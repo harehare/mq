@@ -1,0 +1,72 @@
+def halt_error(): halt(5);
+
+def is_array(a): eq(type(a), "array");
+def is_markdown(m): eq(type(m), "markdown");
+def is_bool(b): eq(type(b), "bool");
+def is_number(n): eq(type(n), "number");
+def is_string(s): eq(type(s), "string");
+def is_none(n): eq(type(n), "None");
+
+def contains(s, search): ne(index(s, search), -1);
+
+def ltrimstr(s, left):
+  if(starts_with(s, left)):
+    slice(s, add(index(s, left), len(left)), len(s))
+  else:
+    s;
+
+def rtrimstr(s, right):
+  if(ends_with(s, right)):
+    slice(s, 0, sub(len(s), len(right)))
+  else:
+     s;
+
+def is_empty(s):
+  if(or(is_string(s), is_array(s))):
+    eq(len(s), 0)
+  else:
+    false;
+
+def test(s, pattern): not(is_empty(match(s, pattern)));
+
+def select(v, f): if(f): v else: None;
+def arrays(a): select(is_array(a));
+def markdowns(m): select(is_markdown(m));
+def booleans(b): select(is_bool(b));
+def numbers(n): select(is_number(n));
+
+def to_array(a):
+  if(is_array(a)):
+    a
+  else:
+    array(a);
+
+# Applies a given function to each element of the provided array and returns a new array with the results.
+def map(v, f): foreach(x, v): f(x);;
+
+# Filters the elements of an array based on a provided callback function.
+def filter(v, f): foreach(x, v): select(x, f(x)); | compact();
+
+def first(arr):
+  if (is_empty(arr)):
+    None
+  else:
+    nth(arr, 0);
+
+def last(arr):
+  if (is_empty(arr)):
+    None
+  else:
+    nth(arr, sub(len(arr), 1));
+
+def is_h(md): eq(md_name(), "h");
+def is_h1(md): eq(md_name(), "h1");
+def is_h2(md): eq(md_name(), "h2");
+def is_h3(md): eq(md_name(), "h3");
+def is_h4(md): eq(md_name(), "h4");
+def is_h5(md): eq(md_name(), "h5");
+def is_em(md): eq(md_name(), "emphasis");
+def is_html(md): eq(md_name(), "html");
+def is_yaml(md): eq(md_name(), "yaml");
+def is_toml(md): eq(md_name(), "toml");
+def is_code(md): eq(md_name(), "code");

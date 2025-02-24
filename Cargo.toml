@@ -1,0 +1,51 @@
+[package]
+default-run = "mdq"
+description = "mdq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
+edition = "2024"
+exclude = [".github"]
+name = "mdq"
+readme = "README.md"
+repository = "https://github.com/harehare/mdq"
+version = "0.1.0"
+
+[workspace]
+members = ["crates/mdq-lang", "crates/mdq-repl", "crates/mdq-md", "crates/mdq-lsp", "crates/mdq-hir", "crates/mdq-formatter", "fuzz"]
+
+[dependencies]
+clap = {version = "4.5.23", features = ["derive"]}
+clap-verbosity-flag = "3.0.2"
+clap_complete = "4.5.45"
+colored = "2.2.0"
+env_logger = "0.11.6"
+itertools = "0.13.0"
+log = "0.4.22"
+mdq-formatter = {path = "./crates/mdq-formatter", version = "0.1.0"}
+mdq-lang = {path = "./crates/mdq-lang", version = "0.1.0"}
+mdq-md = {path = "./crates/mdq-md", version = "0.1.0"}
+mdq-repl = {path = "./crates/mdq-repl", version = "0.1.0"}
+miette = {workspace = true}
+syntect = "5.2.0"
+
+[workspace.dependencies]
+compact_str = "0.8.1"
+itertools = "0.13.0"
+miette = {version = "7.4.0", features = ["fancy"]}
+rstest = "0.23.0"
+rustc-hash = "2.1.0"
+slotmap = "1.0.7"
+thiserror = "2.0.9"
+
+[dev-dependencies]
+assert_cmd = "2.0.16"
+rstest = "0.23.0"
+
+[[bin]]
+doc = false
+name = "mdq"
+path = "src/main.rs"
+
+[profile.release]
+lto = "fat"
+opt-level = 3
+panic = 'abort'
+strip = "symbols"

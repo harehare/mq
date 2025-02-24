@@ -1,0 +1,16 @@
+[package]
+edition = "2024"
+name = "mdq-lsp"
+version = "0.1.0"
+
+[dependencies]
+bimap = "0.6.3"
+dashmap = "6.1.0"
+itertools = {workspace = true}
+mdq-formatter = {path = "../../crates/mdq-formatter", version = "0.1.0"}
+mdq-hir = {path = "../../crates/mdq-hir", version = "0.1.0"}
+mdq-lang = {path = "../../crates/mdq-lang", version = "0.1.0"}
+miette = {workspace = true}
+tokio = {version = "1.43.0", features = ["full"]}
+tokio-macros = "2.5.0"
+tower-lsp = "0.20.0"

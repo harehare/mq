@@ -1,0 +1,16 @@
+[package]
+edition = "2024"
+name = "mdq-repl"
+version = "0.1.0"
+
+[dependencies]
+arboard = "3.4.1"
+colored = "3.0.0"
+dirs = "6.0.0"
+itertools = {workspace = true}
+mdq-hir = {path = "../../crates/mdq-hir", version = "0.1.0"}
+mdq-lang = {path = "../../crates/mdq-lang", version = "0.1.0"}
+mdq-md = {path = "../../crates/mdq-md", version = "0.1.0"}
+miette = {workspace = true}
+rustyline = "15.0.0"
+strum = {version = "0.26.3", features = ["derive"]}
