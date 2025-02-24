@@ -2,7 +2,7 @@
 
 ## Conditionals
 
-mdq supports standard conditional operations through the following functions:
+mq supports standard conditional operations through the following functions:
 
 - `and(a, b)` - Returns true if both `a` and `b` are true
 - `or(a, b)` - Returns true if either `a` or `b` is true
@@ -10,7 +10,7 @@ mdq supports standard conditional operations through the following functions:
 
 ## Comparisons
 
-mdq provides comparison functionality through built-in functions.
+mq provides comparison functionality through built-in functions.
 
 ### Basic Comparisons
 

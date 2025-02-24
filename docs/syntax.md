@@ -161,8 +161,8 @@ include "module_name"
 ### Examples
 
 ```jq
-# Include math functions from math.mdq
+# Include math functions from math.mq
 include "math"
-# Now we can use functions defined in math.mdq
+# Now we can use functions defined in math.mq
 let result = add(2, 3)
 ```

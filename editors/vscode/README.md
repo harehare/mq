@@ -1,6 +1,6 @@
-# mdq support for Visual Studio Code
+# mq support for Visual Studio Code
 
-This extension adds support for the mdq to Visual Studio Code.
+This extension adds support for the mq to Visual Studio Code.
 
 ## Features
 

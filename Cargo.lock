@@ -1457,128 +1457,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mdq"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "clap",
- "clap-verbosity-flag",
- "clap_complete",
- "colored 2.2.0",
- "env_logger",
- "itertools 0.13.0",
- "log",
- "mdq-formatter",
- "mdq-lang",
- "mdq-md",
- "mdq-repl",
- "miette",
- "rstest",
- "syntect",
-]
-
-[[package]]
-name = "mdq-formatter"
-version = "0.1.0"
-dependencies = [
- "mdq-lang",
- "rstest",
- "rustc-hash",
-]
-
-[[package]]
-name = "mdq-hir"
-version = "0.1.0"
-dependencies = [
- "compact_str",
- "itertools 0.13.0",
- "mdq-lang",
- "rstest",
- "rustc-hash",
- "slotmap",
- "strsim",
- "thiserror 2.0.9",
- "url",
-]
-
-[[package]]
-name = "mdq-lang"
-version = "0.1.0"
-dependencies = [
- "base64",
- "chrono",
- "compact_str",
- "criterion",
- "dirs",
- "env_logger",
- "itertools 0.13.0",
- "log",
- "mdq-md",
- "miette",
- "nom",
- "nom_locate",
- "percent-encoding",
- "regex",
- "rstest",
- "rustc-hash",
- "thiserror 2.0.9",
-]
-
-[[package]]
-name = "mdq-lang-fuzz"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "libfuzzer-sys",
- "mdq-lang",
-]
-
-[[package]]
-name = "mdq-lsp"
-version = "0.1.0"
-dependencies = [
- "bimap",
- "dashmap 6.1.0",
- "itertools 0.13.0",
- "mdq-formatter",
- "mdq-hir",
- "mdq-lang",
- "miette",
- "tokio",
- "tokio-macros",
- "tower-lsp",
-]
-
-[[package]]
-name = "mdq-md"
-version = "0.1.0"
-dependencies = [
- "compact_str",
- "comrak",
- "itertools 0.13.0",
- "markdown",
- "miette",
- "rstest",
- "syntect",
-]
-
-[[package]]
-name = "mdq-repl"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "colored 3.0.0",
- "dirs",
- "itertools 0.13.0",
- "mdq-hir",
- "mdq-lang",
- "mdq-md",
- "miette",
- "rustyline",
- "strum",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1640,6 +1518,128 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "mq-formatter"
+version = "0.1.0"
+dependencies = [
+ "mq-lang",
+ "rstest",
+ "rustc-hash",
+]
+
+[[package]]
+name = "mq-hir"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "itertools 0.13.0",
+ "mq-lang",
+ "rstest",
+ "rustc-hash",
+ "slotmap",
+ "strsim",
+ "thiserror 2.0.9",
+ "url",
+]
+
+[[package]]
+name = "mq-lang"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "compact_str",
+ "criterion",
+ "dirs",
+ "env_logger",
+ "itertools 0.13.0",
+ "log",
+ "miette",
+ "mq-md",
+ "nom",
+ "nom_locate",
+ "percent-encoding",
+ "regex",
+ "rstest",
+ "rustc-hash",
+ "thiserror 2.0.9",
+]
+
+[[package]]
+name = "mq-lang-fuzz"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "libfuzzer-sys",
+ "mq-lang",
+]
+
+[[package]]
+name = "mq-lsp"
+version = "0.1.0"
+dependencies = [
+ "bimap",
+ "dashmap 6.1.0",
+ "itertools 0.13.0",
+ "miette",
+ "mq-formatter",
+ "mq-hir",
+ "mq-lang",
+ "tokio",
+ "tokio-macros",
+ "tower-lsp",
+]
+
+[[package]]
+name = "mq-md"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "comrak",
+ "itertools 0.13.0",
+ "markdown",
+ "miette",
+ "rstest",
+ "syntect",
+]
+
+[[package]]
+name = "mq-repl"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "colored 3.0.0",
+ "dirs",
+ "itertools 0.13.0",
+ "miette",
+ "mq-hir",
+ "mq-lang",
+ "mq-md",
+ "rustyline",
+ "strum",
+]
+
+[[package]]
+name = "mquery"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "clap-verbosity-flag",
+ "clap_complete",
+ "colored 2.2.0",
+ "env_logger",
+ "itertools 0.13.0",
+ "log",
+ "miette",
+ "mq-formatter",
+ "mq-lang",
+ "mq-md",
+ "mq-repl",
+ "rstest",
+ "syntect",
 ]
 
 [[package]]

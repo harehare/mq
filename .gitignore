@@ -52,3 +52,6 @@ jspm_packages/
 
 .cache/
 .vscode-test
+# Added by goreleaser init:
+dist/
+.intentionally-empty-file.o

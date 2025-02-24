@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-name = "mdq-lang-fuzz"
+name = "mq-lang-fuzz"
 publish = false
 version = "0.1.0"
 
@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 arbitrary = {version = "1.4.1", features = ["derive"]}
 libfuzzer-sys = "0.4"
-mdq-lang = {path = "../crates/mdq-lang", version = "0.1.0"}
+mq-lang = {path = "../crates/mq-lang", version = "0.1.0"}
 
 [[bin]]
 bench = false

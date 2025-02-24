@@ -2,12 +2,12 @@
     <img src="assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
 </div>
 
-# `mdq` - Markdown processing tool inspired by jq
+# `mq` - Markdown processing tool inspired by jq
 
-[![ci](https://github.com/harehare/mdq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mdq/actions/workflows/ci.yml)
-![GitHub Release](https://img.shields.io/github/v/release/harehare/mdq)
+[![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
+![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
 
-mdq is a command-line tool that processes Markdown using a syntax similar to jq.
+mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
 
 > ⚠️ This project is under active development and is not yet production-ready. ⚠
@@ -24,20 +24,20 @@ It's written in Rust, allowing you to easily slice, filter, map, and transform s
 
 ## Installation
 
-To install `mdq`, you can use `cargo`:
+To install `mq`, you can use `cargo`:
 
 ```sh
-cargo install --git https://github.com/harehare/mdq.git mdq
+cargo install --git https://github.com/harehare/mq.git mq
 # Installing from cargo is under preparation.
-cargo install mdq
+cargo install mquery
 ```
 
 ## Usage
 
-Here's a basic example of how to use `mdq`:
+Here's a basic example of how to use `mq`:
 
 ```sh
-mdq 'or(.[], .h) | select(contains("name"))'
+mq 'or(.[], .h) | select(contains("name"))'
 ```
 
 ### Advanced Usage
@@ -46,7 +46,7 @@ This example how to generate a table of contents (TOC) from a markdown file.
 You can chain multiple operations to perform complex transformations:
 
 ```sh
-mdq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)); | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
+mq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)); | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
 ```
 
 For more detailed usage and examples, refer to the [documentation](docs/README.md).

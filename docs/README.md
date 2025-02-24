@@ -1,6 +1,6 @@
 # Documentation
 
-Welcome to the documentation mdq. Here you will find links to all the sections of our documentation.
+Welcome to the documentation mq. Here you will find links to all the sections of our documentation.
 
 ## Table of Contents
 

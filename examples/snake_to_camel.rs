@@ -1,5 +1,5 @@
 fn main() {
-    let mut engine = mdq_lang::Engine::default();
+    let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();
 
     let code = "
@@ -11,6 +11,6 @@ fn main() {
             | add(first_char, rest_str);
         | join(\"\");
     | snake_to_camel(\"CAMEL_CASE\")";
-    let input = vec![mdq_lang::Value::String("".to_string())].into_iter();
+    let input = vec![mq_lang::Value::String("".to_string())].into_iter();
     println!("{:?}", engine.eval(&code, input).unwrap());
 }

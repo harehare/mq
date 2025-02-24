@@ -1,5 +1,5 @@
 {
-  "name": "mdq",
+  "name": "mq",
   "displayName": "",
   "description": "",
   "version": "0.0.1",
@@ -10,30 +10,30 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:mdq"
+    "onLanguage:mq"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "languages": [
       {
-        "id": "mdq",
+        "id": "mq",
         "extensions": [
-          ".mdq"
+          ".mq"
         ]
       }
     ]
   },
   "commands": [
     {
-      "command": "mdq-lsp.installLSP",
-      "title": "mdq: Install LSP"
+      "command": "mq-lsp.installLSP",
+      "title": "mq: Install LSP"
     }
   ],
   "configuration": {
     "type": "object",
     "title": "LSP Configuration",
     "properties": {
-      "mdq-lsp.lspPath": {
+      "mq-lsp.lspPath": {
         "type": "string",
         "default": "",
         "description": "Path to the LSP server executable"

@@ -15,18 +15,18 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::{LinesWithEndings, as_24_bit_terminal_escaped};
 
 #[derive(Parser, Debug)]
-#[command(name = "mdq")]
+#[command(name = "mq")]
 #[command(author = "Takahiro Sato. <harehare1110@gmail.com>")]
 #[command(version = "0.1.0")]
 #[command(after_help = "Examples:\n\n\
     To filter markdown nodes:\n\
-    $ mdq 'query' file.md\n\n\
+    $ mq 'query' file.md\n\n\
     To start a REPL session:\n\
-    $ mdq repl\n\n\
+    $ mq repl\n\n\
     To format markdown file:\n\
-    $ mdq fmt --check file.md")]
+    $ mq fmt --check file.md")]
 #[command(
-    about = "mdq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
+    about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
 )]
 pub struct Cli {
@@ -162,7 +162,7 @@ impl Cli {
 
         match &self.commands {
             Some(Commands::Repl) => {
-                mdq_repl::Repl::new(vec![mdq_lang::Value::String("".to_string())]).run()
+                mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
             }
             Some(Commands::Fmt {
                 indent_width,
@@ -170,7 +170,7 @@ impl Cli {
             }) => {
                 for (_, content) in self.read_contents()? {
                     let formatted =
-                        mdq_formatter::Formatter::new(Some(mdq_formatter::FormatterConfig {
+                        mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                             indent_width: *indent_width,
                         }))
                         .format(&content)
@@ -186,11 +186,11 @@ impl Cli {
                 Ok(())
             }
             Some(Commands::Completion { shell }) => {
-                generate(*shell, &mut Cli::command(), "mdq", &mut std::io::stdout());
+                generate(*shell, &mut Cli::command(), "mq", &mut std::io::stdout());
                 Ok(())
             }
             None => {
-                let mut engine = mdq_lang::Engine::default();
+                let mut engine = mq_lang::Engine::default();
                 engine.load_builtin_module()?;
 
                 let query = self
@@ -218,7 +218,7 @@ impl Cli {
 
     fn execute(
         &self,
-        engine: &mut mdq_lang::Engine,
+        engine: &mut mq_lang::Engine,
         query: &str,
         file: Option<PathBuf>,
         content: &str,
@@ -229,78 +229,70 @@ impl Cli {
 
         let runtime_values = if self.input.null_input {
             engine.eval(
-                &query,
-                vec![mdq_lang::Value::String("".to_string())].into_iter(),
+                query,
+                vec![mq_lang::Value::String("".to_string())].into_iter(),
             )
+        } else if self.input.raw_input {
+            let runtime_values = content
+                .lines()
+                .map(|line| mq_lang::Value::String(line.to_string()))
+                .collect_vec();
+            engine.eval(&query, runtime_values.into_iter())
         } else {
-            if self.input.raw_input {
-                let runtime_values = content
-                    .lines()
-                    .map(|line| mdq_lang::Value::String(line.to_string()))
-                    .collect_vec();
-                engine.eval(&query, runtime_values.into_iter())
-            } else {
-                let markdown: mdq_md::Markdown = mdq_md::Markdown::from_str(&content)?;
-                let input = markdown.nodes.into_iter().map(mdq_lang::Value::from);
+            let markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
+            let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
 
-                if self.output.update {
-                    let results = engine.eval(&query, input.clone())?;
-                    results
-                        .values()
-                        .iter()
-                        .zip(input.into_iter())
-                        .flat_map(|(updated_runtime_value, runtime_value)| {
-                            if let mdq_lang::Value::Markdown(node) = &runtime_value {
-                                match updated_runtime_value {
-                                    mdq_lang::Value::None
-                                    | mdq_lang::Value::Function(_, _)
-                                    | mdq_lang::Value::NativeFunction(_) => Ok(vec![runtime_value]),
-                                    mdq_lang::Value::Markdown(_) => {
-                                        Ok(vec![updated_runtime_value.clone()])
-                                    }
-                                    mdq_lang::Value::String(s) => {
-                                        Ok(vec![mdq_lang::Value::Markdown(
-                                            node.clone().with_value(s),
-                                        )])
-                                    }
-                                    mdq_lang::Value::Bool(b) => {
-                                        Ok(vec![mdq_lang::Value::Markdown(
-                                            node.clone().with_value(b.to_string().as_str()),
-                                        )])
-                                    }
-                                    mdq_lang::Value::Number(n) => {
-                                        Ok(vec![mdq_lang::Value::Markdown(
-                                            node.clone().with_value(n.to_string().as_str()),
-                                        )])
-                                    }
-                                    mdq_lang::Value::Array(array) => Ok(array
-                                        .iter()
-                                        .filter_map(|o| {
-                                            if !matches!(o, mdq_lang::Value::None) {
-                                                Some(mdq_lang::Value::Markdown(
-                                                    node.clone().with_value(o.to_string().as_str()),
-                                                ))
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect()),
+            if self.output.update {
+                let results = engine.eval(query, input.clone())?;
+                results
+                    .values()
+                    .iter()
+                    .zip(input.into_iter())
+                    .flat_map(|(updated_runtime_value, runtime_value)| {
+                        if let mq_lang::Value::Markdown(node) = &runtime_value {
+                            match updated_runtime_value {
+                                mq_lang::Value::None
+                                | mq_lang::Value::Function(_, _)
+                                | mq_lang::Value::NativeFunction(_) => Ok(vec![runtime_value]),
+                                mq_lang::Value::Markdown(_) => {
+                                    Ok(vec![updated_runtime_value.clone()])
                                 }
-                            } else {
-                                Err(miette!("Internal error"))
+                                mq_lang::Value::String(s) => {
+                                    Ok(vec![mq_lang::Value::Markdown(node.clone().with_value(s))])
+                                }
+                                mq_lang::Value::Bool(b) => Ok(vec![mq_lang::Value::Markdown(
+                                    node.clone().with_value(b.to_string().as_str()),
+                                )]),
+                                mq_lang::Value::Number(n) => Ok(vec![mq_lang::Value::Markdown(
+                                    node.clone().with_value(n.to_string().as_str()),
+                                )]),
+                                mq_lang::Value::Array(array) => Ok(array
+                                    .iter()
+                                    .filter_map(|o| {
+                                        if !matches!(o, mq_lang::Value::None) {
+                                            Some(mq_lang::Value::Markdown(
+                                                node.clone().with_value(o.to_string().as_str()),
+                                            ))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect()),
                             }
-                        })
-                        .try_fold(
-                            Vec::with_capacity(results.values().len()),
-                            |mut acc, res| {
-                                acc.extend(res);
-                                Ok(acc)
-                            },
-                        )
-                        .map(Into::into)
-                } else {
-                    engine.eval(&query, input)
-                }
+                        } else {
+                            Err(miette!("Internal error"))
+                        }
+                    })
+                    .try_fold(
+                        Vec::with_capacity(results.values().len()),
+                        |mut acc, res| {
+                            acc.extend(res);
+                            Ok(acc)
+                        },
+                    )
+                    .map(Into::into)
+            } else {
+                engine.eval(query, input)
             }
         }?;
 
@@ -330,7 +322,7 @@ impl Cli {
             })
     }
 
-    fn print(&self, runtime_values: mdq_lang::Values) -> miette::Result<()> {
+    fn print(&self, runtime_values: mq_lang::Values) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if self.output.unbuffered {
             Box::new(stdout.lock())
@@ -343,11 +335,11 @@ impl Cli {
             &runtime_values.compact()
         };
 
-        let markdown = mdq_md::Markdown::new(
+        let markdown = mq_md::Markdown::new(
             runtime_values
                 .iter()
                 .map(|runtime_value| match runtime_value {
-                    mdq_lang::Value::Markdown(node) => node.clone(),
+                    mq_lang::Value::Markdown(node) => node.clone(),
                     _ => runtime_value.to_string().into(),
                 })
                 .collect(),

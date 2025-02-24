@@ -5,7 +5,7 @@ import which from "which";
 let client: lc.LanguageClient;
 
 export async function activate(context: vscode.ExtensionContext) {
-  vscode.commands.registerCommand("mdq-lsp.installLSP", async () => {
+  vscode.commands.registerCommand("mq-lsp.installLSP", async () => {
     await installLspServer();
   });
 
@@ -14,17 +14,17 @@ export async function activate(context: vscode.ExtensionContext) {
   if (process.env._MDQ_DEBUG_BIN) {
     lspPath = process.env._MDQ_DEBUG_BIN;
   } else {
-    const config = vscode.workspace.getConfiguration("mdq-lsp");
+    const config = vscode.workspace.getConfiguration("mq-lsp");
     const configLspPath = config.get<string>("lspPath");
 
     if (configLspPath) {
       lspPath = configLspPath;
     } else {
-      lspPath = await which("mdq-lsp", { nothrow: true });
+      lspPath = await which("mq-lsp", { nothrow: true });
 
       if (lspPath === null) {
         const selected = await vscode.window.showInformationMessage(
-          "Install mdq-lsp-server?",
+          "Install mq-lsp-server?",
           "Yes",
           "No"
         );
@@ -57,13 +57,13 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   const clientOptions: lc.LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "mdq" }],
-    initializationOptions: vscode.workspace.getConfiguration("mdq"),
+    documentSelector: [{ scheme: "file", language: "mq" }],
+    initializationOptions: vscode.workspace.getConfiguration("mq"),
   };
 
   client = new lc.LanguageClient(
-    "mdq",
-    "mdq Language Server",
+    "mq",
+    "mq Language Server",
     serverOptions,
     clientOptions
   );
@@ -90,8 +90,8 @@ const installLspServer = async () => {
     { type: "cargo", task: "install-lsp" },
     vscode.TaskScope.Workspace,
     "Install LSP Server",
-    "mdq-lsp",
-    new vscode.ShellExecution("cargo install mdq-lsp")
+    "mq-lsp",
+    new vscode.ShellExecution("cargo install mq-lsp")
   );
 
   try {

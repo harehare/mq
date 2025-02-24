@@ -22,9 +22,9 @@ fn main() {
 - item 1
 - item 2
 ";
-    let markdown = mdq_md::Markdown::from_str(markdown_content).unwrap();
-    let input = markdown.nodes.into_iter().map(mdq_lang::Value::from);
-    let mut engine = mdq_lang::Engine::default();
+    let markdown = mq_md::Markdown::from_str(markdown_content).unwrap();
+    let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
+    let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();
 
     let code = ".h

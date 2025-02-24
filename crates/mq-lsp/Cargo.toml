@@ -1,0 +1,16 @@
+[package]
+edition = "2024"
+name = "mq-lsp"
+version = "0.1.0"
+
+[dependencies]
+bimap = "0.6.3"
+dashmap = "6.1.0"
+itertools = {workspace = true}
+miette = {workspace = true}
+mq-formatter = {path = "../../crates/mq-formatter", version = "0.1.0"}
+mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
+mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
+tokio = {version = "1.43.0", features = ["full"]}
+tokio-macros = "2.5.0"
+tower-lsp = "0.20.0"

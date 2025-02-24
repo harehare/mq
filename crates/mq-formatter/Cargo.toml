@@ -1,0 +1,11 @@
+[package]
+edition = "2024"
+name = "mq-formatter"
+version = "0.1.0"
+
+[dependencies]
+mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
+rustc-hash = {workspace = true}
+
+[dev-dependencies]
+rstest = {workspace = true}
