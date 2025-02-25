@@ -1,6 +1,5 @@
-//! This module provides functionality for formatting data within the `mq-formatter` crate.
-//!
-//! The `formatter` module contains the core structures and configurations used for formatting.
+//! This crate provides an automatic code formatter to enforce consistent code style across [mq language](https://github.com/harehare/mq) source files.
+//! By applying standardized formatting rules, it helps developers maintain clean and readable [mq language](https://github.com/harehare/mq) code.
 //!
 //! ## Examples
 //!

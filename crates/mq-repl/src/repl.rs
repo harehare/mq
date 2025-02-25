@@ -16,13 +16,13 @@ use crate::command_context::{Command, CommandContext, CommandOutput};
 
 const PROMPT: &str = "> ";
 
-pub struct MdqLineHelper {
+pub struct MqLineHelper {
     command_context: Rc<RefCell<CommandContext>>,
     file_completer: FilenameCompleter,
     matching_bracket_highlighter: MatchingBracketHighlighter,
 }
 
-impl MdqLineHelper {
+impl MqLineHelper {
     pub fn new(command_context: Rc<RefCell<CommandContext>>) -> Self {
         Self {
             command_context,
@@ -32,11 +32,11 @@ impl MdqLineHelper {
     }
 }
 
-impl Hinter for MdqLineHelper {
+impl Hinter for MqLineHelper {
     type Hint = String;
 }
 
-impl Highlighter for MdqLineHelper {
+impl Highlighter for MqLineHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
         &'s self,
         prompt: &'p str,
@@ -51,7 +51,7 @@ impl Highlighter for MdqLineHelper {
     }
 }
 
-impl Validator for MdqLineHelper {
+impl Validator for MqLineHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> Result<ValidationResult, ReadlineError> {
         let input = ctx.input();
         if input.is_empty() || input.ends_with("\n") || input.starts_with(":") {
@@ -70,7 +70,7 @@ impl Validator for MdqLineHelper {
     }
 }
 
-impl Completer for MdqLineHelper {
+impl Completer for MqLineHelper {
     type Candidate = Pair;
     fn complete(
         &self,
@@ -98,7 +98,7 @@ impl Completer for MdqLineHelper {
     }
 }
 
-impl Helper for MdqLineHelper {}
+impl Helper for MqLineHelper {}
 
 pub struct Repl {
     command_context: Rc<RefCell<CommandContext>>,
@@ -131,7 +131,7 @@ impl Repl {
             .color_mode(rustyline::ColorMode::Enabled)
             .build();
         let mut editor = Editor::with_config(config).into_diagnostic()?;
-        let helper = MdqLineHelper::new(Rc::clone(&self.command_context));
+        let helper = MqLineHelper::new(Rc::clone(&self.command_context));
 
         editor.set_helper(Some(helper));
         editor.bind_sequence(

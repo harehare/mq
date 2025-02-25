@@ -1,15 +1,4 @@
-//! `mq-lang` is provides a parser and evaluator for a mq language.
-//!
-//! ## Modules
-//!
-//! - `ast`: Abstract Syntax Tree (AST) structures and parser.
-//! - `cst`: Concrete Syntax Tree (CST) structures and parser.
-//! - `engine`: Execution engine for evaluating mq code.
-//! - `error`: Error handling utilities.
-//! - `eval`: Evaluation logic and built-in functions.
-//! - `lexer`: Lexical analysis and tokenization.
-//! - `optimizer`: Code optimization utilities.
-//! - `value`: Value types used in the language.
+//! `mq-lang` is provides a parser and evaluator for a [mq language](https://github.com/harehare/mq).
 //!
 //! ## Examples
 //!
@@ -69,7 +58,7 @@ pub use lexer::token::{Token, TokenKind};
 pub use range::{Position, Range};
 pub use value::{Value, Values};
 
-pub type MdqResult = Result<Values, Error>;
+pub type MqResult = Result<Values, Error>;
 
 pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     let tokens = tokenize(

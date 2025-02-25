@@ -276,3 +276,193 @@ async fn main() {
 
     Server::new(stdin, stdout, socket).serve(service).await;
 }
+
+#[cfg(test)]
+mod tests {
+    use tower_lsp::lsp_types::{SemanticToken, TextDocumentItem};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_did_open() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "def main(): 1;".to_string(),
+                },
+            })
+            .await;
+
+        assert!(
+            backend
+                .source_map
+                .read()
+                .unwrap()
+                .contains_left(&uri.to_string())
+        );
+        assert!(
+            backend
+                .hir
+                .read()
+                .unwrap()
+                .symbols()
+                .map(|(_, s)| s.name.clone().unwrap().to_owned())
+                .collect_vec()
+                .contains(&"main".into()),
+        );
+        assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_completion() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let result = backend
+            .completion(CompletionParams {
+                text_document_position: tower_lsp::lsp_types::TextDocumentPositionParams {
+                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                    position: Position::new(0, 0),
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            })
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_goto_definition() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let result = backend
+            .goto_definition(GotoDefinitionParams {
+                text_document_position_params: tower_lsp::lsp_types::TextDocumentPositionParams {
+                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                    position: Position::new(0, 0),
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_hover() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let result = backend
+            .hover(HoverParams {
+                text_document_position_params: tower_lsp::lsp_types::TextDocumentPositionParams {
+                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                    position: Position::new(0, 0),
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_semantic_tokens() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .hir
+            .write()
+            .unwrap()
+            .add_code(uri.clone(), "def main(): 1;");
+
+        let result = backend
+            .semantic_tokens_full(SemanticTokensParams {
+                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert_eq!(
+            result.unwrap().unwrap(),
+            SemanticTokensResult::Tokens(SemanticTokens {
+                result_id: None,
+                data: vec![
+                    SemanticToken {
+                        delta_line: 0,
+                        delta_start: 0,
+                        length: 3,
+                        token_type: 0,
+                        token_modifiers_bitset: 0
+                    },
+                    SemanticToken {
+                        delta_line: 0,
+                        delta_start: 4,
+                        length: 4,
+                        token_type: 4,
+                        token_modifiers_bitset: 0
+                    },
+                    SemanticToken {
+                        delta_line: 0,
+                        delta_start: 8,
+                        length: 1,
+                        token_type: 2,
+                        token_modifiers_bitset: 0
+                    }
+                ]
+            })
+        );
+    }
+}

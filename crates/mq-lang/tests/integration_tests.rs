@@ -1,4 +1,4 @@
-use mq_lang::{Engine, MdqResult, Value};
+use mq_lang::{Engine, MqResult, Value};
 use rstest::{fixture, rstest};
 
 #[fixture]
@@ -199,7 +199,7 @@ fn test(
     mut engine: Engine,
     #[case] program: &str,
     #[case] input: Vec<Value>,
-    #[case] expected: MdqResult,
+    #[case] expected: MqResult,
 ) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

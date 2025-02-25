@@ -3,7 +3,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use itertools::Itertools;
 
 use crate::{
-    AstIdentName, MdqResult, Module, ModuleLoader, Token, Value,
+    AstIdentName, Module, ModuleLoader, MqResult, Token, Value,
     arena::Arena,
     error::{self, InnerError},
     eval::Evaluator,
@@ -67,7 +67,7 @@ impl Engine {
         })
     }
 
-    pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MdqResult {
+    pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let program = parse(code, Rc::clone(&self.token_arena))?;
         let program = if self.optimization {
             Optimizer::new().optimize(&program)

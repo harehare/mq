@@ -1,15 +1,4 @@
-//! This module provides the core functionality for the `mq-hir` crate, which includes
-//! handling high-level intermediate representation (HIR) for the project. The module is organized into several submodules, each responsible for a specific aspect of the HIR processing and management.
-//!
-//! - `builtin`: Contains built-in definitions and utilities.
-//! - `error`: Defines error types and handling mechanisms.
-//! - `find`: Provides functionality to find elements within the HIR.
-//! - `hir`: Defines the structure and manipulation of the high-level intermediate representation.
-//! - `reference`: Manages references within the HIR.
-//! - `resolve`: Handles name resolution within the HIR.
-//! - `scope`: Manages scopes and their relationships within the HIR.
-//! - `source`: Deals with source code representation and management.
-//! - `symbol`: Defines symbols and their properties within the HIR.
+//! This module provides the core functionality for the `mq-hir` crate, which includes the High-level Intermediate Representation (HIR) for the [mq language](https://github.com/harehare/mq).
 //!
 //! ## Example
 //!

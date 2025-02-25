@@ -1,10 +1,5 @@
 //! This module contains the main library code for the `mq-repl` crate.
 //!
-//! It includes the following submodules:
-//!
-//! - `command_context`: Handles the context for commands executed within the REPL.
-//! - `repl`: Contains the implementation of the Read-Eval-Print Loop (REPL).
-//!
 //! ## Example
 //!
 //! ```rust
