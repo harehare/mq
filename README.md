@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
+    <img src="docs/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
 </div>
 
 # `mq` - Markdown processing tool inspired by jq

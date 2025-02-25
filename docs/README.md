@@ -1,3 +1,5 @@
+<img src="./assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
+
 # Documentation
 
 Welcome to the documentation mq. Here you will find links to all the sections of our documentation.
@@ -17,6 +19,9 @@ Welcome to the documentation mq. Here you will find links to all the sections of
   - [Pipe-Operator](syntax.md#Pipe-Operator)
     - [Usage](syntax.md#Usage)
     - [Examples](syntax.md#Examples)
+  - [?-Operator](syntax.md#?-Operator)
+    - [Usage](syntax.md#Usage)
+    - [Examples](syntax.md#Examples)
   - [Environment-variables](syntax.md#Environment-variables)
   - [Def-Expression](syntax.md#Def-Expression)
     - [Examples](syntax.md#Examples)
@@ -27,6 +32,8 @@ Welcome to the documentation mq. Here you will find links to all the sections of
   - [Foreach-Expression](syntax.md#Foreach-Expression)
   - [Doc-Comments](syntax.md#Doc-Comments)
   - [Include](syntax.md#Include)
+    - [Examples](syntax.md#Examples)
+  - [Self](syntax.md#Self)
     - [Examples](syntax.md#Examples)
 - [Types-and-Values](types_and_values.md#Types-and-Values)
   - [Values](types_and_values.md#Values)
