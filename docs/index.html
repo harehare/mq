@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mq - Markdown processing tool inspired by jq</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins|JetBrains+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --primary-color: #20638f;
+        --secondary-color: #000000;
+        --dark-color: #123850;
+        --light-color: #e8f4fc;
+        --lighter-blue: #f0f8ff;
+        --accent-blue: #5dade2;
+        --text-color: #2c3e50;
+        --code-bg: #eef7fd;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Oxygen, Ubuntu, sans-serif;
+        line-height: 1.6;
+        color: var(--text-color);
+        background-color: var(--lighter-blue);
+        font-weight: 400;
+      }
+
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      header {
+        background: linear-gradient(
+          135deg,
+          var(--secondary-color) 0%,
+          var(--dark-color) 100%
+        );
+        padding: 3rem 0;
+        text-align: center;
+        color: white;
+      }
+
+      .logo {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+
+      .logo-icon {
+        width: 96px;
+        height: 96px;
+        background-color: transparent;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-weight: 600;
+        font-size: 28px;
+      }
+
+      .title {
+        font-size: 2.8rem;
+        margin-bottom: 0.5rem;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+
+      .subtitle {
+        font-size: 1.3rem;
+        color: var(--light-color);
+        margin-bottom: 1.8rem;
+        font-weight: 400;
+      }
+
+      .cta {
+        display: inline-block;
+        background-color: white;
+        color: var(--primary-color);
+        padding: 14px 28px;
+        text-decoration: none;
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.3s;
+        margin: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .cta:hover {
+        background-color: var(--light-color);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .secondary-cta {
+        background-color: transparent;
+        color: white;
+        border: 2px solid white;
+      }
+
+      .secondary-cta:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+
+      section {
+        padding: 2rem 0;
+      }
+
+      section:nth-child(odd) {
+        background-color: white;
+      }
+
+      section:nth-child(even) {
+        background-color: var(--lighter-blue);
+      }
+
+      section h2 {
+        text-align: center;
+        margin-bottom: 1.5rem;
+        color: var(--dark-color);
+        font-size: 2.2rem;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+
+      .code-example {
+        background-color: var(--code-bg);
+        border-radius: 16px;
+        padding: 2rem;
+        margin: 2.5rem 0;
+        overflow-x: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      }
+
+      code {
+        font-family: "JetBrains Mono", "SF Mono", "Fira Code", Consolas,
+          monospace;
+        font-size: 0.95rem;
+        display: block;
+        line-height: 1.7;
+        color: #283747;
+      }
+
+      footer {
+        background-color: var(--dark-color);
+        color: white;
+        text-align: center;
+        padding: 1rem 0;
+        font-weight: 400;
+      }
+
+      .version {
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+
+      .about-content {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3rem;
+        align-items: center;
+      }
+
+      .about-text {
+        line-height: 1.8;
+      }
+
+      .about-text p {
+        margin-bottom: 1.2rem;
+        color: #4a5568;
+      }
+
+      .links {
+        display: flex;
+        justify-content: center;
+        gap: 1.5rem;
+        margin-top: 2rem;
+        flex-wrap: wrap;
+      }
+
+      .link-item {
+        display: flex;
+        align-items: center;
+        color: var(--primary-color);
+        text-decoration: none;
+        font-weight: 500;
+        padding: 0.75rem 1.5rem;
+        border-radius: 10px;
+        background-color: white;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s;
+      }
+
+      .link-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      .link-icon {
+        margin-right: 0.75rem;
+        font-size: 1.2rem;
+      }
+
+      @media (max-width: 768px) {
+        .title {
+          font-size: 2.2rem;
+        }
+
+        .about-content {
+          grid-template-columns: 1fr;
+        }
+
+        .links {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .link-item {
+          width: 100%;
+          max-width: 300px;
+          justify-content: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <div class="logo">
+          <div class="logo-icon"><img src="../assets/logo.svg" /></div>
+          <h1 class="title">mq</h1>
+        </div>
+        <p class="subtitle">Markdown processing tool inspired by jq</p>
+        <div>
+          <a href="https://github.com/harehare/mq" class="cta secondary-cta"
+            >View on GitHub</a
+          >
+        </div>
+      </div>
+    </header>
+
+    <section id="about">
+      <div class="container">
+        <h2>What is mq?</h2>
+        <div class="about-content">
+          <div class="about-text">
+            <p>
+              mq is a command-line tool that processes Markdown using a syntax
+              similar to jq. It's written in Rust, allowing you to easily slice,
+              filter, map, and transform structured data.
+            </p>
+            <div class="links">
+              <a
+                href="https://github.com/harehare/mq/blob/master/docs/README.md"
+                class="link-item"
+                target="_blank"
+              >
+                <span class="link-icon">📚</span> Documentation
+              </a>
+              <a
+                href="#"
+                class="link-item"
+                style="opacity: 0.6; cursor: default"
+              >
+                <span class="link-icon">🎮</span> Playground (Coming Soon)
+              </a>
+            </div>
+          </div>
+          <div class="code-example">
+            <code>
+              <span style="color: #2e8b57"># mq Example</span><br />
+              <br />
+              <pre>
+<span style="color: #0077aa">def</span> <span style="color: #dd4a68">markdown_toc</span>():
+    <span style="color: #999">.h</span> | <span style="color: #0077aa">let</span> link = <span style="color: #dd4a68">md_link</span>(<span style="color: #dd4a68">add</span>(<span style="color: #669900">"#"</span>, <span style="color: #dd4a68">to_text</span>(self)), <span style="color: #dd4a68">to_text</span>(self));
+       | <span style="color: #0077aa">if</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h1"</span>)):
+           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">1</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h2"</span>)):
+           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">2</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h3"</span>)):
+           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">3</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h4"</span>)):
+           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">4</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h5"</span>)):
+           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">5</span>)
+         <span style="color: #0077aa">else</span>:
+           <span style="color: #0077aa">None</span>;
+| <span style="color: #dd4a68">markdown_toc</span>()
+    </pre>
+            </code>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="container">
+        <p class="version">Latest Version: v0.1.0</p>
+      </div>
+    </footer>
+  </body>
+</html>
