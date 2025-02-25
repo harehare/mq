@@ -28,6 +28,31 @@ let add_one = def _add_one(x): add(x, 1);
 # => 11
 ```
 
+## ? Operator
+
+The ? operator is a safe navigation operator that provides null-safe operations.
+
+### Usage
+
+When applied to a None value, the ? operator prevents errors by returning None instead of raising an exception.
+
+### Examples
+
+```jq
+# Safe access with ? operator
+let x = None;
+x | add?(1)
+# => None
+
+# Chaining with ? operator
+None | add?(1) | mul?(2)
+# => None
+
+# Normal operation when value exists
+42 | add?(1)
+# => 43
+```
+
 ## Environment variables
 
 Environment variables can be referenced using $XXX syntax, where XXX represents the name of the environment variable. For example:
@@ -153,6 +178,11 @@ let value = add(2, 3);
 ## Include
 
 Loads functions from an external file using the syntax `include "module_name"`.
+The include directive searches for .mq files in the following locations:
+
+- `$HOME/.mq` - User's home directory mq folder
+- `$ORIGIN/../lib/mq` - Library directory relative to the source file
+- `$ORIGIN/../lib` - Parent lib directory relative to the source file
 
 ```jq
 include "module_name"
@@ -165,4 +195,16 @@ include "module_name"
 include "math"
 # Now we can use functions defined in math.mq
 let result = add(2, 3)
+```
+
+## Self
+
+The current value being processed can be referenced as `self`. When there are insufficient arguments provided in a method call, the current value (`self`) is automatically passed as the first argument.
+
+### Examples
+
+```jq
+# These expressions are equivalent
+"hello" | upcase()
+upcase("hello")
 ```
