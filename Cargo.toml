@@ -9,7 +9,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.1.0"
 
 [workspace]
-members = ["crates/mq-lang", "crates/mq-repl", "crates/mq-md", "crates/mq-lsp", "crates/mq-hir", "crates/mq-formatter", "fuzz"]
+members = ["crates/mq-lang", "crates/mq-repl", "crates/mq-md", "crates/mq-lsp", "crates/mq-hir", "crates/mq-formatter", "fuzz", "crates/mq-wasm"]
 
 [dependencies]
 clap = {version = "4.5.23", features = ["derive"]}

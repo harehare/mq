@@ -1622,6 +1622,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-wasm"
+version = "0.1.0"
+dependencies = [
+ "mq-lang",
+ "mq-md",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "mquery"
 version = "0.1.0"
 dependencies = [

@@ -1,6 +1,12 @@
 [package]
+edition = "2024"
 name = "mq-wasm"
 version = "0.1.0"
-edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
+mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
+mq-md = {path = "../../crates/mq-md", version = "0.1.0"}
+wasm-bindgen = "0.2.100"
