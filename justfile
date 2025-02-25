@@ -15,7 +15,6 @@ bench:
 build:
     cargo build --release --workspace
 
-
 test:
     cargo fmt --all -- --check
     cargo clippy --workspace

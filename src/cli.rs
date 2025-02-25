@@ -237,7 +237,7 @@ impl Cli {
                 .lines()
                 .map(|line| mq_lang::Value::String(line.to_string()))
                 .collect_vec();
-            engine.eval(&query, runtime_values.into_iter())
+            engine.eval(query, runtime_values.into_iter())
         } else {
             let markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
             let input = markdown.nodes.into_iter().map(mq_lang::Value::from);

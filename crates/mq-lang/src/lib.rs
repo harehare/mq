@@ -75,6 +75,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     (cst_nodes, errors)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn parse(
     code: &str,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
@@ -92,6 +93,7 @@ pub fn parse(
     .map_err(|e| error::Error::from_error(code, InnerError::Parse(e), ModuleLoader::new(None)))
 }
 
+#[allow(clippy::result_large_err)]
 pub fn tokenize(
     code: &str,
     options: lexer::Options,

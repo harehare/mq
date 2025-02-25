@@ -47,6 +47,7 @@ impl Engine {
             .collect_vec()
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn load_builtin_module(&mut self) -> Result<(), error::Error> {
         self.evaluator.load_builtin_module().map_err(|e| {
             error::Error::from_error(
@@ -67,6 +68,7 @@ impl Engine {
         })
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let program = parse(code, Rc::clone(&self.token_arena))?;
         let program = if self.optimization {
