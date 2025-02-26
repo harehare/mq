@@ -19,6 +19,10 @@ build:
 build-wasm:
     wasm-pack build -p mq-wasm --release --target web
 
+[working-directory: 'crates/mq-wasm']
+test-wasm:
+    wasm-pack test --chrome --headless
+
 test:
     cargo fmt --all -- --check
     cargo clippy --workspace

@@ -1612,7 +1612,6 @@ dependencies = [
  "markdown",
  "miette",
  "rstest",
- "syntect",
 ]
 
 [[package]]
