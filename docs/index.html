@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="./assets/logo.svg" />
     <title>mq - Markdown processing tool inspired by jq</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -141,10 +142,11 @@
       .code-example {
         background-color: var(--code-bg);
         border-radius: 16px;
-        padding: 2rem;
+        padding: 1rem;
         margin: 2.5rem 0;
         overflow-x: auto;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        align-self: start;
       }
 
       code {
@@ -280,15 +282,115 @@
                 <span class="link-icon">🎮</span> Playground (Coming Soon)
               </a>
             </div>
+            <div style="margin-top: 2rem">
+              <h3 style="text-align: left; margin-bottom: 1.5rem">
+                ✨ Features
+              </h3>
+              <ul style="list-style: none; padding-left: 0">
+                <li
+                  style="
+                    margin-bottom: 1rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">🔍</span>
+                  <div>
+                    <strong>Slice and Filter</strong>: Extract specific parts of
+                    your Markdown documents with ease.
+                  </div>
+                </li>
+                <li
+                  style="
+                    margin-bottom: 0.5rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">🔄</span>
+                  <div>
+                    <strong>Map and Transform</strong>: Apply transformations to
+                    your Markdown content.
+                  </div>
+                </li>
+                <li
+                  style="
+                    margin-bottom: 0.5rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">💻</span>
+                  <div>
+                    <strong>Command-line Interface</strong>: Simple and
+                    intuitive CLI for quick operations.
+                  </div>
+                </li>
+                <li
+                  style="
+                    margin-bottom: 0.5rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">🔌</span>
+                  <div>
+                    <strong>Extensibility</strong>: Easily extendable with
+                    custom functions.
+                  </div>
+                </li>
+                <li
+                  style="
+                    margin-bottom: 0.5rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">🛠️</span>
+                  <div>
+                    <strong>Built-in support</strong>: Filter and transform
+                    content with many built-in functions and selectors.
+                  </div>
+                </li>
+                <li
+                  style="
+                    margin-bottom: 0.5rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">🎯</span>
+                  <div>
+                    <strong>REPL Support</strong>: Interactive command-line REPL
+                    for testing and experimenting.
+                  </div>
+                </li>
+                <li
+                  style="
+                    margin-bottom: 1rem;
+                    display: flex;
+                    align-items: flex-start;
+                  "
+                >
+                  <span style="margin-right: 0.5rem">🎨</span>
+                  <div>
+                    <strong>IDE Support</strong>: VSCode Extension and Language
+                    Server Protocol (LSP) support for custom function
+                    development.
+                  </div>
+                </li>
+              </ul>
+            </div>
           </div>
           <div class="code-example">
             <code>
-              <span style="color: #2e8b57"># mq Example</span><br />
+              <span style="color: #2e8b57"># Example</span><br />
               <br />
               <pre>
-<span style="color: #0077aa">def</span> <span style="color: #dd4a68">markdown_toc</span>():
-    <span style="color: #999">.h</span> | <span style="color: #0077aa">let</span> link = <span style="color: #dd4a68">md_link</span>(<span style="color: #dd4a68">add</span>(<span style="color: #669900">"#"</span>, <span style="color: #dd4a68">to_text</span>(self)), <span style="color: #dd4a68">to_text</span>(self));
-       | <span style="color: #0077aa">if</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h1"</span>)):
+<span style="color: #666">$ <span style="color: var(--primary-color);">mq</span> '</span><span style="color: #0077aa">cat</span> README.md <span style="font-weight: bold;">|</span>
+  <span style="color: #0077aa">def</span> <span style="color: #dd4a68">markdown_toc</span>():
+    <span style="color: #999">.h</span> <span style="font-weight: bold;">|</span> <span style="color: #0077aa">let</span> link = <span style="color: #dd4a68">md_link</span>(<span style="color: #dd4a68">add</span>(<span style="color: #669900">"#"</span>, <span style="color: #dd4a68">to_text</span>(self)), <span style="color: #dd4a68">to_text</span>(self));
+       <span style="font-weight: bold;">|</span> <span style="color: #0077aa">if</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h1"</span>)):
            <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">1</span>)
          <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h2"</span>)):
            <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">2</span>)
@@ -300,7 +402,7 @@
            <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">5</span>)
          <span style="color: #0077aa">else</span>:
            <span style="color: #0077aa">None</span>;
-| <span style="color: #dd4a68">markdown_toc</span>()
+<span style="font-weight: bold;">|</span> <span style="color: #dd4a68">markdown_toc</span>()'
     </pre>
             </code>
           </div>

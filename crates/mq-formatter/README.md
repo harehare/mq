@@ -1,18 +1,17 @@
 # mq-formatter
 
-This module provides functionality for formatting data within the `mq-formatter` crate.
+This crate provides an automatic code formatter to enforce consistent code style across [mq language](https://github.com/harehare/mq) source files.
+By applying standardized formatting rules, it helps developers maintain clean and readable [mq language](https://github.com/harehare/mq) code.
 
-The `formatter` module contains the core structures and configurations used for formatting.
-
-## Examples
+### Examples
 
 ```rust
 use mq_formatter::{Formatter, FormatterConfig};
 
 let config = FormatterConfig::default();
 let mut formatter = Formatter::new(Some(config));
-let data = "if(a): 1 elif(b): 2 else: 3";
+let data = "if(a):1 elif(b):2 else:3";
 let formatted_data = formatter.format(data);
 
-assert_eq!(formatted_data.unwrap(), "if (a):1 elif (b):2 else:3");
+assert_eq!(formatted_data.unwrap(), "if (a): 1 elif (b): 2 else: 3");
 ```
