@@ -15,6 +15,10 @@ bench:
 build:
     cargo build --release --workspace
 
+[working-directory: 'crates/mq-wasm']
+build-wasm:
+    wasm-pack build -p mq-wasm --release --target web
+
 test:
     cargo fmt --all -- --check
     cargo clippy --workspace
