@@ -616,7 +616,9 @@ impl Node {
     }
 
     pub fn is_code(&self, lang: Option<CompactString>) -> bool {
-        if let Self::Code(Code {
+        if lang.is_none() {
+            true
+        } else if let Self::Code(Code {
             lang: node_lang, ..
         }) = &self
         {

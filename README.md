@@ -37,7 +37,8 @@ cargo install mquery
 Here's a basic example of how to use `mq`:
 
 ```sh
-mq 'or(.[], .h) | select(contains("name"))'
+$ mq 'or(.[], .h) | select(contains("name"))'
+$ mq '.code | select(contains("else"))'
 ```
 
 ### Advanced Usage
@@ -46,7 +47,7 @@ This example how to generate a table of contents (TOC) from a markdown file.
 You can chain multiple operations to perform complex transformations:
 
 ```sh
-mq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)); | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
+$ mq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)); | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
 ```
 
 For more detailed usage and examples, refer to the [documentation](docs/README.md).
