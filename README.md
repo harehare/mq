@@ -32,6 +32,12 @@ cargo install --git https://github.com/harehare/mq.git mquery
 cargo install mquery
 ```
 
+### Docker
+
+```sh
+$ docker run --rm ghcr.io/harehare/mq:0.1.0-preview
+```
+
 ## Usage
 
 Here's a basic example of how to use `mq`:
