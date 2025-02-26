@@ -8,7 +8,7 @@ const NEW_LINE: &str = "\r\n";
 #[cfg(not(target_os = "windows"))]
 const NEW_LINE: &str = "\n";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Formatter {
     config: FormatterConfig,
     output: String,
