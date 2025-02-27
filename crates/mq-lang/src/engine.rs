@@ -58,6 +58,7 @@ impl Engine {
         })
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn load_module(&mut self, module_name: &str) -> Result<(), error::Error> {
         let module = self
             .evaluator

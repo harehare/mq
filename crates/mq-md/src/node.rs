@@ -775,6 +775,11 @@ impl Node {
                 .into_iter()
                 .flat_map(Self::from_mdast_node)
                 .collect_vec(),
+            mdast::Node::ListItem(list_item) => list_item
+                .children
+                .into_iter()
+                .flat_map(Self::from_mdast_node)
+                .collect_vec(),
             mdast::Node::List(list) => Self::mdast_list_items(&list, 0),
             mdast::Node::Table(table) => table
                 .children
@@ -1080,7 +1085,7 @@ impl Node {
                                         indent: indent + 1,
                                         index: 0,
                                         checked: list.checked,
-                                        value: Self::from_mdast_node(node.clone())
+                                        value: Self::from_mdast_node(n.clone())
                                             .first()
                                             .map(|v| Box::new(v.clone()))
                                             .unwrap_or_else(|| {
