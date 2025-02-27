@@ -25,6 +25,7 @@ impl FromStr for Markdown {
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut pre_line = 0;
+        let mut first_row = true;
         let text = self
             .nodes
             .iter()
@@ -36,9 +37,10 @@ impl fmt::Display for Markdown {
                 }
 
                 let value = if let Some(pos) = node.position() {
-                    let value = if pre_line != pos.start.line {
+                    let value = if !first_row && pre_line != pos.start.line {
                         format!("{}{}", '\n', value)
                     } else {
+                        first_row = false;
                         value
                     };
 
