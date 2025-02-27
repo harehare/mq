@@ -1,6 +1,7 @@
 [package]
 edition = "2024"
 name = "mq-repl"
+publish = false
 version = "0.1.0"
 
 [dependencies]

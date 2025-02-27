@@ -10,19 +10,19 @@ def is_none(n): eq(type(n), "None");
 def contains(s, search): ne(index(s, search), -1);
 
 def ltrimstr(s, left):
-  if(starts_with(s, left)):
+  if (starts_with(s, left)):
     slice(s, add(index(s, left), len(left)), len(s))
   else:
     s;
 
 def rtrimstr(s, right):
-  if(ends_with(s, right)):
+  if (ends_with(s, right)):
     slice(s, 0, sub(len(s), len(right)))
   else:
      s;
 
 def is_empty(s):
-  if(or(is_string(s), is_array(s))):
+  if (or(is_string(s), is_array(s))):
     eq(len(s), 0)
   else:
     false;
@@ -59,14 +59,14 @@ def last(arr):
   else:
     nth(arr, sub(len(arr), 1));
 
-def is_h(md): eq(md_name(), "h");
-def is_h1(md): eq(md_name(), "h1");
-def is_h2(md): eq(md_name(), "h2");
-def is_h3(md): eq(md_name(), "h3");
-def is_h4(md): eq(md_name(), "h4");
-def is_h5(md): eq(md_name(), "h5");
-def is_em(md): eq(md_name(), "emphasis");
-def is_html(md): eq(md_name(), "html");
-def is_yaml(md): eq(md_name(), "yaml");
-def is_toml(md): eq(md_name(), "toml");
-def is_code(md): eq(md_name(), "code");
+def is_h(md): eq(md_name(md), "h");
+def is_h1(md): eq(md_name(md), "h1");
+def is_h2(md): eq(md_name(md), "h2");
+def is_h3(md): eq(md_name(md), "h3");
+def is_h4(md): eq(md_name(md), "h4");
+def is_h5(md): eq(md_name(md), "h5");
+def is_em(md): eq(md_name(md), "emphasis");
+def is_html(md): eq(md_name(md), "html");
+def is_yaml(md): eq(md_name(md), "yaml");
+def is_toml(md): eq(md_name(md), "toml");
+def is_code(md): eq(md_name(md), "code");

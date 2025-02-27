@@ -3,6 +3,7 @@ description = "Lexer, parser and evaluator of mq."
 edition = "2024"
 exclude = [".github"]
 name = "mq-lang"
+publish = false
 readme = "README.md"
 version = "0.1.0"
 

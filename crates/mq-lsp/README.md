@@ -1,6 +1,6 @@
 # mq-lsp
 
-`mq-lsp` is a Language Server Protocol (LSP) implementation for the mq language. It provides various language features such as syntax highlighting, code completion, go-to-definition, and more.
+`mq-lsp` is a Language Server Protocol (LSP) implementation for the [mq language](https://github.com/harehare/mq). It provides various language features such as syntax highlighting, code completion, go-to-definition, and more.
 
 ### Features
 

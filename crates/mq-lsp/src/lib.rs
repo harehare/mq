@@ -1,4 +1,4 @@
-//! `mq-lsp` is a Language Server Protocol (LSP) implementation for the mq language. It provides various language features such as syntax highlighting, code completion, go-to-definition, and more.
+//! `mq-lsp` is a Language Server Protocol (LSP) implementation for the [mq language](https://harehare.github.io/mq/). It provides various language features such as syntax highlighting, code completion, go-to-definition, and more.
 //!
 //! ## Features
 //!
@@ -15,6 +15,16 @@
 //! ## Usage
 //!
 //! To use this LSP server, you need to integrate it with an LSP client. The server reads from stdin and writes to stdout, making it compatible with various editors and IDEs that support LSP.
+//!
+//! ### Installation
+//!
+//! You can install `mq-lsp` using Cargo, the Rust package manager:
+//!
+//! ```bash
+//! $ cargo install mq-lsp
+//! ```
+//!
+//! Make sure you have Rust and Cargo installed on your system. After installation, the `mq-lsp` binary will be available in your system path.
 pub mod capabilities;
 pub mod completions;
 pub mod document_symbol;

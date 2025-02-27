@@ -1,6 +1,14 @@
 [package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
+documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
 edition = "2024"
+homepage = "https://harehare.github.io/mq/"
+keywords = ["markdown", "jq", "lsp", "query"]
+license-file = "LICENSE"
 name = "mq-lsp"
+readme = "README.md"
+repository = "https://github.com/harehare/mq/crate/mq-lsp"
 version = "0.1.0"
 
 [dependencies]
@@ -14,3 +22,7 @@ mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
 tokio = {version = "1.43.0", features = ["full"]}
 tokio-macros = "2.5.0"
 tower-lsp = "0.20.0"
+
+[[bin]]
+name = "mq-lsp"
+path = "src/main.rs"
