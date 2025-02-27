@@ -3,7 +3,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use itertools::Itertools;
 
 use crate::{
-    AstIdentName, Module, ModuleLoader, MqResult, Token, Value,
+    AstIdentName, ModuleLoader, MqResult, Token, Value,
     arena::Arena,
     error::{self, InnerError},
     eval::Evaluator,
@@ -58,13 +58,25 @@ impl Engine {
         })
     }
 
-    pub fn load_module(&mut self, module: Module) -> Result<(), Box<error::Error>> {
-        self.evaluator.load_module(Some(module)).map_err(|e| {
-            Box::new(error::Error::from_error(
+    pub fn load_module(&mut self, module_name: &str) -> Result<(), error::Error> {
+        let module = self
+            .evaluator
+            .module_loader
+            .load_from_file(module_name, Rc::clone(&self.token_arena))
+            .map_err(|e| {
+                error::Error::from_error(
+                    "",
+                    InnerError::Module(e),
+                    self.evaluator.module_loader.clone(),
+                )
+            })?;
+
+        self.evaluator.load_module(module).map_err(|e| {
+            error::Error::from_error(
                 "",
                 InnerError::Eval(e),
                 self.evaluator.module_loader.clone(),
-            ))
+            )
         })
     }
 

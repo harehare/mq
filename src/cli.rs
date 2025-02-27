@@ -106,6 +106,10 @@ struct InputArgs {
     // Search modules from the directory
     #[arg(short = 'L', long = "directory")]
     module_directories: Option<Vec<PathBuf>>,
+
+    /// Load additional modules from specified files
+    #[arg(short = 'M', long)]
+    module_names: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, clap::Args)]
@@ -192,6 +196,16 @@ impl Cli {
             None => {
                 let mut engine = mq_lang::Engine::default();
                 engine.load_builtin_module()?;
+
+                if let Some(dirs) = &self.input.module_directories {
+                    engine.set_paths(dirs.clone());
+                }
+
+                if let Some(modules) = &self.input.module_names {
+                    for module_name in modules {
+                        engine.load_module(module_name)?;
+                    }
+                }
 
                 let query = self
                     .input
