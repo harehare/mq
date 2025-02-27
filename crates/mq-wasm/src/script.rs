@@ -3,13 +3,14 @@ use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Script {
     engine: mq_lang::Engine,
 }
 
 #[wasm_bindgen]
 impl Script {
+    #[allow(clippy::new_without_default)]
     #[wasm_bindgen]
     pub fn new() -> Self {
         let mut engine = mq_lang::Engine::default();
