@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [lib]
 crate-type = ["cdylib"]
+path = "src/lib.rs"
 
 [dependencies]
 mq-formatter = {path = "../../crates/mq-formatter", version = "0.1.0"}
@@ -14,3 +15,6 @@ wasm-bindgen = "0.2.100"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.50"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-O4', '--enable-simd']

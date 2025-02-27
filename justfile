@@ -17,7 +17,7 @@ build:
 
 [working-directory: 'crates/mq-wasm']
 build-wasm:
-    wasm-pack build -p mq-wasm --release --target web
+    wasm-pack build --release --target web
 
 [working-directory: 'crates/mq-wasm']
 test-wasm:
@@ -35,3 +35,4 @@ readme:
   cargo readme --project-root crates/mq-hir --output README.md
   cargo readme --project-root crates/mq-md --output README.md
   cargo readme --project-root crates/mq-formatter --output README.md
+  cargo readme --project-root crates/mq-wasm --output README.md

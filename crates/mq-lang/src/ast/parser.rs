@@ -37,7 +37,6 @@ impl<'a> Parser<'a> {
         self.parse_program(true)
     }
 
-    #[inline(always)]
     fn parse_program(&mut self, root: bool) -> Result<Program, ParseError> {
         let mut asts = Vec::with_capacity(1000);
 
@@ -69,7 +68,6 @@ impl<'a> Parser<'a> {
         Ok(asts)
     }
 
-    #[inline(always)]
     fn parse_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         match &token.kind {
             TokenKind::Selector(_) => self.parse_selector(token),
@@ -90,7 +88,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_self(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
@@ -98,7 +95,6 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
     fn parse_literal(&mut self, literal_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let literal_node = match &literal_token.kind {
             TokenKind::BoolLiteral(b) => Ok(Rc::new(Node {
@@ -147,7 +143,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_ident(&mut self, ident: &str, ident_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::LParen) => {
@@ -189,7 +184,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_def(&mut self, def_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
@@ -231,7 +225,6 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
     fn parse_while(&mut self, while_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&while_token));
         let args = self.parse_args()?;
@@ -261,7 +254,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_until(&mut self, until_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&until_token));
         let args = self.parse_args()?;
@@ -291,7 +283,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_foreach(&mut self, foreach_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let token_id = self
             .token_arena
@@ -333,7 +324,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_if(&mut self, if_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let mut nodes = Vec::with_capacity(10);
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&if_token));
@@ -417,7 +407,6 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
     fn parse_let(&mut self, let_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
@@ -458,7 +447,6 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
     fn parse_include(&mut self, include_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         match self.tokens.peek() {
             Some(token) => match &***token {
@@ -482,7 +470,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_args(&mut self) -> Result<Vec<Rc<Node>>, ParseError> {
         match self.tokens.peek() {
             Some(token) => match &***token {
@@ -738,7 +725,6 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    #[inline(always)]
     fn parse_head(&mut self, token: Rc<Token>, depth: u8) -> Result<Rc<Node>, ParseError> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
@@ -746,7 +732,6 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
     fn parse_selector(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         if let TokenKind::Selector(selector) = &token.kind {
             match selector.as_str() {
@@ -966,7 +951,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_int_arg(&mut self, token: Rc<Token>) -> Result<i64, ParseError> {
         let args = self.parse_int_args(Rc::clone(&token))?;
 
@@ -977,7 +961,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_string_arg(&mut self, token: Rc<Token>) -> Result<String, ParseError> {
         let args = self.parse_string_args(Rc::clone(&token))?;
 
@@ -988,7 +971,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_int_array_arg(&mut self, token: &Rc<Token>) -> Result<ArrayIndex, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(token));
         self.next_token_without_eof(token_id, |token_kind| {
@@ -1025,7 +1007,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
     fn parse_int_args(&mut self, arg_token: Rc<Token>) -> Result<Vec<i64>, ParseError> {
         let mut args = Vec::new();
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&arg_token));
@@ -1063,7 +1044,6 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    #[inline(always)]
     fn parse_string_args(&mut self, arg_token: Rc<Token>) -> Result<Vec<String>, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&arg_token));
         self.next_token_without_eof(token_id, |token_kind| {
@@ -1101,7 +1081,6 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    #[inline(always)]
     fn next_token_with_eof(
         &mut self,
         current_token_id: TokenId,
@@ -1110,7 +1089,6 @@ impl<'a> Parser<'a> {
         self.next_token(current_token_id, expected_kinds, true)
     }
 
-    #[inline(always)]
     fn next_token_without_eof(
         &mut self,
         current_token_id: TokenId,
@@ -1119,7 +1097,6 @@ impl<'a> Parser<'a> {
         self.next_token(current_token_id, expected_kinds, false)
     }
 
-    #[inline(always)]
     fn next_token(
         &mut self,
         current_token_id: TokenId,
