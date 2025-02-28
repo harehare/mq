@@ -303,11 +303,16 @@ impl Formatter {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Selector,
             token: Some(token),
+            children,
             ..
         } = &**node
         {
             self.append_indent(indent_level);
             self.output.push_str(&token.to_string());
+
+            children.iter().for_each(|child| {
+                self.visit_node(Arc::clone(child), indent_level);
+            });
         }
     }
 
@@ -449,6 +454,17 @@ else:
     #[case::foreach_one_line(
         "foreach(x,array(1,2,3)):add(x,1);add(1,2);",
         "foreach (x, array(1, 2, 3)): add(x, 1);add(1, 2);"
+    )]
+    #[case::foreach_one_line(".[]|upcase()", ".[] | upcase()")]
+    #[case::test(
+        "# Sample
+def hello_world():
+  add(\" Hello World\")?;
+select(or(.[],.code,.h))|upcase()|hello_world()",
+        "# Sample
+def hello_world():
+  add(\" Hello World\")?;
+select(or(.[], .code, .h)) | upcase() | hello_world()"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);

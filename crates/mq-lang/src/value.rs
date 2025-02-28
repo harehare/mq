@@ -125,11 +125,12 @@ impl From<Vec<Value>> for Values {
     }
 }
 
-impl Iterator for Values {
+impl IntoIterator for Values {
     type Item = Value;
+    type IntoIter = std::vec::IntoIter<Value>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop()
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 

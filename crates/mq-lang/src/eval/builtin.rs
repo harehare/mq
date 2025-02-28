@@ -323,6 +323,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         eval_builtin(o, ident, &vec![RuntimeValue::String(s.clone())])
                     })
                     .unwrap_or(RuntimeValue::FALSE)),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -345,6 +346,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         eval_builtin(o, ident, &vec![RuntimeValue::String(s.clone())])
                     })
                     .unwrap_or(RuntimeValue::FALSE)),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -360,6 +362,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Markdown(node_value),
                     RuntimeValue::String(pattern),
                 ] => match_re(&node_value.value(), pattern),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -369,12 +372,12 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("downcase"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node_value)] => Ok(node_value
                     .with_value(node_value.value().to_lowercase().as_str())
                     .into()),
                 [RuntimeValue::String(s)] => Ok(s.to_lowercase().into()),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                [_] => Ok(RuntimeValue::NONE),
                 _ => unreachable!(),
             }),
         );
@@ -396,6 +399,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             .to_string(),
                     )
                     .into()),
+                [
+                    RuntimeValue::None,
+                    RuntimeValue::String(_),
+                    RuntimeValue::String(_),
+                ] => Ok(RuntimeValue::None),
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone(), c.clone()],
@@ -414,6 +422,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         .with_value(node_value.value().repeat(n.value() as usize).as_str())
                         .into())
                 }
+                [RuntimeValue::None, _] => Ok(RuntimeValue::None),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -466,6 +475,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Markdown(node_value)] => {
                     Ok(node_value.with_value(node_value.to_string().trim()).into())
                 }
+                [RuntimeValue::None] => Ok(RuntimeValue::None),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -477,6 +487,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     .with_value(node_value.value().to_uppercase().as_str())
                     .into()),
                 [RuntimeValue::String(s)] => Ok(s.to_uppercase().into()),
+                [RuntimeValue::None] => Ok(RuntimeValue::None),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -517,6 +528,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                     Ok(node_value.with_value(&sub).into())
                 }
+                [
+                    RuntimeValue::None,
+                    RuntimeValue::Number(_),
+                    RuntimeValue::Number(_),
+                ] => Ok(RuntimeValue::NONE),
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone(), c.clone()],
@@ -561,6 +577,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .map(|i| RuntimeValue::Number((i as i64).into()))
                     .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
+                [RuntimeValue::None, _] => Ok(RuntimeValue::Number((-1_i64).into())),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -576,6 +593,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     node_value.value().chars().count().into(),
                 )),
                 [RuntimeValue::Array(array)] => Ok(RuntimeValue::Number(array.len().into())),
+                [RuntimeValue::None] => Ok(RuntimeValue::Number(0.into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -588,6 +606,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(RuntimeValue::Number(node_value.value().len().into()))
                 }
                 [RuntimeValue::Array(array)] => Ok(RuntimeValue::Number(array.len().into())),
+                [RuntimeValue::None] => Ok(RuntimeValue::Number(0.into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -620,6 +639,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .map(|i| RuntimeValue::Number(i.into()))
                     .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
+                [RuntimeValue::None, RuntimeValue::String(_)] => {
+                    Ok(RuntimeValue::Number((-1_i64).into()))
+                }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -642,6 +664,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         None => Ok(RuntimeValue::None),
                     }
                 }
+                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -659,6 +682,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     s.remove(n.value() as usize);
                     Ok(s.into_iter().collect::<String>().into())
                 }
+                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -731,6 +755,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Markdown(node_value), RuntimeValue::String(s)] => {
                     Ok(split_re(node_value.value().as_str(), s)?)
                 }
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),

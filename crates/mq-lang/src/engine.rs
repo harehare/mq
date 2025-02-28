@@ -14,15 +14,11 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Options {
     pub optimize: bool,
-    pub ignore_none: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            optimize: true,
-            ignore_none: true,
-        }
+        Self { optimize: true }
     }
 }
 
@@ -48,10 +44,6 @@ impl Default for Engine {
 impl Engine {
     pub fn set_optimize(&mut self, optimize: bool) {
         self.options.optimize = optimize;
-    }
-
-    pub fn set_ignore_none(&mut self, ignore_none: bool) {
-        self.options.ignore_none = ignore_none;
     }
 
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {

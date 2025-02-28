@@ -1,20 +1,27 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 
-import init, { Script } from "./mq-wasm/mq_wasm";
-import { editor } from "monaco-editor";
+import init, { runScript, formatScript } from "./mq-wasm/mq_wasm";
+import { FaGithub } from "react-icons/fa6";
+
+const CODE_KEY = "mq-playground.code";
+const MARKDOWN_KEY = "mq-playground.markdown";
+const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
 export const Playground = () => {
-  const [code, setCode] = useState<string | undefined>(`# Sample
+  const [code, setCode] = useState<string | undefined>(
+    localStorage.getItem(CODE_KEY) ||
+      `# Sample
 def hello_world():
-  add(" Hello World");
-.[] | upcase()? | hello_world()?
-`);
+  add(" Hello World")?;
+select(or(.[], .code, .h)) | upcase() | hello_world()
+`
+  );
 
-  const [markdown, setMarkdown] = useState<
-    string | undefined
-  >(`# Sample Markdown
+  const [markdown, setMarkdown] = useState<string | undefined>(
+    localStorage.getItem(MARKDOWN_KEY) ||
+      `# Sample Markdown
 
 - Hello
 - World
@@ -22,50 +29,36 @@ def hello_world():
 \`\`\`
 Code block
 \`\`\`
-`);
+`
+  );
 
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
 
-  const scriptRef = useRef<Script>(null);
-  const codeRef = useRef<editor.IStandaloneCodeEditor>(null);
-  const markdownRef = useRef<editor.IStandaloneCodeEditor>(null);
-
   useEffect(() => {
     init().then(() => {
-      scriptRef.current = Script.new();
       setWasmLoaded(true);
     });
   }, []);
 
-  const handleCodeEditorDidMount = (editor: editor.IStandaloneCodeEditor) => {
-    codeRef.current = editor;
-  };
-
-  const handleMarkdownEditorDidMount = (
-    editor: editor.IStandaloneCodeEditor
-  ) => {
-    markdownRef.current = editor;
-  };
-
   const run = useCallback(async () => {
-    if (!scriptRef.current || !code || !markdown) {
+    if (!code || !markdown) {
       return;
     }
 
     try {
-      setResult(await scriptRef.current.run(code, markdown));
+      setResult(await runScript(code, markdown));
     } catch (e) {
       setResult((e as Error).toString());
     }
   }, [code, markdown]);
 
   const format = useCallback(async () => {
-    if (!scriptRef.current || !code) {
+    if (!code) {
       return;
     }
 
-    setCode(await scriptRef.current.format(code));
+    setCode(await formatScript(code));
   }, [code]);
 
   const beforeMount = (monaco: Monaco) => {
@@ -79,6 +72,7 @@ Code block
           [/\|/, "operator"],
           [/".*?"/, "string"],
           [/\d+/, "number"],
+          [/[a-zA-Z_]\w*(?=\s*\()/, "function"],
           [/(([a-zA-Z_]\w*)\s*\()/, "function"],
           [/\(|\)|\[|\]/, "delimiter.parenthesis"],
           [/[a-zA-Z_]\w*/, "identifier"],
@@ -87,35 +81,82 @@ Code block
     });
 
     monaco.editor.defineTheme("mq-base", {
-      base: "vs-dark",
+      base: isDarkMode ? "vs-dark" : "vs",
       inherit: true,
       rules: [
-        { token: "comment", foreground: "#6A9955", fontStyle: "italic" },
-        { token: "keyword", foreground: "#569CD6", fontStyle: "bold" },
-        { token: "function", foreground: "#DCDCAA" },
-        { token: "variable", foreground: "#9CDCFE" },
-        { token: "property", foreground: "#9CDCFE" },
-        { token: "string", foreground: "#CE9178" },
-        { token: "number", foreground: "#B5CEA8" },
-        { token: "operator", foreground: "#D4D4D4" },
-        { token: "delimiter", foreground: "#D4D4D4" },
-        { token: "identifier", foreground: "#D4D4D4" },
+        {
+          token: "comment",
+          foreground: isDarkMode ? "#6A9955" : "#008000",
+          fontStyle: "italic",
+        },
+        {
+          token: "keyword",
+          foreground: isDarkMode ? "#569CD6" : "#0000FF",
+          fontStyle: "bold",
+        },
+        { token: "function", foreground: isDarkMode ? "#DCDCAA" : "#795E26" },
+        { token: "variable", foreground: isDarkMode ? "#9CDCFE" : "#001080" },
+        { token: "property", foreground: isDarkMode ? "#9CDCFE" : "#001080" },
+        { token: "string", foreground: isDarkMode ? "#CE9178" : "#A31515" },
+        { token: "number", foreground: isDarkMode ? "#B5CEA8" : "#098658" },
+        {
+          token: "operator",
+          foreground: isDarkMode ? "#D4D4D4" : "#000000",
+          fontStyle: "bold",
+        },
+        { token: "delimiter", foreground: isDarkMode ? "#D4D4D4" : "#000000" },
+        { token: "identifier", foreground: isDarkMode ? "#D4D4D4" : "#000000" },
       ],
-      colors: {
-        "editor.background": "#1E1E1E",
-        "editor.foreground": "#D4D4D4",
-        "editorLineNumber.foreground": "#858585",
-        "editor.lineHighlightBackground": "#2D2D30",
-        "editorCursor.foreground": "#A7A7A7",
-      },
+      colors: isDarkMode
+        ? {
+            "editor.background": "#1E1E1E",
+            "editor.foreground": "#D4D4D4",
+            "editorLineNumber.foreground": "#858585",
+            "editor.lineHighlightBackground": "#2D2D30",
+            "editorCursor.foreground": "#A7A7A7",
+          }
+        : {
+            "editor.background": "#FFFFFF",
+            "editor.foreground": "#000000",
+            "editorLineNumber.foreground": "#237893",
+            "editor.lineHighlightBackground": "#F3F3F3",
+            "editorCursor.foreground": "#000000",
+          },
     });
   };
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        localStorage.setItem(CODE_KEY, code || "");
+        localStorage.setItem(MARKDOWN_KEY, markdown || "");
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [code, markdown]);
 
   return (
     <div className="playground-container">
       <header className="playground-header">
-        <img src="../public/logo.svg" className="logo-icon" />
-        <h1>mq Playground</h1>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <img src="/logo.svg" className="logo-icon" />
+          <h1>mq Playground</h1>
+        </div>
+        <a
+          href="https://github.com/harehare/mq"
+          style={{
+            marginRight: "8px",
+            textDecoration: "none",
+            color: "inherit",
+          }}
+          target="_blank"
+        >
+          <FaGithub />
+        </a>
       </header>
 
       <div className="playground-content">
@@ -136,7 +177,7 @@ Code block
                   onClick={run}
                   disabled={!wasmLoaded}
                 >
-                  Run
+                  ▶ Run
                 </button>
               </div>
             </div>
@@ -146,15 +187,17 @@ Code block
                 defaultLanguage="mq"
                 value={code}
                 onChange={setCode}
-                onMount={handleCodeEditorDidMount}
                 beforeMount={beforeMount}
                 options={{
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   fontSize: 12,
                   automaticLayout: true,
+                  fontFamily:
+                    "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+                  fontLigatures: true,
                 }}
-                theme="vs-dark"
+                theme="mq-base"
               />
             </div>
           </div>
@@ -169,21 +212,23 @@ Code block
                 defaultLanguage="markdown"
                 value={markdown}
                 onChange={setMarkdown}
-                onMount={handleMarkdownEditorDidMount}
                 options={{
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
-                  fontSize: 14,
+                  fontSize: 12,
                   automaticLayout: true,
+                  fontFamily:
+                    "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+                  fontLigatures: true,
                 }}
-                theme="vs-light"
+                theme="mq-base"
               />
             </div>
           </div>
         </div>
         <div className="right-panel">
           <div className="editor-header">
-            <h2>Execution Result</h2>
+            <h2>Output</h2>
           </div>
           <div className="editor-content result-container">
             {!wasmLoaded ? (
@@ -201,7 +246,7 @@ Code block
                   fontSize: 12,
                   automaticLayout: true,
                 }}
-                theme="vs-light"
+                theme="mq-base"
               />
             ) : (
               <div className="empty-message">

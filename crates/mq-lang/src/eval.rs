@@ -25,7 +25,6 @@ pub struct Evaluator {
     env: Rc<RefCell<Env>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     pub module_loader: module::ModuleLoader,
-    ignore_none: bool,
 }
 
 impl Evaluator {
@@ -37,7 +36,6 @@ impl Evaluator {
             env: Rc::new(RefCell::new(Env::new(None))),
             module_loader,
             token_arena,
-            ignore_none: true,
         }
     }
 
@@ -419,7 +417,7 @@ impl Evaluator {
         optional: bool,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        if runtime_value.is_none() && (self.ignore_none || optional) {
+        if runtime_value.is_none() && optional {
             return Ok(RuntimeValue::NONE);
         }
 

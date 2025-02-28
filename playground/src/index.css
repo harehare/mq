@@ -1,6 +1,6 @@
 :root {
   --primary-color: #20638f;
-  --secondary-color: #000000;
+  --secondary-color: #1E1E1E;
   --dark-color: #123850;
   --light-color: #e8f4fc;
   --lighter-blue: #f0f8ff;
@@ -18,11 +18,14 @@ body {
   flex-direction: column;
   height: 100vh;
   background-color: #f0f4f8;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
 .playground-header {
-  background: linear-gradient(135deg, #000000 0%, #123850 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--secondary-color);
   color: white;
   padding: 2px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -40,30 +43,22 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
-  padding: 8px;
 }
 
 .left-panel {
   display: flex;
   flex-direction: column;
   width: 50%;
-  padding-right: 4px;
 }
 
 .right-panel {
   width: 50%;
-  padding-left: 4px;
 }
 
 .editor-container {
   display: flex;
   flex-direction: column;
   height: 50%;
-  margin-bottom: 8px;
-}
-
-.left-panel .editor-container:first-child {
-  margin-bottom: 8px;
 }
 
 .right-panel {
@@ -76,12 +71,11 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg, #000000 0%, #123850 100%);
+  height: 32px;
+  background-color: var(--secondary-color);
   color: var(--light-color);
   padding: 4px;
   gap: 8px;
-  border-top-left-radius: 4px;
-  border-top-right-radius: 4px;
 }
 
 .editor-buttons{
@@ -92,8 +86,6 @@ body {
   color: var(--light-color);
   padding: 4px;
   gap: 8px;
-  border-top-left-radius: 4px;
-  border-top-right-radius: 4px;
 }
 
 .editor-header h2 {
@@ -106,22 +98,19 @@ body {
 
 .editor-content {
   flex: 1;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-bottom-left-radius: 4px;
-  border-bottom-right-radius: 4px;
   overflow: hidden;
 }
 
 .format-button,
 .run-button {
-  background-color: #3182ce;
-  color: white;
+  background-color: transparent;
+  color: #3182ce;
   border: none;
-  border-radius: 4px;
   padding: 4px 12px;
   font-size: 0.875rem;
   cursor: pointer;
   transition: background-color 0.2s;
+  font-weight: 600;
 }
 
 .run-button {
@@ -130,7 +119,8 @@ body {
 
 .format-button:hover,
 .run-button:hover {
-  background-color: #2b6cb0;
+  color: #88acd2;
+  font-weight: 600;
 }
 
 .format-button:disabled,
@@ -140,7 +130,6 @@ body {
 }
 
 .result-container {
-  background-color: white;
   height: 100%;
 }
 
@@ -148,6 +137,55 @@ body {
 .empty-message {
   padding: 16px;
   color: #718096;
+  background-color: var(--secondary-color);
+  height: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary-color: #3a8ec5;
+    --secondary-color: #2a2a2a;
+    --dark-color: #1a4c6b;
+    --light-color: #e8f4fc;
+    --lighter-blue: #1e2a38;
+    --accent-blue: #5dade2;
+    --text-color: #e2e8f0;
+    --code-bg: #2d3748;
+  }
+
+  .loading-message,
+  .empty-message {
+    color: #a0aec0;
+    background-color: var(--secondary-color);
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --primary-color: #3182ce;
+    --secondary-color: #f7fafc;
+    --dark-color: #2c5282;
+    --light-color: #ffffff;
+    --lighter-blue: #ebf8ff;
+    --accent-blue: #4299e1;
+    --text-color: #2d3748;
+    --code-bg: #f7fafc;
+  }
+
+  .editor-header {
+    background-color: #edf2f7;
+    color: var(--text-color);
+  }
+
+  .playground-header {
+    background-color: var(--dark-color);
+  }
+
+  .loading-message,
+  .empty-message {
+    color: #718096;
+    background-color: #f7fafc;
+  }
 }
 
 .logo-icon {
