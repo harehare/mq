@@ -30,6 +30,10 @@ use syntect::util::{LinesWithEndings, as_24_bit_terminal_escaped};
     long_about = None
 )]
 pub struct Cli {
+    /// Process “None” values during execution.
+    #[arg(short = 'P', long, default_value_t = false)]
+    process_none: bool,
+
     #[clap(flatten)]
     input: InputArgs,
 
@@ -200,6 +204,8 @@ impl Cli {
                 if let Some(dirs) = &self.input.module_directories {
                     engine.set_paths(dirs.clone());
                 }
+
+                engine.set_ignore_none(!self.process_none);
 
                 if let Some(modules) = &self.input.module_names {
                     for module_name in modules {
