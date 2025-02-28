@@ -143,7 +143,13 @@ Code block
     <div className="playground-container">
       <header className="playground-header">
         <div style={{ display: "flex", alignItems: "center" }}>
-          <img src="/logo.svg" className="logo-icon" />
+          <a
+            href="https://harehare.github.io/mq/"
+            style={{ textDecoration: "none", paddingTop: "4px" }}
+            target="_blank"
+          >
+            <img src="./logo.svg" className="logo-icon" />
+          </a>
           <h1>mq Playground</h1>
         </div>
         <a

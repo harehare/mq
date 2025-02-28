@@ -26,6 +26,22 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+      - uses: extractions/setup-just@v2
+      - name: Build
+        run: just build-wasm
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./playground
+      - name: Build
+        run: npm run build
+        working-directory: ./playground
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

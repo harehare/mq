@@ -60,7 +60,7 @@ For more detailed usage and examples, refer to the [documentation](docs/README.m
 
 ## Playground
 
-- Work in progress
+An [Online Playground](https://harehare.github.io/mq/playground) is available, powered by WebAssembly.
 
 ## License
 
