@@ -14,7 +14,7 @@
     <style>
       :root {
         --primary-color: #20638f;
-        --secondary-color: #000000;
+        --secondary-color: #1e1e1e;
         --dark-color: #123850;
         --light-color: #e8f4fc;
         --lighter-blue: #f0f8ff;
@@ -389,8 +389,7 @@
               <span style="color: #2e8b57"># Example</span><br />
               <br />
               <pre>
-<span style="color: #666">$ <span style="color: var(--primary-color);">mq</span> '</span><span style="color: #0077aa">cat</span> README.md <span style="font-weight: bold;">|</span>
-  <span style="color: #0077aa">def</span> <span style="color: #dd4a68">markdown_toc</span>():
+<span style="color: #666">$ </span><span style="color: #0077aa">cat</span> README.md <span style="font-weight: bold;">| </span><span style="color: var(--primary-color);">mq</span> '<span style="color: #0077aa">def</span> <span style="color: #dd4a68">markdown_toc</span>():
     <span style="color: #999">.h</span> <span style="font-weight: bold;">|</span> <span style="color: #0077aa">let</span> link = <span style="color: #dd4a68">md_link</span>(<span style="color: #dd4a68">add</span>(<span style="color: #669900">"#"</span>, <span style="color: #dd4a68">to_text</span>(self)), <span style="color: #dd4a68">to_text</span>(self));
        <span style="font-weight: bold;">|</span> <span style="color: #0077aa">if</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h1"</span>)):
            <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">1</span>)

@@ -3,6 +3,7 @@ use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
     rc::Rc,
+    vec,
 };
 
 use crate::{AstIdent, AstParams, Program, Value, number::Number};
@@ -117,6 +118,7 @@ impl RuntimeValue {
     pub const NONE: RuntimeValue = Self::None;
     pub const TRUE: RuntimeValue = Self::Bool(true);
     pub const FALSE: RuntimeValue = Self::Bool(false);
+    pub const EMPTY_ARRAY: RuntimeValue = Self::Array(vec![]);
 
     pub fn name(&self) -> &str {
         match self {

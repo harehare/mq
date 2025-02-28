@@ -12,9 +12,20 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub struct Options {
+    pub optimize: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { optimize: true }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Engine {
     pub(crate) evaluator: Evaluator,
-    pub(crate) optimization: bool,
+    pub(crate) options: Options,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
 }
 
@@ -24,15 +35,15 @@ impl Default for Engine {
 
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(None), Rc::clone(&token_arena)),
-            optimization: true,
+            options: Options::default(),
             token_arena: Rc::clone(&token_arena),
         }
     }
 }
 
 impl Engine {
-    pub fn set_optimize(&mut self, optimization: bool) {
-        self.optimization = optimization;
+    pub fn set_optimize(&mut self, optimize: bool) {
+        self.options.optimize = optimize;
     }
 
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
@@ -84,7 +95,7 @@ impl Engine {
     #[allow(clippy::result_large_err)]
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let program = parse(code, Rc::clone(&self.token_arena))?;
-        let program = if self.optimization {
+        let program = if self.options.optimize {
             Optimizer::new().optimize(&program)
         } else {
             program

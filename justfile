@@ -17,7 +17,7 @@ build:
 
 [working-directory: 'crates/mq-wasm']
 build-wasm:
-    wasm-pack build --release --target web
+    wasm-pack build --release --target web --out-dir ../../playground/src/mq-wasm
 
 [working-directory: 'crates/mq-wasm']
 test-wasm:

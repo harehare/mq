@@ -17,7 +17,7 @@ pub struct ErrorReporter {
 
 impl Display for ErrorReporter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Formatting Failed: {}", &self.errors.iter().join(", "))
+        write!(f, "{}", &self.errors.iter().join(", "))
     }
 }
 
@@ -363,6 +363,11 @@ impl<'a> Parser<'a> {
             | Token {
                 range: _,
                 kind: TokenKind::None,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Selector(_),
                 ..
             }
             | Token {
