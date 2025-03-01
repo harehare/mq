@@ -34,6 +34,7 @@ async function main() {
 		sourcemap: !production,
 		sourcesContent: false,
 		platform: 'node',
+		treeShaking: true,
 		outfile: 'dist/extension.js',
 		external: ['vscode'],
 		logLevel: 'silent',

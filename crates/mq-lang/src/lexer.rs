@@ -679,11 +679,7 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 39}, end: Position {line: 1, column: 39} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case("\"test",
           Options::default(),
-          Err(LexerError::UnexpectedToken(Token {
-              range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} },
-              kind: TokenKind::Eof,
-              module_id: 1.into()
-          })))]
+          Err(LexerError::UnexpectedEOFDetected(1.into())))]
     #[case::new_line("and(\ncontains(\"test\"))",
             Options{include_spaces: true, ignore_errors: true},
             Ok(vec![

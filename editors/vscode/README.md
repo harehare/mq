@@ -23,6 +23,15 @@ This extension provides essential coding assistance for `.mq` files, helping you
 - `mq: Show input text`: Show the currently input for mq queries
 - `mq: Run selected text`: Executes the selected mq query against the current input data
 
+## Configuration
+
+The extension can be configured through Visual Studio Code settings:
+
+- `mq-lsp.lspPath`: Path to the mq language server binary
+- `mq-lsp.showExamplesInNewFile`: To Show/Hide examples in new file
+
+You can customize these settings in your VS Code settings.json file or through the Settings UI.
+
 ## Playground
 
 An [Online Playground](https://harehare.github.io/mq/playground) is available, powered by WebAssembly.
@@ -61,3 +70,7 @@ def important_headings():
 ```
 
 For more detailed usage and examples, refer to the [documentation](https://github.com/harehare/mq/blob/master/docs/README.md).
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
