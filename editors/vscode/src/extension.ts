@@ -7,9 +7,61 @@ const COMMANDS = [
   "mq/runSelectedText",
   "mq/showInputText",
 ] as const;
+
+const EXAMPLES = `# To hide these examples, set mq-lsp.showExamplesInNewFile to false in settings
+# Hello world
+def hello_world():
+  add(" Hello World")?;
+select(or(.[], .code, .h)) | upcase() | hello_world();
+
+# Extract js code
+.code("js")
+
+# Custom function
+def snake_to_camel(x):
+  let words = split(x, "_");
+  | foreach(word, words):
+  let first_char = upcase(first(word));
+  | let rest_str = downcase(slice(word, 1, len(word)));
+  | add(first_char, rest_str);
+  | join("");
+| snake_to_camel()
+
+# Markdown Toc
+.h
+| let link = md_link(add("#", to_text(self)), to_text(self));
+| if (eq(md_name(), "h1")):
+    md_list(link, 1)
+  elif (eq(md_name(), "h2")):
+    md_list(link, 2)
+  elif (eq(md_name(), "h3")):
+    md_list(link, 3)
+  elif (eq(md_name(), "h4")):
+    md_list(link, 4)
+  elif (eq(md_name(), "h5")):
+    md_list(link, 5)
+  else:
+    None;
+
+`;
+
 let client: lc.LanguageClient | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq-lsp.new", async () => {
+      const config = vscode.workspace.getConfiguration("mq-lsp");
+      const showExamplesInNewFile = config.get<boolean>(
+        "showExamplesInNewFile"
+      );
+      const document = await vscode.workspace.openTextDocument({
+        language: "mq",
+        content: showExamplesInNewFile ? EXAMPLES : "",
+      });
+      await vscode.window.showTextDocument(document);
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("mq-lsp.installLSPServer", async () => {
       await stopLspServer();

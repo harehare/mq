@@ -84,6 +84,7 @@ impl<'a> Parser<'a> {
             TokenKind::StringLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
             TokenKind::None => self.parse_literal(token),
+            TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
     }
@@ -1551,7 +1552,7 @@ mod tests {
                 token(TokenKind::Colon),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Eof, module_id: 1.into()})))]
+            Err(ParseError::UnexpectedEOFDetected(0.into())))]
     fn test(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

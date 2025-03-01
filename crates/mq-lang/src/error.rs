@@ -41,6 +41,7 @@ impl Error {
         let source_code = top_level_source_code.into();
         let token = match &cause {
             InnerError::Lexer(LexerError::UnexpectedToken(token)) => Some(token),
+            InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => None,
             InnerError::Parse(err) => match err {
                 ParseError::EnvNotFound(token, _) => Some(token),
                 ParseError::Unclosed(token) => Some(token),
@@ -66,6 +67,7 @@ impl Error {
                 ModuleError::NotFound(_) => None,
                 ModuleError::IOError(_) => None,
                 ModuleError::LexerError(LexerError::UnexpectedToken(token)) => Some(token),
+                ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_)) => None,
                 ModuleError::ParseError(err) => match err {
                     ParseError::EnvNotFound(token, _) => Some(token),
                     ParseError::Unclosed(token) => Some(token),
@@ -106,6 +108,9 @@ impl Error {
             None => {
                 let (module_id, is_eof) = match &cause {
                     InnerError::Parse(ParseError::UnexpectedEOFDetected(module_id)) => {
+                        (Some(module_id), true)
+                    }
+                    InnerError::Lexer(LexerError::UnexpectedEOFDetected(module_id)) => {
                         (Some(module_id), true)
                     }
                     InnerError::Eval(_) => (None, false),

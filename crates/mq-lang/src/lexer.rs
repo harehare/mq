@@ -58,11 +58,7 @@ impl Lexer {
                     ]
                     .concat())
                 } else {
-                    Err(LexerError::UnexpectedToken(Token {
-                        range: eof,
-                        kind: TokenKind::Eof,
-                        module_id,
-                    }))
+                    Err(LexerError::UnexpectedEOFDetected(module_id))
                 }
             }
             Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
