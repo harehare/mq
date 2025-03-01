@@ -11,8 +11,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   let lspPath: string | null;
 
-  if (process.env._MDQ_DEBUG_BIN) {
-    lspPath = process.env._MDQ_DEBUG_BIN;
+  if (process.env._MQ_DEBUG_BIN) {
+    lspPath = process.env._MQ_DEBUG_BIN;
   } else {
     const config = vscode.workspace.getConfiguration("mq-lsp");
     const configLspPath = config.get<string>("lspPath");
