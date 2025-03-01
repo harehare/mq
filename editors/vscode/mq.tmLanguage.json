@@ -1,0 +1,92 @@
+{
+    "name": "mq",
+    "scopeName": "source.mq",
+    "fileTypes": [
+        "mq"
+    ],
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#functions"
+        },
+        {
+            "include": "#variables"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.mq",
+                    "match": "#.*$"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.mq",
+                    "match": "\\b(def|let|if|elif|else|while|foreach|until)\\b"
+                },
+                {
+                    "name": "keyword.operator.mq",
+                    "match": "(\\?|\\|)"
+                },
+                {
+                    "name": "constant.language.boolean.mq",
+                    "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "constant.language.none.mq",
+                    "match": "\\b(None)\\b"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.mq",
+                    "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
+                },
+                {
+                    "name": "entity.name.function.call.mq",
+                    "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
+                }
+            ]
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "name": "variable.declaration.mq",
+                    "match": "\\b(let)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*="
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.mq",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.mq",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "numbers": {
+            "name": "constant.numeric.mq",
+            "match": "\\b[0-9]+\\b"
+        }
+    }
+}

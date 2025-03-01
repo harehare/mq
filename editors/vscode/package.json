@@ -9,14 +9,16 @@
   "private": true,
   "version": "0.1.0",
   "engines": {
-    "vscode": "^1.96.0"
+    "vscode": "^1.97.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harehare/mq.git"
   },
   "keywords": [
     "mq",
     "jq",
-    "mq language",
     "extension",
-    "intellisense",
     "autocompletion",
     "syntax-highlighting"
   ],
@@ -24,7 +26,6 @@
     "Programming Languages",
     "Formatters",
     "Linters",
-    "Snippets",
     "Other"
   ],
   "activationEvents": [
@@ -37,24 +38,48 @@
         "id": "mq",
         "extensions": [
           ".mq"
-        ]
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "assets/logo.svg",
+          "dark": "assets/logo.svg"
+        }
       }
-    ]
-  },
-  "commands": [
-    {
-      "command": "mq-lsp.installLSP",
-      "title": "mq: Install LSP"
-    }
-  ],
-  "configuration": {
-    "type": "object",
-    "title": "LSP Configuration",
-    "properties": {
-      "mq-lsp.lspPath": {
-        "type": "string",
-        "default": "",
-        "description": "Path to the LSP server executable"
+    ],
+    "grammars": [
+      {
+        "language": "mq",
+        "scopeName": "source.mq",
+        "path": "./mq.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mq-lsp.installLSPServer",
+        "title": "mq: Install LSP Server"
+      },
+      {
+        "command": "mq-lsp.startLSPServer",
+        "title": "mq: Start LSP Server"
+      },
+      {
+        "command": "mq-lsp.setSelectedTextAsInput",
+        "title": "mq: Set selected text as input"
+      },
+      {
+        "command": "mq-lsp.runSelectedText",
+        "title": "mq: Run selected text"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "LSP Configuration",
+      "properties": {
+        "mq-lsp.lspPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the LSP server executable"
+        }
       }
     }
   },

@@ -1,7 +1,8 @@
 use tower_lsp::lsp_types::{
-    CompletionOptions, HoverProviderCapability, OneOf, SemanticTokensFullOptions,
-    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
+    CompletionOptions, ExecuteCommandOptions, HoverProviderCapability, OneOf,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -12,6 +13,13 @@ pub fn server_capabilities() -> ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec![" ".to_string(), "|".to_string()]),
+            ..Default::default()
+        }),
+        execute_command_provider: Some(ExecuteCommandOptions {
+            commands: vec![
+                "mq/runSelectedText".to_string(),
+                "mq/setSelectedTextAsInput".to_string(),
+            ],
             ..Default::default()
         }),
         document_formatting_provider: Some(OneOf::Left(true)),

@@ -25,6 +25,10 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             let length = ((range.end.column - 1) - (range.start.column - 2)) as u32;
             let token_type = token_type(tower_lsp::lsp_types::SemanticTokenType::COMMENT);
 
+            if line.checked_sub(pre_line).is_none() {
+                continue;
+            }
+
             let delta_line = line - pre_line;
             let delta_start = if delta_line == 0 {
                 start - pre_start

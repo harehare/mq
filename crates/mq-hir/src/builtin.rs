@@ -5,6 +5,7 @@ use crate::{scope::ScopeId, source::SourceId};
 
 #[derive(Debug, Default)]
 pub struct Builtin {
+    pub disabled: bool,
     pub functions: FxHashMap<CompactString, mq_lang::BuiltinFunctionDoc>,
     pub selectors: FxHashMap<CompactString, mq_lang::BuiltinSelectorDoc>,
     pub source_id: SourceId,
@@ -19,6 +20,7 @@ impl Builtin {
             selectors: mq_lang::BUILTIN_SELECTOR_DOC.clone(),
             source_id,
             scope_id,
+            disabled: false,
             loaded: false,
         }
     }

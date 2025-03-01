@@ -109,7 +109,7 @@ impl Hir {
     }
 
     pub fn add_builtin(&mut self) {
-        if self.builtin.loaded {
+        if self.builtin.loaded || self.builtin.disabled {
             return;
         }
 
@@ -761,6 +761,42 @@ impl Hir {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::def("# test
+def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec![SymbolKind::Keyword, SymbolKind::Function(Vec::new()), SymbolKind::Number])]
+    fn test_symbols(
+        #[case] code: &str,
+        #[case] expected_doc: Vec<String>,
+        #[case] expected_kind: Vec<SymbolKind>,
+    ) {
+        let mut hir = Hir::new();
+        let url = Url::parse("file:///test").unwrap();
+
+        hir.builtin.disabled = true;
+        hir.add_code(url, code);
+
+        let symbols = hir
+            .symbols()
+            .map(|(_, symbol)| symbol.clone())
+            .collect_vec();
+
+        assert_eq!(
+            symbols
+                .iter()
+                .map(|symbol| symbol.clone().kind)
+                .collect_vec(),
+            expected_kind
+        );
+
+        assert_eq!(
+            symbols
+                .iter()
+                .map(|symbol| symbol.doc.iter().map(|(_, doc)| doc.clone()).join("\n"))
+                .collect_vec(),
+            expected_doc
+        );
+    }
 
     #[rstest]
     #[case::let_("let x = 1;", "x", SymbolKind::Variable)]

@@ -28,6 +28,7 @@
 pub mod capabilities;
 pub mod completions;
 pub mod document_symbol;
+pub mod execute_command;
 pub mod goto_definition;
 pub mod hover;
 pub mod references;

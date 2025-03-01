@@ -6,6 +6,7 @@ use itertools::Itertools;
 use mq_lsp::capabilities;
 use mq_lsp::completions;
 use mq_lsp::document_symbol;
+use mq_lsp::execute_command;
 use mq_lsp::goto_definition;
 use mq_lsp::hover;
 use mq_lsp::references;
@@ -27,6 +28,7 @@ use tower_lsp::lsp_types::HoverParams;
 use tower_lsp::lsp_types::InitializeParams;
 use tower_lsp::lsp_types::InitializeResult;
 use tower_lsp::lsp_types::Location;
+use tower_lsp::lsp_types::MessageType;
 use tower_lsp::lsp_types::Position;
 use tower_lsp::lsp_types::Range;
 use tower_lsp::lsp_types::ReferenceParams;
@@ -46,11 +48,15 @@ struct Backend {
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
     error_map: DashMap<String, Vec<(std::string::String, mq_lang::Range)>>,
     cst_nodes_map: DashMap<String, Vec<Arc<mq_lang::CstNode>>>,
+    input: RwLock<String>,
 }
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        self.client
+            .log_message(MessageType::INFO, "Server initialized")
+            .await;
         Ok(InitializeResult {
             capabilities: capabilities::server_capabilities(),
             ..Default::default()
@@ -159,6 +165,22 @@ impl LanguageServer for Backend {
             position,
             self.source_map.read().unwrap().clone(),
         ))
+    }
+
+    async fn execute_command(
+        &self,
+        params: tower_lsp::lsp_types::ExecuteCommandParams,
+    ) -> Result<Option<serde_json::Value>> {
+        match params.command.as_str() {
+            "mq/setSelectedTextAsInput" => Ok(params.arguments[0].as_str().map(|text| {
+                self.input.write().unwrap().push_str(text);
+                format!("Set mq input:\n{}", text).into()
+            })),
+            _ => Ok(
+                execute_command::response(self.input.read().unwrap().clone(), params)
+                    .map(|result| serde_json::Value::String(result)),
+            ),
+        }
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
@@ -272,6 +294,7 @@ async fn main() {
         source_map: RwLock::new(BiMap::new()),
         error_map: DashMap::new(),
         cst_nodes_map: DashMap::new(),
+        input: RwLock::new(String::new()),
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
@@ -291,6 +314,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -335,6 +359,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -363,6 +388,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -390,6 +416,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -416,6 +443,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
