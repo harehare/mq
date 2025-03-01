@@ -2,7 +2,7 @@
     <img src="docs/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
 </div>
 
-# `mq` - Markdown processing tool inspired by jq
+# `mq` - jq like Markdown processing tool
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 ![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
