@@ -12,7 +12,7 @@ builds:
   - builder: rust
     flags:
       - --release
-      - --package=mquery
+      - --package=mq-cli
       - --bin=mq
     targets:
       - x86_64-unknown-linux-gnu

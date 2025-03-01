@@ -69,6 +69,10 @@
       {
         "command": "mq-lsp.runSelectedText",
         "title": "mq: Run selected text"
+      },
+      {
+        "command": "mq-lsp.showInput",
+        "title": "mq: Show input text"
       }
     ],
     "configuration": {

@@ -19,6 +19,7 @@ pub fn server_capabilities() -> ServerCapabilities {
             commands: vec![
                 "mq/runSelectedText".to_string(),
                 "mq/setSelectedTextAsInput".to_string(),
+                "mq/showInputText".to_string(),
             ],
             ..Default::default()
         }),

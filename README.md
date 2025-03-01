@@ -27,9 +27,9 @@ It's written in Rust, allowing you to easily slice, filter, map, and transform s
 To install `mq`, you can use `cargo`:
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mquery
+cargo install --git https://github.com/harehare/mq.git mq-cli
 # Installing from cargo is under preparation.
-cargo install mquery
+cargo install mq-cli
 ```
 
 ### Docker

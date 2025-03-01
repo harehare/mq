@@ -1531,6 +1531,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-cli"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "clap-verbosity-flag",
+ "clap_complete",
+ "colored 2.2.0",
+ "env_logger",
+ "itertools 0.13.0",
+ "log",
+ "miette",
+ "mq-formatter",
+ "mq-lang",
+ "mq-md",
+ "mq-repl",
+ "rstest",
+ "syntect",
+]
+
+[[package]]
 name = "mq-formatter"
 version = "0.1.0"
 dependencies = [
@@ -1641,27 +1662,6 @@ dependencies = [
  "mq-md",
  "wasm-bindgen",
  "wasm-bindgen-test",
-]
-
-[[package]]
-name = "mquery"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "clap",
- "clap-verbosity-flag",
- "clap_complete",
- "colored 2.2.0",
- "env_logger",
- "itertools 0.13.0",
- "log",
- "miette",
- "mq-formatter",
- "mq-lang",
- "mq-md",
- "mq-repl",
- "rstest",
- "syntect",
 ]
 
 [[package]]

@@ -176,9 +176,12 @@ impl LanguageServer for Backend {
                 self.input.write().unwrap().push_str(text);
                 format!("Set mq input:\n{}", text).into()
             })),
+            "mq/showInputText" => Ok(Some(
+                format!("mq input:\n{}", self.input.read().unwrap()).into(),
+            )),
             _ => Ok(
                 execute_command::response(self.input.read().unwrap().clone(), params)
-                    .map(|result| serde_json::Value::String(result)),
+                    .map(serde_json::Value::String),
             ),
         }
     }

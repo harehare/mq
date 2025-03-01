@@ -23,6 +23,8 @@ To use this LSP server, you need to integrate it with an LSP client. The server 
 You can install `mq-lsp` using Cargo, the Rust package manager:
 
 ```bash
+$ cargo install --git https://github.com/harehare/mq.git mq-lsp
+# Installing from cargo is under preparation.
 $ cargo install mq-lsp
 ```
 
