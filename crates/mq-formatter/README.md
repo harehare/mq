@@ -1,7 +1,7 @@
 # mq-formatter
 
-This crate provides an automatic code formatter to enforce consistent code style across [mq language](https://github.com/harehare/mq) source files.
-By applying standardized formatting rules, it helps developers maintain clean and readable [mq language](https://github.com/harehare/mq) code.
+This crate provides an automatic code formatter to enforce consistent code style across [mq](https://github.com/harehare/mq) source files.
+By applying standardized formatting rules, it helps developers maintain clean and readable [mq](https://github.com/harehare/mq) code.
 
 ### Examples
 

@@ -1,4 +1,4 @@
-//! `mq-lang` is provides a parser and evaluator for a [mq language](https://github.com/harehare/mq).
+//! `mq-lang` is provides a parser and evaluator for a [mq](https://github.com/harehare/mq).
 //!
 //! ## Examples
 //!
