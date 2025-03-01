@@ -78,7 +78,7 @@ body {
   gap: 8px;
 }
 
-.editor-buttons{
+.editor-actions{
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -193,3 +193,4 @@ body {
   height: 32px;
   background-color: transparent;
 }
+

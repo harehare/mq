@@ -4,10 +4,16 @@ fn main() {
     let markdown_content = "
 # Example
 
-```javascript
-const numbers = [1, 2, 3, 4, 5];
-const doubled = numbers.map(n => n * 2);
-console.log(doubled);
+```js
+console.log('Hello, World!');
+```
+
+```python
+print('Hello, World!')
+```
+
+```js
+console.log('Hello, World!')
 ```
     ";
     let markdown = mq_md::Markdown::from_str(markdown_content).unwrap();
@@ -15,6 +21,6 @@ console.log(doubled);
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();
 
-    let code = ".code | to_text()?";
+    let code = ".code(\"js\") | to_text()?";
     println!("{:?}", engine.eval(&code, input).unwrap());
 }

@@ -8,28 +8,133 @@ import { FaGithub } from "react-icons/fa6";
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
+const EXAMPLES = [
+  {
+    name: "Hello World",
+    code: `# Hello world
+def hello_world():
+  add(" Hello World")?;
+select(or(.[], .code, .h)) | upcase() | hello_world()`,
+    markdown: `# h1
+
+- .[]
+- .[]
+
+\`\`\`
+code
+\`\`\`
+`,
+  },
+  {
+    name: "Markdown Toc",
+    code: `.h
+| let link = md_link(add("#", to_text(self)), to_text(self));
+| if (eq(md_name(), "h1")):
+    md_list(link, 1)
+  elif (eq(md_name(), "h2")):
+    md_list(link, 2)
+  elif (eq(md_name(), "h3")):
+    md_list(link, 3)
+  elif (eq(md_name(), "h4")):
+    md_list(link, 4)
+  elif (eq(md_name(), "h5")):
+    md_list(link, 5)
+  else:
+    None`,
+    markdown: `# [header1](https://example.com)
+
+- item 1
+- item 2
+
+## header2
+
+- item 1
+- item 2
+
+### header3
+
+- item 1
+- item 2
+
+#### header4
+
+- item 1
+- item 2`,
+  },
+  {
+    name: "Markdown Toc",
+    code: `.h
+| let link = md_link(add("#", to_text(self)), to_text(self));
+| if (eq(md_name(), "h1")):
+    md_list(link, 1)
+  elif (eq(md_name(), "h2")):
+    md_list(link, 2)
+  elif (eq(md_name(), "h3")):
+    md_list(link, 3)
+  elif (eq(md_name(), "h4")):
+    md_list(link, 4)
+  elif (eq(md_name(), "h5")):
+    md_list(link, 5)
+  else:
+    None`,
+    markdown: `# [header1](https://example.com)
+
+- item 1
+- item 2
+
+## header2
+
+- item 1
+- item 2
+
+### header3
+
+- item 1
+- item 2
+
+#### header4
+
+- item 1
+- item 2`,
+  },
+  {
+    name: "Extract js code",
+    code: `.code("js")`,
+    markdown: `# Sample codes
+\`\`\`js
+console.log("Hello, World!");
+\`\`\`
+
+\`\`\`python
+print("Hello, World!")
+\`\`\`
+
+\`\`\`js
+console.log("Hello, World!");
+\`\`\`
+`,
+  },
+  {
+    name: "Custom function",
+    code: `def snake_to_camel(x):
+        let words = split(x, "_");
+        | foreach(word, words):
+            let first_char = upcase(first(word));
+            | let rest_str = downcase(slice(word, 1, len(word)));
+            | add(first_char, rest_str);
+        | join("");
+    | snake_to_camel()`,
+    markdown: `# sample_codes`,
+  },
+];
 
 export const Playground = () => {
   const [code, setCode] = useState<string | undefined>(
-    localStorage.getItem(CODE_KEY) ||
-      `# Sample
-def hello_world():
-  add(" Hello World")?;
-select(or(.[], .code, .h)) | upcase() | hello_world()
-`
+    localStorage.getItem(CODE_KEY) || EXAMPLES[0].code
   );
 
   const [markdown, setMarkdown] = useState<string | undefined>(
-    localStorage.getItem(MARKDOWN_KEY) ||
-      `# Sample Markdown
-
-- Hello
-- World
-
-\`\`\`
-Code block
-\`\`\`
-`
+    localStorage.getItem(MARKDOWN_KEY) || EXAMPLES[0].markdown
   );
 
   const [result, setResult] = useState("");
@@ -41,7 +146,7 @@ Code block
     });
   }, []);
 
-  const run = useCallback(async () => {
+  const handleRun = useCallback(async () => {
     if (!code || !markdown) {
       return;
     }
@@ -53,13 +158,19 @@ Code block
     }
   }, [code, markdown]);
 
-  const format = useCallback(async () => {
+  const handleFormat = useCallback(async () => {
     if (!code) {
       return;
     }
 
     setCode(await formatScript(code));
   }, [code]);
+
+  const handleChangeExample = useCallback((index: number) => {
+    const selected = EXAMPLES[index];
+    setCode(selected.code);
+    setMarkdown(selected.markdown);
+  }, []);
 
   const beforeMount = (monaco: Monaco) => {
     monaco.languages.register({ id: "mq" });
@@ -170,17 +281,43 @@ Code block
           <div className="editor-container">
             <div className="editor-header">
               <h2>Code</h2>
-              <div className="editor-buttons">
+              <div className="editor-actions">
+                <div>
+                  <select
+                    className="dropdown"
+                    style={{
+                      appearance: "none",
+                      backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
+                      border: isDarkMode
+                        ? "1px solid #3e3e42"
+                        : "1px solid #ccc",
+                      borderRadius: "4px",
+                      padding: "6px 24px 6px 12px",
+                      fontSize: "13px",
+                      color: isDarkMode ? "#d4d4d4" : "#333",
+                      cursor: "pointer",
+                    }}
+                    onChange={(e) => {
+                      handleChangeExample(parseInt(e.target.value));
+                    }}
+                  >
+                    {EXAMPLES.map((example, index) => (
+                      <option key={index} value={index}>
+                        {example.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   className="format-button"
-                  onClick={format}
+                  onClick={handleFormat}
                   disabled={!wasmLoaded}
                 >
                   Format
                 </button>
                 <button
                   className="run-button"
-                  onClick={run}
+                  onClick={handleRun}
                   disabled={!wasmLoaded}
                 >
                   ▶ Run
