@@ -265,15 +265,7 @@ impl Cli {
                 .collect_vec();
             engine.eval(query, runtime_values.into_iter())
         } else {
-            let mut markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
-            markdown.set_options(mq_md::RenderOptions {
-                list_style: match self.output.list_style.clone() {
-                    ListStyle::Dash => mq_md::ListStyle::Dash,
-                    ListStyle::Plus => mq_md::ListStyle::Plus,
-                    ListStyle::Star => mq_md::ListStyle::Star,
-                },
-            });
-
+            let markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
             let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
 
             if self.output.update {
@@ -369,7 +361,7 @@ impl Cli {
             &runtime_values.compact()
         };
 
-        let markdown = mq_md::Markdown::new(
+        let mut markdown = mq_md::Markdown::new(
             runtime_values
                 .iter()
                 .map(|runtime_value| match runtime_value {
@@ -378,6 +370,14 @@ impl Cli {
                 })
                 .collect(),
         );
+        markdown.set_options(mq_md::RenderOptions {
+            list_style: match self.output.list_style.clone() {
+                ListStyle::Dash => mq_md::ListStyle::Dash,
+                ListStyle::Plus => mq_md::ListStyle::Plus,
+                ListStyle::Star => mq_md::ListStyle::Star,
+            },
+            list_indent: mq_md::ListIndent::default(),
+        });
 
         if self.output.color_output {
             let ps = SyntaxSet::load_defaults_newlines();

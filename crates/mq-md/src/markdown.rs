@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Display},
-    str::FromStr,
-};
+use std::{fmt, str::FromStr};
 
 use comrak::{
     Arena, ComrakOptions, ListStyleType, format_commonmark, markdown_to_html, parse_document,
@@ -9,7 +6,7 @@ use comrak::{
 use itertools::Itertools;
 use miette::{IntoDiagnostic, miette};
 
-use crate::node::Node;
+use crate::node::{ListIndent, ListStyle, Node};
 
 #[derive(Debug, Clone)]
 pub struct Markdown {
@@ -40,7 +37,8 @@ impl fmt::Display for Markdown {
             .nodes
             .iter()
             .filter_map(|node| {
-                let value = node.to_string();
+                let value =
+                    node.to_string_with(&self.options.list_style, &self.options.list_indent);
 
                 if value.is_empty() {
                     return None;
@@ -77,26 +75,9 @@ impl fmt::Display for Markdown {
 }
 
 #[derive(Debug, Clone, Default)]
-pub enum ListStyle {
-    #[default]
-    Dash,
-    Plus,
-    Star,
-}
-
-impl Display for ListStyle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ListStyle::Dash => write!(f, "-"),
-            ListStyle::Plus => write!(f, "+"),
-            ListStyle::Star => write!(f, "*"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
 pub struct RenderOptions {
     pub list_style: ListStyle,
+    pub list_indent: ListIndent,
 }
 
 impl Markdown {

@@ -304,6 +304,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_text"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+                [RuntimeValue::None] => Ok("".to_owned().into()),
                 [RuntimeValue::Markdown(node_value)] => Ok(node_value.value().into()),
                 [RuntimeValue::Array(array)] => Ok(format!("[{}]", array.iter().join(",")).into()),
                 [value] => Ok(value.to_string().into()),

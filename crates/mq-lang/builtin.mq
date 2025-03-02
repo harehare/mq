@@ -7,7 +7,7 @@ def is_number(n): eq(type(n), "number");
 def is_string(s): eq(type(s), "string");
 def is_none(n): eq(type(n), "None");
 
-def contains(s, search): ne(index(s, search), -1);
+def contains(haystack, needle): ne(index(haystack, needle), -1);
 
 def ltrimstr(s, left):
   if (starts_with(s, left)):

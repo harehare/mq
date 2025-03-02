@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Display};
 
 use compact_str::CompactString;
 use itertools::Itertools;
@@ -10,6 +10,48 @@ pub const EMPTY_NODE: Node = Node::Text(Text {
     value: String::new(),
     position: None,
 });
+
+#[derive(Debug, Clone, Default)]
+pub enum ListStyle {
+    #[default]
+    Dash,
+    Plus,
+    Star,
+}
+
+impl Display for ListStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ListStyle::Dash => write!(f, "-"),
+            ListStyle::Plus => write!(f, "+"),
+            ListStyle::Star => write!(f, "*"),
+        }
+    }
+}
+
+type IndentSpace = String;
+
+#[derive(Debug, Clone)]
+pub struct ListIndent(IndentSpace);
+
+impl Default for ListIndent {
+    fn default() -> Self {
+        Self("  ".to_string())
+    }
+}
+
+impl From<u8> for ListIndent {
+    fn from(value: u8) -> Self {
+        let value = if value == 0 { 2 } else { value };
+        Self(" ".repeat(value as usize))
+    }
+}
+
+impl Display for ListIndent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct List {
@@ -221,8 +263,25 @@ impl From<String> for Node {
 }
 
 impl Display for Node {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let s = match self.clone() {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.to_string_with(&ListStyle::default(), &ListIndent::default())
+        )
+    }
+}
+
+impl Node {
+    pub fn text_type(text: &str) -> Self {
+        Self::Text(Text {
+            value: text.to_string(),
+            position: None,
+        })
+    }
+
+    pub fn to_string_with(&self, list_style: &ListStyle, list_indent: &ListIndent) -> String {
+        match self.clone() {
             Self::List(List {
                 indent,
                 checked,
@@ -231,12 +290,13 @@ impl Display for Node {
             }) => {
                 // TODO: set indent
                 format!(
-                    "{}- {}{}",
-                    "  ".repeat(indent as usize),
+                    "{}{} {}{}",
+                    list_indent.0.repeat(indent as usize),
+                    list_style,
                     checked
                         .map(|it| if it { "[x] " } else { "[] " })
                         .unwrap_or_else(|| ""),
-                    value
+                    value.to_string_with(list_style, list_indent)
                 )
             }
             Self::TableCell(TableCell {
@@ -246,9 +306,9 @@ impl Display for Node {
                 ..
             }) => {
                 if last_cell_in_row || last_cell_of_in_table {
-                    format!("|{}|", value)
+                    format!("|{}|", value.to_string_with(list_style, list_indent))
                 } else {
-                    format!("|{}", value)
+                    format!("|{}", value.to_string_with(list_style, list_indent))
                 }
             }
             Self::TableHeader(TableHeader { align, .. }) => {
@@ -265,7 +325,9 @@ impl Display for Node {
                         .join("|")
                 )
             }
-            Self::Blockquote(Value { value, .. }) => format!("> {}", value),
+            Self::Blockquote(Value { value, .. }) => {
+                format!("> {}", value.to_string_with(list_style, list_indent))
+            }
             Self::Code(Code { value, lang, .. }) => format!(
                 "```{}\n{}\n```",
                 lang.unwrap_or_else(|| "".to_string()),
@@ -274,8 +336,12 @@ impl Display for Node {
             Self::Definition(Definition { label, url, .. }) => {
                 format!("[{}]: {}", label.unwrap_or_default(), url)
             }
-            Self::Delete(Value { value, .. }) => format!("~~{}~~", value),
-            Self::Emphasis(Value { value, .. }) => format!("*{}*", value),
+            Self::Delete(Value { value, .. }) => {
+                format!("~~{}~~", value.to_string_with(list_style, list_indent))
+            }
+            Self::Emphasis(Value { value, .. }) => {
+                format!("*{}*", value.to_string_with(list_style, list_indent))
+            }
             Self::Footnote(Footnote { label, ident, .. }) => {
                 format!("[^{}]: {}", label.unwrap_or_default(), ident)
             }
@@ -283,7 +349,11 @@ impl Display for Node {
                 format!("[^{}]", label.unwrap_or_default())
             }
             Self::Heading(Heading { depth, value, .. }) => {
-                format!("{} {}", "#".repeat(depth as usize), value)
+                format!(
+                    "{} {}",
+                    "#".repeat(depth as usize),
+                    value.to_string_with(list_style, list_indent)
+                )
             }
             Self::Html(Html { value, .. }) => value,
             Self::Image(Image {
@@ -359,24 +429,13 @@ impl Display for Node {
             }
             Self::MdxjsEsm(mdxjs_esm) => mdxjs_esm.value,
             Self::Strong(Value { value, .. }) => {
-                format!("**{}**", value)
+                format!("**{}**", value.to_string_with(list_style, list_indent))
             }
             Self::Yaml(Yaml { value, .. }) => value,
             Self::Toml(Toml { value, .. }) => value,
             Self::Break { .. } => "\\".to_string(),
             Self::HorizontalRule { .. } => "---".to_string(),
-        };
-
-        write!(f, "{}", s)
-    }
-}
-
-impl Node {
-    pub fn text_type(text: &str) -> Self {
-        Self::Text(Text {
-            value: text.to_string(),
-            position: None,
-        })
+        }
     }
 
     pub fn node_value(&self) -> Box<Node> {
@@ -1477,6 +1536,9 @@ mod tests {
     #[case(Node::List(List{index: 0, indent: 2, checked: None, value: Box::new("test".to_string().into()), position: None}),
            "    - test".to_string())]
     fn test_display(#[case] node: Node, #[case] expected: String) {
-        assert_eq!(node.to_string(), expected);
+        assert_eq!(
+            node.to_string_with(&ListStyle::default(), &ListIndent::default()),
+            expected
+        );
     }
 }
