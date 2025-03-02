@@ -1,4 +1,7 @@
-use std::{fmt, str::FromStr};
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+};
 
 use comrak::{Arena, ComrakOptions, format_commonmark, markdown_to_html, parse_document};
 use itertools::Itertools;
@@ -6,6 +9,7 @@ use miette::{IntoDiagnostic, miette};
 
 use crate::node::Node;
 
+#[derive(Debug, Clone)]
 pub struct Markdown {
     pub nodes: Vec<Node>,
 }
@@ -66,12 +70,46 @@ impl fmt::Display for Markdown {
     }
 }
 
+#[derive(Debug, Default)]
+pub enum ListStyle {
+    #[default]
+    Dash,
+    Plus,
+    Star,
+}
+
+impl From<String> for ListStyle {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "plus" => ListStyle::Plus,
+            "star" => ListStyle::Star,
+            _ => ListStyle::Dash,
+        }
+    }
+}
+
+impl Display for ListStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ListStyle::Dash => write!(f, "-"),
+            ListStyle::Plus => write!(f, "+"),
+            ListStyle::Star => write!(f, "*"),
+        }
+    }
+}
+
+pub struct Options {
+    pub list_style: Option<String>,
+}
+
 impl Markdown {
     pub fn new(nodes: Vec<Node>) -> Self {
         Self { nodes }
     }
 
     pub fn to_pretty_markdown(&self) -> miette::Result<String> {
+        // list_style
+
         let options = comrak::Options {
             extension: {
                 comrak::ExtensionOptions {

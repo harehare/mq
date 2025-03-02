@@ -61,6 +61,10 @@ body {
   height: 50%;
 }
 
+.editor {
+  height: 100%;
+}
+
 .right-panel {
   display: flex;
   flex-direction: column;
@@ -78,7 +82,7 @@ body {
   gap: 8px;
 }
 
-.editor-actions{
+.editor-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -194,3 +198,42 @@ body {
   background-color: transparent;
 }
 
+@media (max-width: 768px) {
+
+  .left-panel,
+  .right-panel {
+    width: 100%;
+  }
+
+  .playground-content {
+    flex-direction: column;
+  }
+
+  .editor-container {
+    height: auto;
+    min-height: 250px;
+  }
+
+  .editor-content {
+    min-height: 150px;
+  }
+
+  .editor-header {
+    flex-wrap: wrap;
+  }
+
+  .editor-header h2 {
+    font-size: 0.75rem;
+  }
+
+  .editor-actions {
+    flex-wrap: wrap;
+    padding: 2px;
+  }
+
+  .format-button,
+  .run-button {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+  }
+}

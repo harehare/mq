@@ -1,6 +1,7 @@
 # mq-md
 
-This module provides functionality for parsing and converting Markdown content.
+This crate provides markdown parsing and HTML conversion functionality used in [mq](https://github.com/harehare/mq).
+It offers a simple API to manipulate markdown content and generate different output formats.
 
 ### Example
 

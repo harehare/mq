@@ -290,7 +290,7 @@ export const Playground = () => {
             </div>
             <div className="editor-content">
               <Editor
-                height="100%"
+                className="editor"
                 defaultLanguage="mq"
                 value={code}
                 onChange={setCode}

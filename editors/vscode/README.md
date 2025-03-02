@@ -29,6 +29,7 @@ The extension can be configured through Visual Studio Code settings:
 
 - `mq-lsp.lspPath`: Path to the mq language server binary
 - `mq-lsp.showExamplesInNewFile`: To Show/Hide examples in new file
+- `editor.semanticHighlighting.enabled`: Set to `true` to enable semantic token highlighting for improved code visualization
 
 You can customize these settings in your VS Code settings.json file or through the Settings UI.
 

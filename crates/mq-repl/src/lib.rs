@@ -1,4 +1,9 @@
-//! This module contains the main library code for the `mq-repl` crate.
+//! This crate provides a REPL (Read-Eval-Print Loop) environment for the [mq](https://github.com/harehare/mq), allowing for interactive execution of mq code.
+//!
+//! The REPL supports:
+//! - Interactive command evaluation
+//! - History navigation
+//! - Code execution in a persistent environment
 //!
 //! ## Example
 //!

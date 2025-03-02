@@ -1,6 +1,6 @@
 {
   "name": "vscode-mq",
-  "displayName": "mq support for Visual Studio Code",
+  "displayName": "mq - jq like tool for markdown processing",
   "description": "mq is a jq like tool for markdown processing. This extension adds support for the mq to Visual Studio Code.",
   "author": "harehare",
   "publisher": "harehare",

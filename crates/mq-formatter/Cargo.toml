@@ -1,7 +1,13 @@
 [package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
 edition = "2024"
+homepage = "https://harehare.github.io/mq/"
+keywords = ["markdown", "jq", "query"]
+license-file = "LICENSE"
 name = "mq-formatter"
-publish = false
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
 version = "0.1.0"
 
 [dependencies]
