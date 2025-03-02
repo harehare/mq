@@ -32,7 +32,7 @@ clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.45"
 colored = "2.2.0"
 env_logger = "0.11.6"
-itertools = "0.13.0"
+itertools = "0.14.0"
 log = "0.4.22"
 miette = {version = "7.4.0", features = ["fancy"]}
 mq-formatter = {path = "./crates/mq-formatter", version = "0.1.0"}
