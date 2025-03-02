@@ -27,7 +27,7 @@ version = "0.1.0"
 members = ["crates/mq-lang", "crates/mq-repl", "crates/mq-md", "crates/mq-lsp", "crates/mq-hir", "crates/mq-formatter", "fuzz", "crates/mq-wasm"]
 
 [dependencies]
-clap = {version = "4.5.23", features = ["derive"]}
+clap = {version = "4.5.31", features = ["derive"]}
 clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.45"
 colored = "3.0.0"
