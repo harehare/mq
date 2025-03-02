@@ -21,6 +21,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
