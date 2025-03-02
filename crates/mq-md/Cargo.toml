@@ -15,7 +15,7 @@ compact_str = "0.8.1"
 comrak = "0.33.0"
 itertools = "0.14.0"
 markdown = "1.0.0-alpha.23"
-miette = {version = "7.4.0", features = ["fancy"]}
+miette = {version = "7.5.0", features = ["fancy"]}
 
 [dev-dependencies]
 rstest = "0.23.0"

@@ -15,7 +15,7 @@ version = "0.1.0"
 bimap = "0.6.3"
 dashmap = "6.1.0"
 itertools = "0.14.0"
-miette = {version = "7.4.0", features = ["fancy"]}
+miette = {version = "7.5.0", features = ["fancy"]}
 mq-formatter = {path = "../../crates/mq-formatter", version = "0.1.0"}
 mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
