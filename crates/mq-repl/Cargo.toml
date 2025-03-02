@@ -20,4 +20,4 @@ mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
 mq-md = {path = "../../crates/mq-md", version = "0.1.0"}
 rustyline = "15.0.0"
-strum = {version = "0.26.3", features = ["derive"]}
+strum = {version = "0.27.1", features = ["derive"]}
