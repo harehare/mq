@@ -1330,9 +1330,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -1540,7 +1540,7 @@ dependencies = [
  "clap_complete",
  "colored 2.2.0",
  "env_logger",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "miette",
  "mq-formatter",
@@ -1565,7 +1565,7 @@ name = "mq-hir"
 version = "0.1.0"
 dependencies = [
  "compact_str",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "mq-lang",
  "rstest",
  "rustc-hash",
@@ -1585,7 +1585,7 @@ dependencies = [
  "criterion",
  "dirs",
  "env_logger",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "miette",
  "mq-md",
@@ -1613,7 +1613,7 @@ version = "0.1.0"
 dependencies = [
  "bimap",
  "dashmap 6.1.0",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "miette",
  "mq-formatter",
  "mq-hir",
@@ -1631,7 +1631,7 @@ version = "0.1.0"
 dependencies = [
  "compact_str",
  "comrak",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "markdown",
  "miette",
  "rstest",
@@ -1644,7 +1644,7 @@ dependencies = [
  "arboard",
  "colored 3.0.0",
  "dirs",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "miette",
  "mq-hir",
  "mq-lang",

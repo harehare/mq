@@ -14,7 +14,7 @@ version = "0.1.0"
 arboard = "3.4.1"
 colored = "3.0.0"
 dirs = "6.0.0"
-itertools = "0.13.0"
+itertools = "0.14.0"
 miette = {version = "7.4.0", features = ["fancy"]}
 mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
