@@ -8,7 +8,7 @@ version = "0.1.0"
 compact_str = {workspace = true}
 comrak = "0.33.0"
 itertools = {workspace = true}
-markdown = "1.0.0-alpha.21"
+markdown = "1.0.0-alpha.23"
 miette = {workspace = true}
 
 [dev-dependencies]

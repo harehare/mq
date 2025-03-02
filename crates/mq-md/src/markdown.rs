@@ -3,7 +3,9 @@ use std::{
     str::FromStr,
 };
 
-use comrak::{Arena, ComrakOptions, format_commonmark, markdown_to_html, parse_document};
+use comrak::{
+    Arena, ComrakOptions, ListStyleType, format_commonmark, markdown_to_html, parse_document,
+};
 use itertools::Itertools;
 use miette::{IntoDiagnostic, miette};
 
@@ -12,6 +14,7 @@ use crate::node::Node;
 #[derive(Debug, Clone)]
 pub struct Markdown {
     pub nodes: Vec<Node>,
+    pub options: RenderOptions,
 }
 
 impl FromStr for Markdown {
@@ -22,7 +25,10 @@ impl FromStr for Markdown {
             .map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
-        Ok(Self { nodes })
+        Ok(Self {
+            nodes,
+            options: RenderOptions::default(),
+        })
     }
 }
 
@@ -70,22 +76,12 @@ impl fmt::Display for Markdown {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub enum ListStyle {
     #[default]
     Dash,
     Plus,
     Star,
-}
-
-impl From<String> for ListStyle {
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "plus" => ListStyle::Plus,
-            "star" => ListStyle::Star,
-            _ => ListStyle::Dash,
-        }
-    }
 }
 
 impl Display for ListStyle {
@@ -98,18 +94,24 @@ impl Display for ListStyle {
     }
 }
 
-pub struct Options {
-    pub list_style: Option<String>,
+#[derive(Debug, Clone, Default)]
+pub struct RenderOptions {
+    pub list_style: ListStyle,
 }
 
 impl Markdown {
     pub fn new(nodes: Vec<Node>) -> Self {
-        Self { nodes }
+        Self {
+            nodes,
+            options: RenderOptions::default(),
+        }
+    }
+
+    pub fn set_options(&mut self, options: RenderOptions) {
+        self.options = options;
     }
 
     pub fn to_pretty_markdown(&self) -> miette::Result<String> {
-        // list_style
-
         let options = comrak::Options {
             extension: {
                 comrak::ExtensionOptions {
@@ -132,6 +134,14 @@ impl Markdown {
                     greentext: true,
                     ..comrak::ExtensionOptions::default()
                 }
+            },
+            render: comrak::RenderOptions {
+                list_style: match self.options.list_style.clone() {
+                    ListStyle::Dash => ListStyleType::Dash,
+                    ListStyle::Plus => ListStyleType::Plus,
+                    ListStyle::Star => ListStyleType::Star,
+                },
+                ..comrak::RenderOptions::default()
             },
             ..comrak::Options::default()
         };

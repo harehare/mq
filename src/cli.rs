@@ -89,6 +89,14 @@ impl Display for Theme {
     }
 }
 
+#[derive(Debug, Clone, Default, clap::ValueEnum)]
+pub enum ListStyle {
+    #[default]
+    Dash,
+    Plus,
+    Star,
+}
+
 #[derive(Clone, Debug, clap::Args)]
 struct InputArgs {
     // load filter from the file
@@ -137,6 +145,10 @@ struct OutputArgs {
     /// Unbuffered output
     #[clap(long, default_value_t = false)]
     unbuffered: bool,
+
+    /// Set the list style for markdown output
+    #[clap(long, value_enum, default_value_t = ListStyle::Dash)]
+    list_style: ListStyle,
 }
 
 #[derive(Debug, Subcommand)]
@@ -253,7 +265,15 @@ impl Cli {
                 .collect_vec();
             engine.eval(query, runtime_values.into_iter())
         } else {
-            let markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
+            let mut markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
+            markdown.set_options(mq_md::RenderOptions {
+                list_style: match self.output.list_style.clone() {
+                    ListStyle::Dash => mq_md::ListStyle::Dash,
+                    ListStyle::Plus => mq_md::ListStyle::Plus,
+                    ListStyle::Star => mq_md::ListStyle::Star,
+                },
+            });
+
             let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
 
             if self.output.update {
