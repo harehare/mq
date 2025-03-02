@@ -30,7 +30,7 @@ members = ["crates/mq-lang", "crates/mq-repl", "crates/mq-md", "crates/mq-lsp", 
 clap = {version = "4.5.23", features = ["derive"]}
 clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.45"
-colored = "2.2.0"
+colored = "3.0.0"
 env_logger = "0.11.6"
 itertools = "0.13.0"
 log = "0.4.22"
