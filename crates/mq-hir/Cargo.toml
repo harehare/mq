@@ -1,18 +1,24 @@
 [package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
 edition = "2024"
+homepage = "https://harehare.github.io/mq/"
+keywords = ["markdown", "jq", "query"]
+license-file = "LICENSE"
 name = "mq-hir"
-publish = false
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
 version = "0.1.0"
 
 [dependencies]
-compact_str = {workspace = true}
-itertools = {workspace = true}
+compact_str = "0.8.1"
+itertools = "0.13.0"
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
-rustc-hash = {workspace = true}
-slotmap = {workspace = true}
+rustc-hash = "2.1.0"
+slotmap = "1.0.7"
 strsim = "0.11.1"
-thiserror = {workspace = true}
+thiserror = "2.0.9"
 url = "2.5.4"
 
 [dev-dependencies]
-rstest = {workspace = true}
+rstest = "0.23.0"

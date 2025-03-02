@@ -12,7 +12,7 @@ version = "0.1.0"
 
 [dependencies]
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
-rustc-hash = {workspace = true}
+rustc-hash = "2.1.0"
 
 [dev-dependencies]
-rstest = {workspace = true}
+rstest = "0.23.0"

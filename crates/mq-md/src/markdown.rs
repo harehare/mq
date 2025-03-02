@@ -6,7 +6,7 @@ use comrak::{
 use itertools::Itertools;
 use miette::{IntoDiagnostic, miette};
 
-use crate::node::{ListIndent, ListStyle, Node};
+use crate::node::{ListStyle, Node};
 
 #[derive(Debug, Clone)]
 pub struct Markdown {
@@ -37,8 +37,7 @@ impl fmt::Display for Markdown {
             .nodes
             .iter()
             .filter_map(|node| {
-                let value =
-                    node.to_string_with(&self.options.list_style, &self.options.list_indent);
+                let value = node.to_string_with(&self.options.list_style);
 
                 if value.is_empty() {
                     return None;
@@ -77,7 +76,6 @@ impl fmt::Display for Markdown {
 #[derive(Debug, Clone, Default)]
 pub struct RenderOptions {
     pub list_style: ListStyle,
-    pub list_indent: ListIndent,
 }
 
 impl Markdown {

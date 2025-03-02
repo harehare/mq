@@ -1,5 +1,6 @@
 .vscode
 
+book
 dist
 debug/
 target/

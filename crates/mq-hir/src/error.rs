@@ -8,14 +8,10 @@ use crate::{Hir, Symbol, SymbolKind};
 pub enum HirError {
     #[error(
         "Unresolved symbol: {}",
-        match &similar_name {
-            Some(names) => {
-                format!("{}, these names seem close though: `{}`", symbol, names.join(", "))
-            }
-            None => {
-                symbol.to_string()
-            }
-        }
+        similar_name
+            .as_ref()
+            .map(|names| format!("{}, these names seem close though: `{}`", symbol, names.join(", ")))
+            .unwrap_or_else(|| symbol.to_string())
     )]
     UnresolvedSymbol {
         symbol: Symbol,

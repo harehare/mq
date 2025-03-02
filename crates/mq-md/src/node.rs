@@ -29,30 +29,6 @@ impl Display for ListStyle {
     }
 }
 
-type IndentSpace = String;
-
-#[derive(Debug, Clone)]
-pub struct ListIndent(IndentSpace);
-
-impl Default for ListIndent {
-    fn default() -> Self {
-        Self("  ".to_string())
-    }
-}
-
-impl From<u8> for ListIndent {
-    fn from(value: u8) -> Self {
-        let value = if value == 0 { 2 } else { value };
-        Self(" ".repeat(value as usize))
-    }
-}
-
-impl Display for ListIndent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct List {
     pub value: Box<Node>,
@@ -264,11 +240,7 @@ impl From<String> for Node {
 
 impl Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.to_string_with(&ListStyle::default(), &ListIndent::default())
-        )
+        write!(f, "{}", self.to_string_with(&ListStyle::default()))
     }
 }
 
@@ -280,7 +252,7 @@ impl Node {
         })
     }
 
-    pub fn to_string_with(&self, list_style: &ListStyle, list_indent: &ListIndent) -> String {
+    pub fn to_string_with(&self, list_style: &ListStyle) -> String {
         match self.clone() {
             Self::List(List {
                 indent,
@@ -288,15 +260,14 @@ impl Node {
                 value,
                 ..
             }) => {
-                // TODO: set indent
                 format!(
                     "{}{} {}{}",
-                    list_indent.0.repeat(indent as usize),
+                    "  ".repeat(indent as usize),
                     list_style,
                     checked
                         .map(|it| if it { "[x] " } else { "[] " })
                         .unwrap_or_else(|| ""),
-                    value.to_string_with(list_style, list_indent)
+                    value.to_string_with(list_style)
                 )
             }
             Self::TableCell(TableCell {
@@ -306,9 +277,9 @@ impl Node {
                 ..
             }) => {
                 if last_cell_in_row || last_cell_of_in_table {
-                    format!("|{}|", value.to_string_with(list_style, list_indent))
+                    format!("|{}|", value.to_string_with(list_style))
                 } else {
-                    format!("|{}", value.to_string_with(list_style, list_indent))
+                    format!("|{}", value.to_string_with(list_style))
                 }
             }
             Self::TableHeader(TableHeader { align, .. }) => {
@@ -326,7 +297,7 @@ impl Node {
                 )
             }
             Self::Blockquote(Value { value, .. }) => {
-                format!("> {}", value.to_string_with(list_style, list_indent))
+                format!("> {}", value.to_string_with(list_style))
             }
             Self::Code(Code { value, lang, .. }) => format!(
                 "```{}\n{}\n```",
@@ -337,10 +308,10 @@ impl Node {
                 format!("[{}]: {}", label.unwrap_or_default(), url)
             }
             Self::Delete(Value { value, .. }) => {
-                format!("~~{}~~", value.to_string_with(list_style, list_indent))
+                format!("~~{}~~", value.to_string_with(list_style))
             }
             Self::Emphasis(Value { value, .. }) => {
-                format!("*{}*", value.to_string_with(list_style, list_indent))
+                format!("*{}*", value.to_string_with(list_style))
             }
             Self::Footnote(Footnote { label, ident, .. }) => {
                 format!("[^{}]: {}", label.unwrap_or_default(), ident)
@@ -352,7 +323,7 @@ impl Node {
                 format!(
                     "{} {}",
                     "#".repeat(depth as usize),
-                    value.to_string_with(list_style, list_indent)
+                    value.to_string_with(list_style)
                 )
             }
             Self::Html(Html { value, .. }) => value,
@@ -429,7 +400,7 @@ impl Node {
             }
             Self::MdxjsEsm(mdxjs_esm) => mdxjs_esm.value,
             Self::Strong(Value { value, .. }) => {
-                format!("**{}**", value.to_string_with(list_style, list_indent))
+                format!("**{}**", value.to_string_with(list_style))
             }
             Self::Yaml(Yaml { value, .. }) => value,
             Self::Toml(Toml { value, .. }) => value,
@@ -1536,9 +1507,6 @@ mod tests {
     #[case(Node::List(List{index: 0, indent: 2, checked: None, value: Box::new("test".to_string().into()), position: None}),
            "    - test".to_string())]
     fn test_display(#[case] node: Node, #[case] expected: String) {
-        assert_eq!(
-            node.to_string_with(&ListStyle::default(), &ListIndent::default()),
-            expected
-        );
+        assert_eq!(node.to_string_with(&ListStyle::default()), expected);
     }
 }

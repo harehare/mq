@@ -23,6 +23,9 @@ build-wasm:
 test-wasm:
     wasm-pack test --chrome --headless
 
+test-fazz:
+    cargo +nightly fuzz run interpreter
+
 test:
     cargo fmt --all -- --check
     cargo clippy --workspace

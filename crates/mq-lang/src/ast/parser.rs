@@ -1114,13 +1114,17 @@ impl<'a> Parser<'a> {
                 kind: token.kind.clone(),
                 module_id: token.module_id,
             })),
-            None if expected_eof => Ok(self.token_arena.borrow_mut().alloc(Rc::new(Token {
-                range: Rc::clone(&self.token_arena).borrow()[current_token_id]
-                    .range
-                    .clone(),
-                kind: TokenKind::Eof,
-                module_id: self.token_arena.borrow()[current_token_id].module_id,
-            }))),
+            None if expected_eof => {
+                let range = self.token_arena.borrow()[current_token_id].range.clone();
+                let module_id = self.token_arena.borrow()[current_token_id].module_id;
+                Ok(Rc::clone(&self.token_arena)
+                    .borrow_mut()
+                    .alloc(Rc::new(Token {
+                        range,
+                        kind: TokenKind::Eof,
+                        module_id,
+                    })))
+            }
             None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         }
     }

@@ -1,15 +1,21 @@
 [package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
 edition = "2024"
+homepage = "https://harehare.github.io/mq/"
+keywords = ["markdown", "jq", "query"]
+license-file = "LICENSE"
 name = "mq-repl"
-publish = false
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
 version = "0.1.0"
 
 [dependencies]
 arboard = "3.4.1"
 colored = "3.0.0"
 dirs = "6.0.0"
-itertools = {workspace = true}
-miette = {workspace = true}
+itertools = "0.13.0"
+miette = {version = "7.4.0", features = ["fancy"]}
 mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
 mq-md = {path = "../../crates/mq-md", version = "0.1.0"}

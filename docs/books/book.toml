@@ -1,0 +1,11 @@
+[book]
+authors = ["harehare"]
+language = "en"
+multilingual = false
+src = "src"
+title = "mq - jq like tool for markdown processing"
+
+[output.html]
+additional-head = """
+<link rel="shortcut icon" href="images/logo.svg" type="image/x-icon">
+"""

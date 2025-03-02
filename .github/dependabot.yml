@@ -1,0 +1,50 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-formatter"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-hir"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-lang"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-lsp"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-md"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-repl"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "cargo"
+    directory: "/crate/mq-wasm"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10

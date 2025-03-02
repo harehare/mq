@@ -10,7 +10,7 @@
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
 
-> ⚠️ This project is under active development and is not yet production-ready. ⚠
+> ⚠️ This project is under active development and is not yet production-ready.
 
 ## Features
 

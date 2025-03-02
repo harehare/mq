@@ -166,7 +166,7 @@ Foreach loops are useful for:
 - Mapping operations across collections
 - Filtering and transforming data
 
-## Doc-Comments
+## Comments
 
 Similar to jq, comments starting with `#` are doc-comments.
 

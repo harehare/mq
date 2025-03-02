@@ -376,7 +376,6 @@ impl Cli {
                 ListStyle::Plus => mq_md::ListStyle::Plus,
                 ListStyle::Star => mq_md::ListStyle::Star,
             },
-            list_indent: mq_md::ListIndent::default(),
         });
 
         if self.output.color_output {

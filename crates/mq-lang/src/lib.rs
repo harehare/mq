@@ -12,6 +12,27 @@
 //! let mut engine = mq_lang::Engine::default();
 //!
 //! assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
+//!
+//! // Parse code into AST nodes
+//! use mq_lang::{tokenize, LexerOptions, AstParser, Arena};
+//! use std::rc::Rc;
+//! use std::cell::RefCell;
+//!
+//! let code = "add(1, 2)";
+//! let token_arena = Rc::new(RefCell::new(Arena::new()));
+//! let parser = mq_lang::parse(code, token_arena).unwrap();
+//!
+//! assert_eq!(ast.nodes.len(), 1);
+//!
+//! // Parse code into CST nodes
+//! use mq_lang::{tokenize, LexerOptions, CstParser};
+//! use std::sync::Arc;
+//!
+//! let code = "add(1, 2)";
+//! let (cst_nodes, errors) = mq_lang::parse_recovery(code);
+//!
+//! assert!(errors.errors().is_empty());
+//! assert!(!cst_nodes.is_empty());
 //! ```
 mod arena;
 mod ast;

@@ -1,4 +1,4 @@
-//! This module provides the core functionality for the `mq-hir` crate, which includes the High-level Intermediate Representation (HIR) for the [mq language](https://github.com/harehare/mq).
+//! This module provides the core functionality for the `mq-hir` crate, which includes the High-level Intermediate Representation (HIR) for the [mq](https://github.com/harehare/mq).
 //!
 //! ## Example
 //!
