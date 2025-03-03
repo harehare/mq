@@ -40,8 +40,7 @@ When applied to a None value, the ? operator prevents errors by returning None i
 
 ```jq
 # Safe access with ? operator
-let x = None;
-x | add?(1)
+let x = None | x | add?(1)
 # => None
 
 # Chaining with ? operator
@@ -89,11 +88,11 @@ The let expression binds a value to an identifier for later use:
 
 ```jq
 # Binds 42 to x
-let x = 42;
+let x = 42
 # Uses x in an expression
-let y = add(x, 1);
+let y = add(x, 1)
 # Binds `add` function to z
-let z = add; | z(1);
+let z = def _add(x): add(x, 1); | z(1);
 ```
 
 ## If Expression
@@ -117,7 +116,7 @@ The conditions must evaluate to boolean values.
 The while loop repeatedly executes code while a condition is true:
 
 ```jq
-let i = 0;
+let i = 0 |
 while (lt(i, 3)):
   # Do something
   let i = add(i, 1) | i;
@@ -138,7 +137,7 @@ Key points:
 The until loop repeatedly executes code until a condition becomes true:
 
 ```jq
-let i = 10;
+let i = 10 |
 until (eq(i, 0)):
   # Do something
   let i = sub(i, 1) | i;
@@ -153,7 +152,7 @@ instead of while the condition remains true.
 The foreach loop iterates over elements in an array:
 
 ```jq
-let items = array(1, 2, 3);
+let items = array(1, 2, 3) |
 foreach (x, items):
    # Do something
    sub(x, 1);
@@ -172,7 +171,7 @@ Similar to jq, comments starting with `#` are doc-comments.
 
 ```jq
 # doc-comment
-let value = add(2, 3);
+let value = add(2, 3)
 ```
 
 ## Include

@@ -1535,21 +1535,21 @@ mod tests {
                            ].into(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_md::Node::List(
-                mq_md::List{value: Box::new("list".to_string().into()), index: 0, indent: 1 as u8, checked: None, position: None}))]))]
-    #[case::md_check(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Checked Item".to_string().into()), indent: 0, index: 0, checked: None, position: None}))],
+                mq_md::List{value: Box::new("list".to_string().into()), index: 0, level: 1 as u8, checked: None, position: None}))]))]
+    #[case::md_check(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("md_check"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Checked Item".to_string().into()), indent: 0, index: 0, checked: Some(true), position: None}))]))]
-    #[case::md_check(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Unchecked Item".to_string().into()), indent: 0, index: 0, checked: None, position: None}))],
+            Ok(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: Some(true), position: None}))]))]
+    #[case::md_check(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Unchecked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("md_check"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Unchecked Item".to_string().into()), indent: 0, index: 0, checked: Some(false), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("Unchecked Item".to_string().into()), level: 0, index: 0, checked: Some(false), position: None}))]))]
     #[case::compact(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("test1".to_string()),
                 RuntimeValue::NONE,
@@ -1645,6 +1645,11 @@ mod tests {
                 ast_node(ast::Expr::Call(ast::Ident::new("to_tsv"), Vec::new(), false))
             ],
             Ok(vec![RuntimeValue::String("test1\t42\ttrue".to_string())]))]
+    #[case::md_list_level(vec![RuntimeValue::Markdown(mq_md::Node::List(mq_md::List{value: Box::new("List Item".to_string().into()), level: 1, index: 0, checked: None, position: None}))],
+            vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("md_list_level"), vec![], false)),
+            ],
+            Ok(vec![RuntimeValue::Number(1.into())]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

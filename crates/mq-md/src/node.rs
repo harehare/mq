@@ -4,7 +4,7 @@ use compact_str::CompactString;
 use itertools::Itertools;
 use markdown::mdast;
 
-type Indent = u8;
+type Level = u8;
 
 pub const EMPTY_NODE: Node = Node::Text(Text {
     value: String::new(),
@@ -33,7 +33,7 @@ impl Display for ListStyle {
 pub struct List {
     pub value: Box<Node>,
     pub index: usize,
-    pub indent: Indent,
+    pub level: Level,
     pub checked: Option<bool>,
     pub position: Option<Position>,
 }
@@ -255,14 +255,14 @@ impl Node {
     pub fn to_string_with(&self, list_style: &ListStyle) -> String {
         match self.clone() {
             Self::List(List {
-                indent,
+                level,
                 checked,
                 value,
                 ..
             }) => {
                 format!(
                     "{}{} {}{}",
-                    "  ".repeat(indent as usize),
+                    "  ".repeat(level as usize),
                     list_style,
                     checked
                         .map(|it| if it { "[x] " } else { "[] " })
@@ -1084,14 +1084,14 @@ impl Node {
             .unwrap_or_else(|| Box::new(EMPTY_NODE))
     }
 
-    fn mdast_list_items(list: &mdast::List, indent: Indent) -> Vec<Node> {
+    fn mdast_list_items(list: &mdast::List, level: Level) -> Vec<Node> {
         list.children
             .iter()
             .flat_map(|n| {
                 if let mdast::Node::ListItem(list) = n {
                     itertools::concat(vec![
                         vec![Self::List(List {
-                            indent,
+                            level,
                             index: 0,
                             checked: list.checked,
                             value: Self::from_mdast_node(n.clone())
@@ -1109,10 +1109,10 @@ impl Node {
                             .iter()
                             .flat_map(|node| {
                                 if let mdast::Node::List(sub_list) = node {
-                                    Self::mdast_list_items(sub_list, indent + 1)
+                                    Self::mdast_list_items(sub_list, level + 1)
                                 } else if let mdast::Node::ListItem(list) = node {
                                     vec![Self::List(List {
-                                        indent: indent + 1,
+                                        level: level + 1,
                                         index: 0,
                                         checked: list.checked,
                                         value: Self::from_mdast_node(n.clone())
@@ -1133,7 +1133,7 @@ impl Node {
                             .collect(),
                     ])
                 } else if let mdast::Node::List(sub_list) = n {
-                    Self::mdast_list_items(sub_list, indent + 1)
+                    Self::mdast_list_items(sub_list, level + 1)
                 } else {
                     Vec::new()
                 }
@@ -1141,13 +1141,13 @@ impl Node {
             .enumerate()
             .filter_map(|(i, node)| match node {
                 Self::List(List {
-                    indent,
+                    level,
                     index: _,
                     checked,
                     value,
                     position,
                 }) => Some(Self::List(List {
-                    indent,
+                    level,
                     index: i,
                     checked,
                     value,
@@ -1488,15 +1488,15 @@ mod tests {
     #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), label: None, position: None }),
            "test".to_string(),
            Node::Footnote(Footnote{ident: "test".to_string(), label: None, position: None }))]
-    #[case::list(Node::List(List{index: 0, indent: 0, checked: None, value: Box::new("test".to_string().into()), position: None }),
+    #[case::list(Node::List(List{index: 0, level: 0, checked: None, value: Box::new("test".to_string().into()), position: None }),
            "test".to_string(),
-           Node::List(List{index: 0, indent: 0, checked: None, value: Box::new("test".to_string().into()), position: None }))]
-    #[case::list(Node::List(List{index: 1, indent: 1, checked: Some(true), value: Box::new("test".to_string().into()), position: None }),
+           Node::List(List{index: 0, level: 0, checked: None, value: Box::new("test".to_string().into()), position: None }))]
+    #[case::list(Node::List(List{index: 1, level: 1, checked: Some(true), value: Box::new("test".to_string().into()), position: None }),
            "test".to_string(),
-           Node::List(List{index: 1, indent: 1, checked: Some(true), value: Box::new("test".to_string().into()), position: None }))]
-    #[case::list(Node::List(List{index: 2, indent: 2, checked: Some(false), value: Box::new("test".to_string().into()), position: None }),
+           Node::List(List{index: 1, level: 1, checked: Some(true), value: Box::new("test".to_string().into()), position: None }))]
+    #[case::list(Node::List(List{index: 2, level: 2, checked: Some(false), value: Box::new("test".to_string().into()), position: None }),
            "test".to_string(),
-           Node::List(List{index: 2, indent: 2, checked: Some(false), value: Box::new("test".to_string().into()), position: None }))]
+           Node::List(List{index: 2, level: 2, checked: Some(false), value: Box::new("test".to_string().into()), position: None }))]
     fn test_with_value(#[case] node: Node, #[case] input: String, #[case] expected: Node) {
         assert_eq!(node.with_value(input.as_str()), expected);
     }
@@ -1504,7 +1504,7 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None }),
            "test".to_string())]
-    #[case(Node::List(List{index: 0, indent: 2, checked: None, value: Box::new("test".to_string().into()), position: None}),
+    #[case(Node::List(List{index: 0, level: 2, checked: None, value: Box::new("test".to_string().into()), position: None}),
            "    - test".to_string())]
     fn test_display(#[case] node: Node, #[case] expected: String) {
         assert_eq!(node.to_string_with(&ListStyle::default()), expected);

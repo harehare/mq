@@ -12,6 +12,15 @@ It's written in Rust, allowing you to easily slice, filter, map, and transform s
 
 > ⚠️ This project is under active development and is not yet production-ready.
 
+## Why mq?
+
+mq makes working with Markdown files as easy as jq makes working with JSON. It's especially useful for:
+
+- **LLM Workflows**: Efficiently manipulate and process Markdown used in LLM prompts and outputs
+- **Documentation Management**: Extract, transform, and organize content across multiple documentation files
+- **Content Analysis**: Quickly extract specific sections or patterns from Markdown documents
+- **Batch Processing**: Apply consistent transformations across multiple Markdown files
+
 ## Features
 
 - **Slice and Filter**: Extract specific parts of your Markdown documents with ease.
@@ -57,7 +66,7 @@ This example how to generate a table of contents (TOC) from a markdown file.
 You can chain multiple operations to perform complex transformations:
 
 ```sh
-$ mq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)); | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
+$ mq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)) | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
 ```
 
 For more detailed usage and examples, refer to the [documentation](docs/README.md).

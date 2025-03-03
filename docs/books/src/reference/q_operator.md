@@ -10,8 +10,7 @@ When applied to a None value, the ? operator prevents errors by returning None i
 
 ```python
 # Safe access with ? operator
-let x = None;
-x | add?(1)
+let x = None | x | add?(1)
 # => None
 
 # Chaining with ? operator

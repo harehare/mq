@@ -801,32 +801,14 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::ImageRef)),
                 })),
-                ".code_inline" => {
-                    if let Ok(s) = self.parse_string_arg(Rc::clone(&token)) {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::InlineCode(Some(s)))),
-                        }))
-                    } else {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::InlineCode(None))),
-                        }))
-                    }
-                }
-                ".math_inline" => {
-                    if let Ok(s) = self.parse_string_arg(Rc::clone(&token)) {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::InlineMath(Some(s)))),
-                        }))
-                    } else {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::InlineMath(None))),
-                        }))
-                    }
-                }
+                ".code_inline" => Ok(Rc::new(Node {
+                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                    expr: Rc::new(Expr::Selector(Selector::InlineCode)),
+                })),
+                ".math_inline" => Ok(Rc::new(Node {
+                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                    expr: Rc::new(Expr::Selector(Selector::InlineMath)),
+                })),
                 ".link" => Ok(Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Link)),
@@ -868,19 +850,10 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Toml)),
                 })),
-                ".strong" => {
-                    if let Ok(s) = self.parse_string_arg(Rc::clone(&token)) {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::Strong(Some(s)))),
-                        }))
-                    } else {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::Strong(None))),
-                        }))
-                    }
-                }
+                ".strong" => Ok(Rc::new(Node {
+                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                    expr: Rc::new(Expr::Selector(Selector::Strong)),
+                })),
                 ".yaml" => Ok(Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Yaml)),

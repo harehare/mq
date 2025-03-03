@@ -3,7 +3,7 @@
 The foreach loop iterates over elements in an array:
 
 ```js
-let items = array(1, 2, 3);
+let items = array(1, 2, 3) |
 foreach (x, items):
    # Do something
    sub(x, 1);

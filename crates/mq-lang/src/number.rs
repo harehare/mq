@@ -39,6 +39,12 @@ impl From<i32> for Number {
     }
 }
 
+impl From<u8> for Number {
+    fn from(value: u8) -> Self {
+        Number(value as f64)
+    }
+}
+
 impl From<u32> for Number {
     fn from(value: u32) -> Self {
         Number(value as f64)

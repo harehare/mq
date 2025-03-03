@@ -3,7 +3,7 @@
 The until loop repeatedly executes code until a condition becomes true:
 
 ```python
-let i = 10;
+let i = 10 |
 until (eq(i, 0)):
   # Do something
   let i = sub(i, 1) | i;

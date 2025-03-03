@@ -30,7 +30,7 @@ pub fn run_script(code: &str, content: &str) -> Result<String, JsValue> {
 pub fn format_script(code: &str) -> Result<String, JsValue> {
     mq_formatter::Formatter::default()
         .format(code)
-        .map_err(|e| JsValue::from_str(&format!("{}", &e)))
+        .map_err(|e| JsValue::from_str(&format!("{:?}", &e)))
 }
 
 #[cfg(test)]

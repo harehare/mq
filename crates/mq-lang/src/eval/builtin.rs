@@ -306,7 +306,17 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::None] => Ok("".to_owned().into()),
                 [RuntimeValue::Markdown(node_value)] => Ok(node_value.value().into()),
-                [RuntimeValue::Array(array)] => Ok(format!("[{}]", array.iter().join(",")).into()),
+                [RuntimeValue::Array(array)] => Ok(array
+                    .iter()
+                    .map(|a| {
+                        if a.is_none() {
+                            "".to_string()
+                        } else {
+                            a.to_string()
+                        }
+                    })
+                    .join(",")
+                    .into()),
                 [value] => Ok(value.to_string().into()),
                 _ => unreachable!(),
             }),
@@ -1132,25 +1142,35 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_list"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
-                [RuntimeValue::Markdown(node), RuntimeValue::Number(indent)] => {
+                [RuntimeValue::Markdown(node), RuntimeValue::Number(level)] => {
                     Ok(mq_md::Node::List(mq_md::List {
                         value: node.node_value(),
                         index: 0,
-                        indent: indent.value() as u8,
+                        level: level.value() as u8,
                         checked: None,
                         position: None,
                     })
                     .into())
                 }
-                [a, RuntimeValue::Number(indent)] => Ok(mq_md::Node::List(mq_md::List {
+                [a, RuntimeValue::Number(level)] => Ok(mq_md::Node::List(mq_md::List {
                     value: Box::new(a.to_string().into()),
                     index: 0,
-                    indent: indent.value() as u8,
+                    level: level.value() as u8,
                     checked: None,
                     position: None,
                 })
                 .into()),
                 _ => Ok(RuntimeValue::None),
+            }),
+        );
+        map.insert(
+            CompactString::new("md_list_level"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+                [RuntimeValue::Markdown(mq_md::Node::List(mq_md::List { level, .. }))] => {
+                    Ok(RuntimeValue::Number((*level).into()))
+                }
+                [a] => Ok(a.clone()),
+                _ => unreachable!(),
             }),
         );
         map.insert(
@@ -2040,6 +2060,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
+            CompactString::new("md_list_level"),
+            BuiltinFunctionDoc {
+                description: "Returns the indent level of a markdown list node.",
+                params: &["list"],
+            },
+        );
+        map.insert(
             CompactString::new("md_check"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given checked state.",
@@ -2150,13 +2177,13 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
         ast::Selector::Code(lang) if node.is_code(lang.clone()) => {
             vec![RuntimeValue::Markdown(node)]
         }
-        ast::Selector::InlineCode(_) if node.is_inline_code() => {
+        ast::Selector::InlineCode if node.is_inline_code() => {
             vec![RuntimeValue::Markdown(node)]
         }
-        ast::Selector::InlineMath(_) if node.is_inline_math() => {
+        ast::Selector::InlineMath if node.is_inline_math() => {
             vec![RuntimeValue::Markdown(node)]
         }
-        ast::Selector::Strong(_) if node.is_strong() => {
+        ast::Selector::Strong if node.is_strong() => {
             vec![RuntimeValue::Markdown(node)]
         }
         ast::Selector::Emphasis if node.is_emphasis() => {

@@ -67,7 +67,7 @@ impl Formatter {
     fn visit_node(&mut self, node: Arc<mq_lang::CstNode>, indent_level: usize) {
         let has_leading_new_line = node.has_new_line();
 
-        let indent_level = if has_leading_new_line {
+        let indent_level_consider_new_line = if has_leading_new_line {
             indent_level
         } else {
             0
@@ -78,19 +78,23 @@ impl Formatter {
         }
 
         match &node.kind {
-            mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level),
+            mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def => self.format_expr(&node, indent_level),
             mq_lang::CstNodeKind::Foreach => self.format_expr(&node, indent_level),
-            mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level),
+            mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::If => self.format_if(&node, indent_level),
             mq_lang::CstNodeKind::Include => self.format_include(&node, indent_level),
-            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level),
+            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level),
             mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level),
-            mq_lang::CstNodeKind::Token => self.append_punctuations(&node, indent_level),
+            mq_lang::CstNodeKind::Token => {
+                self.append_punctuations(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::Selector => self.format_selector(&node, indent_level),
-            mq_lang::CstNodeKind::Self_ => self.format_self(&node, indent_level),
-            mq_lang::CstNodeKind::Literal => self.append_literal(&node, indent_level),
+            mq_lang::CstNodeKind::Self_ => self.format_self(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Literal => {
+                self.append_literal(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::While => self.format_expr(&node, indent_level),
             mq_lang::CstNodeKind::Until => self.format_expr(&node, indent_level),
             mq_lang::CstNodeKind::Eof => {}
@@ -110,7 +114,9 @@ impl Formatter {
     }
 
     fn format_expr(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
-        self.append_indent(indent_level);
+        if node.has_new_line() {
+            self.append_indent(indent_level);
+        }
         self.output.push_str(&node.to_string());
         self.append_space();
 
@@ -465,6 +471,54 @@ select(or(.[],.code,.h))|upcase()|hello_world()",
 def hello_world():
   add(\" Hello World\")?;
 select(or(.[], .code, .h)) | upcase() | hello_world()"
+    )]
+    #[case::test(
+        ".h
+| let link = md_link(add(\"#\", to_text(self)), to_text(self));
+| if (eq(md_name(), \"h1\")):
+    md_list(link, 1)
+  elif (eq(md_name(),\"h2\")):
+    md_list(link, 2)
+  elif (eq(md_name(), \"h3\")):
+    md_list(link, 3)
+  elif (eq(md_name(), \"h4\")):
+    md_list(link, 4)
+  elif (eq(md_name(), \"h5\")):
+    md_list(link, 5)
+  else:
+    None",
+        ".h
+| let link = md_link(add(\"#\", to_text(self)), to_text(self));
+| if (eq(md_name(), \"h1\")):
+  md_list(link, 1)
+elif (eq(md_name(), \"h2\")):
+  md_list(link, 2)
+elif (eq(md_name(), \"h3\")):
+  md_list(link, 3)
+elif (eq(md_name(), \"h4\")):
+  md_list(link, 4)
+elif (eq(md_name(), \"h5\")):
+  md_list(link, 5)
+else:
+  None"
+    )]
+    #[case::test(
+        "def snake_to_camel(x):
+  let words = split(x, \"_\")
+  | foreach (word, words):
+  let first_char = upcase(first(word))
+  | let rest_str = downcase(slice(word, 1, len(word)))
+  | add(first_char, rest_str);
+  | join(\"\");
+| snake_to_camel()",
+        "def snake_to_camel(x):
+  let words = split(x, \"_\")
+  | foreach (word, words):
+    let first_char = upcase(first(word))
+    | let rest_str = downcase(slice(word, 1, len(word)))
+    | add(first_char, rest_str);
+  | join(\"\");
+| snake_to_camel()"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);

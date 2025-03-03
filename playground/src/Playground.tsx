@@ -28,19 +28,19 @@ code
   {
     name: "Markdown Toc",
     code: `.h
-| let link = md_link(add("#", to_text(self)), to_text(self));
+| let link = md_link(add("#", to_text(self)), to_text(self))
 | if (eq(md_name(), "h1")):
-    md_list(link, 1)
-  elif (eq(md_name(), "h2")):
-    md_list(link, 2)
-  elif (eq(md_name(), "h3")):
-    md_list(link, 3)
-  elif (eq(md_name(), "h4")):
-    md_list(link, 4)
-  elif (eq(md_name(), "h5")):
-    md_list(link, 5)
-  else:
-    None`,
+  md_list(link, 1)
+elif (eq(md_name(), "h2")):
+  md_list(link, 2)
+elif (eq(md_name(), "h3")):
+  md_list(link, 3)
+elif (eq(md_name(), "h4")):
+  md_list(link, 4)
+elif (eq(md_name(), "h5")):
+  md_list(link, 5)
+else:
+  None`,
     markdown: `# [header1](https://example.com)
 
 - item 1
@@ -81,13 +81,13 @@ console.log("Hello, World!");
   {
     name: "Custom function",
     code: `def snake_to_camel(x):
-        let words = split(x, "_");
-        | foreach(word, words):
-            let first_char = upcase(first(word));
-            | let rest_str = downcase(slice(word, 1, len(word)));
-            | add(first_char, rest_str);
-        | join("");
-    | snake_to_camel()`,
+  let words = split(x, "_")
+  | foreach (word, words):
+    let first_char = upcase(first(word))
+    | let rest_str = downcase(slice(word, 1, len(word)))
+    | add(first_char, rest_str);
+  | join("");
+| snake_to_camel()`,
     markdown: `# sample_codes`,
   },
 ];
