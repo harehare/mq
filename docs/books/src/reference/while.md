@@ -3,7 +3,7 @@
 The while loop repeatedly executes code while a condition is true:
 
 ```python
-let i = 0; |
+let i = 0 |
 while (lt(i, 3)):
   # Do something
   let i = add(i, 1) | i;
