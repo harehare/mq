@@ -32,11 +32,14 @@ jobs:
         with:
           node-version-file: .tool-versions
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Install wasm-pack
-        run: cargo install wasm-pack
+      - name: Install wasm-pack and mdbook
+        run: cargo install wasm-pack mdbook
       - uses: extractions/setup-just@v2
       - name: Build
         run: just build-wasm
+      - name: Build mdbook
+        run: mdbook build -d ../book
+        working-directory: ./docs/books
       - name: Install dependencies
         run: npm ci
         working-directory: ./playground
