@@ -20,7 +20,7 @@ mq-formatter = {path = "../../crates/mq-formatter", version = "0.1.0"}
 mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
 mq-md = {path = "../../crates/mq-md", version = "0.1.0"}
-serde_json = "1.0.139"
+serde_json = "1.0.140"
 tokio = {version = "1.43.0", features = ["full"]}
 tokio-macros = "2.5.0"
 tower-lsp = "0.20.0"
