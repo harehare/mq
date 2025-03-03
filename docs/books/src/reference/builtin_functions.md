@@ -74,6 +74,7 @@
 | `md_strong`      | Creates a markdown strong (bold) node with the given value.                      | `value`                    | `md_strong("bold")`                                   |
 | `md_em`          | Creates a markdown emphasis (italic) node with the given value.                  | `value`                    | `md_em("italic")`                                     |
 | `md_hr`          | Creates a markdown horizontal rule node.                                         | None                       | `md_hr()`                                             |
+| `md_list_level`  | Returns the indent level of a markdown list node.                                | `list`                     | `md_list_level(list)`                                 |
 | `md_list`        | Creates a markdown list node with the given value and indent level.              | `value`, `indent`          | `md_list("item", 1)`                                  |
 | `md_check`       | Creates a markdown list node with the given checked state.                       | `list`, `checked`          | `md_check(list, true)`                                |
 | `halt_error`     | Halts execution with error code 5                                                | None                       | `halt_error()`                                        |

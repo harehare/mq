@@ -1,0 +1,47 @@
+# CLI
+
+The mq command-line interface provides tools for querying and manipulating markdown content.
+Below is the complete reference for all available commands and options.
+
+```sh
+Usage: mq [OPTIONS] [QUERY] [FILES]... [COMMAND]
+
+Commands:
+  repl
+  fmt
+  completion
+  help        Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [QUERY]
+  [FILES]...
+
+Options:
+  -f, --from-file <FROM_FILE>
+  -R, --raw-input                       Reads each line as a string
+  -n, --null-input                      Use empty string as the single input value
+  -L, --directory <MODULE_DIRECTORIES>
+  -M, --module-names <MODULE_NAMES>     Load additional modules from specified files
+  -C, --color-output                    Colorize output
+  -c, --compact-output                  pretty print
+  -F, --output-format <OUTPUT_FORMAT>   Compact instead of pretty-printed output [default: markdown] [possible values: markdown, html, text]
+  -U, --update                          Update the input markdown
+      --theme <THEME>                   Set the theme for syntax highlighting [default: solarized-dark] [possible values: solarized-dark, solarized-light, base16-ocean-dark, base16-ocean-light]
+      --unbuffered                      Unbuffered output
+      --list-style <LIST_STYLE>         Set the list style for markdown output [default: dash] [possible values: dash, plus, star]
+  -v, --verbose...                      Increase logging verbosity
+  -q, --quiet...                        Decrease logging verbosity
+  -h, --help                            Print help
+  -V, --version                         Print version
+
+Examples:
+
+To filter markdown nodes:
+$ mq 'query' file.md
+
+To start a REPL session:
+$ mq repl
+
+To format markdown file:
+$ mq fmt --check file.md
+```

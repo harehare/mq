@@ -6,7 +6,14 @@
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
 
-> ⚠️ This project is under active development and is not yet production-ready.
+## Why mq?
+
+mq makes working with Markdown files as easy as jq makes working with JSON. It's especially useful for:
+
+- **LLM Workflows**: Efficiently manipulate and process Markdown used in LLM prompts and outputs
+- **Documentation Management**: Extract, transform, and organize content across multiple documentation files
+- **Content Analysis**: Quickly extract specific sections or patterns from Markdown documents
+- **Batch Processing**: Apply consistent transformations across multiple Markdown files
 
 ## Features
 

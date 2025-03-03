@@ -6,6 +6,5 @@ src = "src"
 title = "mq - jq like tool for markdown processing"
 
 [output.html]
-additional-head = """
-<link rel="shortcut icon" href="images/logo.svg" type="image/x-icon">
-"""
+git-repository-url = "https://github.com/harehare/mq"
+site-url = "/mq/book"
