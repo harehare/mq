@@ -69,7 +69,7 @@ You can chain multiple operations to perform complex transformations:
 $ mq 'select(or(.h1, .h2, .h3)) | let link = md_link(add($__FILE__, add("#", to_text(self))), to_text(self)) | if (is_h1()): md_list(link, 1)  elif (is_h2()): md_list(link, 2) elif (is_h3()): md_list(link, 3) else: None' docs/book/*.md
 ```
 
-For more detailed usage and examples, refer to the [documentation](docs/README.md).
+For more detailed usage and examples, refer to the [documentation](https://harehare.github.io/mq/book/).
 
 ## Playground
 

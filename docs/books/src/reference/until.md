@@ -3,10 +3,9 @@
 The until loop repeatedly executes code until a condition becomes true:
 
 ```python
-let i = 10 |
-until (eq(i, 0)):
-  # Do something
-  let i = sub(i, 1) | i;
+let x = 5 |
+until(gt(x, 0)):
+  let x = sub(x, 1) | x;
 # => 0
 ```
 

@@ -70,7 +70,7 @@ def important_headings():
 | important_headings()
 ```
 
-For more detailed usage and examples, refer to the [documentation](https://github.com/harehare/mq/blob/master/docs/README.md).
+For more detailed usage and examples, refer to the [documentation](https://harehare.github.io/mq/book/).
 
 ## License
 

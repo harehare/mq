@@ -18,7 +18,7 @@ fn engine() -> Engine {
       vec![Value::String("helloWorld".to_string())],
       Ok(vec![Value::String("2025".to_string())].into()))]
 #[case::while_("
-    let x = 5;
+    let x = 5 |
     while(gt(x, 0)):
       let x = sub(x, 1) | x;
     ",
@@ -26,20 +26,20 @@ fn engine() -> Engine {
       Ok(vec![Value::Array(vec![Value::Number(4.into()), Value::Number(3.into()), Value::Number(2.into()), Value::Number(1.into()), Value::Number(0.into())])].into()))]
 #[case::until("
     until(gt(1)):
-      sub(1); | add(2) | pow(2) | div(3)
+      sub(1) | add(2) | pow(2) | div(3)
     ",
       vec![Value::Number(10.into())],
       Ok(vec![Value::Number(3.into())].into()))]
 #[case::until("
     until(gt(1)):
-      sub(1); | add(2) | pow(2) | div(3)
+      sub(1) | add(2) | pow(2) | div(3)
     ",
       vec![Value::Number(10.into())],
       Ok(vec![Value::Number(3.into())].into()))]
 #[case::until("
-      let x = 5;
+      let x = 5 |
       until(gt(x, 0)):
-        let x = sub(x, 1); | x
+        let x = sub(x, 1) | x;
       ",
         vec![Value::Number(5.into())],
         Ok(vec![Value::Number(0.into())].into()))]
