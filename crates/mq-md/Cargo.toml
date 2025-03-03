@@ -18,4 +18,4 @@ markdown = "1.0.0-alpha.23"
 miette = {version = "7.5.0", features = ["fancy"]}
 
 [dev-dependencies]
-rstest = "0.23.0"
+rstest = "0.25.0"
