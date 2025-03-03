@@ -43,7 +43,7 @@ syntect = {version = "5.2.0", default-features = false, features = ["default-fan
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
-rstest = "0.23.0"
+rstest = "0.25.0"
 
 [[bin]]
 doc = false
