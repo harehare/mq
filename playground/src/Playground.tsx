@@ -83,12 +83,28 @@ console.log("Hello, World!");
     code: `def snake_to_camel(x):
   let words = split(x, "_")
   | foreach (word, words):
-    let first_char = upcase(first(word))
-    | let rest_str = downcase(slice(word, 1, len(word)))
-    | add(first_char, rest_str);
+      let first_char = upcase(first(word))
+      | let rest_str = downcase(slice(word, 1, len(word)))
+      | add(first_char, rest_str);
   | join("");
 | snake_to_camel()`,
     markdown: `# sample_codes`,
+  },
+  {
+    name: "Generate sitemap",
+    code: `def sitemap(item, base_url):
+  let url = "<url>
+  <loc>\${loc}</loc>
+</url>"
+  | let path = replace(to_text(item), ".md", ".html")
+  | replace(url, "\${loc}", add(base_url, path)); | sitemap("https://example.com/")`,
+    markdown: `# Summary
+
+- [Chapter1](chapter1.md)
+- [Chapter2](Chapter2.md)
+  - [Chapter3](Chapter3.md)
+- [Chapter4](Chapter4.md)
+`,
   },
 ];
 

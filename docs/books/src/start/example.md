@@ -48,3 +48,15 @@ def snake_to_camel(x):
   | join("");
 | snake_to_camel()
 ```
+
+## Generate sitemap
+
+```python
+def sitemap(item, base_url):
+  let url = "<url>
+  <loc>\${loc}</loc>
+</url>"
+  | let path = replace(to_text(item), ".md", ".html")
+  | replace(url, "\${loc}", add(base_url, path));
+  | sitemap("https://example.com/")
+```
