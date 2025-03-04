@@ -2,7 +2,7 @@
 
 | Selector Name           | Description                                                     | Parameters      | Example                 |
 | ----------------------- | --------------------------------------------------------------- | --------------- | ----------------------- |
-| `.h`                    | Selects a heading node with the specified depth.                |                 | `.h`                    |
+| `.h`, `.h(depth)`       | Selects a heading node with the specified depth.                | None, `depth`   | `.h`, `.h(6)`           |
 | `.h1`                   | Selects a heading node with the 1 depth.                        | None            | `.h1`                   |
 | `.h2`                   | Selects a heading node with the 2 depth.                        | None            | `.h2`                   |
 | `.h3`                   | Selects a heading node with the 3 depth.                        | None            | `.h3`                   |

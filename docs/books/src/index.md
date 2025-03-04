@@ -1,6 +1,6 @@
 <div style="display: flex; align-items: center;">
-    <img src="./images//logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
-    <div><h1>Introduction to mq</h1></div>
+    <img src="./images//logo.svg" style="width: 96px; height: 96px; margin-right: 10px;"/>
+    <div><h1>mq</h1></div>
 </div>
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
