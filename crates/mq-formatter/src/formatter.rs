@@ -84,7 +84,7 @@ impl Formatter {
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::If => self.format_if(&node, indent_level),
             mq_lang::CstNodeKind::Include => self.format_include(&node, indent_level),
-            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level),
+            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level),
             mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level),
             mq_lang::CstNodeKind::Token => {
