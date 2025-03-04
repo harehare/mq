@@ -393,7 +393,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("replace"),
+            CompactString::new("gsub"),
             BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
                 [
                     RuntimeValue::String(s1),
@@ -408,6 +408,38 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     .with_value(
                         &replace_re(node_value.value().as_str(), s1.as_str(), s2.as_str())?
                             .to_string(),
+                    )
+                    .into()),
+                [
+                    RuntimeValue::None,
+                    RuntimeValue::String(_),
+                    RuntimeValue::String(_),
+                ] => Ok(RuntimeValue::None),
+                [a, b, c] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone(), c.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("replace"),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
+                [
+                    RuntimeValue::String(s1),
+                    RuntimeValue::String(s2),
+                    RuntimeValue::String(s3),
+                ] => Ok(s1.replace(s2, s3).into()),
+                [
+                    RuntimeValue::Markdown(node_value),
+                    RuntimeValue::String(s1),
+                    RuntimeValue::String(s2),
+                ] => Ok(node_value
+                    .with_value(
+                        node_value
+                            .value()
+                            .replace(s1.as_str(), s2.as_str())
+                            .as_str(),
                     )
                     .into()),
                 [
@@ -1695,6 +1727,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Converts the given string to lowercase.",
                 params: &["input"],
+            },
+        );
+        map.insert(
+            CompactString::new("gsub"),
+            BuiltinFunctionDoc {
+                description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
+                params: &["pattern", "from", "to"],
             },
         );
         map.insert(

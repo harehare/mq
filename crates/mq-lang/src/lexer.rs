@@ -443,7 +443,6 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
             alt((
                 value('\\', char('\\')),
                 value('\"', char('\"')),
-                value('\'', char('\'')),
                 value('\r', char('r')),
                 value('\n', char('n')),
                 value('\t', char('t')),

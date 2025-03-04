@@ -319,9 +319,13 @@ impl Formatter {
         {
             self.append_indent(indent_level);
             match &token.kind {
-                mq_lang::TokenKind::StringLiteral(s) => {
-                    self.output.push_str(&format!("\"{}\"", &s))
-                }
+                mq_lang::TokenKind::StringLiteral(s) => self.output.push_str(&format!(
+                    "\"{}\"",
+                    &s.replace("\"", "\\\"")
+                        .replace("\\n", "\\\\n")
+                        .replace("\\t", "\\\\t")
+                        .replace("\\r", "\\\\r")
+                )),
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
@@ -553,6 +557,7 @@ else:
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\");| snake_to_camel()",
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\"); | snake_to_camel()"
     )]
+    #[case::string("let test = \"test\"", "let test = \"test\"")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
