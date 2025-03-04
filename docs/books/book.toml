@@ -1,5 +1,6 @@
 [book]
-authors = ["harehare"]
+authors = ["Takahiro Sato"]
+description = "Reference on the mq."
 language = "en"
 multilingual = false
 src = "src"
@@ -7,4 +8,6 @@ title = "mq - jq like tool for markdown processing"
 
 [output.html]
 git-repository-url = "https://github.com/harehare/mq"
+no-section-label = true
 site-url = "/mq/book"
+smart-punctuation = true
