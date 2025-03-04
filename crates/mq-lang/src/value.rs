@@ -51,7 +51,7 @@ impl Display for Value {
                 a.iter()
                     .map(|v| v.to_string())
                     .collect::<Vec<String>>()
-                    .join("\n")
+                    .join(", ")
             ),
             Value::Markdown(m) => m.to_string(),
             Value::None => "".to_string(),

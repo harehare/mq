@@ -20,6 +20,7 @@ fn engine() -> Engine {
 #[case::while_("
     let x = 5 |
     while(gt(x, 0)):
+      # test
       let x = sub(x, 1) | x;
     ",
       vec![Value::Number(10.into())],

@@ -76,7 +76,7 @@ impl From<String> for Command {
             [":load_file", file_path] => Command::LoadFile(file_path.to_string()),
             [":vars"] => Command::Vars,
             [":version"] => Command::Version,
-            s => Command::Eval(s.join(" ")),
+            _ => Command::Eval(s),
         }
     }
 }
