@@ -74,29 +74,41 @@ impl Formatter {
         };
 
         if !IGNORE_TRIVIA_KIND.contains(&node.kind) {
-            self.append_leading_trivia(&node, indent_level);
+            self.append_leading_trivia(&node, indent_level_consider_new_line);
         }
 
         match &node.kind {
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Def => self.format_expr(&node, indent_level),
-            mq_lang::CstNodeKind::Foreach => self.format_expr(&node, indent_level),
+            mq_lang::CstNodeKind::Def => {
+                self.format_expr(&node, indent_level_consider_new_line, indent_level)
+            }
+            mq_lang::CstNodeKind::Foreach => {
+                self.format_expr(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::If => self.format_if(&node, indent_level),
-            mq_lang::CstNodeKind::Include => self.format_include(&node, indent_level),
+            mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Include => {
+                self.format_include(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level),
-            mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level),
+            mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Token => {
                 self.append_punctuations(&node, indent_level_consider_new_line)
             }
-            mq_lang::CstNodeKind::Selector => self.format_selector(&node, indent_level),
+            mq_lang::CstNodeKind::Selector => {
+                self.format_selector(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::Self_ => self.format_self(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
-            mq_lang::CstNodeKind::While => self.format_expr(&node, indent_level),
-            mq_lang::CstNodeKind::Until => self.format_expr(&node, indent_level),
+            mq_lang::CstNodeKind::While => {
+                self.format_expr(&node, indent_level_consider_new_line, indent_level)
+            }
+            mq_lang::CstNodeKind::Until => {
+                self.format_expr(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Eof => {}
         }
 
@@ -113,7 +125,14 @@ impl Formatter {
         });
     }
 
-    fn format_expr(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_expr(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
+        let is_prev_pipe = self.is_prev_pipe();
+
         if node.has_new_line() {
             self.append_indent(indent_level);
         }
@@ -135,9 +154,9 @@ impl Formatter {
             self.visit_node(
                 Arc::clone(child),
                 if node.has_new_line() {
-                    indent_level + 1
+                    block_indent_level + 1
                 } else {
-                    indent_level
+                    block_indent_level
                 },
             );
         });
@@ -145,14 +164,20 @@ impl Formatter {
         let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
         let colon_node = expr_nodes.next().unwrap();
 
-        self.visit_node(Arc::clone(colon_node), indent_level + 1);
+        self.visit_node(Arc::clone(colon_node), block_indent_level + 1);
 
         if !expr_nodes.peek().unwrap().has_new_line() {
             self.append_space();
         }
 
+        let block_indent_level = if is_prev_pipe {
+            block_indent_level + 2
+        } else {
+            block_indent_level + 1
+        };
+
         expr_nodes.for_each(|child| {
-            self.visit_node(Arc::clone(child), indent_level + 1);
+            self.visit_node(Arc::clone(child), block_indent_level);
         });
     }
 
@@ -369,6 +394,10 @@ impl Formatter {
     fn append_space(&mut self) {
         self.output.push(' ');
     }
+
+    fn is_prev_pipe(&self) -> bool {
+        self.output.ends_with("| ")
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -514,11 +543,15 @@ else:
         "def snake_to_camel(x):
   let words = split(x, \"_\")
   | foreach (word, words):
-    let first_char = upcase(first(word))
-    | let rest_str = downcase(slice(word, 1, len(word)))
-    | add(first_char, rest_str);
+      let first_char = upcase(first(word))
+      | let rest_str = downcase(slice(word, 1, len(word)))
+      | add(first_char, rest_str);
   | join(\"\");
 | snake_to_camel()"
+    )]
+    #[case::test(
+        "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\");| snake_to_camel()",
+        "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\"); | snake_to_camel()"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
