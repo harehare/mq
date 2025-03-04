@@ -611,7 +611,7 @@ mod tests {
        Ok(vec![RuntimeValue::Markdown(mq_md::Node::Text(mq_md::Text{value: "examString".to_string(), position: None}))]))]
     #[case::replace_regex(vec![RuntimeValue::String("test123".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("replace"), vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("gsub"), vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("456".to_string())))
             ], false))
@@ -619,7 +619,7 @@ mod tests {
        Ok(vec![RuntimeValue::String("test456".to_string())]))]
     #[case::replace_regex(vec![RuntimeValue::Markdown(mq_md::Node::Text(mq_md::Text{value: "test123".to_string(), position: None}))],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("replace"), vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("gsub"), vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("456".to_string())))
             ], false))
