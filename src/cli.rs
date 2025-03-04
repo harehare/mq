@@ -118,6 +118,10 @@ struct InputArgs {
     /// Load additional modules from specified files
     #[arg(short = 'M', long)]
     module_names: Option<Vec<String>>,
+
+    /// Sets  string  that can be referenced at runtime
+    #[arg(long = "arg", value_names = ["NAME", "VALUE"])]
+    args: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, clap::Args)]
@@ -217,6 +221,12 @@ impl Cli {
                     for module_name in modules {
                         engine.load_module(module_name)?;
                     }
+                }
+
+                if let Some(args) = &self.input.args {
+                    args.chunks(2).for_each(|v| {
+                        engine.define_string_value(&v[0], &v[1]);
+                    });
                 }
 
                 let query = self
@@ -326,6 +336,10 @@ impl Cli {
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
+        if self.input.null_input {
+            return Ok(vec![(None, "".to_string())]);
+        }
+
         self.files
             .clone()
             .map(|files| {

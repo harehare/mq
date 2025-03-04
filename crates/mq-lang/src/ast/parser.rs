@@ -736,10 +736,19 @@ impl<'a> Parser<'a> {
     fn parse_selector(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         if let TokenKind::Selector(selector) = &token.kind {
             match selector.as_str() {
-                ".h" => Ok(Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                    expr: Rc::new(Expr::Selector(Selector::Heading(None))),
-                })),
+                ".h" => {
+                    if let Ok(depth) = self.parse_int_arg(Rc::clone(&token)) {
+                        Ok(Rc::new(Node {
+                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                            expr: Rc::new(Expr::Selector(Selector::Heading(Some(depth as u8)))),
+                        }))
+                    } else {
+                        Ok(Rc::new(Node {
+                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                            expr: Rc::new(Expr::Selector(Selector::Heading(None))),
+                        }))
+                    }
+                }
                 ".h1" | ".#" => self.parse_head(token, 1),
                 ".h2" | ".##" => self.parse_head(token, 2),
                 ".h3" | ".###" => self.parse_head(token, 3),
@@ -1530,6 +1539,42 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedEOFDetected(0.into())))]
+    #[case::h_selector(
+        vec![
+            token(TokenKind::Selector(CompactString::new(".h"))),
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(3.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(3)))),
+            })
+        ]))]
+    #[case::h_selector_without_number(
+        vec![
+            token(TokenKind::Selector(CompactString::new(".h"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(None))),
+            })
+        ]))]
+    #[case::h1_shorthand(
+        vec![
+            token(TokenKind::Selector(CompactString::new(".#"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+            })
+        ]))]
     fn test(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

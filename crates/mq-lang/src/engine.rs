@@ -58,6 +58,10 @@ impl Engine {
             .collect_vec()
     }
 
+    pub fn define_string_value(&self, name: &str, value: &str) {
+        self.evaluator.define_string_value(name, value);
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn load_builtin_module(&mut self) -> Result<(), error::Error> {
         self.evaluator.load_builtin_module().map_err(|e| {

@@ -83,6 +83,13 @@ impl Evaluator {
         self.env.borrow().defined_runtime_values()
     }
 
+    pub fn define_string_value(&self, name: &str, value: &str) {
+        self.env.borrow_mut().define(
+            &ast::Ident::new(name),
+            RuntimeValue::String(value.to_string()),
+        );
+    }
+
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
         let module = self
             .module_loader
