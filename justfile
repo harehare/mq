@@ -31,6 +31,9 @@ test:
     cargo clippy --workspace
     cargo test --workspace
 
+deps:
+    cargo +nightly udeps
+
 readme:
   cargo readme --project-root crates/mq-lang --output README.md
   cargo readme --project-root crates/mq-lsp --output README.md
