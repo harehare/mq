@@ -12,9 +12,7 @@ const EXAMPLES = [
   {
     name: "Hello World",
     code: `# Hello world
-def hello_world():
-  add(" Hello World")?;
-select(or(.[], .code, .h)) | upcase() | hello_world()`,
+select(or(.[], .code, .h)) | upcase() | add(" Hello World")?`,
     markdown: `# h1
 
 - .[]
