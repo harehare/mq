@@ -6,9 +6,7 @@ under preparation
 
 ```js
 # Hello world
-def hello_world():
-  add(" Hello World")?;
-select(or(.[], .code, .h)) | upcase() | hello_world()
+select(or(.[], .code, .h)) | upcase() | add(" Hello World")?
 ```
 
 ## Markdown TOC
@@ -56,7 +54,7 @@ def sitemap(item, base_url):
   let url = "<url>
   <loc>${loc}</loc>
 </url>"
-  | .[] 
+  | .[]
   | let path = replace(to_text(item), ".md", ".html")
   | replace(url, "${loc}", add(base_url, path));
   | sitemap("https://example.com/")
