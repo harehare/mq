@@ -4,15 +4,9 @@ use clap_complete::{Shell, generate};
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
-use std::fmt::{self, Display};
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style, ThemeSet};
-use syntect::html::highlighted_html_for_string;
-use syntect::parsing::SyntaxSet;
-use syntect::util::{LinesWithEndings, as_24_bit_terminal_escaped};
 
 #[derive(Parser, Debug)]
 #[command(name = "mq")]
@@ -54,41 +48,6 @@ enum Format {
     Text,
 }
 
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
-enum Theme {
-    #[default]
-    SolarizedDark,
-    SolarizedLight,
-    Base16OceanDark,
-    Base16OceanLight,
-}
-
-impl Theme {
-    fn name(&self) -> String {
-        match self {
-            Theme::SolarizedDark => "Solarized (dark)".to_owned(),
-            Theme::SolarizedLight => "Solarized (light)".to_owned(),
-            Theme::Base16OceanDark => "base16-ocean.dark".to_owned(),
-            Theme::Base16OceanLight => "base16-ocean.light".to_owned(),
-        }
-    }
-}
-
-impl Display for Theme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Theme::SolarizedDark => "solarized-dark".to_owned(),
-                Theme::SolarizedLight => "solarized-light".to_owned(),
-                Theme::Base16OceanDark => "base16-ocean-dark".to_owned(),
-                Theme::Base16OceanLight => "base16-ocean-light".to_owned(),
-            }
-        )
-    }
-}
-
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
 pub enum ListStyle {
     #[default]
@@ -126,10 +85,6 @@ struct InputArgs {
 
 #[derive(Clone, Debug, clap::Args)]
 struct OutputArgs {
-    /// Colorize output
-    #[clap(short = 'C', long, default_value = "false")]
-    color_output: bool,
-
     /// pretty print
     #[clap(short, long, default_value = "false")]
     compact_output: bool,
@@ -141,10 +96,6 @@ struct OutputArgs {
     /// Update the input markdown
     #[clap(short = 'U', long, default_value = "false")]
     update: bool,
-
-    /// Set the theme for syntax highlighting
-    #[clap(long, default_value_t = Theme::SolarizedDark)]
-    theme: Theme,
 
     /// Unbuffered output
     #[clap(long, default_value_t = false)]
@@ -172,10 +123,6 @@ enum Commands {
 
 impl Cli {
     pub fn run(&self) -> miette::Result<()> {
-        if !self.output.color_output {
-            unsafe { env::set_var("NO_COLOR", "true") }
-        }
-
         if self.commands.is_none() && self.query.is_none() {
             return Cli::command().print_help().into_diagnostic();
         }
@@ -392,83 +339,24 @@ impl Cli {
             },
         });
 
-        if self.output.color_output {
-            let ps = SyntaxSet::load_defaults_newlines();
-            let ts = ThemeSet::load_defaults();
-
-            match self.output.output_format {
-                Format::Text => {
-                    let syntax = ps.find_syntax_by_extension("md").unwrap();
-                    let mut h = HighlightLines::new(syntax, &ts.themes[&self.output.theme.name()]);
-                    let markdown_text = markdown.to_text();
-                    let lines = LinesWithEndings::from(markdown_text.as_str());
-                    let mut text_lines = Vec::with_capacity(lines.count());
-
-                    for line in LinesWithEndings::from(&markdown.to_text()) {
-                        let ranges: Vec<(Style, &str)> =
-                            h.highlight_line(line, &ps).into_diagnostic()?;
-                        text_lines.push(as_24_bit_terminal_escaped(&ranges[..], true));
-                    }
-
-                    handle
-                        .write_all(text_lines.join("").as_bytes())
-                        .into_diagnostic()?;
-                }
-                Format::Markdown => {
-                    let syntax = ps.find_syntax_by_extension("md").unwrap();
-                    let mut h = HighlightLines::new(syntax, &ts.themes[&self.output.theme.name()]);
-                    let s = if self.output.update || !self.output.compact_output {
-                        markdown.to_pretty_markdown()?
-                    } else {
-                        markdown.to_string()
-                    };
-                    let lines = LinesWithEndings::from(&s);
-                    let mut text_lines = Vec::with_capacity(lines.count());
-
-                    for line in LinesWithEndings::from(&s) {
-                        let ranges: Vec<(Style, &str)> =
-                            h.highlight_line(line, &ps).into_diagnostic()?;
-
-                        text_lines.push(as_24_bit_terminal_escaped(&ranges[..], true));
-                    }
-
-                    handle
-                        .write_all(text_lines.join("").as_bytes())
-                        .into_diagnostic()?;
-                }
-                Format::Html => {
-                    let syntax = ps.find_syntax_by_extension("html").unwrap();
-                    let html = highlighted_html_for_string(
-                        &markdown.to_html(),
-                        &ps,
-                        syntax,
-                        &ts.themes["base16-ocean.dark"],
-                    )
-                    .into_diagnostic()?;
-
-                    handle.write_all(html.as_bytes()).into_diagnostic()?;
-                }
+        match self.output.output_format {
+            Format::Html => handle
+                .write_all(markdown.to_html().as_bytes())
+                .map_err(|e| miette!(e))?,
+            Format::Text => {
+                handle
+                    .write_all(markdown.to_text().as_bytes())
+                    .map_err(|e| miette!(e))?;
             }
-        } else {
-            match self.output.output_format {
-                Format::Html => handle
-                    .write_all(markdown.to_html().as_bytes())
-                    .map_err(|e| miette!(e))?,
-                Format::Text => {
+            Format::Markdown => {
+                if self.output.update || !self.output.compact_output {
                     handle
-                        .write_all(markdown.to_text().as_bytes())
+                        .write_all(markdown.to_pretty_markdown()?.as_bytes())
                         .map_err(|e| miette!(e))?;
-                }
-                Format::Markdown => {
-                    if self.output.update || !self.output.compact_output {
-                        handle
-                            .write_all(markdown.to_pretty_markdown()?.as_bytes())
-                            .map_err(|e| miette!(e))?;
-                    } else {
-                        handle
-                            .write_all(markdown.to_string().as_bytes())
-                            .map_err(|e| miette!(e))?;
-                    }
+                } else {
+                    handle
+                        .write_all(markdown.to_string().as_bytes())
+                        .map_err(|e| miette!(e))?;
                 }
             }
         }

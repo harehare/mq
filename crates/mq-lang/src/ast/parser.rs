@@ -434,9 +434,7 @@ impl<'a> Parser<'a> {
         let ast = self.parse_expr(Rc::clone(expr_token))?;
 
         self.next_token_with_eof(let_token_id, |token_kind| {
-            matches!(token_kind, TokenKind::SemiColon)
-                || matches!(token_kind, TokenKind::Pipe)
-                || matches!(token_kind, TokenKind::Eof)
+            matches!(token_kind, TokenKind::Pipe) || matches!(token_kind, TokenKind::Eof)
         })?;
 
         Ok(Rc::new(Node {
@@ -1321,7 +1319,6 @@ mod tests {
                 token(TokenKind::Ident(CompactString::new("x"))),
                 token(TokenKind::Equal),
                 token(TokenKind::NumberLiteral(42.into())),
-                token(TokenKind::SemiColon),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -1342,7 +1339,6 @@ mod tests {
                 token(TokenKind::Ident(CompactString::new("y"))),
                 token(TokenKind::Equal),
                 token(TokenKind::StringLiteral("hello".to_string())),
-                token(TokenKind::SemiColon),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -1363,7 +1359,6 @@ mod tests {
                 token(TokenKind::Ident(CompactString::new("flag"))),
                 token(TokenKind::Equal),
                 token(TokenKind::BoolLiteral(true)),
-                token(TokenKind::SemiColon),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -1384,7 +1379,6 @@ mod tests {
                 token(TokenKind::Ident(CompactString::new("z"))),
                 token(TokenKind::Equal),
                 token(TokenKind::Ident(CompactString::new("some_var"))),
-                token(TokenKind::SemiColon),
                 token(TokenKind::Eof)
             ],
             Ok(vec![

@@ -12,7 +12,7 @@ fn engine() -> Engine {
 #[case::def_("
     # comments
     def test_fn(s):
-       let test = \"WORLD\"; | ltrimstr(s, \"hello\") | upcase() | ltrimstr(test);
+       let test = \"WORLD\" | ltrimstr(s, \"hello\") | upcase() | ltrimstr(test);
     | test_fn(\"helloWorld2025\")
     ",
       vec![Value::String("helloWorld".to_string())],
@@ -40,7 +40,7 @@ fn engine() -> Engine {
 #[case::until("
       let x = 5 |
       until(gt(x, 0)):
-        let x = sub(x, 1); | x
+        let x = sub(x, 1) | x
       ",
         vec![Value::Number(5.into())],
         Ok(vec![Value::Number(0.into())].into()))]
@@ -162,15 +162,25 @@ fn engine() -> Engine {
       vec![Value::String("hello world".to_string())],
       Ok(vec![Value::String("hello world".to_string())].into()))]
 #[case::closure("
-            def make_adder(x):
-              def adder(y):
-                  add(x, y);
-            ;
-            let add_five = make_adder(5);
-            | add_five(10)
-            ",
-              vec![Value::Number(10.into())],
-              Ok(vec![Value::Number(15.into())].into()))]
+      def make_adder(x):
+        def adder(y):
+            add(x, y);
+      ;
+      let add_five = make_adder(5)
+      | add_five(10)
+      ",
+        vec![Value::Number(10.into())],
+        Ok(vec![Value::Number(15.into())].into()))]
+#[case::closure("
+      def make_adder(x):
+        def adder(y):
+            add(x, y);
+      ;
+      let add_five = def adder(x): add(x, 5);
+      | add_five(10)
+      ",
+        vec![Value::Number(10.into())],
+        Ok(vec![Value::Number(15.into())].into()))]
 #[case::map("def test(x): add(x, 1); map(array(1, 2, 3), test)",
             vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
             Ok(vec![Value::Array(vec![Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])].into()))]

@@ -3,6 +3,7 @@ pub mod token;
 
 use compact_str::CompactString;
 use error::LexerError;
+use nom::Parser;
 use nom::bytes::complete::is_not;
 use nom::character::complete::line_ending;
 use nom::combinator::opt;
@@ -26,6 +27,22 @@ use crate::range::Range;
 const MARKDOWN: &str = ".";
 
 type Span<'a> = LocatedSpan<&'a str, ModuleId>;
+
+macro_rules! define_token_parser {
+    ($name:ident, $tag:expr, $kind:expr) => {
+        fn $name(input: Span) -> IResult<Span, Token> {
+            map(tag($tag), |span: Span| {
+                let module_id = span.extra;
+                Token {
+                    range: span.into(),
+                    kind: $kind,
+                    module_id,
+                }
+            })
+            .parse(input)
+        }
+    };
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Options {
@@ -88,7 +105,8 @@ fn unicode(input: Span) -> IResult<Span, char> {
             |span: Span| u32::from_str_radix(span.fragment(), 16),
         ),
         char::from_u32,
-    )(input)
+    )
+    .parse(input)
 }
 
 #[inline(always)]
@@ -101,7 +119,8 @@ fn inline_comment(input: Span) -> IResult<Span, Token> {
             kind,
             module_id,
         }
-    })(input)
+    })
+    .parse(input)
 }
 
 #[inline(always)]
@@ -113,7 +132,8 @@ fn newline(input: Span) -> IResult<Span, Token> {
             kind: TokenKind::NewLine,
             module_id,
         }
-    })(input)
+    })
+    .parse(input)
 }
 
 #[inline(always)]
@@ -126,7 +146,8 @@ fn tab(input: Span) -> IResult<Span, Token> {
             kind: TokenKind::Tab(num),
             module_id,
         }
-    })(input)
+    })
+    .parse(input)
 }
 
 #[inline(always)]
@@ -139,274 +160,51 @@ fn spaces(input: Span) -> IResult<Span, Token> {
             kind: TokenKind::Whitespace(num),
             module_id,
         }
-    })(input)
+    })
+    .parse(input)
 }
 
-#[inline(always)]
-fn comma(input: Span) -> IResult<Span, Token> {
-    map(tag(","), |span: Span| {
-        let module_id = span.extra;
-
-        Token {
-            range: span.into(),
-            kind: TokenKind::Comma,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn question(input: Span) -> IResult<Span, Token> {
-    map(tag("?"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Question,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn l_paren(input: Span) -> IResult<Span, Token> {
-    map(tag("("), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::LParen,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn r_paren(input: Span) -> IResult<Span, Token> {
-    map(tag(")"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::RParen,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn l_bracket(input: Span) -> IResult<Span, Token> {
-    map(tag("["), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::LBracket,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn r_bracket(input: Span) -> IResult<Span, Token> {
-    map(tag("]"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::RBracket,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn pipe(input: Span) -> IResult<Span, Token> {
-    map(tag("|"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Pipe,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn colon(input: Span) -> IResult<Span, Token> {
-    map(tag(":"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Colon,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn semi_colon(input: Span) -> IResult<Span, Token> {
-    map(tag(";"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::SemiColon,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn equal(input: Span) -> IResult<Span, Token> {
-    map(tag("="), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Equal,
-            module_id,
-        }
-    })(input)
-}
+define_token_parser!(comma, ",", TokenKind::Comma);
+define_token_parser!(question, "?", TokenKind::Question);
+define_token_parser!(l_paren, "(", TokenKind::LParen);
+define_token_parser!(r_paren, ")", TokenKind::RParen);
+define_token_parser!(l_bracket, "[", TokenKind::LBracket);
+define_token_parser!(r_bracket, "]", TokenKind::RBracket);
+define_token_parser!(pipe, "|", TokenKind::Pipe);
+define_token_parser!(colon, ":", TokenKind::Colon);
+define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
+define_token_parser!(equal, "=", TokenKind::Equal);
+define_token_parser!(def, "def", TokenKind::Def);
+define_token_parser!(let_, "let", TokenKind::Let);
+define_token_parser!(self_, "self", TokenKind::Self_);
+define_token_parser!(while_, "while", TokenKind::While);
+define_token_parser!(until, "until", TokenKind::Until);
+define_token_parser!(if_, "if", TokenKind::If);
+define_token_parser!(else_, "else", TokenKind::Else);
+define_token_parser!(elif, "elif", TokenKind::Elif);
+define_token_parser!(none, "None", TokenKind::None);
+define_token_parser!(include, "include", TokenKind::Include);
+define_token_parser!(foreach, "foreach", TokenKind::Foreach);
+define_token_parser!(
+    empty_string,
+    "\"\"",
+    TokenKind::StringLiteral(String::new())
+);
 
 #[inline(always)]
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
         l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, equal, pipe, question,
-    ))(input)
-}
-
-#[inline(always)]
-fn def(input: Span) -> IResult<Span, Token> {
-    map(tag("def"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Def,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn let_(input: Span) -> IResult<Span, Token> {
-    map(tag("let"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Let,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn self_(input: Span) -> IResult<Span, Token> {
-    map(tag("self"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Self_,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn while_(input: Span) -> IResult<Span, Token> {
-    map(tag("while"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::While,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn until(input: Span) -> IResult<Span, Token> {
-    map(tag("until"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Until,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn if_(input: Span) -> IResult<Span, Token> {
-    map(tag("if"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::If,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn else_(input: Span) -> IResult<Span, Token> {
-    map(tag("else"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Else,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn elif(input: Span) -> IResult<Span, Token> {
-    map(tag("elif"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Elif,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn none(input: Span) -> IResult<Span, Token> {
-    map(tag("None"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::None,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn include(input: Span) -> IResult<Span, Token> {
-    map(tag("include"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Include,
-            module_id,
-        }
-    })(input)
-}
-
-#[inline(always)]
-fn foreach(input: Span) -> IResult<Span, Token> {
-    map(tag("foreach"), |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::Foreach,
-            module_id,
-        }
-    })(input)
+    ))
+    .parse(input)
 }
 
 #[inline(always)]
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
         def, let_, self_, while_, until, if_, elif, else_, none, include, foreach,
-    ))(input)
+    ))
+    .parse(input)
 }
 
 #[inline(always)]
@@ -420,16 +218,8 @@ fn number_literal(input: Span) -> IResult<Span, Token> {
                 module_id,
             }
         })
-    })(input)
-}
-
-#[inline(always)]
-fn empty_string(input: Span) -> IResult<Span, Token> {
-    map(tag("\"\""), |span: Span| Token {
-        range: span.into(),
-        kind: TokenKind::StringLiteral(String::new()),
-        module_id: span.extra,
-    })(input)
+    })
+    .parse(input)
 }
 
 #[inline(always)]
@@ -450,7 +240,8 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
             )),
         ),
         char('"'),
-    )(span)?;
+    )
+    .parse(span)?;
     let (span, end) = position(span)?;
     let module_id = start.extra;
 
@@ -469,7 +260,7 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
 
 #[inline(always)]
 fn literals(input: Span) -> IResult<Span, Token> {
-    alt((number_literal, empty_string, string_literal))(input)
+    alt((number_literal, empty_string, string_literal)).parse(input)
 }
 
 #[inline(always)]
@@ -517,7 +308,8 @@ fn ident(input: Span) -> IResult<Span, Token> {
                 }
             }
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 #[inline(always)]
@@ -536,12 +328,13 @@ fn env(input: Span) -> IResult<Span, Token> {
                 }
             },
         ),
-    )(input)
+    )
+    .parse(input)
 }
 
 #[inline(always)]
 fn token(input: Span) -> IResult<Span, Token> {
-    alt((inline_comment, punctuations, keywords, env, literals, ident))(input)
+    alt((inline_comment, punctuations, keywords, env, literals, ident)).parse(input)
 }
 
 #[inline(always)]
@@ -556,15 +349,16 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         env,
         literals,
         ident,
-    ))(input)
+    ))
+    .parse(input)
 }
 
 #[inline(always)]
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
     if options.include_spaces {
-        many0(token_include_spaces)(input)
+        many0(token_include_spaces).parse(input)
     } else {
-        many0(delimited(multispace0, token, multispace0))(input)
+        many0(delimited(multispace0, token, multispace0)).parse(input)
     }
 }
 

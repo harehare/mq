@@ -206,7 +206,7 @@ mod tests {
 
     #[rstest]
     #[case::load1("test".to_string(), Err(ModuleError::InvalidModule))]
-    #[case::load2("let test = \"value\";".to_string(), Ok(Some(Module{
+    #[case::load2("let test = \"value\"".to_string(), Ok(Some(Module{
         name: "test".to_string(),
         modules: vec![],
         vars: vec![
