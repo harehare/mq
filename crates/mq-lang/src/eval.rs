@@ -1657,6 +1657,16 @@ mod tests {
                   ast_node(ast::Expr::Call(ast::Ident::new("md_list_level"), vec![], false)),
             ],
             Ok(vec![RuntimeValue::Number(1.into())]))]
+    #[case::text_selector(vec![RuntimeValue::Markdown(mq_md::Node::Text(mq_md::Text{value: "test".to_string(), position: None}))],
+           vec![
+                ast_node(ast::Expr::Selector(ast::Selector::Text)),
+           ],
+           Ok(vec![RuntimeValue::Markdown(mq_md::Node::Text(mq_md::Text{value: "test".to_string(), position: None}))]))]
+    #[case::text_selector_heading(vec![RuntimeValue::Markdown(mq_md::Node::Heading(mq_md::Heading{depth: 1, value: Box::new("Heading 1".to_string().into()), position: None}))],
+           vec![
+                ast_node(ast::Expr::Selector(ast::Selector::Text)),
+           ],
+           Ok(vec![RuntimeValue::NONE]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

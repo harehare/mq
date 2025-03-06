@@ -32,6 +32,7 @@
 | `.list`,`.[]`           | Selects a list node with the specified index and checked state. | `indent`        | `.list(1)`, `.[1]`      |
 | `.mdx_js_esm`           | Selects an MDX JS ESM node.                                     | None            | `.mdx_js_esm`           |
 | `.toml`                 | Selects a TOML node.                                            | None            | `.toml`                 |
+| `.text `                | Selects a Text node.                                            | None            | `.text`                 |
 | `.yaml`                 | Selects a YAML node.                                            | None            | `.yaml`                 |
 | `.break`                | Selects a break node.                                           | None            | `.break`                |
 | `.mdx_text_expression`  | Selects an MDX text expression node.                            | None            | `.mdx_text_expression`  |

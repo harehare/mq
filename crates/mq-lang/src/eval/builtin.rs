@@ -1243,6 +1243,14 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
+            CompactString::new(".text"),
+            BuiltinSelectorDoc {
+                description: "Selects a text node.",
+                params: &[],
+            },
+        );
+
+        map.insert(
             CompactString::new(".h1"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 1 depth.",
@@ -2323,6 +2331,9 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
         },
         ast::Selector::MdxJsEsm if node.is_msx_js_esm() => {
             vec![RuntimeValue::Markdown(node.clone())]
+        }
+        ast::Selector::Text if node.is_text() => {
+            vec![RuntimeValue::Markdown(node)]
         }
         ast::Selector::Toml if node.is_toml() => {
             vec![RuntimeValue::Markdown(node)]

@@ -565,6 +565,10 @@ impl Node {
         matches!(self, Self::LinkRef(_))
     }
 
+    pub fn is_text(&self) -> bool {
+        matches!(self, Self::Text(_))
+    }
+
     pub fn is_image(&self) -> bool {
         matches!(self, Self::Image(_))
     }

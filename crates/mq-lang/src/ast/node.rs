@@ -142,6 +142,7 @@ pub enum Selector {
     Math,
     Heading(Option<Depth>),
     Table(Option<usize>, Option<usize>),
+    Text,
     HorizontalRule,
     Definition,
     MdxFlowExpression,

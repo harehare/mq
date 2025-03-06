@@ -892,6 +892,10 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::MdxFlowExpression)),
                 })),
+                ".text" => Ok(Rc::new(Node {
+                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                    expr: Rc::new(Expr::Selector(Selector::Text)),
+                })),
                 // .[], .[n] .[][], .[n][n]
                 "." => {
                     let token1 = match self.tokens.peek() {
