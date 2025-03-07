@@ -650,13 +650,15 @@ impl Node {
     }
 
     pub fn is_code(&self, lang: Option<CompactString>) -> bool {
-        if lang.is_none() {
-            true
-        } else if let Self::Code(Code {
+        if let Self::Code(Code {
             lang: node_lang, ..
         }) = &self
         {
-            node_lang.clone().unwrap_or_default() == lang.unwrap_or_default()
+            if lang.is_none() {
+                true
+            } else {
+                node_lang.clone().unwrap_or_default() == lang.unwrap_or_default()
+            }
         } else {
             false
         }
@@ -1512,5 +1514,132 @@ mod tests {
            "    - test".to_string())]
     fn test_display(#[case] node: Node, #[case] expected: String) {
         assert_eq!(node.to_string_with(&ListStyle::default()), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), true)]
+    #[case(Node::CodeInline(CodeInline{value: "test".to_string(), position: None}), false)]
+    #[case(Node::MathInline(MathInline{value: "test".to_string(), position: None}), false)]
+    fn test_is_text(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_text(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::CodeInline(CodeInline{value: "test".to_string(), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_inline_code(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_inline_code(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::MathInline(MathInline{value: "test".to_string(), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_inline_math(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_inline_math(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Strong(Value{value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_strong(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_strong(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Delete(Value{value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_delete(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_delete(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Link(Link{url: "test".to_string(), title: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_link(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_link(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), label: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_link_ref(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_link_ref(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "test".to_string(), title: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_image(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_image(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test".to_string(), label: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_image_ref(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_image_ref(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), true, Some("rust".into()))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), false, Some("python".into()))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), true, None)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false, None)]
+    fn test_is_code(
+        #[case] node: Node,
+        #[case] expected: bool,
+        #[case] lang: Option<CompactString>,
+    ) {
+        assert_eq!(node.is_code(lang), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Heading(Heading{depth: 1, value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), true, Some(1))]
+    #[case(Node::Heading(Heading{depth: 2, value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), false, Some(1))]
+    #[case(Node::Heading(Heading{depth: 1, value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), true, None)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false, None)]
+    fn test_is_heading(#[case] node: Node, #[case] expected: bool, #[case] depth: Option<u8>) {
+        assert_eq!(node.is_heading(depth), expected);
+    }
+
+    #[rstest]
+    #[case(Node::HorizontalRule{position: None}, true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_horizontal_rule(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_horizontal_rule(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Blockquote(Value{value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_blockquote(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_blockquote(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_html(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_html(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::node_value(
+           &Node::Strong(Value{value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None})),
+           Box::new(Node::Text(Text{value: "test".to_string(), position: None})))]
+    #[case(Node::node_value(
+           &Node::Text(Text{value: "test".to_string(), position: None})),
+           Box::new(Node::Text(Text{value: "test".to_string(), position: None})))]
+    fn test_node_value(#[case] actual: Box<Node>, #[case] expected: Box<Node>) {
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(Node::name(&Node::Text(Text{value: "test".to_string(), position: None})), "text")]
+    #[case(Node::name(&Node::Strong(Value{value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None})), "strong")]
+    #[case(Node::name(&Node::Heading(Heading{depth: 1, value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None})), "h1")]
+    #[case(Node::name(&Node::Heading(Heading{depth: 2, value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None})), "h2")]
+    fn test_name(#[case] actual: CompactString, #[case] expected: &str) {
+        assert_eq!(actual, expected);
     }
 }

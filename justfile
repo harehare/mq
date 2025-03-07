@@ -29,12 +29,13 @@ test-fazz:
 test:
     cargo fmt --all -- --check
     cargo clippy --workspace
+    cargo test --examples
     cargo test --workspace
 
 deps:
     cargo +nightly udeps
 
-readme:
+docs:
   cargo readme --project-root crates/mq-lang --output README.md
   cargo readme --project-root crates/mq-lsp --output README.md
   cargo readme --project-root crates/mq-repl --output README.md

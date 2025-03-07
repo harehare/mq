@@ -1573,6 +1573,156 @@ mod tests {
                 expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
             })
         ]))]
+    #[case::while_(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("loop body".to_string())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 4.into(),
+            expr: Rc::new(Expr::While(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Literal(Literal::String("loop body".to_string()))),
+                })],
+            )),
+        })]))]
+    #[case::until(
+        vec![
+            token(TokenKind::Until),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(false)),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("loop body".to_string())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 4.into(),
+            expr: Rc::new(Expr::Until(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Literal(Literal::String("loop body".to_string()))),
+                })],
+            )),
+        })]))]
+    #[case::foreach(
+        vec![
+            token(TokenKind::Foreach),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::Comma),
+            token(TokenKind::StringLiteral("array".to_string())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(CompactString::new("print"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::RParen),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 6.into(),
+            expr: Rc::new(Expr::Foreach(
+                Ident::new_with_token(
+                    "item",
+                    Some(Rc::new(token(TokenKind::Ident(CompactString::new("item"))))),
+                ),
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(Expr::Literal(Literal::String("array".to_string()))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 5.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token(
+                            "print",
+                            Some(Rc::new(token(TokenKind::Ident(CompactString::new(
+                                "print",
+                            ))))),
+                        ),
+                        vec![Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token(
+                                "item",
+                                Some(Rc::new(token(TokenKind::Ident(CompactString::new("item"))))),
+                            ))),
+                        })],
+                        false,
+                    )),
+                })],
+            )),
+        })]))]
+    #[case::self_(
+        vec![token(TokenKind::Self_), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(Expr::Self_),
+        })]))]
+    #[case::include(
+        vec![
+            token(TokenKind::Include),
+            token(TokenKind::StringLiteral("module_name".to_string())),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(Expr::Include(Literal::String("module_name".to_string()))),
+        })]))]
+    #[case::code_selector_with_language(
+        vec![
+            token(TokenKind::Selector(CompactString::new(".code"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("rust".to_string())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 2.into(),
+            expr: Rc::new(Expr::Selector(Selector::Code(Some(CompactString::new(
+                "rust",
+            ))))),
+        })]))]
+    #[case::table_selector(
+        vec![
+            token(TokenKind::Selector(CompactString::new("."))),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 8.into(),
+            expr: Rc::new(Expr::Selector(Selector::Table(Some(1), Some(2)))),
+        })]))]
+    #[case::list_checked_selector(
+        vec![
+            token(TokenKind::Selector(CompactString::new(".list.checked"))),
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(3.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Rc::new(Node {
+            token_id: 2.into(),
+            expr: Rc::new(Expr::Selector(Selector::List(Some(3), Some(true)))),
+        })]))]
     fn test(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
