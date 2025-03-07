@@ -56,8 +56,12 @@ You can install the VSCode extension from the [Visual Studio Marketplace](https:
 Here's a basic example of how to use `mq`:
 
 ```sh
+# code
+$ mq '.code | select(contains("name"))'
+# table
+$ mq '.[][] | select(contains("name"))'
+# list or header
 $ mq 'or(.[], .h) | select(contains("name"))'
-$ mq '.code | select(contains("else"))'
 ```
 
 ### Advanced Usage

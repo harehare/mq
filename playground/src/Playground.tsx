@@ -104,6 +104,47 @@ console.log("Hello, World!");
 - [Chapter4](Chapter4.md)
 `,
   },
+  {
+    name: "Extract table",
+    code: `.[1][]`,
+    markdown: `# Product List
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Laptop  | Electronics | $1200 | 45 |
+| Monitor | Electronics | $350 | 28 |
+| Chair   | Furniture | $150 | 73 |
+| Desk    | Furniture | $200 | 14 |
+| Keyboard | Accessories | $80 | 35 |
+
+| Product | Category | Price | Stock |
+|---------|----------|-------|-------|
+| Mouse   | Accessories | $25 | 50 |
+| Headphones | Electronics | $120 | 32 |
+| Bookshelf | Furniture | $180 | 17 |
+| USB Cable | Accessories | $12 | 89 |
+| Coffee Maker | Appliances | $85 | 24 |
+`,
+  },
+  {
+    name: "Extract list",
+    code: `.[] | select(is_list2())`,
+    markdown: `# Product List
+
+- Electronics
+  - Laptop: $1200
+  - Monitor: $350
+  - Headphones: $120
+- Furniture
+  - Chair: $150
+  - Desk: $200
+  - Bookshelf: $180
+- Accessories
+  - Keyboard: $80
+  - Mouse: $25
+  - USB Cable: $12
+`,
+  },
 ];
 
 export const Playground = () => {

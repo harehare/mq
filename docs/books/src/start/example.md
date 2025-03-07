@@ -34,6 +34,18 @@ else:
 .code("js")
 ```
 
+## Extract table
+
+```js
+.[1][]
+```
+
+## Extract list
+
+```js
+.[1]
+```
+
 ## Custom function
 
 ```js
