@@ -1,40 +1,61 @@
+# Halts execution with error code 5
 def halt_error(): halt(5);
 
+# Checks if input is an array
 def is_array(a): eq(type(a), "array");
+# Checks if input is markdown
 def is_markdown(m): eq(type(m), "markdown");
+# Checks if input is a boolean
 def is_bool(b): eq(type(b), "bool");
+# Checks if input is a number
 def is_number(n): eq(type(n), "number");
+# Checks if input is a string
 def is_string(s): eq(type(s), "string");
+# Checks if input is None
 def is_none(n): eq(type(n), "None");
 
+# Checks if string contains a substring
 def contains(haystack, needle): ne(index(haystack, needle), -1);
 
+# Removes prefix string from input if it exists
 def ltrimstr(s, left):
   if (starts_with(s, left)):
     slice(s, add(index(s, left), len(left)), len(s))
   else:
     s;
 
+# Removes suffix string from input if it exists
 def rtrimstr(s, right):
   if (ends_with(s, right)):
     slice(s, 0, sub(len(s), len(right)))
   else:
     s;
 
+# Checks if string or array is empty
 def is_empty(s):
   if (or(is_string(s), is_array(s))):
     eq(len(s), 0)
   else:
     false;
 
-def test(s, pattern): not(is_empty(match(s, pattern)));
+# Tests if string matches a pattern
+def test(s, pattern): match(s, pattern) | is_empty() | not();
 
+# Returns value if condition is true, None otherwise
 def select(v, f): if (f): v else: None;
+# Returns array if input is array, None otherwise
 def arrays(a): select(a, is_array(a));
+# Returns markdown if input is markdown, None otherwise
 def markdowns(m): select(m, is_markdown(m));
+# Returns boolean if input is boolean, None otherwise
 def booleans(b): select(b, is_bool(b));
+# Returns number if input is number, None otherwise
 def numbers(n): select(n, is_number(n));
 
+# Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
+def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
+
+# Converts input to an array
 def to_array(a):
   if (is_array(a)):
     a
@@ -47,27 +68,64 @@ def map(v, f): foreach (x, v): f(x);;
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f): foreach (x, v): select(x, f(x)); | compact();
 
+# Returns the first element of an array
 def first(arr):
   if (is_empty(arr)):
     None
   else:
     nth(arr, 0);
 
+# Returns the last element of an array
 def last(arr):
   if (is_empty(arr)):
     None
   else:
     nth(arr, sub(len(arr), 1));
 
+# Checks if markdown is heading
 def is_h(md): eq(md_name(md), "h");
+
+# Checks if markdown is h1 heading
 def is_h1(md): eq(md_name(md), "h1");
+
+# Checks if markdown is h2 heading
 def is_h2(md): eq(md_name(md), "h2");
+
+# Checks if markdown is h3 heading
 def is_h3(md): eq(md_name(md), "h3");
+
+# Checks if markdown is h4 heading
 def is_h4(md): eq(md_name(md), "h4");
+
+# Checks if markdown is h5 heading
 def is_h5(md): eq(md_name(md), "h5");
+
+# Checks if markdown is emphasis
 def is_em(md): eq(md_name(md), "emphasis");
+
+# Checks if markdown is html
 def is_html(md): eq(md_name(md), "html");
+
+# Checks if markdown is yaml
 def is_yaml(md): eq(md_name(md), "yaml");
+
+# Checks if markdown is toml
 def is_toml(md): eq(md_name(md), "toml");
+
+# Checks if markdown is code block
 def is_code(md): eq(md_name(md), "code");
-def is_text(text): eq(md_name(md), "text");
+
+# Checks if markdown is text
+def is_text(text): eq(md_name(text), "text");
+
+# Checks if markdown is list
+def is_list(list): eq(md_name(list), "list");
+
+# Checks if markdown is list with indentation level 1
+def is_list1(list): and(is_list(list), eq(md_list_level(list), 0));
+
+# Checks if markdown is list with indentation level 2
+def is_list2(list): and(is_list(list), eq(md_list_level(list), 1));
+
+# Checks if markdown is list with indentation level 3
+def is_list3(list): and(is_list(list), eq(md_list_level(list), 2));

@@ -536,6 +536,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("update"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(node_value1),
+                    RuntimeValue::Markdown(node_value2),
+                ] => Ok(node_value1.with_value(&node_value2.value()).into()),
+                [RuntimeValue::Markdown(node_value), RuntimeValue::String(s)] => {
+                    Ok(node_value.with_value(s).into())
+                }
+                [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+                [_, a] => Ok(a.clone()),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
             CompactString::new("slice"),
             BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
                 [
@@ -1201,7 +1216,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Markdown(mq_md::Node::List(mq_md::List { level, .. }))] => {
                     Ok(RuntimeValue::Number((*level).into()))
                 }
-                [a] => Ok(a.clone()),
+                [_] => Ok(RuntimeValue::Number(0.into())),
                 _ => unreachable!(),
             }),
         );
@@ -1791,6 +1806,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Extracts a substring from the given string.",
                 params: &["string", "start", "end"],
+            },
+        );
+        map.insert(
+            CompactString::new("update"),
+            BuiltinFunctionDoc {
+                description: "Update the value with specified value.",
+                params: &["target_value", "source_value"],
             },
         );
         map.insert(
