@@ -4,8 +4,9 @@
 
 - `42` (a number)
 - `"Hello, world!"` (a string)
-- `[1, 2, 3]` (an array)
-- `{ "name": "Alice", "age": 30 }` (an object)
+- `array(1, 2, 3)` (an array)
+- `true`, `false` (a boolean)
+- `None`
 
 ## Types
 
