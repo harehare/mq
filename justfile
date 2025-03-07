@@ -43,3 +43,4 @@ docs:
   cargo readme --project-root crates/mq-md --output README.md
   cargo readme --project-root crates/mq-formatter --output README.md
   cargo readme --project-root crates/mq-wasm --output README.md
+  ./scripts/update_doc.sh
