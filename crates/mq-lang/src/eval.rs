@@ -1450,62 +1450,62 @@ mod tests {
               ], false)),
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string())])]))]
-    #[case::md_code(vec![RuntimeValue::String("test1".to_string())],
+    #[case::to_code(vec![RuntimeValue::String("test1".to_string())],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("md_code"), vec![
+              ast_node(ast::Expr::Call(ast::Ident::new("to_code"), vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
               ], false)),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("elm".to_string()), value: "test1".to_string(), position: None}))]))]
     #[case::md_h1(vec![RuntimeValue::String("Heading 1".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_h"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                   ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, value: Box::new("Heading 1".to_string().into()), position: None}))]))]
     #[case::md_h2(vec![RuntimeValue::String("Heading 2".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_h"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                   ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, value: Box::new("Heading 2".to_string().into()), position: None}))]))]
     #[case::md_h3(vec![RuntimeValue::String("Heading 3".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_h"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
                   ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 3, value: Box::new("Heading 3".to_string().into()), position: None}))]))]
-    #[case::md_math(vec![RuntimeValue::String("E=mc^2".to_string())],
+    #[case::to_math(vec![RuntimeValue::String("E=mc^2".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_math"), Vec::new(), false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_math"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}))]))]
-    #[case::md_math_inline(vec![RuntimeValue::String("E=mc^2".to_string())],
+    #[case::to_math_inline(vec![RuntimeValue::String("E=mc^2".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_math_inline"), Vec::new(), false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_math_inline"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string(), position: None}))]))]
-    #[case::md_text(vec![RuntimeValue::String("This is a text".to_string())],
+    #[case::to_md_text(vec![RuntimeValue::String("This is a text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_text"), Vec::new(), false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_md_text"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "This is a text".to_string(), position: None}))]))]
-    #[case::md_strong(vec![RuntimeValue::String("Bold text".to_string())],
+    #[case::to_strong(vec![RuntimeValue::String("Bold text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_strong"), Vec::new(), false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{value: Box::new("Bold text".to_string().into()), position: None}))]))]
-    #[case::md_em(vec![RuntimeValue::String("Italic text".to_string())],
+    #[case::to_em(vec![RuntimeValue::String("Italic text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_em"), Vec::new(), false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_em"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{value: Box::new("Italic text".to_string().into()), position: None}))]))]
-    #[case::md_image(vec![RuntimeValue::String("Image Alt".to_string())],
+    #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_image"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_image"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("https://example.com/image.png".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Image Alt".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Image Title".to_string()))),
@@ -1517,9 +1517,9 @@ mod tests {
                 title: Some("Image Title".to_string()),
                 position: None
             }))]))]
-    #[case::md_link(vec![RuntimeValue::String("Link Text".to_string())],
+    #[case::to_link(vec![RuntimeValue::String("Link Text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_link"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_link"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("https://example.com".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Link Title".to_string()))),
                   ], false)),
@@ -1529,30 +1529,30 @@ mod tests {
                 title: Some("Link Title".to_string()),
                 position: None
             }))]))]
-    #[case::md_hr(vec![RuntimeValue::NONE],
+    #[case::to_hr(vec![RuntimeValue::NONE],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_hr"), Vec::new(), false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_hr"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule{position: None})]))]
-    #[case::md_hr(vec![RuntimeValue::String("list".to_string())],
+    #[case::to_hr(vec![RuntimeValue::String("list".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_list"),
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
                            vec![
                                  ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                            ].into(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
                 mq_markdown::List{value: Box::new("list".to_string().into()), index: 0, level: 1 as u8, checked: None, position: None}))]))]
-    #[case::md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
+    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_check"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                   ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: Some(true), position: None}))]))]
-    #[case::md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Unchecked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
+    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Unchecked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_check"), vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                   ], false)),
             ],
@@ -1652,9 +1652,9 @@ mod tests {
                 ast_node(ast::Expr::Call(ast::Ident::new("to_tsv"), Vec::new(), false))
             ],
             Ok(vec![RuntimeValue::String("test1\t42\ttrue".to_string())]))]
-    #[case::md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("List Item".to_string().into()), level: 1, index: 0, checked: None, position: None}))],
+    #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("List Item".to_string().into()), level: 1, index: 0, checked: None, position: None}))],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("md_list_level"), vec![], false)),
+                  ast_node(ast::Expr::Call(ast::Ident::new("get_md_list_level"), vec![], false)),
             ],
             Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::text_selector(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}))],
@@ -1667,6 +1667,43 @@ mod tests {
                 ast_node(ast::Expr::Selector(ast::Selector::Text)),
            ],
            Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_md_table_row(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("Cell 1".to_string()),
+                RuntimeValue::String("Cell 2".to_string()),
+                RuntimeValue::String("Cell 3".to_string()),
+            ])],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("to_md_table_row"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{
+                cells: vec![
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 0,
+                        value: Box::new("Cell 1".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 1,
+                        value: Box::new("Cell 2".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 2,
+                        value: Box::new("Cell 3".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                ],
+                position: None
+            }))]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

@@ -83,49 +83,49 @@ def last(arr):
     nth(arr, sub(len(arr), 1));
 
 # Checks if markdown is heading
-def is_h(md): eq(md_name(md), "h");
+def is_h(md): eq(to_md_name(md), "h");
 
 # Checks if markdown is h1 heading
-def is_h1(md): eq(md_name(md), "h1");
+def is_h1(md): eq(to_md_name(md), "h1");
 
 # Checks if markdown is h2 heading
-def is_h2(md): eq(md_name(md), "h2");
+def is_h2(md): eq(to_md_name(md), "h2");
 
 # Checks if markdown is h3 heading
-def is_h3(md): eq(md_name(md), "h3");
+def is_h3(md): eq(to_md_name(md), "h3");
 
 # Checks if markdown is h4 heading
-def is_h4(md): eq(md_name(md), "h4");
+def is_h4(md): eq(to_md_name(md), "h4");
 
 # Checks if markdown is h5 heading
-def is_h5(md): eq(md_name(md), "h5");
+def is_h5(md): eq(to_md_name(md), "h5");
 
 # Checks if markdown is emphasis
-def is_em(md): eq(md_name(md), "emphasis");
+def is_em(md): eq(to_md_name(md), "emphasis");
 
 # Checks if markdown is html
-def is_html(md): eq(md_name(md), "html");
+def is_html(md): eq(to_md_name(md), "html");
 
 # Checks if markdown is yaml
-def is_yaml(md): eq(md_name(md), "yaml");
+def is_yaml(md): eq(to_md_name(md), "yaml");
 
 # Checks if markdown is toml
-def is_toml(md): eq(md_name(md), "toml");
+def is_toml(md): eq(to_md_name(md), "toml");
 
 # Checks if markdown is code block
-def is_code(md): eq(md_name(md), "code");
+def is_code(md): eq(to_md_name(md), "code");
 
 # Checks if markdown is text
-def is_text(text): eq(md_name(text), "text");
+def is_text(text): eq(to_md_name(text), "text");
 
 # Checks if markdown is list
-def is_list(list): eq(md_name(list), "list");
+def is_list(list): eq(to_md_name(list), "list");
 
 # Checks if markdown is list with indentation level 1
-def is_list1(list): and(is_list(list), eq(md_list_level(list), 0));
+def is_list1(list): and(is_list(list), eq(get_md_list_level(list), 0));
 
 # Checks if markdown is list with indentation level 2
-def is_list2(list): and(is_list(list), eq(md_list_level(list), 1));
+def is_list2(list): and(is_list(list), eq(get_md_list_level(list), 1));
 
 # Checks if markdown is list with indentation level 3
-def is_list3(list): and(is_list(list), eq(md_list_level(list), 2));
+def is_list3(list): and(is_list(list), eq(get_md_list_level(list), 2));

@@ -61,6 +61,7 @@ impl ParamNum {
     pub fn is_missing_one_params(&self, num_args: u8) -> bool {
         match self {
             ParamNum::Fixed(n) => num_args == n.checked_sub(1).unwrap_or_default(),
+            ParamNum::Range(n, _) => num_args == n.checked_sub(1).unwrap_or_default(),
             _ => false,
         }
     }
@@ -1005,13 +1006,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("and"),
-            BuiltinFunction::new(ParamNum::Range(2, 255), |_, args| {
+            BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, args| {
                 Ok(args.iter().all(|arg| arg.is_true()).into())
             }),
         );
         map.insert(
             CompactString::new("or"),
-            BuiltinFunction::new(ParamNum::Range(2, 255), |_, args| {
+            BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, args| {
                 Ok(args.iter().any(|arg| arg.is_true()).into())
             }),
         );
@@ -1025,7 +1026,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         // markdown
         map.insert(
-            CompactString::new("md_code"),
+            CompactString::new("to_code"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
                     value: a.to_string(),
@@ -1043,7 +1044,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_code_inline"),
+            CompactString::new("to_code_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
                     value: a.to_string(),
@@ -1054,7 +1055,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_h"),
+            CompactString::new("to_h"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node), RuntimeValue::Number(depth)] => {
                     Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
@@ -1076,13 +1077,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_hr"),
+            CompactString::new("to_hr"),
             BuiltinFunction::new(ParamNum::Fixed(0), |_, _| {
                 Ok(mq_markdown::Node::HorizontalRule { position: None }.into())
             }),
         );
         map.insert(
-            CompactString::new("md_link"),
+            CompactString::new("to_link"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
                 [RuntimeValue::String(url), RuntimeValue::String(title)] => {
                     Ok(mq_markdown::Node::Link(mq_markdown::Link {
@@ -1100,7 +1101,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_image"),
+            CompactString::new("to_image"),
             BuiltinFunction::new(ParamNum::Fixed(3), |_, args| match args.as_slice() {
                 [
                     RuntimeValue::String(url),
@@ -1117,7 +1118,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_math"),
+            CompactString::new("to_math"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::Math(mq_markdown::Math {
                     value: a.to_string(),
@@ -1128,7 +1129,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_math_inline"),
+            CompactString::new("to_math_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
                     value: a.to_string(),
@@ -1139,14 +1140,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_name"),
+            CompactString::new("to_md_name"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(m)] => Ok(m.name().to_string().into()),
                 _ => Ok(RuntimeValue::None),
             }),
         );
         map.insert(
-            CompactString::new("md_strong"),
+            CompactString::new("to_strong"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node)] => {
                     Ok(mq_markdown::Node::Strong(mq_markdown::Value {
@@ -1164,7 +1165,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_em"),
+            CompactString::new("to_em"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node)] => {
                     Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
@@ -1182,7 +1183,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_text"),
+            CompactString::new("to_md_text"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::Text(mq_markdown::Text {
                     value: a.to_string(),
@@ -1193,7 +1194,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_list"),
+            CompactString::new("to_md_list"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node), RuntimeValue::Number(level)] => {
                     Ok(mq_markdown::Node::List(mq_markdown::List {
@@ -1219,7 +1220,53 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_list_level"),
+            CompactString::new("to_md_table_row"),
+            BuiltinFunction::new(ParamNum::Range(1, u8::MAX), |_, args| {
+                let cells = args
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, arg)| match arg {
+                        RuntimeValue::Array(array) => array
+                            .iter()
+                            .enumerate()
+                            .map(move |(j, v)| {
+                                mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                                    row: 0,
+                                    column: i + j,
+                                    value: Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                                        value: v.to_string(),
+                                        position: None,
+                                    })),
+                                    last_cell_in_row: false,
+                                    last_cell_of_in_table: false,
+                                    position: None,
+                                })
+                            })
+                            .collect_vec(),
+                        v => vec![mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                            row: 0,
+                            column: i,
+                            value: Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                                value: v.to_string(),
+                                position: None,
+                            })),
+                            last_cell_in_row: false,
+                            last_cell_of_in_table: false,
+                            position: None,
+                        })],
+                    })
+                    .collect_vec();
+
+                Ok(RuntimeValue::Markdown(mq_markdown::Node::TableRow(
+                    mq_markdown::TableRow {
+                        cells,
+                        position: None,
+                    },
+                )))
+            }),
+        );
+        map.insert(
+            CompactString::new("get_md_list_level"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
@@ -1232,7 +1279,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("md_check"),
+            CompactString::new("set_md_check"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::List(list)),
@@ -2055,21 +2102,21 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("md_name"),
+            CompactString::new("to_md_name"),
             BuiltinFunctionDoc {
                 description: "Returns the name of the given markdown node.",
                 params: &["markdown"],
             },
         );
         map.insert(
-            CompactString::new("md_text"),
+            CompactString::new("to_md_text"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown text node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("md_image"),
+            CompactString::new("to_image"),
             BuiltinFunctionDoc {
                 description:
                     "Creates a markdown image node with the given URL, alt text, and title.",
@@ -2077,77 +2124,84 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("md_code"),
+            CompactString::new("to_code"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown code block with the given value and language.",
                 params: &["value", "language"],
             },
         );
         map.insert(
-            CompactString::new("md_code_inline"),
+            CompactString::new("to_code_inline"),
             BuiltinFunctionDoc {
                 description: "Creates an inline markdown code node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("md_h"),
+            CompactString::new("to_h"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown heading node with the given value and depth.",
                 params: &["value", "depth"],
             },
         );
         map.insert(
-            CompactString::new("md_math"),
+            CompactString::new("to_math"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown math block with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("md_math_inline"),
+            CompactString::new("to_math_inline"),
             BuiltinFunctionDoc {
                 description: "Creates an inline markdown math node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("md_strong"),
+            CompactString::new("to_strong"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown strong (bold) node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("md_em"),
+            CompactString::new("to_em"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown emphasis (italic) node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("md_hr"),
+            CompactString::new("to_hr"),
             BuiltinFunctionDoc {
-                description: "Creates amarkdown horizontal rule node.",
+                description: "Creates a markdown horizontal rule node.",
                 params: &[],
             },
         );
         map.insert(
-            CompactString::new("md_list"),
+            CompactString::new("to_md_list"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given value and indent level.",
                 params: &["value", "indent"],
             },
         );
         map.insert(
-            CompactString::new("md_list_level"),
+            CompactString::new("to_md_table_row"),
+            BuiltinFunctionDoc {
+                description: "Creates a markdown table row node with the given values.",
+                params: &["cells"],
+            },
+        );
+        map.insert(
+            CompactString::new("get_md_list_level"),
             BuiltinFunctionDoc {
                 description: "Returns the indent level of a markdown list node.",
                 params: &["list"],
             },
         );
         map.insert(
-            CompactString::new("md_check"),
+            CompactString::new("set_md_check"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given checked state.",
                 params: &["list", "checked"],

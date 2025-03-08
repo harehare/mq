@@ -26,17 +26,17 @@ code
   {
     name: "Markdown Toc",
     code: `.h
-| let link = md_link(add("#", to_text(self)), to_text(self))
-| if (eq(md_name(), "h1")):
-  md_list(link, 1)
-elif (eq(md_name(), "h2")):
-  md_list(link, 2)
-elif (eq(md_name(), "h3")):
-  md_list(link, 3)
-elif (eq(md_name(), "h4")):
-  md_list(link, 4)
-elif (eq(md_name(), "h5")):
-  md_list(link, 5)
+| let link = to_link(add("#", to_text(self)), to_text(self))
+| if (eq(to_md_name(), "h1")):
+  to_md_list(link, 1)
+elif (eq(to_md_name(), "h2")):
+  to_md_list(link, 2)
+elif (eq(to_md_name(), "h3")):
+  to_md_list(link, 3)
+elif (eq(to_md_name(), "h4")):
+  to_md_list(link, 4)
+elif (eq(to_md_name(), "h5")):
+  to_md_list(link, 5)
 else:
   None`,
     markdown: `# [header1](https://example.com)

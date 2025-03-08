@@ -30,6 +30,36 @@ impl Display for ListStyle {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum TableAlignKind {
+    Left,
+    Right,
+    Center,
+    None,
+}
+
+impl From<mdast::AlignKind> for TableAlignKind {
+    fn from(value: mdast::AlignKind) -> Self {
+        match value {
+            mdast::AlignKind::Left => Self::Left,
+            mdast::AlignKind::Right => Self::Right,
+            mdast::AlignKind::Center => Self::Center,
+            mdast::AlignKind::None => Self::None,
+        }
+    }
+}
+
+impl Display for TableAlignKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TableAlignKind::Left => write!(f, ":---"),
+            TableAlignKind::Right => write!(f, "---:"),
+            TableAlignKind::Center => write!(f, ":---:"),
+            TableAlignKind::None => write!(f, "---"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct List {
     pub value: Box<Node>,
     pub index: usize,
@@ -49,8 +79,14 @@ pub struct TableCell {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TableRow {
+    pub cells: Vec<Node>,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableHeader {
-    pub align: Vec<mdast::AlignKind>,
+    pub align: Vec<TableAlignKind>,
     pub position: Option<Position>,
 }
 
@@ -190,6 +226,7 @@ pub enum Node {
     Math(Math),
     List(List),
     TableHeader(TableHeader),
+    TableRow(TableRow),
     TableCell(TableCell),
     Code(Code),
     Strong(Value),
@@ -270,6 +307,10 @@ impl Node {
                     value.to_string_with(list_style)
                 )
             }
+            Self::TableRow(TableRow { cells, .. }) => cells
+                .iter()
+                .map(|cell| format!("|{}", cell.to_string_with(list_style)))
+                .join(""),
             Self::TableCell(TableCell {
                 last_cell_in_row,
                 last_cell_of_in_table,
@@ -283,18 +324,7 @@ impl Node {
                 }
             }
             Self::TableHeader(TableHeader { align, .. }) => {
-                format!(
-                    "|{}|",
-                    align
-                        .iter()
-                        .map(|a| match a {
-                            mdast::AlignKind::Left => ":---",
-                            mdast::AlignKind::Right => "---:",
-                            mdast::AlignKind::Center => ":---:",
-                            mdast::AlignKind::None => "---",
-                        })
-                        .join("|")
-                )
+                format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
             Self::Blockquote(Value { value, .. }) => {
                 format!("> {}", value.to_string_with(list_style))
@@ -442,6 +472,7 @@ impl Node {
             Self::Math(v) => v.value,
             Self::List(l) => l.value.value(),
             Self::TableCell(c) => c.value.value(),
+            Self::TableRow(c) => c.cells.iter().map(|cell| cell.value()).join(","),
             Self::Code(c) => c.value,
             Self::Strong(v) => v.value.value(),
             Self::Text(t) => t.value,
@@ -489,6 +520,7 @@ impl Node {
             Self::Math(_) => "math".into(),
             Self::List(_) => "list".into(),
             Self::TableHeader(_) => "table_header".into(),
+            Self::TableRow(_) => "table_row".into(),
             Self::TableCell(_) => "table_cell".into(),
             Self::Code(_) => "code".into(),
             Self::Strong(_) => "strong".into(),
@@ -523,6 +555,7 @@ impl Node {
             Self::Math(v) => v.position.clone(),
             Self::Code(c) => c.position.clone(),
             Self::TableCell(c) => c.position.clone(),
+            Self::TableRow(r) => r.position.clone(),
             Self::TableHeader(c) => c.position.clone(),
             Self::List(l) => l.position.clone(),
             Self::Strong(s) => s.position.clone(),
@@ -722,6 +755,16 @@ impl Node {
                 cell.value = Box::new(cell.value.with_value(value));
                 Self::TableCell(cell)
             }
+            Self::TableRow(mut row) => {
+                row.cells = row
+                    .cells
+                    .iter()
+                    .zip(value.split(","))
+                    .map(|(cell, value)| cell.with_value(value))
+                    .collect_vec();
+
+                Self::TableRow(row)
+            }
             Self::Strong(mut strong) => {
                 strong.value = Box::new(strong.value.with_value(value));
                 Self::Strong(strong)
@@ -848,7 +891,7 @@ impl Node {
                                 .collect(),
                             if row == 0 {
                                 vec![Self::TableHeader(TableHeader {
-                                    align: table.align.clone(),
+                                    align: table.align.iter().map(|a| (*a).into()).collect_vec(),
                                     position: n.position().map(|p| p.clone().into()),
                                 })]
                             } else {

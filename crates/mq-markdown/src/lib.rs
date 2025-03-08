@@ -16,7 +16,7 @@ mod node;
 pub use markdown::{Markdown, RenderOptions};
 pub use node::{
     Code, CodeInline, Footnote, FootnoteRef, Heading, Html, Image, ImageRef, Link, LinkRef, List,
-    ListStyle, Math, MathInline, Node, TableCell, Text, Toml, Value, Yaml,
+    ListStyle, Math, MathInline, Node, TableCell, TableRow, Text, Toml, Value, Yaml,
 };
 
 pub fn to_html(markdown: &str) -> String {

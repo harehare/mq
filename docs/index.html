@@ -398,17 +398,17 @@
               <br />
               <pre>
 <span style="color: #666">$ </span><span style="color: #0077aa">cat</span> README.md <span style="font-weight: bold;">| </span><span style="color: var(--primary-color);">mq</span> '<span style="color: #0077aa">def</span> <span style="color: #dd4a68">markdown_toc</span>():
-    <span style="color: #999">.h</span> <span style="font-weight: bold;">|</span> <span style="color: #0077aa">let</span> link = <span style="color: #dd4a68">md_link</span>(<span style="color: #dd4a68">add</span>(<span style="color: #669900">"#"</span>, <span style="color: #dd4a68">to_text</span>(self)), <span style="color: #dd4a68">to_text</span>(self));
-       <span style="font-weight: bold;">|</span> <span style="color: #0077aa">if</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h1"</span>)):
-           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">1</span>)
-         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h2"</span>)):
-           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">2</span>)
-         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h3"</span>)):
-           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">3</span>)
-         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h4"</span>)):
-           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">4</span>)
-         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">md_name</span>(), <span style="color: #669900">"h5"</span>)):
-           <span style="color: #dd4a68">md_list</span>(link, <span style="color: #905">5</span>)
+    <span style="color: #999">.h</span> <span style="font-weight: bold;">|</span> <span style="color: #0077aa">let</span> link = <span style="color: #dd4a68">to_link</span>(<span style="color: #dd4a68">add</span>(<span style="color: #669900">"#"</span>, <span style="color: #dd4a68">to_text</span>(self)), <span style="color: #dd4a68">to_text</span>(self));
+       <span style="font-weight: bold;">|</span> <span style="color: #0077aa">if</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">to_md_name</span>(), <span style="color: #669900">"h1"</span>)):
+           <span style="color: #dd4a68">to_md_list</span>(link, <span style="color: #905">1</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">to_md_name</span>(), <span style="color: #669900">"h2"</span>)):
+           <span style="color: #dd4a68">to_md_list</span>(link, <span style="color: #905">2</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">to_md_name</span>(), <span style="color: #669900">"h3"</span>)):
+           <span style="color: #dd4a68">to_md_list</span>(link, <span style="color: #905">3</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">to_md_name</span>(), <span style="color: #669900">"h4"</span>)):
+           <span style="color: #dd4a68">to_md_list</span>(link, <span style="color: #905">4</span>)
+         <span style="color: #0077aa">elif</span> (<span style="color: #dd4a68">eq</span>(<span style="color: #dd4a68">to_md_name</span>(), <span style="color: #669900">"h5"</span>)):
+           <span style="color: #dd4a68">to_md_list</span>(link, <span style="color: #905">5</span>)
          <span style="color: #0077aa">else</span>:
            <span style="color: #0077aa">None</span>;
 <span style="font-weight: bold;">|</span> <span style="color: #dd4a68">markdown_toc</span>()'
