@@ -1,9 +1,10 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
+use crate::MqResult;
 use itertools::Itertools;
 
 use crate::{
-    AstIdentName, ModuleLoader, MqResult, Token, Value,
+    AstIdentName, ModuleLoader, Token, Value,
     arena::Arena,
     error::{self, InnerError},
     eval::Evaluator,
@@ -112,5 +113,44 @@ impl Engine {
 
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_engine_default() {
+        let engine = Engine::default();
+        assert_eq!(engine.options.optimize, true);
+    }
+
+    #[test]
+    fn test_set_optimize() {
+        let mut engine = Engine::default();
+        engine.set_optimize(false);
+        assert_eq!(engine.options.optimize, false);
+    }
+
+    #[test]
+    fn test_set_paths() {
+        let mut engine = Engine::default();
+        let paths = vec![PathBuf::from("/test/path")];
+        engine.set_paths(paths.clone());
+        assert_eq!(engine.evaluator.module_loader.search_paths, Some(paths));
+    }
+
+    #[test]
+    fn test_define_string_value() {
+        let engine = Engine::default();
+        engine.define_string_value("test_var", "test_value");
+        let values = engine.defined_values();
+        assert!(values.iter().any(|(name, _)| name.as_str() == "test_var"));
+    }
+
+    #[test]
+    fn test_version() {
+        let version = Engine::version();
+        assert!(!version.is_empty());
     }
 }

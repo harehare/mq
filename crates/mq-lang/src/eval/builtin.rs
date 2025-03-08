@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
-use mq_md;
+use mq_markdown;
 
 static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
@@ -205,9 +205,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_html"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(mq_md::to_html(s).into()),
+                [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
                 [RuntimeValue::Markdown(node_value)] => {
-                    Ok(mq_md::to_html(node_value.to_string().as_str()).into())
+                    Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1027,13 +1027,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_code"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
-                [a, RuntimeValue::String(lang)] => Ok(mq_md::Node::Code(mq_md::Code {
+                [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
                     value: a.to_string(),
                     lang: Some(lang.to_string()),
                     position: None,
                 })
                 .into()),
-                [a, RuntimeValue::None] => Ok(mq_md::Node::Code(mq_md::Code {
+                [a, RuntimeValue::None] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
                     value: a.to_string(),
                     lang: None,
                     position: None,
@@ -1045,7 +1045,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_code_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [a] => Ok(mq_md::Node::CodeInline(mq_md::CodeInline {
+                [a] => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
                     value: a.to_string(),
                     position: None,
                 })
@@ -1057,33 +1057,35 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("md_h"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node), RuntimeValue::Number(depth)] => {
-                    Ok(mq_md::Node::Heading(mq_md::Heading {
+                    Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
                         depth: (*depth).value() as u8,
                         value: node.node_value(),
                         position: None,
                     })
                     .into())
                 }
-                [a, RuntimeValue::Number(depth)] => Ok(mq_md::Node::Heading(mq_md::Heading {
-                    depth: (*depth).value() as u8,
-                    value: Box::new(a.to_string().into()),
-                    position: None,
-                })
-                .into()),
+                [a, RuntimeValue::Number(depth)] => {
+                    Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
+                        depth: (*depth).value() as u8,
+                        value: Box::new(a.to_string().into()),
+                        position: None,
+                    })
+                    .into())
+                }
                 _ => Ok(RuntimeValue::None),
             }),
         );
         map.insert(
             CompactString::new("md_hr"),
             BuiltinFunction::new(ParamNum::Fixed(0), |_, _| {
-                Ok(mq_md::Node::HorizontalRule { position: None }.into())
+                Ok(mq_markdown::Node::HorizontalRule { position: None }.into())
             }),
         );
         map.insert(
             CompactString::new("md_link"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
                 [RuntimeValue::String(url), RuntimeValue::String(title)] => {
-                    Ok(mq_md::Node::Link(mq_md::Link {
+                    Ok(mq_markdown::Node::Link(mq_markdown::Link {
                         url: url.to_string(),
                         title: Some(title.to_string()),
                         position: None,
@@ -1104,7 +1106,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::String(url),
                     RuntimeValue::String(alt),
                     RuntimeValue::String(title),
-                ] => Ok(mq_md::Node::Image(mq_md::Image {
+                ] => Ok(mq_markdown::Node::Image(mq_markdown::Image {
                     alt: alt.to_string(),
                     url: url.to_string(),
                     title: Some(title.to_string()),
@@ -1117,7 +1119,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_math"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [a] => Ok(mq_md::Node::Math(mq_md::Math {
+                [a] => Ok(mq_markdown::Node::Math(mq_markdown::Math {
                     value: a.to_string(),
                     position: None,
                 })
@@ -1128,7 +1130,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_math_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [a] => Ok(mq_md::Node::MathInline(mq_md::MathInline {
+                [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
                     value: a.to_string(),
                     position: None,
                 })
@@ -1146,12 +1148,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_strong"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [RuntimeValue::Markdown(node)] => Ok(mq_md::Node::Strong(mq_md::Value {
-                    value: node.node_value(),
-                    position: None,
-                })
-                .into()),
-                [a] => Ok(mq_md::Node::Strong(mq_md::Value {
+                [RuntimeValue::Markdown(node)] => {
+                    Ok(mq_markdown::Node::Strong(mq_markdown::Value {
+                        value: node.node_value(),
+                        position: None,
+                    })
+                    .into())
+                }
+                [a] => Ok(mq_markdown::Node::Strong(mq_markdown::Value {
                     value: Box::new(a.to_string().into()),
                     position: None,
                 })
@@ -1162,12 +1166,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_em"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [RuntimeValue::Markdown(node)] => Ok(mq_md::Node::Emphasis(mq_md::Value {
-                    value: node.node_value(),
-                    position: None,
-                })
-                .into()),
-                [a] => Ok(mq_md::Node::Emphasis(mq_md::Value {
+                [RuntimeValue::Markdown(node)] => {
+                    Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
+                        value: node.node_value(),
+                        position: None,
+                    })
+                    .into())
+                }
+                [a] => Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
                     value: Box::new(a.to_string().into()),
                     position: None,
                 })
@@ -1178,7 +1184,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("md_text"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [a] => Ok(mq_md::Node::Text(mq_md::Text {
+                [a] => Ok(mq_markdown::Node::Text(mq_markdown::Text {
                     value: a.to_string(),
                     position: None,
                 })
@@ -1190,7 +1196,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("md_list"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node), RuntimeValue::Number(level)] => {
-                    Ok(mq_md::Node::List(mq_md::List {
+                    Ok(mq_markdown::Node::List(mq_markdown::List {
                         value: node.node_value(),
                         index: 0,
                         level: level.value() as u8,
@@ -1199,23 +1205,28 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .into())
                 }
-                [a, RuntimeValue::Number(level)] => Ok(mq_md::Node::List(mq_md::List {
-                    value: Box::new(a.to_string().into()),
-                    index: 0,
-                    level: level.value() as u8,
-                    checked: None,
-                    position: None,
-                })
-                .into()),
+                [a, RuntimeValue::Number(level)] => {
+                    Ok(mq_markdown::Node::List(mq_markdown::List {
+                        value: Box::new(a.to_string().into()),
+                        index: 0,
+                        level: level.value() as u8,
+                        checked: None,
+                        position: None,
+                    })
+                    .into())
+                }
                 _ => Ok(RuntimeValue::None),
             }),
         );
         map.insert(
             CompactString::new("md_list_level"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [RuntimeValue::Markdown(mq_md::Node::List(mq_md::List { level, .. }))] => {
-                    Ok(RuntimeValue::Number((*level).into()))
-                }
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+                        level,
+                        ..
+                    })),
+                ] => Ok(RuntimeValue::Number((*level).into())),
                 [_] => Ok(RuntimeValue::Number(0.into())),
                 _ => unreachable!(),
             }),
@@ -1224,9 +1235,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("md_check"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [
-                    RuntimeValue::Markdown(mq_md::Node::List(list)),
+                    RuntimeValue::Markdown(mq_markdown::Node::List(list)),
                     RuntimeValue::Bool(checked),
-                ] => Ok(mq_md::Node::List(mq_md::List {
+                ] => Ok(mq_markdown::Node::List(mq_markdown::List {
                     checked: Some(*checked),
                     ..list.clone()
                 })
@@ -2241,7 +2252,7 @@ pub fn eval_builtin(
 }
 
 #[inline(always)]
-pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<RuntimeValue> {
+pub fn eval_selector(node: mq_markdown::Node, selector: &ast::Selector) -> Vec<RuntimeValue> {
     match selector {
         ast::Selector::Code(lang) if node.is_code(lang.clone()) => {
             vec![RuntimeValue::Markdown(node)]
@@ -2283,7 +2294,7 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
             (
                 Some(row1),
                 Some(column1),
-                mq_md::Node::TableCell(mq_md::TableCell {
+                mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     column: column2,
                     row: row2,
                     last_cell_in_row: _,
@@ -2297,7 +2308,11 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
                     Vec::new()
                 }
             }
-            (Some(row1), None, mq_md::Node::TableCell(mq_md::TableCell { row: row2, .. })) => {
+            (
+                Some(row1),
+                None,
+                mq_markdown::Node::TableCell(mq_markdown::TableCell { row: row2, .. }),
+            ) => {
                 if *row1 == row2 {
                     vec![RuntimeValue::Markdown(node)]
                 } else {
@@ -2307,7 +2322,7 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
             (
                 None,
                 Some(column1),
-                mq_md::Node::TableCell(mq_md::TableCell {
+                mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     column: column2, ..
                 }),
             ) => {
@@ -2317,7 +2332,7 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
                     Vec::new()
                 }
             }
-            (None, None, mq_md::Node::TableCell(_)) => {
+            (None, None, mq_markdown::Node::TableCell(_)) => {
                 vec![RuntimeValue::Markdown(node)]
             }
             _ => Vec::new(),
@@ -2334,7 +2349,7 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
         ast::Selector::List(index, checked) => match (index, node.clone()) {
             (
                 Some(index),
-                mq_md::Node::List(mq_md::List {
+                mq_markdown::Node::List(mq_markdown::List {
                     index: list_index,
                     checked: list_checked,
                     ..
@@ -2346,7 +2361,7 @@ pub fn eval_selector(node: mq_md::Node, selector: &ast::Selector) -> Vec<Runtime
                     Vec::new()
                 }
             }
-            (_, mq_md::Node::List(mq_md::List { .. })) => {
+            (_, mq_markdown::Node::List(mq_markdown::List { .. })) => {
                 vec![RuntimeValue::Markdown(node)]
             }
             _ => Vec::new(),

@@ -32,15 +32,15 @@ pub struct Node {
 impl Node {
     pub fn range(&self, arena: Rc<Arena<Rc<Token>>>) -> Range {
         match &*self.expr {
-            Expr::Def(_, _, args)
-            | Expr::While(_, args)
-            | Expr::Until(_, args)
-            | Expr::Foreach(_, _, args) => {
-                let start = args
+            Expr::Def(_, _, program)
+            | Expr::While(_, program)
+            | Expr::Until(_, program)
+            | Expr::Foreach(_, _, program) => {
+                let start = program
                     .first()
                     .map(|node| node.range(Rc::clone(&arena)).start)
                     .unwrap_or_default();
-                let end = args
+                let end = program
                     .last()
                     .map(|node| node.range(Rc::clone(&arena)).end)
                     .unwrap_or_default();
@@ -173,4 +173,139 @@ pub enum Expr {
     If(Vec<Cond>),
     Include(Literal),
     Self_,
+}
+#[cfg(test)]
+mod tests {
+    use crate::{Position, TokenKind};
+
+    use super::*;
+
+    fn create_token(range: Range) -> Rc<Token> {
+        Rc::new(Token {
+            range,
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })
+    }
+
+    #[test]
+    fn test_node_range_literal() {
+        let mut arena = Arena::new(10);
+        let range = Range {
+            start: Position::new(1, 1),
+            end: Position::new(2, 2),
+        };
+        let token = create_token(range.clone());
+        let token_id = arena.alloc(Rc::clone(&token));
+
+        let node = Node {
+            token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("test".to_string()))),
+        };
+
+        assert_eq!(node.range(Rc::new(arena)), range);
+    }
+
+    #[test]
+    fn test_node_range_call_with_args() {
+        let mut arena = Arena::new(10);
+
+        let arg1_range = Range {
+            start: Position::new(2, 2),
+            end: Position::new(2, 2),
+        };
+        let arg1_token = create_token(arg1_range.clone());
+        let arg1_token_id = arena.alloc(Rc::clone(&arg1_token));
+
+        let arg2_range = Range {
+            start: Position::new(3, 3),
+            end: Position::new(3, 3),
+        };
+        let arg2_token = create_token(arg2_range.clone());
+        let arg2_token_id = arena.alloc(Rc::clone(&arg2_token));
+
+        let arg1 = Rc::new(Node {
+            token_id: arg1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("arg1".to_string()))),
+        });
+
+        let arg2 = Rc::new(Node {
+            token_id: arg2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("arg2".to_string()))),
+        });
+
+        let call_token_id = arena.alloc(create_token(Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 1),
+        }));
+        let call_node = Node {
+            token_id: call_token_id,
+            expr: Rc::new(Expr::Call(Ident::new("test_func"), vec![arg1, arg2], false)),
+        };
+
+        assert_eq!(
+            call_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(2, 2),
+                end: Position::new(3, 3)
+            }
+        );
+    }
+
+    #[test]
+    fn test_node_range_if_expression() {
+        let mut arena = Arena::new(10);
+
+        let cond_range = Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 1),
+        };
+        let cond_token_id = arena.alloc(create_token(cond_range.clone()));
+
+        let then_range = Range {
+            start: Position::new(2, 2),
+            end: Position::new(2, 2),
+        };
+        let then_token_id = arena.alloc(create_token(then_range.clone()));
+
+        let else_range = Range {
+            start: Position::new(3, 3),
+            end: Position::new(3, 3),
+        };
+        let else_token_id = arena.alloc(create_token(else_range.clone()));
+
+        let cond_node = Rc::new(Node {
+            token_id: cond_token_id,
+            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+        });
+
+        let then_node = Rc::new(Node {
+            token_id: then_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("then".to_string()))),
+        });
+
+        let else_node = Rc::new(Node {
+            token_id: else_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("else".to_string()))),
+        });
+
+        let if_node = Node {
+            token_id: arena.alloc(create_token(Range {
+                start: Position::new(0, 0),
+                end: Position::new(0, 0),
+            })),
+            expr: Rc::new(Expr::If(vec![
+                (Some(cond_node), then_node),
+                (None, else_node),
+            ])),
+        };
+
+        assert_eq!(
+            if_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(2, 2),
+                end: Position::new(3, 3)
+            }
+        );
+    }
 }

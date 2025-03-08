@@ -7,7 +7,7 @@
 //!
 //! let code = "add(\"world!\")";
 //! let input = vec![mq_lang::Value::Markdown(
-//!   mq_md::Markdown::from_str("Hello,").unwrap()
+//!   mq_markdown::Markdown::from_str("Hello,").unwrap()
 //! )].into_iter();
 //! let mut engine = mq_lang::Engine::default();
 //!

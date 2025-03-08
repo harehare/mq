@@ -20,7 +20,7 @@ fn main() {
 | USB Cable | Accessories | $12 | 89 |
 | Coffee Maker | Appliances | $85 | 24 |
     ";
-    let markdown = mq_md::Markdown::from_str(markdown_content).unwrap();
+    let markdown = mq_markdown::Markdown::from_str(markdown_content).unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();

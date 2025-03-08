@@ -19,18 +19,21 @@ build:
 build-wasm:
     wasm-pack build --release --target web --out-dir ../../playground/src/mq-wasm
 
-[working-directory: 'crates/mq-wasm']
-test-wasm:
-    wasm-pack test --chrome --headless
-
-test-fazz:
-    cargo +nightly fuzz run interpreter
-
 test:
     cargo fmt --all -- --check
     cargo clippy --workspace
     cargo test --examples
     cargo test --workspace
+
+test-cov:
+    cargo llvm-cov --open --html --workspace
+
+test-fazz:
+    cargo +nightly fuzz run interpreter
+
+[working-directory: 'crates/mq-wasm']
+test-wasm:
+    wasm-pack test --chrome --headless
 
 deps:
     cargo +nightly udeps
@@ -40,7 +43,7 @@ docs:
   cargo readme --project-root crates/mq-lsp --output README.md
   cargo readme --project-root crates/mq-repl --output README.md
   cargo readme --project-root crates/mq-hir --output README.md
-  cargo readme --project-root crates/mq-md --output README.md
+  cargo readme --project-root crates/mq-markdown --output README.md
   cargo readme --project-root crates/mq-formatter --output README.md
   cargo readme --project-root crates/mq-wasm --output README.md
   ./scripts/update_doc.sh

@@ -89,3 +89,102 @@ impl Env {
             .collect()
     }
 }
+#[cfg(test)]
+mod tests {
+    use crate::AstIdentName;
+
+    use super::*;
+
+    #[test]
+    fn test_env_define_and_resolve() {
+        let mut env = Env::new(None);
+        let ident = AstIdent {
+            name: AstIdentName::from("x"),
+            token: None,
+        };
+        let value = RuntimeValue::Number(42.0.into());
+        env.define(&ident, value.clone());
+
+        let resolved = env.resolve(&ident).unwrap();
+        assert_eq!(*resolved, value);
+    }
+
+    #[test]
+    fn test_env_resolve_from_parent() {
+        let parent_env = Rc::new(RefCell::new(Env::new(None)));
+        let mut child_env = Env::new(Some(Rc::downgrade(&parent_env)));
+
+        let parent_ident = AstIdent {
+            name: AstIdentName::from("parent_var"),
+            token: None,
+        };
+        let parent_value = RuntimeValue::Number(100.0.into());
+        parent_env
+            .borrow_mut()
+            .define(&parent_ident, parent_value.clone());
+
+        let child_ident = AstIdent {
+            name: AstIdentName::from("child_var"),
+            token: None,
+        };
+        let child_value = RuntimeValue::Number(200.0.into());
+        child_env.define(&child_ident, child_value.clone());
+
+        assert_eq!(*child_env.resolve(&child_ident).unwrap(), child_value);
+        assert_eq!(*child_env.resolve(&parent_ident).unwrap(), parent_value);
+
+        let result = parent_env.borrow().resolve(&child_ident);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_env_shadow_parent_variable() {
+        let parent_env = Rc::new(RefCell::new(Env::new(None)));
+        let mut child_env = Env::new(Some(Rc::downgrade(&parent_env)));
+
+        let ident = AstIdent {
+            name: AstIdentName::from("x"),
+            token: None,
+        };
+
+        let parent_value = RuntimeValue::Number(100.0.into());
+        parent_env.borrow_mut().define(&ident, parent_value);
+
+        let child_value = RuntimeValue::Number(200.0.into());
+        child_env.define(&ident, child_value.clone());
+
+        assert_eq!(*child_env.resolve(&ident).unwrap(), child_value);
+    }
+
+    #[test]
+    fn test_defined_runtime_values() {
+        let mut env = Env::new(None);
+        let ident1 = AstIdent {
+            name: AstIdentName::from("x"),
+            token: None,
+        };
+        let ident2 = AstIdent {
+            name: AstIdentName::from("y"),
+            token: None,
+        };
+
+        let value1 = RuntimeValue::Number(42.0.into());
+        let value2 = RuntimeValue::TRUE;
+
+        env.define(&ident1, value1);
+        env.define(&ident2, value2);
+
+        let defined = env.defined_runtime_values();
+        assert_eq!(defined.len(), 2);
+
+        let defined_map: FxHashMap<_, _> = defined.into_iter().collect();
+        assert_eq!(
+            *defined_map.get(&AstIdentName::from("x")).unwrap(),
+            Box::new(RuntimeValue::Number(42.0.into()))
+        );
+        assert_eq!(
+            *defined_map.get(&AstIdentName::from("y")).unwrap(),
+            Box::new(RuntimeValue::TRUE)
+        );
+    }
+}

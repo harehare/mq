@@ -149,7 +149,8 @@ impl CommandContext {
             Command::LoadFile(file_path) => fs::read_to_string(file_path)
                 .into_diagnostic()
                 .and_then(|markdown_content| {
-                    let markdown: mq_md::Markdown = mq_md::Markdown::from_str(&markdown_content)?;
+                    let markdown: mq_markdown::Markdown =
+                        mq_markdown::Markdown::from_str(&markdown_content)?;
 
                     self.input = markdown
                         .nodes

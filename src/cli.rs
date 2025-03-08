@@ -17,8 +17,8 @@ use std::{env, fs, path::PathBuf};
     $ mq 'query' file.md\n\n\
     To start a REPL session:\n\
     $ mq repl\n\n\
-    To format markdown file:\n\
-    $ mq fmt --check file.md")]
+    To format mq file:\n\
+    $ mq fmt --check file.mq")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None
@@ -58,7 +58,7 @@ pub enum ListStyle {
 
 #[derive(Clone, Debug, clap::Args)]
 struct InputArgs {
-    // load filter from the file
+    /// load filter from the file
     #[arg(short, long)]
     from_file: Option<Vec<PathBuf>>,
 
@@ -70,7 +70,7 @@ struct InputArgs {
     #[arg(short, long, group = "input")]
     null_input: bool,
 
-    // Search modules from the directory
+    /// Search modules from the directory
     #[arg(short = 'L', long = "directory")]
     module_directories: Option<Vec<PathBuf>>,
 
@@ -222,7 +222,7 @@ impl Cli {
                 .collect_vec();
             engine.eval(query, runtime_values.into_iter())
         } else {
-            let markdown: mq_md::Markdown = mq_md::Markdown::from_str(content)?;
+            let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(content)?;
             let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
 
             if self.output.update {
@@ -322,7 +322,7 @@ impl Cli {
             &runtime_values.compact()
         };
 
-        let mut markdown = mq_md::Markdown::new(
+        let mut markdown = mq_markdown::Markdown::new(
             runtime_values
                 .iter()
                 .map(|runtime_value| match runtime_value {
@@ -331,11 +331,11 @@ impl Cli {
                 })
                 .collect(),
         );
-        markdown.set_options(mq_md::RenderOptions {
+        markdown.set_options(mq_markdown::RenderOptions {
             list_style: match self.output.list_style.clone() {
-                ListStyle::Dash => mq_md::ListStyle::Dash,
-                ListStyle::Plus => mq_md::ListStyle::Plus,
-                ListStyle::Star => mq_md::ListStyle::Star,
+                ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                ListStyle::Star => mq_markdown::ListStyle::Star,
             },
         });
 

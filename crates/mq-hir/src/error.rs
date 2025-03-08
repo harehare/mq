@@ -61,8 +61,9 @@ impl Hir {
             .symbols
             .iter()
             .filter_map(|(_, symbol)| {
-                if matches!(&symbol.kind, SymbolKind::Function(_))
-                    | matches!(&symbol.kind, SymbolKind::Variable)
+                if (matches!(&symbol.kind, SymbolKind::Function(_))
+                    || matches!(&symbol.kind, SymbolKind::Variable))
+                    && target != symbol.name.clone().unwrap_or_default()
                 {
                     let similarity =
                         strsim::jaro_winkler(target, &symbol.name.clone().unwrap_or_default());
@@ -82,5 +83,29 @@ impl Hir {
         } else {
             Some(similar_names)
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use url::Url;
+
+    use super::*;
+
+    #[test]
+    fn test_find_similar_names() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test").unwrap();
+        let _ = hir.add_code(url.clone(), "let test = 1 | let test2 = 1 | let test3 = 1");
+
+        let similar = hir.find_similar_names("test");
+        assert!(similar.is_some());
+        dbg!(&similar);
+        let similar_vec = similar.unwrap();
+        assert_eq!(similar_vec.len(), 2);
+        assert!(similar_vec.contains(&"test2".into()));
+        assert!(similar_vec.contains(&"test3".into()));
+
+        let no_similar = hir.find_similar_names("xyz123");
+        assert!(no_similar.is_none());
     }
 }

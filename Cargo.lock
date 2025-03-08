@@ -1511,7 +1511,7 @@ dependencies = [
  "miette",
  "mq-formatter",
  "mq-lang",
- "mq-md",
+ "mq-markdown",
  "mq-repl",
  "rstest",
 ]
@@ -1553,7 +1553,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "miette",
- "mq-md",
+ "mq-markdown",
  "nom",
  "nom_locate",
  "percent-encoding",
@@ -1583,7 +1583,7 @@ dependencies = [
  "mq-formatter",
  "mq-hir",
  "mq-lang",
- "mq-md",
+ "mq-markdown",
  "serde_json",
  "tokio",
  "tokio-macros",
@@ -1591,7 +1591,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mq-md"
+name = "mq-markdown"
 version = "0.1.0"
 dependencies = [
  "compact_str",
@@ -1613,7 +1613,7 @@ dependencies = [
  "miette",
  "mq-hir",
  "mq-lang",
- "mq-md",
+ "mq-markdown",
  "rustyline",
  "strum",
 ]
@@ -1624,7 +1624,7 @@ version = "0.1.0"
 dependencies = [
  "mq-formatter",
  "mq-lang",
- "mq-md",
+ "mq-markdown",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]

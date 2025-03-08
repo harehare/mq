@@ -153,3 +153,68 @@ impl Error {
         }
     }
 }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{Token, TokenKind, arena::ArenaId};
+
+    #[test]
+    fn test_from_error_with_lexer_error() {
+        let cause = InnerError::Lexer(LexerError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }));
+        let module_loader = ModuleLoader::new(None);
+        let error = Error::from_error("source code", cause, module_loader);
+
+        assert_eq!(error.source_code, "source code");
+        assert_eq!(error.span, Range::default());
+    }
+
+    #[test]
+    fn test_from_error_with_parse_error() {
+        let cause = InnerError::Parse(ParseError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }));
+        let module_loader = ModuleLoader::new(None);
+        let error = Error::from_error("source code", cause, module_loader);
+
+        assert_eq!(error.source_code, "source code");
+    }
+
+    #[test]
+    fn test_from_error_with_eof_error() {
+        let cause = InnerError::Parse(ParseError::UnexpectedEOFDetected(ArenaId::new(0)));
+        let module_loader = ModuleLoader::new(None);
+        let error = Error::from_error("line 1\nline 2", cause, module_loader);
+
+        assert_eq!(error.source_code, "line 1\nline 2");
+        assert_eq!(error.span, Range::default());
+    }
+
+    #[test]
+    fn test_from_error_with_eval_error() {
+        let cause = InnerError::Eval(EvalError::ZeroDivision(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }));
+        let module_loader = ModuleLoader::new(None);
+        let error = Error::from_error("source code", cause, module_loader);
+
+        assert_eq!(error.source_code, "source code");
+    }
+
+    #[test]
+    fn test_from_error_with_module_error() {
+        let cause = InnerError::Module(ModuleError::NotFound("test".to_string()));
+        let module_loader = ModuleLoader::new(None);
+        let error = Error::from_error("source code", cause, module_loader);
+
+        assert_eq!(error.source_code, "source code");
+        assert_eq!(error.span, Range::default());
+    }
+}

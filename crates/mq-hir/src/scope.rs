@@ -1,4 +1,6 @@
-use crate::{SourceInfo, source::SourceId, symbol::SymbolId};
+use crate::SourceInfo;
+use crate::source::SourceId;
+use crate::symbol::SymbolId;
 
 slotmap::new_key_type! { pub struct ScopeId; }
 
@@ -41,5 +43,52 @@ impl Scope {
             ScopeKind::Loop(symbol_id) => Some(symbol_id),
             ScopeKind::Module(_) => None,
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use url::Url;
+
+    use crate::Hir;
+
+    use super::*;
+
+    #[test]
+    fn test_add_child() {
+        let mut hir = Hir::new();
+        let url = Url::parse("file:///test").unwrap();
+        let (source_id, _) = hir.add_code(url.clone(), "let x = 5".into());
+        let source = SourceInfo::new(Some(source_id), None);
+        let mut scope = Scope::new(source, ScopeKind::Module(source_id), None);
+        let child_id = ScopeId::default();
+
+        scope.add_child(child_id);
+        assert_eq!(scope.children.len(), 1);
+        assert_eq!(scope.children[0], child_id);
+    }
+
+    #[test]
+    fn test_symbol_id() {
+        let mut hir = Hir::new();
+        let url = Url::parse("file:///test").unwrap();
+        let (source_id, _) = hir.add_code(url.clone(), "let x = 5".into());
+        let source = SourceInfo::new(Some(source_id), None);
+        let symbol_id = hir.symbols().collect_vec().first().unwrap().0;
+
+        let function_scope = Scope::new(source.clone(), ScopeKind::Function(symbol_id), None);
+        assert_eq!(function_scope.symbol_id(), Some(symbol_id));
+
+        let let_scope = Scope::new(source.clone(), ScopeKind::Let(symbol_id), None);
+        assert_eq!(let_scope.symbol_id(), Some(symbol_id));
+
+        let block_scope = Scope::new(source.clone(), ScopeKind::Block(symbol_id), None);
+        assert_eq!(block_scope.symbol_id(), Some(symbol_id));
+
+        let loop_scope = Scope::new(source.clone(), ScopeKind::Loop(symbol_id), None);
+        assert_eq!(loop_scope.symbol_id(), Some(symbol_id));
+
+        let module_scope = Scope::new(source.clone(), ScopeKind::Module(source_id), None);
+        assert_eq!(module_scope.symbol_id(), None);
     }
 }

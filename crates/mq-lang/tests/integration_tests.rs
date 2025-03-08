@@ -142,8 +142,8 @@ fn engine() -> Engine {
       Ok(vec![Value::FALSE].into()))]
 // select
 #[case::test("select(contains(\"hello\"))",
-      vec![Value::Markdown(mq_md::Node::Text(mq_md::Text{value: "hello world".to_string(), position: None}))],
-      Ok(vec![Value::Markdown(mq_md::Node::Text(mq_md::Text{value: "hello world".to_string(), position: None}))].into()))]
+      vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))].into()))]
 // first
 #[case::first("first(array(1, 2, 3))",
       vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],

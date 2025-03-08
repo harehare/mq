@@ -4,7 +4,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use mq_md::to_html;
+//! use mq_markdown::to_html;
 //!
 //! let markdown = "# Hello, world!";
 //! let html = to_html(markdown);

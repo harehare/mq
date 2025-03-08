@@ -8,7 +8,7 @@ use std::{
 
 use crate::{AstIdent, AstParams, Program, Value, number::Number};
 
-use mq_md::Node;
+use mq_markdown::Node;
 
 use super::env::Env;
 
@@ -201,5 +201,93 @@ impl RuntimeValue {
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_value_from() {
+        assert_eq!(RuntimeValue::from(true), RuntimeValue::Bool(true));
+        assert_eq!(RuntimeValue::from(false), RuntimeValue::Bool(false));
+        assert_eq!(
+            RuntimeValue::from(String::from("test")),
+            RuntimeValue::String(String::from("test"))
+        );
+        assert_eq!(
+            RuntimeValue::from(Number::from(42.0)),
+            RuntimeValue::Number(Number::from(42.0))
+        );
+    }
+
+    #[test]
+    fn test_runtime_value_display() {
+        assert_eq!(format!("{}", RuntimeValue::Bool(true)), "true");
+        assert_eq!(
+            format!("{}", RuntimeValue::Number(Number::from(42.0))),
+            "42"
+        );
+        assert_eq!(
+            format!("{}", RuntimeValue::String(String::from("test"))),
+            "test"
+        );
+        assert_eq!(format!("{}", RuntimeValue::None), "None");
+    }
+
+    #[test]
+    fn test_runtime_value_debug() {
+        assert_eq!(format!("{:?}", RuntimeValue::Bool(true)), "true");
+        assert_eq!(
+            format!("{:?}", RuntimeValue::Number(Number::from(42.0))),
+            "42"
+        );
+        assert_eq!(
+            format!("{:?}", RuntimeValue::String(String::from("test"))),
+            "\"test\""
+        );
+        assert_eq!(format!("{:?}", RuntimeValue::None), "None");
+    }
+
+    #[test]
+    fn test_runtime_value_name() {
+        assert_eq!(RuntimeValue::Bool(true).name(), "bool");
+        assert_eq!(RuntimeValue::Number(Number::from(42.0)).name(), "number");
+        assert_eq!(RuntimeValue::String(String::from("test")).name(), "string");
+        assert_eq!(RuntimeValue::None.name(), "None");
+    }
+
+    #[test]
+    fn test_runtime_value_text() {
+        assert_eq!(RuntimeValue::Bool(true).text(), "true");
+        assert_eq!(RuntimeValue::Number(Number::from(42.0)).text(), "42");
+        assert_eq!(RuntimeValue::String(String::from("test")).text(), "test");
+        assert_eq!(RuntimeValue::None.text(), "None");
+    }
+
+    #[test]
+    fn test_runtime_value_is_true() {
+        assert!(RuntimeValue::Bool(true).is_true());
+        assert!(!RuntimeValue::Bool(false).is_true());
+        assert!(RuntimeValue::Number(Number::from(42.0)).is_true());
+        assert!(!RuntimeValue::Number(Number::from(0.0)).is_true());
+        assert!(RuntimeValue::String(String::from("test")).is_true());
+        assert!(!RuntimeValue::String(String::from("")).is_true());
+        assert!(!RuntimeValue::None.is_true());
+    }
+
+    #[test]
+    fn test_runtime_value_partial_ord() {
+        assert!(RuntimeValue::Number(Number::from(1.0)) < RuntimeValue::Number(Number::from(2.0)));
+        assert!(RuntimeValue::String(String::from("a")) < RuntimeValue::String(String::from("b")));
+        assert!(RuntimeValue::Bool(false) < RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_runtime_value_len() {
+        assert_eq!(RuntimeValue::Number(Number::from(42.0)).len(), 42);
+        assert_eq!(RuntimeValue::String(String::from("test")).len(), 4);
+        assert_eq!(RuntimeValue::Bool(true).len(), 1);
+        assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
     }
 }

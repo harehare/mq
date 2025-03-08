@@ -15,8 +15,8 @@ const EXAMPLES = [
 select(or(.[], .code, .h)) | upcase() | add(" Hello World")?`,
     markdown: `# h1
 
-- .[]
-- .[]
+- item1
+- item2
 
 \`\`\`
 code

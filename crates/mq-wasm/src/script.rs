@@ -6,14 +6,14 @@ use wasm_bindgen::prelude::*;
 pub fn run_script(code: &str, content: &str) -> Result<String, JsValue> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();
-    mq_md::Markdown::from_str(content)
+    mq_markdown::Markdown::from_str(content)
         .map_err(|e| JsValue::from_str(&e.to_string()))
         .and_then(move |markdown| {
             engine
                 .eval(code, markdown.nodes.into_iter().map(mq_lang::Value::from))
                 .map_err(|e| JsValue::from_str(&format!("{}", &e.cause)))
                 .map(|r| {
-                    let markdown = mq_md::Markdown::new(
+                    let markdown = mq_markdown::Markdown::new(
                         r.into_iter()
                             .map(|runtime_value| match runtime_value {
                                 mq_lang::Value::Markdown(node) => node.clone(),

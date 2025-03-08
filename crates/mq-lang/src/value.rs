@@ -3,7 +3,7 @@ use std::fmt::{self, Debug, Display, Formatter};
 use crate::{AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, number::Number};
 
 use itertools::Itertools;
-use mq_md::Node;
+use mq_markdown::Node;
 
 #[derive(Clone, PartialEq)]
 pub enum Value {
@@ -145,5 +145,70 @@ impl Values {
 
     pub fn values(&self) -> &Vec<Value> {
         &self.0
+    }
+}
+#[cfg(test)]
+mod tests {
+    use mq_markdown::Text;
+
+    use super::*;
+
+    #[test]
+    fn test_value_from_node() {
+        let node = Node::Text(Text {
+            value: "test".to_string(),
+            position: None,
+        });
+        let value = Value::from(node.clone());
+        assert_eq!(value, Value::Markdown(node));
+    }
+
+    #[test]
+    fn test_value_from_runtime_value() {
+        let rt_value = RuntimeValue::Number(Number::from(42.0));
+        let value = Value::from(rt_value);
+        assert_eq!(value, Value::Number(Number::from(42.0)));
+    }
+
+    #[test]
+    fn test_value_display() {
+        assert_eq!(Value::Number(Number::from(42.0)).to_string(), "42");
+        assert_eq!(Value::Bool(true).to_string(), "true");
+        assert_eq!(Value::String("hello".to_string()).to_string(), "hello");
+        assert_eq!(Value::None.to_string(), "");
+    }
+
+    #[test]
+    fn test_value_debug() {
+        let value = Value::String("test".to_string());
+        assert_eq!(format!("{:?}", value), "\"test\"");
+    }
+
+    #[test]
+    fn test_value_array_operations() {
+        let array = Value::Array(vec![
+            Value::Number(Number::from(1.0)),
+            Value::Number(Number::from(2.0)),
+            Value::Number(Number::from(3.0)),
+        ]);
+        assert_eq!(array.len(), 3);
+        assert!(array.is_array());
+        assert!(!array.is_empty());
+    }
+
+    #[test]
+    fn test_values_compact() {
+        let values = Values(vec![
+            Value::Number(Number::from(1.0)),
+            Value::None,
+            Value::Number(Number::from(2.0)),
+        ]);
+        assert_eq!(
+            values.compact(),
+            vec![
+                Value::Number(Number::from(1.0)),
+                Value::Number(Number::from(2.0)),
+            ]
+        );
     }
 }
