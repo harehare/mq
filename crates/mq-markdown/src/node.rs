@@ -309,7 +309,7 @@ impl Node {
             }
             Self::TableRow(TableRow { cells, .. }) => cells
                 .iter()
-                .map(|cell| format!("|{}", cell.to_string_with(list_style)))
+                .map(|cell| cell.to_string_with(list_style))
                 .join(""),
             Self::TableCell(TableCell {
                 last_cell_in_row,
@@ -1754,5 +1754,49 @@ mod tests {
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_text_expression(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_text_expression(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None }), ListStyle::Dash, "test")]
+    #[case(Node::List(List{index: 0, level: 2, checked: None, value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "    - test")]
+    #[case(Node::List(List{index: 0, level: 1, checked: None, value: Box::new(Node::text_type("test")), position: None}), ListStyle::Plus, "  + test")]
+    #[case(Node::List(List{index: 0, level: 1, checked: Some(true), value: Box::new(Node::text_type("test")), position: None}), ListStyle::Star, "  * [x] test")]
+    #[case(Node::List(List{index: 0, level: 1, checked: Some(false), value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "  - [] test")]
+    #[case(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, value: Box::new(Node::text_type("test")), position: None})], position: None}), ListStyle::Dash, "|test")]
+    #[case(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, value: Box::new(Node::text_type("test")), position: None})], position: None}), ListStyle::Dash, "|test|")]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "|test")]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "|test|")]
+    #[case(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
+    #[case(Node::Blockquote(Value{value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "> test")]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "```rust\ncode\n```")]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "```\ncode\n```")]
+    #[case(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]
+    #[case(Node::Delete(Value{value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "~~test~~")]
+    #[case(Node::Emphasis(Value{value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "*test*")]
+    #[case(Node::Footnote(Footnote{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]: id")]
+    #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]")]
+    #[case(Node::Heading(Heading{depth: 1, value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "# test")]
+    #[case(Node::Heading(Heading{depth: 3, value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "### test")]
+    #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), ListStyle::Dash, "<div>test</div>")]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}), ListStyle::Dash, "![alt](url)")]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url with space".to_string(), title: Some("title".to_string()), position: None}), ListStyle::Dash, "![alt](url%20with%20space \"title\")")]
+    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: None, position: None}), ListStyle::Dash, "![alt][id]")]
+    #[case(Node::CodeInline(CodeInline{value: "code".to_string(), position: None}), ListStyle::Dash, "`code`")]
+    #[case(Node::MathInline(MathInline{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$x^2$")]
+    #[case(Node::Link(Link{url: "url".to_string(), title: Some("title".to_string()), position: None}), ListStyle::Dash, "[title](url)")]
+    #[case(Node::Link(Link{url: "url with space".to_string(), title: Some("title with space".to_string()), position: None}), ListStyle::Dash, "[title-with-space](url-with-space)")]
+    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[id][label]")]
+    #[case(Node::Math(Math{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$$\nx^2\n$$")]
+    #[case(Node::Strong(Value{value: Box::new(Node::text_type("test")), position: None}), ListStyle::Dash, "**test**")]
+    #[case(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "key: value")]
+    #[case(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "key = \"value\"")]
+    #[case(Node::Break{position: None}, ListStyle::Dash, "\\")]
+    #[case(Node::HorizontalRule{position: None}, ListStyle::Dash, "---")]
+    fn test_to_string_with(
+        #[case] node: Node,
+        #[case] list_style: ListStyle,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(node.to_string_with(&list_style), expected);
     }
 }
