@@ -11,7 +11,7 @@ pub const EMPTY_NODE: Node = Node::Text(Text {
     position: None,
 });
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum ListStyle {
     #[default]
     Dash,
@@ -1684,5 +1684,75 @@ mod tests {
     #[case(Node::name(&Node::Heading(Heading{depth: 2, value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None})), "h2")]
     fn test_name(#[case] actual: CompactString, #[case] expected: &str) {
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(Node::Footnote(Footnote{ident: "test".to_string(), label: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_footnote(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_footnote(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_footnote_ref(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_footnote_ref(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Math(Math{value: "x^2".to_string(), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_math(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_math(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Break{position: None}, true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_break(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_break(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_yaml(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_yaml(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_toml(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_toml(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Definition(Definition{ident: "ident".to_string(), url: "url".to_string(), title: None, label: None, position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_definition(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_definition(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Emphasis(Value{value: Box::new(Node::Text(Text{value: "test".to_string(), position: None})), position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_emphasis(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_emphasis(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::MdxFlowExpression(mdast::MdxFlowExpression{value: "test".to_string(), position: None, stops: vec![]}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_mdx_flow_expression(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_mdx_flow_expression(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::MdxTextExpression(mdast::MdxTextExpression{value: "test".to_string(), position: None, stops: vec![]}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_mdx_text_expression(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_mdx_text_expression(), expected);
     }
 }

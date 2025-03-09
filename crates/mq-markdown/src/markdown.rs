@@ -155,3 +155,90 @@ impl Markdown {
             .join("")
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_markdown_from_str() {
+        let md = "# Hello\n\nWorld".parse::<Markdown>().unwrap();
+        assert_eq!(md.nodes.len(), 2);
+        assert_eq!(md.to_string(), "# Hello\nWorld\n");
+    }
+
+    #[test]
+    fn test_markdown_to_pretty_markdown() {
+        let md = "# Hello\n* Item 1\n* Item 2".parse::<Markdown>().unwrap();
+        assert_eq!(
+            md.to_pretty_markdown().unwrap(),
+            "# Hello\n\n- Item 1\n- Item 2\n"
+        );
+    }
+
+    #[test]
+    fn test_markdown_to_html() {
+        let md = "# Hello".parse::<Markdown>().unwrap();
+        let html = md.to_html();
+        assert_eq!(html, "<h1>Hello</h1>\n");
+    }
+
+    #[test]
+    fn test_markdown_to_text() {
+        let md = "# Hello\n\nWorld".parse::<Markdown>().unwrap();
+        let text = md.to_text();
+        assert_eq!(text, "Hello\nWorld\n");
+    }
+
+    #[test]
+    fn test_render_options() {
+        let mut md = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
+        assert_eq!(md.options.list_style, ListStyle::default());
+
+        md.set_options(RenderOptions {
+            list_style: ListStyle::Plus,
+        });
+        assert_eq!(md.options.list_style, ListStyle::Plus);
+
+        let pretty = md.to_pretty_markdown().unwrap();
+        assert!(pretty.contains("+ Item 1"));
+    }
+
+    #[test]
+    fn test_display_simple() {
+        let md = "# Header\nParagraph".parse::<Markdown>().unwrap();
+        assert_eq!(md.to_string(), "# Header\nParagraph\n");
+    }
+
+    #[test]
+    fn test_display_with_empty_nodes() {
+        let md = "# Header\nContent".parse::<Markdown>().unwrap();
+        assert_eq!(md.to_string(), "# Header\nContent\n");
+    }
+
+    #[test]
+    fn test_display_with_newlines() {
+        let md = "# Header\n\nParagraph 1\n\nParagraph 2"
+            .parse::<Markdown>()
+            .unwrap();
+        assert_eq!(md.to_string(), "# Header\nParagraph 1\nParagraph 2\n");
+    }
+
+    #[test]
+    fn test_display_format_lists() {
+        let md = "- Item 1\n- Item 2\n- Item 3".parse::<Markdown>().unwrap();
+        assert_eq!(md.to_string(), "- Item 1\n- Item 2\n- Item 3\n");
+    }
+
+    #[test]
+    fn test_display_with_different_list_styles() {
+        let mut md = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
+
+        md.set_options(RenderOptions {
+            list_style: ListStyle::Star,
+        });
+
+        let formatted = md.to_pretty_markdown().unwrap();
+        assert!(formatted.contains("* Item 1"));
+        assert!(formatted.contains("* Item 2"));
+    }
+}
