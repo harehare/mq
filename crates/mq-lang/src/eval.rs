@@ -1697,7 +1697,35 @@ mod tests {
                         row: 0,
                         column: 2,
                         value: Box::new("Cell 3".to_string().into()),
+                        last_cell_in_row: true,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                ],
+                position: None
+            }))]))]
+    #[case::to_md_table_row(vec![RuntimeValue::String("Cell 4".to_string())],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("to_md_table_row"), vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("Cell 1".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("Cell 2".to_string()))),
+                ], false))
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{
+                cells: vec![
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 0,
+                        value: Box::new("Cell 1".to_string().into()),
                         last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 1,
+                        value: Box::new("Cell 2".to_string().into()),
+                        last_cell_in_row: true,
                         last_cell_of_in_table: false,
                         position: None
                     }),

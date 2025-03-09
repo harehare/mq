@@ -99,7 +99,6 @@ mod tests {
 
         let similar = hir.find_similar_names("test");
         assert!(similar.is_some());
-        dbg!(&similar);
         let similar_vec = similar.unwrap();
         assert_eq!(similar_vec.len(), 2);
         assert!(similar_vec.contains(&"test2".into()));

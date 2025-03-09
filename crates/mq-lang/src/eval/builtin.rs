@@ -1222,38 +1222,49 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_md_table_row"),
             BuiltinFunction::new(ParamNum::Range(1, u8::MAX), |_, args| {
+                let args_num = args.len();
+                let mut current_index = 0;
                 let cells = args
                     .iter()
                     .enumerate()
                     .flat_map(|(i, arg)| match arg {
-                        RuntimeValue::Array(array) => array
-                            .iter()
-                            .enumerate()
-                            .map(move |(j, v)| {
-                                mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                                    row: 0,
-                                    column: i + j,
-                                    value: Box::new(mq_markdown::Node::Text(mq_markdown::Text {
-                                        value: v.to_string(),
+                        RuntimeValue::Array(array) => {
+                            let array_num = array.len();
+                            array
+                                .iter()
+                                .enumerate()
+                                .map(move |(j, v)| {
+                                    current_index += 1;
+                                    mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                                        row: 0,
+                                        column: current_index - 1,
+                                        value: Box::new(mq_markdown::Node::Text(
+                                            mq_markdown::Text {
+                                                value: v.to_string(),
+                                                position: None,
+                                            },
+                                        )),
+                                        last_cell_in_row: i == args_num - 1 && j == array_num - 1,
+                                        last_cell_of_in_table: false,
                                         position: None,
-                                    })),
-                                    last_cell_in_row: false,
-                                    last_cell_of_in_table: false,
-                                    position: None,
+                                    })
                                 })
-                            })
-                            .collect_vec(),
-                        v => vec![mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                            row: 0,
-                            column: i,
-                            value: Box::new(mq_markdown::Node::Text(mq_markdown::Text {
-                                value: v.to_string(),
+                                .collect_vec()
+                        }
+                        v => {
+                            current_index += 1;
+                            vec![mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                                row: 0,
+                                column: current_index - 1,
+                                value: Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                                    value: v.to_string(),
+                                    position: None,
+                                })),
+                                last_cell_in_row: i == args_num - 1,
+                                last_cell_of_in_table: false,
                                 position: None,
-                            })),
-                            last_cell_in_row: false,
-                            last_cell_of_in_table: false,
-                            position: None,
-                        })],
+                            })]
+                        }
                     })
                     .collect_vec();
 
