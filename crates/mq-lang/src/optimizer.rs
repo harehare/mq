@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use compact_str::CompactString;
-use itertools::Itertools;
 use rustc_hash::FxHashMap;
 
 use crate::Program;
@@ -24,7 +23,7 @@ impl Optimizer {
         program
             .iter()
             .map(|node| self.optimize_node(Rc::clone(node)))
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     #[inline(always)]
@@ -169,7 +168,7 @@ impl Optimizer {
                 let program = program
                     .iter()
                     .map(|node| self.optimize_node(Rc::clone(node)))
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Rc::new(ast::Node {
                     token_id: node.token_id,
@@ -190,7 +189,7 @@ impl Optimizer {
                         let expr = self.optimize_node(Rc::clone(expr));
                         (cond, expr)
                     })
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Rc::new(ast::Node {
                     token_id: node.token_id,
@@ -206,11 +205,11 @@ impl Optimizer {
                 _ => Rc::clone(&node),
             },
             ast::Expr::Def(ident, params, program) => {
-                let params = params.iter().map(Rc::clone).collect_vec();
+                let params = params.iter().map(Rc::clone).collect::<Vec<_>>();
                 let program = program
                     .iter()
                     .map(|node| self.optimize_node(Rc::clone(node)))
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Rc::new(ast::Node {
                     token_id: node.token_id,
@@ -221,7 +220,7 @@ impl Optimizer {
                 let program = program
                     .iter()
                     .map(|node| self.optimize_node(Rc::clone(node)))
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Rc::new(ast::Node {
                     token_id: node.token_id,
@@ -232,7 +231,7 @@ impl Optimizer {
                 let program = program
                     .iter()
                     .map(|node| self.optimize_node(Rc::clone(node)))
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Rc::new(ast::Node {
                     token_id: node.token_id,

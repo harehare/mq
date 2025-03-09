@@ -47,7 +47,6 @@ impl Scope {
 }
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
     use url::Url;
 
     use crate::Hir;
@@ -74,7 +73,7 @@ mod tests {
         let url = Url::parse("file:///test").unwrap();
         let (source_id, _) = hir.add_code(url.clone(), "let x = 5".into());
         let source = SourceInfo::new(Some(source_id), None);
-        let symbol_id = hir.symbols().collect_vec().first().unwrap().0;
+        let symbol_id = hir.symbols().collect::<Vec<_>>().first().unwrap().0;
 
         let function_scope = Scope::new(source.clone(), ScopeKind::Function(symbol_id), None);
         assert_eq!(function_scope.symbol_id(), Some(symbol_id));

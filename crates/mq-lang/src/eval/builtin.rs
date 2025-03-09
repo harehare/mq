@@ -107,7 +107,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("array"),
             BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, args| {
-                Ok(RuntimeValue::Array(args.iter().cloned().collect_vec()))
+                Ok(RuntimeValue::Array(args.to_vec()))
             }),
         );
         map.insert(
@@ -480,14 +480,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
                     s.chars()
                         .map(|c| RuntimeValue::Number((c as u32).into()))
-                        .collect_vec(),
+                        .collect::<Vec<_>>(),
                 )),
                 [RuntimeValue::Markdown(node_value)] => Ok(RuntimeValue::Array(
                     node_value
                         .value()
                         .chars()
                         .map(|c| RuntimeValue::Number((c as u32).into()))
-                        .collect_vec(),
+                        .collect::<Vec<_>>(),
                 )),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -737,7 +737,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(RuntimeValue::Array(array))
                 }
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-                    let mut s = s.clone().chars().collect_vec();
+                    let mut s = s.clone().chars().collect::<Vec<_>>();
                     s.remove(n.value() as usize);
                     Ok(s.into_iter().collect::<String>().into())
                 }
@@ -785,7 +785,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("compact"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
-                    array.iter().filter(|v| !v.is_none()).cloned().collect_vec(),
+                    array
+                        .iter()
+                        .filter(|v| !v.is_none())
+                        .cloned()
+                        .collect::<Vec<_>>(),
                 )),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1249,7 +1253,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                                         position: None,
                                     })
                                 })
-                                .collect_vec()
+                                .collect::<Vec<_>>()
                         }
                         v => {
                             current_index += 1;
@@ -1266,7 +1270,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             })]
                         }
                     })
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Ok(RuntimeValue::Markdown(mq_markdown::Node::TableRow(
                     mq_markdown::TableRow {
@@ -2263,7 +2267,10 @@ impl Error {
             Error::InvalidTypes(name, args) => EvalError::InvalidTypes {
                 token: (*token_arena.borrow()[node.token_id]).clone(),
                 name: name.clone(),
-                args: args.iter().map(|o| o.to_string().into()).collect_vec(),
+                args: args
+                    .iter()
+                    .map(|o| o.to_string().into())
+                    .collect::<Vec<_>>(),
             },
             Error::InvalidNumberOfArguments(name, expected, got) => {
                 EvalError::InvalidNumberOfArguments(
@@ -2550,12 +2557,16 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
         Ok(RuntimeValue::Array(
-            re.split(input).map(|s| s.to_owned().into()).collect_vec(),
+            re.split(input)
+                .map(|s| s.to_owned().into())
+                .collect::<Vec<_>>(),
         ))
     } else if let Ok(re) = Regex::new(pattern) {
         cache.insert(pattern.to_string(), re.clone());
         Ok(RuntimeValue::Array(
-            re.split(input).map(|s| s.to_owned().into()).collect_vec(),
+            re.split(input)
+                .map(|s| s.to_owned().into())
+                .collect::<Vec<_>>(),
         ))
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))

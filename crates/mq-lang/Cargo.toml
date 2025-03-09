@@ -31,6 +31,7 @@ thiserror = "2.0.12"
 
 [dev-dependencies]
 criterion = "0.5.1"
+mq-test-support = {path = "../../crates/mq-test-support", version = "0.1.0"}
 rstest = "0.25.0"
 
 [[bench]]

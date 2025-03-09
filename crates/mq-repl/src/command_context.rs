@@ -1,7 +1,6 @@
 use std::{fmt, fs, str::FromStr};
 
 use arboard::Clipboard;
-use itertools::Itertools;
 use miette::IntoDiagnostic;
 use strum::IntoEnumIterator;
 
@@ -119,7 +118,7 @@ impl CommandContext {
 
                 if name.contains(src) { Some(name) } else { None }
             })
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn execute(&mut self, to_run: &str) -> miette::Result<CommandOutput> {
@@ -129,7 +128,7 @@ impl CommandContext {
                     .input
                     .iter()
                     .map(|runtime_value| runtime_value.to_string())
-                    .collect_vec()
+                    .collect::<Vec<_>>()
                     .join("\n");
                 let mut clipboard = Clipboard::new().unwrap();
 
@@ -183,5 +182,160 @@ impl CommandContext {
                 })?
             }
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_command_from_string() {
+        assert!(matches!(Command::from(":copy".to_string()), Command::Copy));
+        assert!(matches!(Command::from(":help".to_string()), Command::Help));
+        assert!(matches!(Command::from(":quit".to_string()), Command::Quit));
+        assert!(matches!(Command::from(":vars".to_string()), Command::Vars));
+        assert!(matches!(
+            Command::from(":version".to_string()),
+            Command::Version
+        ));
+
+        if let Command::Eval(code) = Command::from("add(1, 2)".to_string()) {
+            assert_eq!(code, "add(1, 2)");
+        } else {
+            panic!("Expected Eval command");
+        }
+
+        if let Command::Env(name, value) = Command::from(":env TEST_VAR test_value".to_string()) {
+            assert_eq!(name, "TEST_VAR");
+            assert_eq!(value, "test_value");
+        } else {
+            panic!("Expected Env command");
+        }
+
+        if let Command::LoadFile(path) = Command::from(":load_file test.md".to_string()) {
+            assert_eq!(path, "test.md");
+        } else {
+            panic!("Expected LoadFile command");
+        }
+    }
+
+    #[test]
+    fn test_command_display() {
+        assert_eq!(format!("{}", Command::Copy), ":copy");
+        assert_eq!(format!("{}", Command::Help), ":help");
+        assert_eq!(format!("{}", Command::Quit), ":quit");
+        assert_eq!(format!("{}", Command::Vars), ":vars");
+        assert_eq!(format!("{}", Command::Version), ":version");
+        assert_eq!(
+            format!("{}", Command::LoadFile("test.md".to_string())),
+            ":load_file"
+        );
+        assert_eq!(
+            format!("{}", Command::Env("key".to_string(), "value".to_string())),
+            ":env"
+        );
+        assert_eq!(format!("{}", Command::Eval("code".to_string())), ":eval");
+    }
+
+    #[test]
+    fn test_command_help() {
+        for cmd in Command::iter() {
+            let help = cmd.help();
+            assert!(!help.is_empty());
+
+            match cmd {
+                Command::Copy => assert!(help.contains("copy")),
+                Command::Help => assert!(help.contains(":help")),
+                Command::Quit => assert!(help.contains(":quit")),
+                Command::Vars => assert!(help.contains(":vars")),
+                Command::Version => assert!(help.contains(":version")),
+                Command::LoadFile(_) => assert!(help.contains(":load_file")),
+                Command::Env(_, _) => assert!(help.contains("env")),
+                Command::Eval(_) => assert!(help.contains(":eval")),
+            }
+        }
+    }
+
+    #[test]
+    fn test_completions() {
+        let engine = mq_lang::Engine::default();
+        let ctx = CommandContext::new(engine, vec![]);
+
+        let completions = ctx.completions("", 0);
+        assert!(!completions.is_empty(), "Completions should not be empty");
+    }
+
+    #[test]
+    fn test_execute_env() {
+        let engine = mq_lang::Engine::default();
+        let mut ctx = CommandContext::new(engine, vec![]);
+
+        let result = ctx.execute(":env TEST_VAR test_value");
+        assert!(matches!(result, Ok(CommandOutput::None)));
+        assert_eq!(std::env::var("TEST_VAR").unwrap(), "test_value");
+    }
+
+    #[test]
+    fn test_execute_help() {
+        let engine = mq_lang::Engine::default();
+        let mut ctx = CommandContext::new(engine, vec![]);
+
+        let result = ctx.execute(":help").unwrap();
+        if let CommandOutput::String(help_strings) = result {
+            assert!(!help_strings.is_empty());
+            assert!(help_strings.iter().any(|s| s.contains("copy")));
+            assert!(help_strings.iter().any(|s| s.contains("env")));
+            assert!(help_strings.iter().any(|s| s.contains(":help")));
+        } else {
+            panic!("Expected String output");
+        }
+    }
+
+    #[test]
+    fn test_execute_vars() {
+        let mut engine = mq_lang::Engine::default();
+        engine
+            .eval("let x = 42", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let mut ctx = CommandContext::new(engine, vec![]);
+
+        let result = ctx.execute(":vars").unwrap();
+        if let CommandOutput::String(vars) = result {
+            assert!(!vars.is_empty());
+            assert!(vars.iter().any(|s| s.contains("x = 42")));
+        } else {
+            panic!("Expected String output");
+        }
+    }
+
+    #[test]
+    fn test_execute_version() {
+        let engine = mq_lang::Engine::default();
+        let mut ctx = CommandContext::new(engine, vec![]);
+
+        let result = ctx.execute(":version").unwrap();
+        if let CommandOutput::String(version) = result {
+            assert_eq!(version.len(), 1);
+            assert!(!version[0].is_empty());
+        } else {
+            panic!("Expected String output");
+        }
+    }
+
+    #[test]
+    fn test_execute_eval() {
+        let engine = mq_lang::Engine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+
+        let result = ctx.execute("add(1, 2)").unwrap();
+        if let CommandOutput::Value(values) = result {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0].to_string(), "3");
+        } else {
+            panic!("Expected Value output");
+        }
+
+        let result = ctx.execute("").unwrap();
+        assert!(matches!(result, CommandOutput::None));
     }
 }

@@ -4,7 +4,6 @@ use std::{
 };
 
 use compact_str::CompactString;
-use itertools::Itertools;
 
 use crate::{Range, Token, TokenKind};
 
@@ -143,7 +142,7 @@ impl Node {
             .iter()
             .filter(|trivia| trivia.is_comment())
             .map(|trivia| (trivia.range(), trivia.comment()))
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn children_without_token(&self) -> Vec<Arc<Node>> {
@@ -151,7 +150,7 @@ impl Node {
             .iter()
             .filter(|child| !child.is_token())
             .cloned()
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn split_cond_and_program(&self) -> (Vec<Arc<Node>>, Vec<Arc<Node>>) {
@@ -167,13 +166,13 @@ impl Node {
                 .take(expr_index)
                 .filter(|child| !child.is_token())
                 .cloned()
-                .collect_vec(),
+                .collect::<Vec<_>>(),
             self.children
                 .iter()
                 .skip(expr_index)
                 .filter(|child| !child.is_token())
                 .cloned()
-                .collect_vec(),
+                .collect::<Vec<_>>(),
         )
     }
 }

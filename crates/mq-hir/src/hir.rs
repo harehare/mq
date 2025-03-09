@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use compact_str::CompactString;
-use itertools::Itertools;
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use url::Url;
@@ -127,7 +126,7 @@ impl Hir {
                         .params
                         .iter()
                         .map(|p| CompactString::new(p))
-                        .collect_vec(),
+                        .collect::<Vec<_>>(),
                 ),
                 source: SourceInfo::new(Some(self.builtin.source_id), None),
                 scope: self.builtin.scope_id,
@@ -760,6 +759,7 @@ impl Hir {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
     use rstest::rstest;
 
     #[rstest]
@@ -779,13 +779,13 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let symbols = hir
             .symbols()
             .map(|(_, symbol)| symbol.clone())
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         assert_eq!(
             symbols
                 .iter()
                 .map(|symbol| symbol.clone().kind)
-                .collect_vec(),
+                .collect::<Vec<_>>(),
             expected_kind
         );
 
@@ -793,7 +793,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
             symbols
                 .iter()
                 .map(|symbol| symbol.doc.iter().map(|(_, doc)| doc.clone()).join("\n"))
-                .collect_vec(),
+                .collect::<Vec<_>>(),
             expected_doc
         );
     }

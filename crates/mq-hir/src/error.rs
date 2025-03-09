@@ -1,5 +1,4 @@
 use compact_str::CompactString;
-use itertools::Itertools;
 use thiserror::Error;
 
 use crate::{Hir, Symbol, SymbolKind};
@@ -37,7 +36,7 @@ impl Hir {
                 }
                 _ => None,
             })
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn error_ranges(&self) -> Vec<(String, mq_lang::Range)> {
@@ -53,7 +52,7 @@ impl Hir {
                     },
                 )
             })
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     fn find_similar_names(&self, target: &str) -> Option<Vec<CompactString>> {
@@ -76,7 +75,7 @@ impl Hir {
                     None
                 }
             })
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         if similar_names.is_empty() {
             None

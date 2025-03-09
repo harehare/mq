@@ -61,7 +61,7 @@ impl ErrorReporter {
                     },
                 )
             })
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 }
 

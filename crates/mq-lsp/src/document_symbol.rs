@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
-use itertools::Itertools;
 use tower_lsp::lsp_types::{
     DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind, Url,
 };
@@ -59,7 +58,7 @@ pub fn response(
                     })
                 })
             })
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         DocumentSymbolResponse::Nested(symbols)
     })

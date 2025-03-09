@@ -2,7 +2,6 @@ use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
 use dashmap::DashMap;
-use itertools::Itertools;
 use mq_lsp::capabilities;
 use mq_lsp::completions;
 use mq_lsp::document_symbol;
@@ -255,7 +254,7 @@ impl Backend {
                     message,
                 )
             })
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         diagnostics.extend(
             self.hir
@@ -278,7 +277,7 @@ impl Backend {
                         message,
                     )
                 })
-                .collect_vec(),
+                .collect::<Vec<_>>(),
         );
 
         self.client
@@ -348,7 +347,7 @@ mod tests {
                 .unwrap()
                 .symbols()
                 .map(|(_, s)| s.name.clone().unwrap().to_owned())
-                .collect_vec()
+                .collect::<Vec<_>>()
                 .contains(&"main".into()),
         );
         assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());

@@ -17,7 +17,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
     for symbol in symbols
         .into_iter()
         .sorted_by_key(|symbol| symbol.source.text_range.clone())
-        .collect_vec()
+        .collect::<Vec<_>>()
     {
         for (range, _) in &symbol.doc {
             let line = range.start.line - 1_u32;

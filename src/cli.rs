@@ -1,7 +1,6 @@
 use clap::CommandFactory;
 use clap::{Parser, Subcommand};
 use clap_complete::{Shell, generate};
-use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use std::io::{self, BufWriter, Read, Write};
@@ -56,7 +55,7 @@ pub enum ListStyle {
     Star,
 }
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// load filter from the file
     #[arg(short, long)]
@@ -83,7 +82,7 @@ struct InputArgs {
     args: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Default)]
 struct OutputArgs {
     /// pretty print
     #[clap(short, long, default_value = "false")]
@@ -219,7 +218,7 @@ impl Cli {
             let runtime_values = content
                 .lines()
                 .map(|line| mq_lang::Value::String(line.to_string()))
-                .collect_vec();
+                .collect::<Vec<_>>();
             engine.eval(query, runtime_values.into_iter())
         } else {
             let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(content)?;
@@ -299,7 +298,7 @@ impl Cli {
                         .into_iter()
                         .zip(contents)
                         .map(|(file, content)| (Some(file), content))
-                        .collect_vec()
+                        .collect::<Vec<_>>()
                 })
             })
             .unwrap_or_else(|| {
@@ -366,5 +365,220 @@ impl Cli {
         }
 
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use mq_test_support::defer;
+
+    use super::*;
+
+    #[test]
+    fn test_cli_null_input() {
+        let cli = Cli {
+            input: InputArgs {
+                null_input: true,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+            query: Some("self".to_string()),
+            files: None,
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_raw_input() {
+        let (_, temp_file_path) = mq_test_support::create_file("test1.md", "# test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                raw_input: true,
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_output_formats() {
+        let (_, temp_file_path) = mq_test_support::create_file("test2.md", "# test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        for format in [Format::Markdown, Format::Html, Format::Text] {
+            let cli = Cli {
+                input: InputArgs::default(),
+                output: OutputArgs {
+                    output_format: format.clone(),
+                    ..Default::default()
+                },
+                commands: None,
+                verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+                query: Some("self".to_string()),
+                files: Some(vec![temp_file_path.clone()]),
+            };
+
+            assert!(cli.run().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_cli_list_styles() {
+        let (_, temp_file_path) = mq_test_support::create_file("test3.md", "# test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        for style in [ListStyle::Dash, ListStyle::Plus, ListStyle::Star] {
+            let cli = Cli {
+                input: InputArgs::default(),
+                output: OutputArgs {
+                    list_style: style.clone(),
+                    ..Default::default()
+                },
+                commands: None,
+                verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+                query: Some("self".to_string()),
+                files: Some(vec![temp_file_path.clone()]),
+            };
+
+            assert!(cli.run().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_cli_fmt_command() {
+        let (_, temp_file_path) = mq_test_support::create_file("test1.mq", "def math(): 42;");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Fmt {
+                indent_width: 2,
+                check: false,
+            }),
+            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+            query: None,
+            files: Some(vec![temp_file_path]),
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_fmt_command_with_check() {
+        let (_, temp_file_path) = mq_test_support::create_file("test2.mq", "def math(): 42;");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Fmt {
+                indent_width: 2,
+                check: true,
+            }),
+            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+            query: None,
+            files: Some(vec![temp_file_path]),
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_update_flag() {
+        let (_, temp_file_path) = mq_test_support::create_file("test4.md", "# test");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                update: true,
+                ..Default::default()
+            },
+            commands: None,
+            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_with_module_names() {
+        let (temp_dir, temp_file_path) = mq_test_support::create_file("math.mq", "def math(): 42;");
+        let (_, temp_md_file_path) = mq_test_support::create_file("test.md", "# test");
+        let temp_md_file_path_clone = temp_md_file_path.clone();
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+
+            if temp_md_file_path_clone.exists() {
+                std::fs::remove_file(&temp_md_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                module_names: Some(vec!["math".to_string()]),
+                module_directories: Some(vec![temp_dir.clone()]),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
+            query: Some("math".to_owned()),
+            files: Some(vec![temp_md_file_path]),
+        };
+
+        assert!(cli.run().is_ok());
     }
 }

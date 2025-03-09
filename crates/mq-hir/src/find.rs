@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use itertools::Itertools;
-
 use crate::{Hir, Scope, Symbol, SymbolKind, scope::ScopeId, source::SourceId, symbol::SymbolId};
 
 impl Hir {
@@ -50,7 +48,7 @@ impl Hir {
         source.and_then(|_| {
             self.scopes
                 .iter()
-                .collect_vec()
+                .collect::<Vec<_>>()
                 .into_iter()
                 .rev()
                 .find(|(_, scope)| {
@@ -97,7 +95,7 @@ impl Hir {
                     }
                 })
             })
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn find_scope_by_source(&self, source_id: &SourceId) -> ScopeId {

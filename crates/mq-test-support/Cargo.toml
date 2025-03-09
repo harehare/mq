@@ -1,0 +1,14 @@
+[package]
+edition = "2024"
+name = "mq-test-support"
+publish = false
+version = "0.1.0"
+
+[lib]
+bench = false
+doctest = false
+
+[dependencies]
+scopeguard = "1.2.0"
+
+[dev-dependencies]

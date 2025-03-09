@@ -15,6 +15,10 @@
     "type": "git",
     "url": "https://github.com/harehare/mq.git"
   },
+  "galleryBanner": {
+    "color": "#123850",
+    "theme": "dark"
+  },
   "keywords": [
     "mq",
     "jq",

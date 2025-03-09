@@ -1,5 +1,4 @@
 use colored::*;
-use itertools::Itertools;
 use miette::IntoDiagnostic;
 use rustyline::{
     At, Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent,
@@ -87,7 +86,7 @@ impl Completer for MqLineHelper {
                 display: cmd.clone(),
                 replacement: format!("{}{}", cmd, &line[pos..]),
             })
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         if line.starts_with(Command::LoadFile("".to_string()).to_string().as_str()) {
             let (_, file_completions) = self.file_completer.complete_path(line, pos)?;
@@ -169,7 +168,7 @@ impl Repl {
                                 let s = runtime_value.to_string();
                                 if s.is_empty() { None } else { Some(s) }
                             })
-                            .collect_vec();
+                            .collect::<Vec<_>>();
 
                         if !lines.is_empty() {
                             println!("{}", lines.join("\n"))

@@ -2,7 +2,6 @@ use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::{AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, number::Number};
 
-use itertools::Itertools;
 use mq_markdown::Node;
 
 #[derive(Clone, PartialEq)]
@@ -48,7 +47,7 @@ impl From<RuntimeValue> for Value {
             RuntimeValue::Bool(b) => Value::Bool(b),
             RuntimeValue::String(s) => Value::String(s),
             RuntimeValue::Array(a) => {
-                Value::Array(a.iter().map(|v| v.clone().into()).collect_vec())
+                Value::Array(a.iter().map(|v| v.clone().into()).collect::<Vec<_>>())
             }
             RuntimeValue::Markdown(m) => Value::Markdown(m),
             RuntimeValue::Function(params, program, _) => Value::Function(params, program),
@@ -158,7 +157,7 @@ impl Values {
             .iter()
             .filter(|v| !v.is_none())
             .cloned()
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn values(&self) -> &Vec<Value> {

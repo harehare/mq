@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
-use itertools::Itertools;
 use tower_lsp::lsp_types::{Location, Position, Range, Url};
 
 pub fn response(
@@ -41,7 +40,7 @@ pub fn response(
                         })
                     })
                 })
-                .collect_vec();
+                .collect::<Vec<_>>();
 
             if locations.is_empty() {
                 None

@@ -1120,7 +1120,6 @@ mod tests {
 
     use super::*;
     use compact_str::CompactString;
-    use itertools::Itertools;
     use rstest::rstest;
 
     fn token(token_kind: TokenKind) -> Token {
@@ -1727,7 +1726,7 @@ mod tests {
         let arena = Arena::new(10);
         assert_eq!(
             Parser::new(
-                input.into_iter().map(Rc::new).collect_vec().iter(),
+                input.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
                 Rc::new(RefCell::new(arena)),
                 Module::TOP_LEVEL_MODULE_ID
             )

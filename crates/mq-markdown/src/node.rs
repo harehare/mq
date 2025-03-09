@@ -761,7 +761,7 @@ impl Node {
                     .iter()
                     .zip(value.split(","))
                     .map(|(cell, value)| cell.with_value(value))
-                    .collect_vec();
+                    .collect::<Vec<_>>();
 
                 Self::TableRow(row)
             }
@@ -831,7 +831,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|n| Self::set_mdast_value(n, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..mdx
             }),
             Self::MdxJsxTextElement(mdx) => Self::MdxJsxTextElement(mdast::MdxJsxTextElement {
@@ -841,7 +841,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|n| Self::set_mdast_value(n, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..mdx
             }),
         }
@@ -853,12 +853,12 @@ impl Node {
                 .children
                 .into_iter()
                 .flat_map(Self::from_mdast_node)
-                .collect_vec(),
+                .collect::<Vec<_>>(),
             mdast::Node::ListItem(list_item) => list_item
                 .children
                 .into_iter()
                 .flat_map(Self::from_mdast_node)
-                .collect_vec(),
+                .collect::<Vec<_>>(),
             mdast::Node::List(list) => Self::mdast_list_items(&list, 0),
             mdast::Node::Table(table) => table
                 .children
@@ -891,7 +891,11 @@ impl Node {
                                 .collect(),
                             if row == 0 {
                                 vec![Self::TableHeader(TableHeader {
-                                    align: table.align.iter().map(|a| (*a).into()).collect_vec(),
+                                    align: table
+                                        .align
+                                        .iter()
+                                        .map(|a| (*a).into())
+                                        .collect::<Vec<_>>(),
                                     position: n.position().map(|p| p.clone().into()),
                                 })]
                             } else {
@@ -1214,7 +1218,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..root
             }),
             mdast::Node::ListItem(list_item) => mdast::Node::ListItem(mdast::ListItem {
@@ -1222,7 +1226,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..list_item
             }),
             mdast::Node::TableCell(table_cell) => mdast::Node::TableCell(mdast::TableCell {
@@ -1230,7 +1234,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..table_cell
             }),
             mdast::Node::Blockquote(blockquote) => mdast::Node::Blockquote(mdast::Blockquote {
@@ -1238,7 +1242,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..blockquote
             }),
             mdast::Node::Code(code) => mdast::Node::Code(mdast::Code {
@@ -1254,7 +1258,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..delete
             }),
             mdast::Node::Emphasis(emphasis) => mdast::Node::Emphasis(mdast::Emphasis {
@@ -1262,7 +1266,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..emphasis
             }),
             mdast::Node::FootnoteDefinition(footnote_definition) => {
@@ -1271,7 +1275,7 @@ impl Node {
                         .children
                         .into_iter()
                         .map(|children| Self::set_mdast_value(children, value))
-                        .collect_vec(),
+                        .collect::<Vec<_>>(),
                     ..footnote_definition
                 })
             }
@@ -1286,7 +1290,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..heading
             }),
             mdast::Node::Html(html) => mdast::Node::Html(mdast::Html {
@@ -1330,7 +1334,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..paragraph
             }),
             mdast::Node::Text(text) => mdast::Node::Text(mdast::Text {
@@ -1349,7 +1353,7 @@ impl Node {
                         .children
                         .into_iter()
                         .map(|children| Self::set_mdast_value(children, value))
-                        .collect_vec(),
+                        .collect::<Vec<_>>(),
                     ..mdx_jsx_flow_element
                 })
             }
@@ -1359,7 +1363,7 @@ impl Node {
                         .children
                         .into_iter()
                         .map(|children| Self::set_mdast_value(children, value))
-                        .collect_vec(),
+                        .collect::<Vec<_>>(),
                     ..mdx_jsx_text_element
                 })
             }
@@ -1378,7 +1382,7 @@ impl Node {
                     .children
                     .into_iter()
                     .map(|children| Self::set_mdast_value(children, value))
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
                 ..strong
             }),
             mdast::Node::Yaml(yaml) => mdast::Node::Yaml(mdast::Yaml {

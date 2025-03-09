@@ -22,7 +22,7 @@ let code = r#"
 hir.add_code(Url::from_str("file:///main.rs").unwrap(), code);
 
 // Retrieve symbols from the HIR
-let symbols: Vec<(SymbolId, &Symbol)> = hir.symbols().collect_vec();
+let symbols: Vec<(SymbolId, &Symbol)> = hir.symbols().collect::<Vec<_>>();
 
 // Print the symbols
 for (symbol_id, symbol) in symbols {

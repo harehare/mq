@@ -1,7 +1,5 @@
 use std::str::FromStr;
 
-use itertools::Itertools;
-
 pub fn response(
     input: String,
     params: tower_lsp::lsp_types::ExecuteCommandParams,
@@ -21,7 +19,7 @@ pub fn response(
                             .nodes
                             .into_iter()
                             .map(mq_lang::Value::from)
-                            .collect_vec()
+                            .collect::<Vec<_>>()
                     })
                     .unwrap_or_else(|_| vec![mq_lang::Value::String(input)]);
 
@@ -49,5 +47,78 @@ pub fn response(
             }
         }
         _ => None,
+    }
+}
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+    use tower_lsp::lsp_types::ExecuteCommandParams;
+
+    use super::*;
+
+    #[test]
+    fn test_run_selected_text_with_valid_text() {
+        let input = "# Test\nThis is a test".to_string();
+        let params = ExecuteCommandParams {
+            command: "mq/runSelectedText".to_string(),
+            arguments: vec![Value::String("add(1, 2)".to_string())],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(input.clone(), params);
+        assert!(response.is_some());
+    }
+
+    #[test]
+    fn test_run_selected_text_with_invalid_code() {
+        let input = "# Test\nThis is a test".to_string();
+        let params = ExecuteCommandParams {
+            command: "mq/runSelectedText".to_string(),
+            arguments: vec![Value::String("add1, 2)".to_string())],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(input, params);
+        assert!(response.is_some());
+        assert!(response.unwrap().contains("Unexpected token"));
+    }
+
+    #[test]
+    fn test_run_selected_text_with_empty_arguments() {
+        let input = "# Test\nThis is a test".to_string();
+        let params = ExecuteCommandParams {
+            command: "mq/runSelectedText".to_string(),
+            arguments: vec![],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(input, params);
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn test_unsupported_command() {
+        let input = "# Test\nThis is a test".to_string();
+        let params = ExecuteCommandParams {
+            command: "unsupported/command".to_string(),
+            arguments: vec![],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(input, params);
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn test_run_selected_text_with_non_string_argument() {
+        let input = "# Test\nThis is a test".to_string();
+        let params = ExecuteCommandParams {
+            command: "mq/runSelectedText".to_string(),
+            arguments: vec![Value::Number(42.into())],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(input, params);
+        assert!(response.is_none());
     }
 }

@@ -47,7 +47,6 @@ mod range;
 mod value;
 
 use error::InnerError;
-use itertools::Itertools;
 use lexer::Lexer;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -91,7 +90,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     )
     .unwrap();
     let (cst_nodes, errors) =
-        CstParser::new(tokens.into_iter().map(Arc::new).collect_vec().iter()).parse();
+        CstParser::new(tokens.into_iter().map(Arc::new).collect::<Vec<_>>().iter()).parse();
 
     (cst_nodes, errors)
 }
@@ -105,7 +104,7 @@ pub fn parse(
         tokenize(code, lexer::Options::default())?
             .into_iter()
             .map(Rc::new)
-            .collect_vec()
+            .collect::<Vec<_>>()
             .iter(),
         token_arena,
         Module::TOP_LEVEL_MODULE_ID,

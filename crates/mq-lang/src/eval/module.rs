@@ -5,7 +5,6 @@ use crate::{
     lexer::{self, Lexer, error::LexerError},
 };
 use compact_str::CompactString;
-use itertools::Itertools;
 use log::debug;
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 use thiserror::Error;
@@ -82,7 +81,7 @@ impl ModuleLoader {
             .tokenize(code, module_id)
             .map_err(ModuleError::LexerError)?;
         let program = Parser::new(
-            tokens.into_iter().map(Rc::new).collect_vec().iter(),
+            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
             token_arena,
             module_id,
         )
@@ -93,13 +92,13 @@ impl ModuleLoader {
             .iter()
             .filter(|node| matches!(*node.expr, ast::Expr::Def(_, _, _)))
             .cloned()
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         let vars = program
             .iter()
             .filter(|node| matches!(*node.expr, ast::Expr::Let(_, _)))
             .cloned()
-            .collect_vec();
+            .collect::<Vec<_>>();
 
         if program.len() != modules.len() + vars.len() {
             return Err(ModuleError::InvalidModule);
@@ -154,7 +153,7 @@ impl ModuleLoader {
             .map(|p| {
                 p.into_iter()
                     .map(|p| p.to_str().map(|p| p.to_string()).unwrap_or_default())
-                    .collect_vec()
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| {
                 DEFAULT_PATHS

@@ -1513,6 +1513,7 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "mq-repl",
+ "mq-test-support",
  "rstest",
 ]
 
@@ -1554,6 +1555,7 @@ dependencies = [
  "log",
  "miette",
  "mq-markdown",
+ "mq-test-support",
  "nom",
  "nom_locate",
  "percent-encoding",
@@ -1616,6 +1618,13 @@ dependencies = [
  "mq-markdown",
  "rustyline",
  "strum",
+]
+
+[[package]]
+name = "mq-test-support"
+version = "0.1.0"
+dependencies = [
+ "scopeguard",
 ]
 
 [[package]]

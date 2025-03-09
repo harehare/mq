@@ -89,7 +89,7 @@ pub fn response(
                         }),
                         _ => None,
                     })
-                    .collect_vec(),
+                    .collect::<Vec<_>>(),
             ))
         }
         None => None,

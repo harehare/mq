@@ -16,7 +16,6 @@ pub mod runtime_value;
 use compact_str::CompactString;
 use env::Env;
 use error::EvalError;
-use itertools::Itertools;
 use log::debug;
 use runtime_value::RuntimeValue;
 
@@ -55,8 +54,8 @@ impl Evaluator {
                         self.env.borrow_mut().define(
                             ident,
                             RuntimeValue::Function(
-                                params.iter().map(Rc::clone).collect_vec(),
-                                program.iter().map(Rc::clone).collect_vec(),
+                                params.iter().map(Rc::clone).collect::<Vec<_>>(),
+                                program.iter().map(Rc::clone).collect::<Vec<_>>(),
                                 Rc::clone(&self.env),
                             ),
                         );
@@ -105,8 +104,8 @@ impl Evaluator {
                     self.env.borrow_mut().define(
                         ident,
                         RuntimeValue::Function(
-                            params.iter().map(Rc::clone).collect_vec(),
-                            program.iter().map(Rc::clone).collect_vec(),
+                            params.iter().map(Rc::clone).collect::<Vec<_>>(),
+                            program.iter().map(Rc::clone).collect::<Vec<_>>(),
                             Rc::clone(&self.env),
                         ),
                     );
@@ -150,8 +149,8 @@ impl Evaluator {
                     }
                     ast::Expr::Def(ident, params, program) => {
                         let function = RuntimeValue::Function(
-                            params.iter().map(Rc::clone).collect_vec(),
-                            program.iter().map(Rc::clone).collect_vec(),
+                            params.iter().map(Rc::clone).collect::<Vec<_>>(),
+                            program.iter().map(Rc::clone).collect::<Vec<_>>(),
                             Rc::clone(&env),
                         );
                         env.borrow_mut().define(ident, function.clone());
@@ -266,8 +265,8 @@ impl Evaluator {
             },
             ast::Expr::Def(ident, params, program) => {
                 let function = RuntimeValue::Function(
-                    params.iter().map(Rc::clone).collect_vec(),
-                    program.iter().map(Rc::clone).collect_vec(),
+                    params.iter().map(Rc::clone).collect::<Vec<_>>(),
+                    program.iter().map(Rc::clone).collect::<Vec<_>>(),
                     Rc::clone(&env),
                 );
                 env.borrow_mut().define(ident, function.clone());
@@ -508,9 +507,8 @@ mod tests {
 
     use super::*;
     use Program;
+    use mq_test_support::defer;
     use rstest::{fixture, rstest};
-    use std::fs::File;
-    use std::io::Write;
 
     #[fixture]
     fn token_arena() -> Rc<RefCell<Arena<Rc<Token>>>> {
@@ -1781,12 +1779,16 @@ mod tests {
 
     #[test]
     fn test_include() {
-        let tmp_dir = std::env::temp_dir();
-        let tmp_file_path = tmp_dir.join("test_module.mq");
+        let (temp_dir, temp_file_path) =
+            mq_test_support::create_file("test_module.mq", "def test(): 42;");
 
-        let mut file = File::create(&tmp_file_path).expect("Failed to create temp file");
-        write!(file, r#"def test(): 42;"#).expect("Failed to write to temp file");
-        let loader = ModuleLoader::new(Some(vec![tmp_dir.clone()]));
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
         let program = vec![
             Rc::new(ast::Node {
                 token_id: 0.into(),
@@ -1806,7 +1808,5 @@ mod tests {
             ),
             Ok(vec![RuntimeValue::Number(42.into())])
         );
-
-        std::fs::remove_file(tmp_file_path).expect("Failed to remove temp dir");
     }
 }

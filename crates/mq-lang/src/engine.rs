@@ -1,7 +1,6 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use crate::MqResult;
-use itertools::Itertools;
 
 use crate::{
     AstIdentName, ModuleLoader, Token, Value,
@@ -56,7 +55,7 @@ impl Engine {
             .defined_runtime_values()
             .iter()
             .map(|(name, value)| (name.clone(), Box::new(Value::from(*value.clone()))))
-            .collect_vec()
+            .collect::<Vec<_>>()
     }
 
     pub fn define_string_value(&self, name: &str, value: &str) {
@@ -107,7 +106,13 @@ impl Engine {
         };
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
-            .map(|values| values.into_iter().map(Into::into).collect_vec().into())
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<_>>()
+                    .into()
+            })
             .map_err(|e| error::Error::from_error(code, e, self.evaluator.module_loader.clone()))
     }
 
