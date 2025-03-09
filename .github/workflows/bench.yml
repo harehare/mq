@@ -26,7 +26,7 @@ jobs:
         with:
           filters: |
             lang:
-              - 'crates/mq-lang/**''
+              - 'crates/mq-lang/**'
 
   benchmarks:
     needs: changes
