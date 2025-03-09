@@ -117,6 +117,9 @@ impl Engine {
 }
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::Write;
+
     use super::*;
 
     #[test]
@@ -152,5 +155,38 @@ mod tests {
     fn test_version() {
         let version = Engine::version();
         assert!(!version.is_empty());
+    }
+
+    #[test]
+    fn test_load_builtin_module() {
+        let mut engine = Engine::default();
+        let result = engine.load_builtin_module();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_load_module() {
+        let temp_dir = std::env::temp_dir();
+        let module_path = temp_dir.join("test_module.mq");
+        let mut file = File::create(&module_path).unwrap();
+        write!(file, "def test(): 42;").unwrap();
+
+        let mut engine = Engine::default();
+        engine.set_paths(vec![temp_dir]);
+
+        let result = engine.load_module("test_module");
+        assert!(result.is_ok());
+
+        let values = engine.defined_values();
+        assert!(values.iter().any(|(name, _)| name.as_str() == "test"));
+    }
+
+    #[test]
+    fn test_eval() {
+        let mut engine = Engine::default();
+        let result = engine.eval("add(1, 1)", vec!["".to_string().into()].into_iter());
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
     }
 }

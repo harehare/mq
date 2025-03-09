@@ -583,6 +583,11 @@ mod tests {
             ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}))]))]
+    #[case::downcase(vec![RuntimeValue::NONE],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
+       ],
+       Ok(vec![RuntimeValue::NONE]))]
     #[case::upcase(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("upcase"), Vec::new(), false))
@@ -1326,6 +1331,14 @@ mod tests {
             ast_node(ast::Expr::Call(ast::Ident::new("trim"), Vec::new(), false))
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}))]))]
+    #[case::slice(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}))],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
+            ], false))
+       ],
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}))]))]
     #[case::slice(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
@@ -1382,6 +1395,11 @@ mod tests {
             RuntimeValue::Number(4.into()),
        ])]))]
     #[case::to_number(vec![RuntimeValue::String("42".to_string())],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+       ],
+       Ok(vec![RuntimeValue::Number(42.into())]))]
+    #[case::to_number(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "42".to_string(), position: None}))],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
        ],
@@ -1478,6 +1496,13 @@ mod tests {
                   ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 3, value: Box::new("Heading 3".to_string().into()), position: None}))]))]
+    #[case::md_h(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Heading".to_string(), position: None}))],
+            vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+                  ], false)),
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, value: Box::new("Heading".to_string().into()), position: None}))]))]
     #[case::to_math(vec![RuntimeValue::String("E=mc^2".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_math"), Vec::new(), false)),
@@ -1534,7 +1559,16 @@ mod tests {
                   ast_node(ast::Expr::Call(ast::Ident::new("to_hr"), Vec::new(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule{position: None})]))]
-    #[case::to_hr(vec![RuntimeValue::String("list".to_string())],
+    #[case::to_md_list(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "list".to_string(), position: None}))],
+            vec![
+                  ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
+                           vec![
+                                 ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                           ].into(), false)),
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
+                mq_markdown::List{value: Box::new("list".to_string().into()), index: 0, level: 1 as u8, checked: None, position: None}))]))]
+    #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
                            vec![

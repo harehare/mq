@@ -129,3 +129,6 @@ def is_list2(list): and(is_list(list), eq(get_md_list_level(list), 1));
 
 # Checks if markdown is list with indentation level 3
 def is_list3(list): and(is_list(list), eq(get_md_list_level(list), 2));
+
+# Convert csv string to markdown table
+def csv2table(csv): split(csv, ",") | to_md_table_row();

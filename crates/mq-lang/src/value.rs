@@ -23,6 +23,24 @@ impl From<Node> for Value {
     }
 }
 
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Value::Bool(b)
+    }
+}
+
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Value::String(s)
+    }
+}
+
+impl From<Number> for Value {
+    fn from(n: Number) -> Self {
+        Value::Number(n)
+    }
+}
+
 impl From<RuntimeValue> for Value {
     fn from(value: RuntimeValue) -> Self {
         match value {
@@ -146,6 +164,14 @@ impl Values {
     pub fn values(&self) -> &Vec<Value> {
         &self.0
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -175,13 +201,28 @@ mod tests {
         assert_eq!(Value::Number(Number::from(42.0)).to_string(), "42");
         assert_eq!(Value::Bool(true).to_string(), "true");
         assert_eq!(Value::String("hello".to_string()).to_string(), "hello");
+        assert_eq!(
+            Value::Array(vec!["a".to_string().into(), "b".to_string().into()]).to_string(),
+            "[a, b]"
+        );
         assert_eq!(Value::None.to_string(), "");
     }
 
     #[test]
     fn test_value_debug() {
-        let value = Value::String("test".to_string());
-        assert_eq!(format!("{:?}", value), "\"test\"");
+        assert_eq!(format!("{:?}", Value::Number(Number::from(42.0))), "42");
+        assert_eq!(format!("{:?}", Value::Bool(true)), "true");
+        assert_eq!(
+            format!(
+                "{:?}",
+                Value::Array(vec!["a".to_string().into(), "b".to_string().into()])
+            ),
+            "a\nb"
+        );
+        assert_eq!(
+            format!("{:?}", Value::String("test".to_string())),
+            "\"test\""
+        );
     }
 
     #[test]

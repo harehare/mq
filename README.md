@@ -6,6 +6,7 @@
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 ![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
+[![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
@@ -53,6 +54,44 @@ $ docker run --rm ghcr.io/harehare/mq:0.1.0-preview
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
 
 ## Usage
+
+### Basic usage
+
+<details>
+<summary>Complete list of options (click to show)</summary>
+
+```sh
+Usage: mq [OPTIONS] [QUERY] [FILES]... [COMMAND]
+
+Commands:
+  repl
+  fmt
+  completion
+  help        Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [QUERY]
+  [FILES]...
+
+Options:
+  -f, --from-file <FROM_FILE>           load filter from the file
+  -R, --raw-input                       Reads each line as a string
+  -n, --null-input                      Use empty string as the single input value
+  -L, --directory <MODULE_DIRECTORIES>  Search modules from the directory
+  -M, --module-names <MODULE_NAMES>     Load additional modules from specified files
+      --arg <NAME> <VALUE>              Sets  string  that can be referenced at runtime
+  -c, --compact-output                  pretty print
+  -F, --output-format <OUTPUT_FORMAT>   Compact instead of pretty-printed output [default: markdown] [possible values: markdown, html, text]
+  -U, --update                          Update the input markdown
+      --unbuffered                      Unbuffered output
+      --list-style <LIST_STYLE>         Set the list style for markdown output [default: dash] [possible values: dash, plus, star]
+  -v, --verbose...                      Increase logging verbosity
+  -q, --quiet...                        Decrease logging verbosity
+  -h, --help                            Print help
+  -V, --version                         Print version
+```
+
+</details>
 
 Here's a basic example of how to use `mq`:
 

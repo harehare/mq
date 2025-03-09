@@ -12,6 +12,7 @@
 | `now`               | Returns the current timestamp.                                                              | None                          | `now()`                                         |
 | `base64`            | Encodes the given string to base64.                                                         | `input`                       | `base64("Hello, World!")`                       |
 | `base64d`           | Decodes the given base64 string.                                                            | `input`                       | `base64d("SGVsbG8sIFdvcmxkIQ==")`               |
+| `csv2table`         | Convert csv string to markdown table.                                                       | `csv`                         | `csv2table("a,b,c")`                            |
 | `gsub`              | Replaces all occurrences matching a regular expression pattern with the replacement string. | `pattern`, `from`, `to`       | `gsub("Hello, World!", "World", "Rust")`        |
 | `min`               | Returns the minimum of two values.                                                          | `value1`, `value2`            | `min(1, 2)`                                     |
 | `max`               | Returns the maximum of two values.                                                          | `value1`, `value2`            | `max(1, 2)`                                     |

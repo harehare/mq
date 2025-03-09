@@ -206,6 +206,63 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())])].into()))]
+// csv2table
+#[case::csv2table("csv2table()",
+            vec![Value::String("a,b,c".to_string()), Value::String("1,2,3".to_string())],
+            Ok(vec![
+              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{cells: vec![
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 0,
+                        value: Box::new("a".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 1,
+                        value: Box::new("b".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 2,
+                        value: Box::new("c".to_string().into()),
+                        last_cell_in_row: true,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+              ], position: None})),
+              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{cells: vec![
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 0,
+                        value: Box::new("1".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 1,
+                        value: Box::new("2".to_string().into()),
+                        last_cell_in_row: false,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
+                        row: 0,
+                        column: 2,
+                        value: Box::new("3".to_string().into()),
+                        last_cell_in_row: true,
+                        last_cell_of_in_table: false,
+                        position: None
+                    }),
+              ], position: None})),
+            ].into()))]
 fn test(
     mut engine: Engine,
     #[case] program: &str,
