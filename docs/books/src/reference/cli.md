@@ -17,10 +17,10 @@ Arguments:
   [FILES]...  
 
 Options:
-  -f, --from-file <FROM_FILE>           
+  -f, --from-file <FROM_FILE>           load filter from the file
   -R, --raw-input                       Reads each line as a string
   -n, --null-input                      Use empty string as the single input value
-  -L, --directory <MODULE_DIRECTORIES>  
+  -L, --directory <MODULE_DIRECTORIES>  Search modules from the directory
   -M, --module-names <MODULE_NAMES>     Load additional modules from specified files
       --arg <NAME> <VALUE>              Sets  string  that can be referenced at runtime
   -c, --compact-output                  pretty print
@@ -41,6 +41,6 @@ $ mq 'query' file.md
 To start a REPL session:
 $ mq repl
 
-To format markdown file:
-$ mq fmt --check file.md
+To format mq file:
+$ mq fmt --check file.mq
 ```
