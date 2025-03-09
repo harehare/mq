@@ -14,9 +14,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  benchmarks:
+  changes:
     runs-on: ubuntu-latest
     if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
+    outputs:
+      lang: ${{ steps.filter.outputs.lang }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            lang:
+              - 'crates/mq-lang/**''
+
+  benchmarks:
+    needs: changes
+    runs-on: ubuntu-latest
+    if: ${{ needs.changes.outputs.lang == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
