@@ -1,0 +1,30 @@
+name: benchmarks
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+concurrency:
+  group: "benchmarks"
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install codspeed
+        run: cargo install cargo-codspeed --locked
+      - uses: extractions/setup-just@v2
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@v3
+        with:
+          run: just bench
+          token: ${{ secrets.CODSPEED_TOKEN }}
