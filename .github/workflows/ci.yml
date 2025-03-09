@@ -35,3 +35,17 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: true
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install codspeed
+        run: cargo install cargo-codspeed --locked
+      - uses: extractions/setup-just@v2
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@v3
+        with:
+          run: just bench
+          token: ${{ secrets.CODSPEED_TOKEN }}

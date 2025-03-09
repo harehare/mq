@@ -9,11 +9,16 @@ run *args:
 start-lsp:
     cargo watch -x run
 
-bench:
-    cargo bench -p mq-lang
+[working-directory: 'crates/mq-lang']
+bench: build-bench
+    cargo codspeed run
 
 build:
     cargo build --release --workspace
+
+[working-directory: 'crates/mq-lang']
+build-bench:
+    cargo codspeed build
 
 [working-directory: 'crates/mq-wasm']
 build-wasm:
