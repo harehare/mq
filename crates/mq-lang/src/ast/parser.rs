@@ -11,6 +11,8 @@ use super::Program;
 use super::error::ParseError;
 use super::node::{Expr, Ident, Literal, Node, Selector, TokenId};
 
+type IfExpr = (Option<Rc<Node>>, Rc<Node>);
+
 #[derive(Debug)]
 struct ArrayIndex(Option<usize>);
 
@@ -38,7 +40,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_program(&mut self, root: bool) -> Result<Program, ParseError> {
-        let mut asts = Vec::with_capacity(1000);
+        let mut asts = Vec::with_capacity(1_000);
 
         while let Some(token) = self.tokens.next() {
             match &token.kind {
@@ -110,7 +112,7 @@ impl<'a> Parser<'a> {
                     .token_arena
                     .borrow_mut()
                     .alloc(Rc::clone(&literal_token)),
-                expr: Rc::new(Expr::Literal(Literal::String(s.to_string()))),
+                expr: Rc::new(Expr::Literal(Literal::String(s.to_owned()))),
             })),
             TokenKind::NumberLiteral(n) => Ok(Rc::new(Node {
                 token_id: self
@@ -211,7 +213,7 @@ impl<'a> Parser<'a> {
             .last()
             .map(|last| last.token_id)
             .unwrap_or(def_token_id);
-        self.next_token_without_eof(token_id, |token_kind| {
+        self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::Colon)
         })?;
 
@@ -234,7 +236,7 @@ impl<'a> Parser<'a> {
             return Err(ParseError::UnexpectedToken((*while_token).clone()));
         }
 
-        self.next_token_without_eof(token_id, |token_kind| {
+        self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::Colon)
         })?;
 
@@ -263,7 +265,7 @@ impl<'a> Parser<'a> {
             return Err(ParseError::UnexpectedToken((*until_token).clone()));
         }
 
-        self.next_token_without_eof(token_id, |token_kind| {
+        self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::Colon)
         })?;
 
@@ -302,7 +304,7 @@ impl<'a> Parser<'a> {
                 name: ident,
                 token: ident_token,
             }) => {
-                self.next_token_without_eof(token_id, |token_kind| {
+                self.next_token(token_id, |token_kind| {
                     matches!(token_kind, TokenKind::Colon)
                 })?;
 
@@ -326,7 +328,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if(&mut self, if_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        let mut nodes = Vec::with_capacity(10);
+        let mut nodes = Vec::with_capacity(8);
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&if_token));
         let args = self.parse_args()?;
 
@@ -336,7 +338,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let token_id = self.next_token_without_eof(token_id, |token_kind| {
+        let token_id = self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::Colon)
         })?;
 
@@ -352,42 +354,13 @@ impl<'a> Parser<'a> {
 
         nodes.push((Some(Rc::clone(cond)), then_expr));
 
-        while let Some(token) = self.tokens.peek() {
-            if matches!(token.kind, TokenKind::Else) {
-                break;
-            }
+        let elif_nodes = self.parse_elif(token_id)?;
 
-            let token_id = self.next_token_without_eof(token_id, |token_kind| {
-                matches!(token_kind, TokenKind::Elif)
-            })?;
-            let args = self.parse_args()?;
+        nodes.extend(elif_nodes);
 
-            if args.len() != 1 {
-                return Err(ParseError::UnexpectedToken(
-                    (*self.token_arena.borrow()[token_id]).clone(),
-                ));
-            }
-
-            let token_id = self.next_token_without_eof(token_id, |token_kind| {
-                matches!(token_kind, TokenKind::Colon)
-            })?;
-
-            let expr_token = match self.tokens.next() {
-                Some(token) => Ok(token),
-                None => Err(ParseError::UnexpectedToken(
-                    (*self.token_arena.borrow()[token_id]).clone(),
-                )),
-            }?;
-
-            let cond = args.first().unwrap();
-            let then_expr = self.parse_expr(Rc::clone(expr_token))?;
-
-            nodes.push((Some(Rc::clone(cond)), then_expr));
-        }
-
-        let token_id = self
-            .next_token_without_eof(token_id, |token_kind| matches!(token_kind, TokenKind::Else))?;
-        let token_id = self.next_token_without_eof(token_id, |token_kind| {
+        let token_id =
+            self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Else))?;
+        let token_id = self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::Colon)
         })?;
 
@@ -408,6 +381,44 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn parse_elif(&mut self, token_id: TokenId) -> Result<Vec<IfExpr>, ParseError> {
+        let mut nodes = Vec::with_capacity(8);
+
+        while let Some(token) = self.tokens.peek() {
+            if matches!(token.kind, TokenKind::Else) {
+                break;
+            }
+
+            let token_id =
+                self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Elif))?;
+            let args = self.parse_args()?;
+
+            if args.len() != 1 {
+                return Err(ParseError::UnexpectedToken(
+                    (*self.token_arena.borrow()[token_id]).clone(),
+                ));
+            }
+
+            let token_id = self.next_token(token_id, |token_kind| {
+                matches!(token_kind, TokenKind::Colon)
+            })?;
+
+            let expr_token = match self.tokens.next() {
+                Some(token) => Ok(token),
+                None => Err(ParseError::UnexpectedToken(
+                    (*self.token_arena.borrow()[token_id]).clone(),
+                )),
+            }?;
+
+            let cond = args.first().unwrap();
+            let then_expr = self.parse_expr(Rc::clone(expr_token))?;
+
+            nodes.push((Some(Rc::clone(cond)), then_expr));
+        }
+
+        Ok(nodes)
+    }
+
     fn parse_let(&mut self, let_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
@@ -423,7 +434,7 @@ impl<'a> Parser<'a> {
         }?;
 
         let let_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&let_token));
-        self.next_token_without_eof(let_token_id, |token_kind| {
+        self.next_token(let_token_id, |token_kind| {
             matches!(token_kind, TokenKind::Equal)
         })?;
         let expr_token = match self.tokens.next() {
@@ -460,7 +471,7 @@ impl<'a> Parser<'a> {
                             .token_arena
                             .borrow_mut()
                             .alloc(Rc::clone(&include_token)),
-                        expr: Rc::new(Expr::Include(Literal::String(module.to_string()))),
+                        expr: Rc::new(Expr::Include(Literal::String(module.to_owned()))),
                     }))
                 }
                 token => Err(ParseError::InsufficientTokens((*token).clone())),
@@ -484,7 +495,7 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        let mut args: Vec<Rc<Node>> = Vec::new();
+        let mut args: Vec<Rc<Node>> = Vec::with_capacity(8);
         let mut prev_token: Option<&Token> = None;
 
         while let Some(token) = self.tokens.next() {
@@ -532,7 +543,7 @@ impl<'a> Parser<'a> {
                 } => {
                     args.push(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: Rc::new(Expr::Literal(Literal::String(s.to_string()))),
+                        expr: Rc::new(Expr::Literal(Literal::String(s.to_owned()))),
                     }));
                 }
                 Token {
@@ -556,7 +567,7 @@ impl<'a> Parser<'a> {
                             .map_err(|_| {
                                 ParseError::EnvNotFound((**token).clone(), CompactString::new(s))
                             })
-                            .map(|s| Rc::new(Expr::Literal(Literal::String(s.to_string()))))?,
+                            .map(|s| Rc::new(Expr::Literal(Literal::String(s.to_owned()))))?,
                     }));
                 }
                 Token {
@@ -958,7 +969,7 @@ impl<'a> Parser<'a> {
 
     fn parse_int_array_arg(&mut self, token: &Rc<Token>) -> Result<ArrayIndex, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(token));
-        self.next_token_without_eof(token_id, |token_kind| {
+        self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::LBracket)
         })?;
 
@@ -975,7 +986,7 @@ impl<'a> Parser<'a> {
         {
             let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&token));
             self.tokens.next();
-            self.next_token_without_eof(token_id, |token_kind| {
+            self.next_token(token_id, |token_kind| {
                 matches!(token_kind, TokenKind::RBracket)
             })?;
             Ok(ArrayIndex(Some(n.value() as usize)))
@@ -993,10 +1004,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_int_args(&mut self, arg_token: Rc<Token>) -> Result<Vec<i64>, ParseError> {
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(8);
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&arg_token));
 
-        self.next_token_without_eof(token_id, |token_kind| {
+        self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::LParen)
         })?;
 
@@ -1031,11 +1042,11 @@ impl<'a> Parser<'a> {
 
     fn parse_string_args(&mut self, arg_token: Rc<Token>) -> Result<Vec<String>, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&arg_token));
-        self.next_token_without_eof(token_id, |token_kind| {
+        self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::LParen)
         })?;
 
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(8);
 
         loop {
             match self.tokens.next() {
@@ -1045,7 +1056,7 @@ impl<'a> Parser<'a> {
                         kind: TokenKind::StringLiteral(s),
                         module_id: _,
                     } => {
-                        args.push(s.to_string());
+                        args.push(s.to_owned());
                     }
                     Token {
                         range: _,
@@ -1071,18 +1082,18 @@ impl<'a> Parser<'a> {
         current_token_id: TokenId,
         expected_kinds: fn(&TokenKind) -> bool,
     ) -> Result<TokenId, ParseError> {
-        self.next_token(current_token_id, expected_kinds, true)
+        self._next_token(current_token_id, expected_kinds, true)
     }
 
-    fn next_token_without_eof(
+    fn next_token(
         &mut self,
         current_token_id: TokenId,
         expected_kinds: fn(&TokenKind) -> bool,
     ) -> Result<TokenId, ParseError> {
-        self.next_token(current_token_id, expected_kinds, false)
+        self._next_token(current_token_id, expected_kinds, false)
     }
 
-    fn next_token(
+    fn _next_token(
         &mut self,
         current_token_id: TokenId,
         expected_kinds: fn(&TokenKind) -> bool,
@@ -1137,12 +1148,12 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::Ident(CompactString::new("contains"))),
             token(TokenKind::LParen),
-            token(TokenKind::StringLiteral("test".to_string())),
+            token(TokenKind::StringLiteral("test".to_owned())),
             token(TokenKind::RParen),
             token(TokenKind::Comma),
             token(TokenKind::Ident(CompactString::new("startswith"))),
             token(TokenKind::LParen),
-            token(TokenKind::StringLiteral("test2".to_string())),
+            token(TokenKind::StringLiteral("test2".to_owned())),
             token(TokenKind::RParen),
             token(TokenKind::RParen),
             token(TokenKind::Eof)
@@ -1159,7 +1170,7 @@ mod tests {
                                 Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
                                 vec![Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Literal(Literal::String("test".to_string())))
+                                    expr: Rc::new(Expr::Literal(Literal::String("test".to_owned())))
                                 })],
                                 false,
                             ))
@@ -1170,7 +1181,7 @@ mod tests {
                                 Ident::new_with_token("startswith", Some(Rc::new(token(TokenKind::Ident(CompactString::new("startswith")))))),
                                 vec![Rc::new(Node {
                                     token_id: 2.into(),
-                                    expr: Rc::new(Expr::Literal(Literal::String("test2".to_string())))
+                                    expr: Rc::new(Expr::Literal(Literal::String("test2".to_owned())))
                                 })],
                                 false
                             ))
@@ -1226,9 +1237,9 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::Ident(CompactString::new("contains"))),
             token(TokenKind::LParen),
-            token(TokenKind::StringLiteral("arg1".to_string())),
+            token(TokenKind::StringLiteral("arg1".to_owned())),
             token(TokenKind::Comma),
-            token(TokenKind::StringLiteral("arg2".to_string())),
+            token(TokenKind::StringLiteral("arg2".to_owned())),
             token(TokenKind::RParen),
         ],
         Ok(vec![
@@ -1253,11 +1264,11 @@ mod tests {
                             vec![
                                 Rc::new(Node {
                                     token_id: 4.into(),
-                                    expr: Rc::new(Expr::Literal(Literal::String("arg1".to_string()))),
+                                    expr: Rc::new(Expr::Literal(Literal::String("arg1".to_owned()))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 5.into(),
-                                    expr: Rc::new(Expr::Literal(Literal::String("arg2".to_string()))),
+                                    expr: Rc::new(Expr::Literal(Literal::String("arg2".to_owned()))),
                                 }),
                             ],
                             false,
@@ -1281,7 +1292,7 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::StringLiteral("value".to_string())),
+            token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::SemiColon)
         ],
         Ok(vec![
@@ -1292,7 +1303,7 @@ mod tests {
                         vec![],
                         vec![Rc::new(Node {
                             token_id: 2.into(),
-                            expr: Rc::new(Expr::Literal(Literal::String("value".to_string()))),
+                            expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
                         })],
                 )),
             }),
@@ -1311,7 +1322,7 @@ mod tests {
             token(TokenKind::Def),
             token(TokenKind::Ident(CompactString::new("name"))),
             token(TokenKind::LParen),
-            token(TokenKind::StringLiteral("value".to_string())),
+            token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::Comma),
             token(TokenKind::RParen),
         ],
@@ -1341,7 +1352,7 @@ mod tests {
                 token(TokenKind::Let),
                 token(TokenKind::Ident(CompactString::new("y"))),
                 token(TokenKind::Equal),
-                token(TokenKind::StringLiteral("hello".to_string())),
+                token(TokenKind::StringLiteral("hello".to_owned())),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -1351,7 +1362,7 @@ mod tests {
                         Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))),
                         Rc::new(Node {
                             token_id: 2.into(),
-                            expr: Rc::new(Expr::Literal(Literal::String("hello".to_string()))),
+                            expr: Rc::new(Expr::Literal(Literal::String("hello".to_owned()))),
                         }),
                     )),
                 })
@@ -1434,10 +1445,10 @@ mod tests {
                 token(TokenKind::BoolLiteral(true)),
                 token(TokenKind::RParen),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("true branch".to_string())),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
                 token(TokenKind::Else),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("false branch".to_string())),
+                token(TokenKind::StringLiteral("false branch".to_owned())),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -1451,14 +1462,14 @@ mod tests {
                             })),
                             Rc::new(Node {
                                 token_id: 3.into(),
-                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_string()))),
+                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
                             })
                         ),
                         (
                             None,
                             Rc::new(Node {
                                 token_id: 6.into(),
-                                expr: Rc::new(Expr::Literal(Literal::String("false branch".to_string()))),
+                                expr: Rc::new(Expr::Literal(Literal::String("false branch".to_owned()))),
                             })
                         )
                     ])),
@@ -1471,16 +1482,16 @@ mod tests {
                 token(TokenKind::BoolLiteral(true)),
                 token(TokenKind::RParen),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("true branch".to_string())),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
                 token(TokenKind::Elif),
                 token(TokenKind::LParen),
                 token(TokenKind::BoolLiteral(false)),
                 token(TokenKind::RParen),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("elif branch".to_string())),
+                token(TokenKind::StringLiteral("elif branch".to_owned())),
                 token(TokenKind::Else),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("else branch".to_string())),
+                token(TokenKind::StringLiteral("else branch".to_owned())),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -1494,7 +1505,7 @@ mod tests {
                             })),
                             Rc::new(Node {
                                 token_id: 3.into(),
-                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_string()))),
+                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
                             })
                         ),
                         (
@@ -1504,14 +1515,14 @@ mod tests {
                             })),
                             Rc::new(Node {
                                 token_id: 7.into(),
-                                expr: Rc::new(Expr::Literal(Literal::String("elif branch".to_string()))),
+                                expr: Rc::new(Expr::Literal(Literal::String("elif branch".to_owned()))),
                             })
                         ),
                         (
                             None,
                             Rc::new(Node {
                                 token_id: 10.into(),
-                                expr: Rc::new(Expr::Literal(Literal::String("else branch".to_string()))),
+                                expr: Rc::new(Expr::Literal(Literal::String("else branch".to_owned()))),
                             })
                         )
                     ])),
@@ -1524,13 +1535,13 @@ mod tests {
                 token(TokenKind::BoolLiteral(true)),
                 token(TokenKind::RParen),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("true branch".to_string())),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
                 token(TokenKind::Elif),
                 token(TokenKind::LParen),
                 token(TokenKind::BoolLiteral(false)),
                 token(TokenKind::RParen),
                 token(TokenKind::Colon),
-                token(TokenKind::StringLiteral("elif branch".to_string())),
+                token(TokenKind::StringLiteral("elif branch".to_owned())),
                 token(TokenKind::Else),
                 token(TokenKind::Colon),
                 token(TokenKind::Eof)
@@ -1579,7 +1590,7 @@ mod tests {
             token(TokenKind::BoolLiteral(true)),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::StringLiteral("loop body".to_string())),
+            token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::SemiColon),
         ],
         Ok(vec![Rc::new(Node {
@@ -1591,7 +1602,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 3.into(),
-                    expr: Rc::new(Expr::Literal(Literal::String("loop body".to_string()))),
+                    expr: Rc::new(Expr::Literal(Literal::String("loop body".to_owned()))),
                 })],
             )),
         })]))]
@@ -1602,7 +1613,7 @@ mod tests {
             token(TokenKind::BoolLiteral(false)),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::StringLiteral("loop body".to_string())),
+            token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::SemiColon),
         ],
         Ok(vec![Rc::new(Node {
@@ -1614,7 +1625,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 3.into(),
-                    expr: Rc::new(Expr::Literal(Literal::String("loop body".to_string()))),
+                    expr: Rc::new(Expr::Literal(Literal::String("loop body".to_owned()))),
                 })],
             )),
         })]))]
@@ -1624,7 +1635,7 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::Ident(CompactString::new("item"))),
             token(TokenKind::Comma),
-            token(TokenKind::StringLiteral("array".to_string())),
+            token(TokenKind::StringLiteral("array".to_owned())),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
             token(TokenKind::Ident(CompactString::new("print"))),
@@ -1642,7 +1653,7 @@ mod tests {
                 ),
                 Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(Expr::Literal(Literal::String("array".to_string()))),
+                    expr: Rc::new(Expr::Literal(Literal::String("array".to_owned()))),
                 }),
                 vec![Rc::new(Node {
                     token_id: 5.into(),
@@ -1674,18 +1685,18 @@ mod tests {
     #[case::include(
         vec![
             token(TokenKind::Include),
-            token(TokenKind::StringLiteral("module_name".to_string())),
+            token(TokenKind::StringLiteral("module_name".to_owned())),
             token(TokenKind::Eof),
         ],
         Ok(vec![Rc::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(Expr::Include(Literal::String("module_name".to_string()))),
+            expr: Rc::new(Expr::Include(Literal::String("module_name".to_owned()))),
         })]))]
     #[case::code_selector_with_language(
         vec![
             token(TokenKind::Selector(CompactString::new(".code"))),
             token(TokenKind::LParen),
-            token(TokenKind::StringLiteral("rust".to_string())),
+            token(TokenKind::StringLiteral("rust".to_owned())),
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],

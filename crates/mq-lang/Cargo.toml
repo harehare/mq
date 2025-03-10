@@ -30,7 +30,7 @@ rustc-hash = "2.1.1"
 thiserror = "2.0.12"
 
 [dev-dependencies]
-criterion = {version = "2.8.1", package = "codspeed-criterion-compat"}
+divan = {version = "2.8.1", package = "codspeed-divan-compat"}
 mq-test-support = {path = "../../crates/mq-test-support", version = "0.1.0"}
 rstest = "0.25.0"
 

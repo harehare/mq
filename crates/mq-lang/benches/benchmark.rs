@@ -1,14 +1,17 @@
 use std::{cell::RefCell, rc::Rc};
 
-use criterion::{Criterion, criterion_group, criterion_main};
 use mq_lang;
 
-fn eval_fibonacci(c: &mut Criterion) {
-    c.bench_function("eval_fibonacci", |b| {
-        b.iter(|| {
-            let mut engine = mq_lang::Engine::default();
-            engine.eval(
-                "
+fn main() {
+    divan::main();
+}
+
+#[divan::bench(args = [20])]
+fn eval_fibonacci(n: u64) -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine
+        .eval(
+            "
      def fibonacci(x):
       if(eq(x, 0)):
         0
@@ -17,30 +20,27 @@ fn eval_fibonacci(c: &mut Criterion) {
           1
         else:
           add(fibonacci(sub(x, 1)), fibonacci(sub(x, 2))); | fibonacci(20)",
-                vec![mq_lang::Value::Number(30.into())].into_iter(),
-            )
-        })
-    });
+            vec![mq_lang::Value::Number(n.into())].into_iter(),
+        )
+        .unwrap()
 }
 
-fn eval_speed_test(c: &mut Criterion) {
-    c.bench_function("eval_speed_test", |b| {
-        b.iter(|| {
-            let mut engine = mq_lang::Engine::default();
-            engine.eval(
-                "until(gt(0)): sub(1);",
-                vec![mq_lang::Value::Number(1_000_00.into())].into_iter(),
-            )
-        })
-    });
+#[divan::bench(args = [1_000_00])]
+fn eval_speed_test(n: u64) -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine
+        .eval(
+            "until(gt(0)): sub(1);",
+            vec![mq_lang::Value::Number(n.into())].into_iter(),
+        )
+        .unwrap()
 }
 
-fn parse_fibonacci(c: &mut Criterion) {
+#[divan::bench]
+fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
-    c.bench_function("parse_fibonacci", |b| {
-        b.iter(|| {
-            mq_lang::parse(
-                "
+    mq_lang::parse(
+        "
      def fibonacci(x):
       if(eq(x, 0)):
         0
@@ -49,11 +49,7 @@ fn parse_fibonacci(c: &mut Criterion) {
           1
         else:
           add(fibonacci(sub(x, 1)), fibonacci(sub(x, 2))); | fibonacci(20)",
-                Rc::clone(&token_arena),
-            )
-        })
-    });
+        Rc::clone(&token_arena),
+    )
+    .unwrap()
 }
-
-criterion_group!(benches, eval_speed_test, eval_fibonacci, parse_fibonacci);
-criterion_main!(benches);
