@@ -63,3 +63,44 @@ pub fn response(
         DocumentSymbolResponse::Nested(symbols)
     })
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_response_with_empty_symbols() {
+        let hir = Arc::new(RwLock::new(mq_hir::Hir::new()));
+        let url = Url::parse("file:///test.mq").unwrap();
+        let source_map = BiMap::new();
+        let res = response(hir.clone(), url.clone(), source_map.clone());
+
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_response_with_various_symbols() {
+        let mut hir = mq_hir::Hir::new();
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        let (source_id, _) = hir.add_code(url.clone(), "def func1(): 1; let var1 = 2");
+        let mut source_map = BiMap::new();
+        source_map.insert(url.to_string(), source_id);
+
+        let res = response(Arc::new(RwLock::new(hir)), url.clone(), source_map);
+        assert!(res.is_some());
+
+        if let DocumentSymbolResponse::Nested(symbols) = res.unwrap() {
+            assert_eq!(symbols.len(), 2);
+
+            let func = symbols.iter().find(|s| s.name == "func1");
+            assert!(func.is_some());
+            assert_eq!(func.unwrap().kind, SymbolKind::FUNCTION);
+
+            let var = symbols.iter().find(|s| s.name == "var1");
+            assert!(var.is_some());
+            assert_eq!(var.unwrap().kind, SymbolKind::FIELD);
+        } else {
+            panic!("Expected Nested response");
+        }
+    }
+}

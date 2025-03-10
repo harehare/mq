@@ -13,7 +13,7 @@
 //!
 mod markdown;
 mod node;
-pub use markdown::{Markdown, RenderOptions};
+pub use markdown::{Markdown, RenderOptions, pretty_markdown};
 pub use node::{
     Code, CodeInline, Definition, Footnote, FootnoteRef, Heading, Html, Image, ImageRef, Link,
     LinkRef, List, ListStyle, Math, MathInline, Node, TableCell, TableRow, Text, Toml, Value, Yaml,

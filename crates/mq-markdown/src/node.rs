@@ -1114,12 +1114,10 @@ impl Node {
                     position: position.map(|p| p.clone().into()),
                 })]
             }
-            mdast::Node::Paragraph(mdast::Paragraph { position, .. }) => {
-                vec![Self::Text(Text {
-                    value: Self::mdast_value(node),
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
+            mdast::Node::Paragraph(mdast::Paragraph { children, .. }) => children
+                .into_iter()
+                .flat_map(Self::from_mdast_node)
+                .collect::<Vec<_>>(),
             _ => Vec::new(),
         }
     }

@@ -24,7 +24,7 @@ mod tests {
     fn test_references() {
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
-        let _ = hir.add_code(url.clone(), "let test = 1");
+        let _ = hir.add_code(url.clone(), "def func1(): 1; let val1 = func1()");
 
         assert_eq!(
             hir.references(hir.symbols().collect::<Vec<_>>().first().unwrap().0),

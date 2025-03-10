@@ -98,47 +98,7 @@ impl Markdown {
     }
 
     pub fn to_pretty_markdown(&self) -> miette::Result<String> {
-        let options = comrak::Options {
-            extension: {
-                comrak::ExtensionOptions {
-                    strikethrough: true,
-                    tagfilter: true,
-                    table: true,
-                    autolink: true,
-                    tasklist: true,
-                    superscript: true,
-                    footnotes: true,
-                    description_lists: true,
-                    multiline_block_quotes: true,
-                    math_dollars: true,
-                    math_code: true,
-                    wikilinks_title_after_pipe: true,
-                    wikilinks_title_before_pipe: true,
-                    underline: true,
-                    subscript: true,
-                    spoiler: true,
-                    greentext: true,
-                    ..comrak::ExtensionOptions::default()
-                }
-            },
-            render: comrak::RenderOptions {
-                list_style: match self.options.list_style.clone() {
-                    ListStyle::Dash => ListStyleType::Dash,
-                    ListStyle::Plus => ListStyleType::Plus,
-                    ListStyle::Star => ListStyleType::Star,
-                },
-                ..comrak::RenderOptions::default()
-            },
-            ..comrak::Options::default()
-        };
-
-        let arena = Arena::new();
-        let root = parse_document(&arena, &self.to_string(), &options);
-        let mut formatted_markdown = Vec::new();
-
-        format_commonmark(root, &options, &mut formatted_markdown).unwrap();
-
-        String::from_utf8(formatted_markdown).into_diagnostic()
+        pretty_markdown(&self.to_string(), &self.options)
     }
 
     pub fn to_html(&self) -> String {
@@ -155,6 +115,51 @@ impl Markdown {
             .join("")
     }
 }
+
+pub fn pretty_markdown(s: &str, options: &RenderOptions) -> miette::Result<String> {
+    let options = comrak::Options {
+        extension: {
+            comrak::ExtensionOptions {
+                strikethrough: true,
+                tagfilter: true,
+                table: true,
+                autolink: true,
+                tasklist: true,
+                superscript: true,
+                footnotes: true,
+                description_lists: true,
+                multiline_block_quotes: true,
+                math_dollars: true,
+                math_code: true,
+                wikilinks_title_after_pipe: true,
+                wikilinks_title_before_pipe: true,
+                underline: true,
+                subscript: true,
+                spoiler: true,
+                greentext: true,
+                ..comrak::ExtensionOptions::default()
+            }
+        },
+        render: comrak::RenderOptions {
+            list_style: match options.list_style.clone() {
+                ListStyle::Dash => ListStyleType::Dash,
+                ListStyle::Plus => ListStyleType::Plus,
+                ListStyle::Star => ListStyleType::Star,
+            },
+            ..comrak::RenderOptions::default()
+        },
+        ..comrak::Options::default()
+    };
+
+    let arena = Arena::new();
+    let root = parse_document(&arena, s, &options);
+    let mut formatted_markdown = Vec::new();
+
+    format_commonmark(root, &options, &mut formatted_markdown).unwrap();
+
+    String::from_utf8(formatted_markdown).into_diagnostic()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

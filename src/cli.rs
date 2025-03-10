@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use clap_complete::{Shell, generate};
 use miette::IntoDiagnostic;
 use miette::miette;
+use std::fmt::{self, Display};
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
@@ -53,6 +54,22 @@ pub enum ListStyle {
     Dash,
     Plus,
     Star,
+}
+
+#[derive(Debug, Clone, Default, clap::ValueEnum)]
+pub enum FormatTarget {
+    #[default]
+    Mq,
+    Markdown,
+}
+
+impl Display for FormatTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FormatTarget::Mq => write!(f, "mq"),
+            FormatTarget::Markdown => write!(f, "markdown"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -109,10 +126,15 @@ struct OutputArgs {
 enum Commands {
     Repl,
     Fmt {
+        /// Number of spaces for indentation
         #[arg(short, long, default_value_t = 2)]
         indent_width: usize,
+        /// Check if files are formatted without modifying them
         #[arg(short, long)]
         check: bool,
+        /// Specify the target format type
+        #[arg(short = 'T', long, default_value_t = FormatTarget::Mq)]
+        target: FormatTarget,
     },
     Completion {
         #[arg(short, long, value_enum)]
@@ -133,19 +155,42 @@ impl Cli {
             Some(Commands::Fmt {
                 indent_width,
                 check,
+                target,
             }) => {
-                for (_, content) in self.read_contents()? {
-                    let formatted =
-                        mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-                            indent_width: *indent_width,
-                        }))
-                        .format(&content)
-                        .into_diagnostic()?;
+                match target {
+                    FormatTarget::Mq => {
+                        let mut formatter =
+                            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+                                indent_width: *indent_width,
+                            }));
+                        for (_, content) in self.read_contents()? {
+                            let formatted = formatter.format(&content).into_diagnostic()?;
 
-                    if *check && formatted != content {
-                        return Err(miette!("The input is not formatted"));
-                    } else {
-                        println!("{}", formatted);
+                            if *check && formatted != content {
+                                return Err(miette!("The input is not formatted"));
+                            } else {
+                                println!("{}", formatted);
+                            }
+                        }
+                    }
+                    FormatTarget::Markdown => {
+                        let options = mq_markdown::RenderOptions {
+                            list_style: match self.output.list_style.clone() {
+                                ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                                ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                                ListStyle::Star => mq_markdown::ListStyle::Star,
+                            },
+                        };
+
+                        for (_, content) in self.read_contents()? {
+                            let formatted = mq_markdown::pretty_markdown(&content, &options)?;
+
+                            if *check && formatted != content {
+                                return Err(miette!("The input is not formatted"));
+                            } else {
+                                println!("{}", formatted);
+                            }
+                        }
                     }
                 }
 
@@ -489,6 +534,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: false,
+                target: FormatTarget::Mq,
             }),
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
@@ -515,6 +561,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: true,
+                target: FormatTarget::Mq,
             }),
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
