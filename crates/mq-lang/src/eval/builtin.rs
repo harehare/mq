@@ -1294,6 +1294,29 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("get_title"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::Definition(
+                        mq_markdown::Definition { title, .. },
+                    ))
+                    | RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image {
+                        title,
+                        ..
+                    }))
+                    | RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link {
+                        title,
+                        ..
+                    })),
+                ] => title
+                    .as_ref()
+                    .map(|t| Ok(RuntimeValue::String(t.clone())))
+                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                [_] => Ok(RuntimeValue::NONE),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
             CompactString::new("set_md_check"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [
@@ -2213,6 +2236,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Returns the indent level of a markdown list node.",
                 params: &["list"],
+            },
+        );
+        map.insert(
+            CompactString::new("get_title"),
+            BuiltinFunctionDoc {
+                description: "Returns the title of a markdown node.",
+                params: &["node"],
             },
         );
         map.insert(

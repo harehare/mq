@@ -79,6 +79,7 @@
 | `to_em`             | Creates a markdown emphasis (italic) node with the given value.                             | `value`                       | `to_em("italic")`                               |
 | `to_hr`             | Creates a markdown horizontal rule node.                                                    | None                          | `to_hr()`                                       |
 | `get_md_list_level` | Returns the indent level of a markdown list node.                                           | `list`                        | `get_md_list_level(list)`                       |
+| `get_title`         | Returns the title of a markdown node.                                                       | `node`                        | `get_title(node)`                               |
 | `to_md_list`        | Creates a markdown list node with the given value and indent level.                         | `value`, `indent`             | `to_md_list("item", 1)`                         |
 | `to_md_table_row`   | Creates a markdown table row node with the given values.                                    | `cells`                       | `to_md_table_row("item", "item2", array(1, 2))` |
 | `set_md_check`      | Creates a markdown list node with the given checked state.                                  | `list`, `checked`             | `set_md_check(list, true)`                      |

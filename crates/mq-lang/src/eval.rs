@@ -1764,6 +1764,26 @@ mod tests {
                 ],
                 position: None
             }))]))]
+    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("Link Title".to_string()), position: None}))],
+                vec![
+                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                ],
+                Ok(vec![RuntimeValue::String("Link Title".to_string())]))]
+    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: None, position: None}))],
+                vec![
+                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                ],
+                Ok(vec![RuntimeValue::NONE]))]
+    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}))],
+                vec![
+                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                ],
+                Ok(vec![RuntimeValue::String("Image Title".to_string())]))]
+    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: None, position: None}))],
+                vec![
+                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                ],
+                Ok(vec![RuntimeValue::NONE]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
