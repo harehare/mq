@@ -54,3 +54,43 @@ pub fn response(
         None
     }
 }
+#[cfg(test)]
+mod tests {
+    use mq_hir::{Hir, SourceId};
+
+    use super::*;
+
+    fn setup() -> (Arc<RwLock<Hir>>, BiMap<String, SourceId>) {
+        let hir = Arc::new(RwLock::new(Hir::new()));
+        let source_map = BiMap::new();
+        (hir, source_map)
+    }
+
+    #[test]
+    fn test_response_no_source() {
+        let (hir, source_map) = setup();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let position = Position::new(0, 0);
+
+        let result = response(hir, url, position, source_map);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_response_with_references() {
+        let (hir, mut source_map) = setup();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let (source_id, _) = hir
+            .write()
+            .unwrap()
+            .add_code(url.clone(), "def func1(): 1; let x = func1()");
+        source_map.insert(url.to_string(), source_id);
+
+        let position = Position::new(0, 5);
+        let result = response(hir, url, position, source_map);
+
+        assert!(result.is_some());
+        let locations = result.unwrap();
+        assert_eq!(locations.len(), 1);
+    }
+}

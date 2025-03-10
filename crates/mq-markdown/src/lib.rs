@@ -23,3 +23,14 @@ pub fn to_html(markdown: &str) -> String {
     let options = comrak::ComrakOptions::default();
     comrak::markdown_to_html(markdown, &options)
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_html() {
+        let markdown = "# Hello, world!";
+        let html = to_html(markdown);
+        assert_eq!(html, "<h1>Hello, world!</h1>\n");
+    }
+}

@@ -204,3 +204,24 @@ impl Repl {
         Ok(())
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_dir() {
+        unsafe { std::env::set_var("MDQ_CONFIG_DIR", "/tmp/test_mq_config") };
+        let config_dir = Repl::config_dir();
+        assert_eq!(
+            config_dir,
+            Some(std::path::PathBuf::from("/tmp/test_mq_config"))
+        );
+
+        unsafe { std::env::remove_var("MDQ_CONFIG_DIR") };
+        let config_dir = Repl::config_dir();
+        assert!(config_dir.is_some());
+        if let Some(dir) = config_dir {
+            assert!(dir.ends_with("mq"));
+        }
+    }
+}
