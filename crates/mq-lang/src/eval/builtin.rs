@@ -1217,7 +1217,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("children"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-                    dbg!(&node);
                     Ok(RuntimeValue::Markdown(
                         node.clone(),
                         Some(runtime_value::Selector::Index(i.value() as usize + 1)),
