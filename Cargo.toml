@@ -37,7 +37,7 @@ members = [
 ]
 
 [dependencies]
-clap = {version = "4.5.31", features = ["derive"]}
+clap = {version = "4.5.32", features = ["derive"]}
 clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.45"
 colored = "3.0.0"
