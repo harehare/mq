@@ -1479,28 +1479,28 @@ mod tests {
                         ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, value: Box::new("Heading 1".to_string().into()), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}))]))]
     #[case::md_h2(vec![RuntimeValue::String("Heading 2".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, value: Box::new("Heading 2".to_string().into()), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading 2".to_string().into()], position: None}))]))]
     #[case::md_h3(vec![RuntimeValue::String("Heading 3".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 3, value: Box::new("Heading 3".to_string().into()), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 3, values: vec!["Heading 3".to_string().into()], position: None}))]))]
     #[case::md_h(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Heading".to_string(), position: None}))],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, value: Box::new("Heading".to_string().into()), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading".to_string().into()], position: None}))]))]
     #[case::to_math(vec![RuntimeValue::String("E=mc^2".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_math"), Vec::new(), false)),
@@ -1520,12 +1520,12 @@ mod tests {
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), Vec::new(), false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{value: Box::new("Bold text".to_string().into()), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold text".to_string().into()], position: None}))]))]
     #[case::to_em(vec![RuntimeValue::String("Italic text".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_em"), Vec::new(), false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{value: Box::new("Italic text".to_string().into()), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic text".to_string().into()], position: None}))]))]
     #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_image"), vec![
@@ -1565,7 +1565,7 @@ mod tests {
                            ].into(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
-                mq_markdown::List{value: Box::new("list".to_string().into()), index: 0, level: 1 as u8, checked: None, position: None}))]))]
+                mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1 as u8, checked: None, position: None}))]))]
     #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
@@ -1574,21 +1574,21 @@ mod tests {
                            ].into(), false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
-                mq_markdown::List{value: Box::new("list".to_string().into()), index: 0, level: 1 as u8, checked: None, position: None}))]))]
-    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
+                mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1 as u8, checked: None, position: None}))]))]
+    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}))],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Checked Item".to_string().into()), level: 0, index: 0, checked: Some(true), position: None}))]))]
-    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Unchecked Item".to_string().into()), level: 0, index: 0, checked: None, position: None}))],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: Some(true), position: None}))]))]
+    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}))],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                   ], false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("Unchecked Item".to_string().into()), level: 0, index: 0, checked: Some(false), position: None}))]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: Some(false), position: None}))]))]
     #[case::compact(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("test1".to_string()),
                 RuntimeValue::NONE,
@@ -1684,7 +1684,7 @@ mod tests {
                 ast_node(ast::Expr::Call(ast::Ident::new("to_tsv"), Vec::new(), false))
             ],
             Ok(vec![RuntimeValue::String("test1\t42\ttrue".to_string())]))]
-    #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{value: Box::new("List Item".to_string().into()), level: 1, index: 0, checked: None, position: None}))],
+    #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["List Item".to_string().into()], level: 1, index: 0, checked: None, position: None}))],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("get_md_list_level"), vec![], false)),
             ],
@@ -1694,7 +1694,7 @@ mod tests {
                 ast_node(ast::Expr::Selector(ast::Selector::Text)),
            ],
            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}))]))]
-    #[case::text_selector_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, value: Box::new("Heading 1".to_string().into()), position: None}))],
+    #[case::text_selector_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}))],
            vec![
                 ast_node(ast::Expr::Selector(ast::Selector::Text)),
            ],
@@ -1712,7 +1712,7 @@ mod tests {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
-                        value: Box::new("Cell 1".to_string().into()),
+                        values: vec!["Cell 1".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -1720,7 +1720,7 @@ mod tests {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 1,
-                        value: Box::new("Cell 2".to_string().into()),
+                        values: vec!["Cell 2".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -1728,7 +1728,7 @@ mod tests {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 2,
-                        value: Box::new("Cell 3".to_string().into()),
+                        values: vec!["Cell 3".to_string().into()],
                         last_cell_in_row: true,
                         last_cell_of_in_table: false,
                         position: None
@@ -1748,7 +1748,7 @@ mod tests {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
-                        value: Box::new("Cell 1".to_string().into()),
+                        values: vec!["Cell 1".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -1756,7 +1756,7 @@ mod tests {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 1,
-                        value: Box::new("Cell 2".to_string().into()),
+                        values: vec!["Cell 2".to_string().into()],
                         last_cell_in_row: true,
                         last_cell_of_in_table: false,
                         position: None

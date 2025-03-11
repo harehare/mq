@@ -214,7 +214,7 @@ fn engine() -> Engine {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
-                        value: Box::new("a".to_string().into()),
+                        values: vec!["a".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -222,7 +222,7 @@ fn engine() -> Engine {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 1,
-                        value: Box::new("b".to_string().into()),
+                        values: vec!["b".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -230,7 +230,7 @@ fn engine() -> Engine {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 2,
-                        value: Box::new("c".to_string().into()),
+                        values: vec!["c".to_string().into()],
                         last_cell_in_row: true,
                         last_cell_of_in_table: false,
                         position: None
@@ -240,7 +240,7 @@ fn engine() -> Engine {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
-                        value: Box::new("1".to_string().into()),
+                        values: vec!["1".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -248,7 +248,7 @@ fn engine() -> Engine {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 1,
-                        value: Box::new("2".to_string().into()),
+                        values: vec!["2".to_string().into()],
                         last_cell_in_row: false,
                         last_cell_of_in_table: false,
                         position: None
@@ -256,7 +256,7 @@ fn engine() -> Engine {
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 2,
-                        value: Box::new("3".to_string().into()),
+                        values: vec!["3".to_string().into()],
                         last_cell_in_row: true,
                         last_cell_of_in_table: false,
                         position: None

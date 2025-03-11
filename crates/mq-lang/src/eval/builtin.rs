@@ -1064,7 +1064,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Markdown(node), RuntimeValue::Number(depth)] => {
                     Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
                         depth: (*depth).value() as u8,
-                        value: node.node_value(),
+                        values: node.node_values(),
                         position: None,
                     })
                     .into())
@@ -1072,7 +1072,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [a, RuntimeValue::Number(depth)] => {
                     Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
                         depth: (*depth).value() as u8,
-                        value: Box::new(a.to_string().into()),
+                        values: vec![a.to_string().into()],
                         position: None,
                     })
                     .into())
@@ -1155,13 +1155,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node)] => {
                     Ok(mq_markdown::Node::Strong(mq_markdown::Value {
-                        value: node.node_value(),
+                        values: node.node_values(),
                         position: None,
                     })
                     .into())
                 }
                 [a] => Ok(mq_markdown::Node::Strong(mq_markdown::Value {
-                    value: Box::new(a.to_string().into()),
+                    values: vec![a.to_string().into()],
                     position: None,
                 })
                 .into()),
@@ -1173,13 +1173,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node)] => {
                     Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
-                        value: node.node_value(),
+                        values: node.node_values(),
                         position: None,
                     })
                     .into())
                 }
                 [a] => Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
-                    value: Box::new(a.to_string().into()),
+                    values: vec![a.to_string().into()],
                     position: None,
                 })
                 .into()),
@@ -1202,7 +1202,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node), RuntimeValue::Number(level)] => {
                     Ok(mq_markdown::Node::List(mq_markdown::List {
-                        value: node.node_value(),
+                        values: node.node_values(),
                         index: 0,
                         level: level.value() as u8,
                         checked: None,
@@ -1212,7 +1212,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 }
                 [a, RuntimeValue::Number(level)] => {
                     Ok(mq_markdown::Node::List(mq_markdown::List {
-                        value: Box::new(a.to_string().into()),
+                        values: vec![a.to_string().into()],
                         index: 0,
                         level: level.value() as u8,
                         checked: None,
@@ -1242,12 +1242,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                                     mq_markdown::Node::TableCell(mq_markdown::TableCell {
                                         row: 0,
                                         column: current_index - 1,
-                                        value: Box::new(mq_markdown::Node::Text(
-                                            mq_markdown::Text {
-                                                value: v.to_string(),
-                                                position: None,
-                                            },
-                                        )),
+                                        values: vec![v.to_string().into()],
                                         last_cell_in_row: i == args_num - 1 && j == array_num - 1,
                                         last_cell_of_in_table: false,
                                         position: None,
@@ -1260,10 +1255,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             vec![mq_markdown::Node::TableCell(mq_markdown::TableCell {
                                 row: 0,
                                 column: current_index - 1,
-                                value: Box::new(mq_markdown::Node::Text(mq_markdown::Text {
-                                    value: v.to_string(),
-                                    position: None,
-                                })),
+                                values: vec![v.to_string().into()],
                                 last_cell_in_row: i == args_num - 1,
                                 last_cell_of_in_table: false,
                                 position: None,
