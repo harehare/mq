@@ -159,3 +159,43 @@ pub const TOKEN_MODIFIER: &[tower_lsp::lsp_types::SemanticTokenModifier] = &[
     SemanticTokenModifier::DEFAULT_LIBRARY,
     SemanticTokenModifier::DOCUMENTATION,
 ];
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_token_type() {
+        assert_eq!(token_type(SemanticTokenType::KEYWORD), 0);
+        assert_eq!(token_type(SemanticTokenType::STRING), 1);
+        assert_eq!(token_type(SemanticTokenType::FUNCTION), 4);
+    }
+
+    #[test]
+    fn test_token_modifier() {
+        assert_eq!(token_modifier(SemanticTokenModifier::DEFINITION), 0);
+        assert_eq!(token_modifier(SemanticTokenModifier::DEFAULT_LIBRARY), 1);
+        assert_eq!(token_modifier(SemanticTokenModifier::DOCUMENTATION), 2);
+    }
+
+    #[test]
+    fn test_response_empty() {
+        let hir = Arc::new(RwLock::new(mq_hir::Hir::default()));
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        let tokens = response(hir, url);
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn test_response_with_symbols() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        hir.add_code(url.clone(), "def func1(): 1;");
+
+        let hir = Arc::new(RwLock::new(hir));
+        let tokens = response(hir, url);
+
+        assert_eq!(tokens.len(), 3);
+    }
+}

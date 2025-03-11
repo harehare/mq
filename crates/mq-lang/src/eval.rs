@@ -72,7 +72,7 @@ impl Evaluator {
 
         input
             .map(|runtime_value| {
-                self.eval_program(&program, &runtime_value, Rc::clone(&self.env))
+                self.eval_program(&program, runtime_value, Rc::clone(&self.env))
                     .map_err(InnerError::Eval)
             })
             .collect()
@@ -133,66 +133,59 @@ impl Evaluator {
     fn eval_program(
         &mut self,
         program: &Program,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         program
             .iter()
-            .try_fold(runtime_value.clone(), |runtime_value, ast| {
-                match &*ast.expr {
-                    ast::Expr::Selector(ident) => {
-                        Ok(Self::eval_selector_expr(&runtime_value, ident))
-                    }
-                    ast::Expr::Include(module_id) => {
-                        self.eval_include(module_id.to_owned())?;
+            .try_fold(runtime_value, |runtime_value, ast| match &*ast.expr {
+                ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(&runtime_value, ident)),
+                ast::Expr::Include(module_id) => {
+                    self.eval_include(module_id.to_owned())?;
+                    Ok(runtime_value)
+                }
+                ast::Expr::Def(ident, params, program) => {
+                    let function = RuntimeValue::Function(
+                        params.iter().map(Rc::clone).collect::<Vec<_>>(),
+                        program.iter().map(Rc::clone).collect::<Vec<_>>(),
+                        Rc::clone(&env),
+                    );
+                    env.borrow_mut().define(ident, function.clone());
+                    Ok(function)
+                }
+                ast::Expr::Let(ident, node) => {
+                    let let_ = self.eval_expr(&runtime_value, Rc::clone(node), Rc::clone(&env))?;
+                    env.borrow_mut().define(ident, let_);
+                    Ok(runtime_value)
+                }
+                ast::Expr::Call(_, _, _) => {
+                    self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                }
+                ast::Expr::Literal(ast::Literal::Bool(b)) => {
+                    if *b {
                         Ok(runtime_value)
+                    } else {
+                        Ok(RuntimeValue::NONE)
                     }
-                    ast::Expr::Def(ident, params, program) => {
-                        let function = RuntimeValue::Function(
-                            params.iter().map(Rc::clone).collect::<Vec<_>>(),
-                            program.iter().map(Rc::clone).collect::<Vec<_>>(),
-                            Rc::clone(&env),
-                        );
-                        env.borrow_mut().define(ident, function.clone());
-                        Ok(function)
-                    }
-                    ast::Expr::Let(ident, node) => {
-                        let let_ =
-                            self.eval_expr(&runtime_value, Rc::clone(node), Rc::clone(&env))?;
-                        env.borrow_mut().define(ident, let_);
-                        Ok(runtime_value)
-                    }
-                    ast::Expr::Call(_, _, _) => {
-                        self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                    }
-                    ast::Expr::Literal(ast::Literal::Bool(b)) => {
-                        if *b {
-                            Ok(runtime_value)
-                        } else {
-                            Ok(RuntimeValue::NONE)
-                        }
-                    }
-                    ast::Expr::Literal(ast::Literal::String(s)) => {
-                        Ok(RuntimeValue::String(s.to_string()))
-                    }
-                    ast::Expr::Literal(ast::Literal::Number(n)) => Ok(RuntimeValue::Number(*n)),
-                    ast::Expr::Literal(ast::Literal::None) => Ok(RuntimeValue::NONE),
-                    ast::Expr::Self_ => Ok(runtime_value),
-                    ast::Expr::While(_, _) => {
-                        self.eval_while(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                    }
-                    ast::Expr::Until(_, _) => {
-                        self.eval_until(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                    }
-                    ast::Expr::Foreach(_, _, _) => {
-                        self.eval_foreach(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                    }
-                    ast::Expr::If(_) => {
-                        self.eval_if(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                    }
-                    ast::Expr::Ident(_) => {
-                        self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                    }
+                }
+                ast::Expr::Literal(ast::Literal::String(s)) => {
+                    Ok(RuntimeValue::String(s.to_string()))
+                }
+                ast::Expr::Literal(ast::Literal::Number(n)) => Ok(RuntimeValue::Number(*n)),
+                ast::Expr::Literal(ast::Literal::None) => Ok(RuntimeValue::NONE),
+                ast::Expr::Self_ => Ok(runtime_value),
+                ast::Expr::While(_, _) => {
+                    self.eval_while(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                }
+                ast::Expr::Until(_, _) => {
+                    self.eval_until(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                }
+                ast::Expr::Foreach(_, _, _) => {
+                    self.eval_foreach(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                }
+                ast::Expr::If(_) => self.eval_if(&runtime_value, Rc::clone(ast), Rc::clone(&env)),
+                ast::Expr::Ident(_) => {
+                    self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
                 }
             })
     }
@@ -309,7 +302,11 @@ impl Evaluator {
 
                 for value in values.into_iter() {
                     env.borrow_mut().define(ident, value);
-                    runtime_values.push(self.eval_program(body, runtime_value, Rc::clone(&env))?);
+                    runtime_values.push(self.eval_program(
+                        body,
+                        runtime_value.clone(),
+                        Rc::clone(&env),
+                    )?);
                 }
             }
 
@@ -337,7 +334,7 @@ impl Evaluator {
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
 
             while cond_value.is_true() {
-                runtime_value = self.eval_program(body, &runtime_value, Rc::clone(&env))?;
+                runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
                 cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
             }
 
@@ -366,7 +363,7 @@ impl Evaluator {
             let mut values = Vec::with_capacity(100_000);
 
             while cond_value.is_true() {
-                runtime_value = self.eval_program(body, &runtime_value, Rc::clone(&env))?;
+                runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
                 cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                 values.push(runtime_value.clone());
             }
@@ -467,7 +464,7 @@ impl Evaluator {
                         }
                     })?;
                 debug!("current env: {}", new_env.borrow());
-                self.eval_program(program, runtime_value, new_env)
+                self.eval_program(program, runtime_value.clone(), new_env)
             } else if let RuntimeValue::NativeFunction(ident) = *fn_value {
                 self.eval_builtin(runtime_value, node, &ident, args, env)
             } else {
@@ -1765,47 +1762,47 @@ mod tests {
                 position: None
             }), None)]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("Link Title".to_string()), position: None}), None)],
-                vec![
-                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
-                ],
-                Ok(vec![RuntimeValue::String("Link Title".to_string())]))]
+            vec![
+                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::String("Link Title".to_string())]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: None, position: None}), None)],
-                vec![
-                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
-                ],
-                Ok(vec![RuntimeValue::NONE]))]
+            vec![
+                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::NONE]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}), None)],
-                vec![
-                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
-                ],
-                Ok(vec![RuntimeValue::String("Image Title".to_string())]))]
+            vec![
+                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::String("Image Title".to_string())]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: None, position: None}), None)],
-                vec![
-                     ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
-                ],
-                Ok(vec![RuntimeValue::NONE]))]
+            vec![
+                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::NONE]))]
     #[case::children(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
-                ], level: 1, index: 0, checked: None, position: None}), None)],
-                       vec![
-                            ast_node(ast::Expr::Call(ast::Ident::new("children"), vec![ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))], false))
-                       ],
-                       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
-                ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
+            ], level: 1, index: 0, checked: None, position: None}), None)],
+                   vec![
+                        ast_node(ast::Expr::Call(ast::Ident::new("children"), vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))], false))
+                   ],
+                   Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
+            ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
     #[case::children(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
-                ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))],
-                       vec![
-                            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![ast_node(ast::Expr::Literal(ast::Literal::String("1".to_string())))], false))
-                       ],
-                       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
-                    mq_markdown::Node::Text(mq_markdown::Text{value: "Item 21".to_string(), position: None})
-                ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
+            ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))],
+                   vec![
+                        ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![ast_node(ast::Expr::Literal(ast::Literal::String("1".to_string())))], false))
+                   ],
+                   Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
+                mq_markdown::Node::Text(mq_markdown::Text{value: "Item 21".to_string(), position: None})
+            ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
