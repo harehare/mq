@@ -13,12 +13,17 @@ use mq_markdown::Node;
 use super::env::Env;
 
 #[derive(Clone, PartialEq)]
+pub enum Selector {
+    Index(usize),
+}
+
+#[derive(Clone, PartialEq)]
 pub enum RuntimeValue {
     Number(Number),
     Bool(bool),
     String(String),
     Array(Vec<RuntimeValue>),
-    Markdown(Node),
+    Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Rc<RefCell<Env>>),
     NativeFunction(AstIdent),
     None,
@@ -26,7 +31,7 @@ pub enum RuntimeValue {
 
 impl From<Node> for RuntimeValue {
     fn from(node: Node) -> Self {
-        RuntimeValue::Markdown(node)
+        RuntimeValue::Markdown(node, None)
     }
 }
 
@@ -55,7 +60,7 @@ impl From<Value> for RuntimeValue {
             Value::Bool(b) => RuntimeValue::Bool(b),
             Value::String(s) => RuntimeValue::String(s),
             Value::Array(a) => RuntimeValue::Array(a.into_iter().map(Into::into).collect()),
-            Value::Markdown(m) => RuntimeValue::Markdown(m),
+            Value::Markdown(m) => RuntimeValue::Markdown(m, None),
             Value::Function(params, program) => {
                 RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::new(None))))
             }
@@ -72,7 +77,7 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a.partial_cmp(b),
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a.partial_cmp(b),
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a.partial_cmp(b),
-            (RuntimeValue::Markdown(a), RuntimeValue::Markdown(b)) => {
+            (RuntimeValue::Markdown(a, _), RuntimeValue::Markdown(b, _)) => {
                 let a = a.to_string();
                 let b = b.to_string();
                 a.to_string().partial_cmp(&b)
@@ -105,7 +110,7 @@ impl Debug for RuntimeValue {
                 .map(|o| o.string())
                 .collect::<Vec<String>>()
                 .join("\n"),
-            RuntimeValue::Markdown(m) => m.to_string(),
+            RuntimeValue::Markdown(m, _) => m.to_string(),
             RuntimeValue::None => "None".to_string(),
             RuntimeValue::Function(params, _, _) => format!("function{}", params.len()),
             RuntimeValue::NativeFunction(ident) => format!("native_function: {}", ident),
@@ -125,7 +130,7 @@ impl RuntimeValue {
             RuntimeValue::Number(_) => "number",
             RuntimeValue::Bool(_) => "bool",
             RuntimeValue::String(_) => "string",
-            RuntimeValue::Markdown(_) => "markdown",
+            RuntimeValue::Markdown(_, _) => "markdown",
             RuntimeValue::Array(_) => "array",
             RuntimeValue::None => "None",
             RuntimeValue::Function(_, _, _) => "function",
@@ -144,7 +149,7 @@ impl RuntimeValue {
                 .map(|o| o.text())
                 .collect::<Vec<String>>()
                 .join("\n"),
-            RuntimeValue::Markdown(m) => m.value(),
+            RuntimeValue::Markdown(m, _) => m.value(),
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),
         }
@@ -168,7 +173,10 @@ impl RuntimeValue {
             RuntimeValue::Number(n) => n.value() != 0.0,
             RuntimeValue::String(s) => !s.is_empty(),
             RuntimeValue::Array(a) => !a.is_empty(),
-            RuntimeValue::Markdown(_) => true,
+            RuntimeValue::Markdown(node, selector) => match selector {
+                Some(Selector::Index(i)) => node.find_children(*i).is_some(),
+                None => true,
+            },
             RuntimeValue::Function(_, _, _) => true,
             RuntimeValue::NativeFunction(_) => true,
             RuntimeValue::None => false,
@@ -181,8 +189,28 @@ impl RuntimeValue {
             RuntimeValue::Bool(_) => 1,
             RuntimeValue::String(s) => s.len(),
             RuntimeValue::Array(a) => a.len(),
-            RuntimeValue::Markdown(m) => m.value().len(),
+            RuntimeValue::Markdown(m, _) => m.value().len(),
             _ => panic!("not supported"),
+        }
+    }
+
+    pub fn markdown_node(&self) -> Option<Node> {
+        match self {
+            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_children(*i),
+            RuntimeValue::Markdown(n, _) => Some(n.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
+        match self {
+            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {
+                RuntimeValue::Markdown(n.with_children_value(value, *i), Some(Selector::Index(*i)))
+            }
+            RuntimeValue::Markdown(n, selector) => {
+                RuntimeValue::Markdown(n.with_value(value), selector.clone())
+            }
+            _ => RuntimeValue::NONE,
         }
     }
 
@@ -196,7 +224,7 @@ impl RuntimeValue {
                 .map(|o| o.string())
                 .collect::<Vec<String>>()
                 .join("\n"),
-            RuntimeValue::Markdown(m) => m.to_string(),
+            RuntimeValue::Markdown(m, _) => m.to_string(),
             RuntimeValue::None => "None".to_string(),
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),

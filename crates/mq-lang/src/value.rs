@@ -49,7 +49,7 @@ impl From<RuntimeValue> for Value {
             RuntimeValue::Array(a) => {
                 Value::Array(a.iter().map(|v| v.clone().into()).collect::<Vec<_>>())
             }
-            RuntimeValue::Markdown(m) => Value::Markdown(m),
+            RuntimeValue::Markdown(m, _) => Value::Markdown(m),
             RuntimeValue::Function(params, program, _) => Value::Function(params, program),
             RuntimeValue::NativeFunction(ident) => Value::NativeFunction(ident),
             RuntimeValue::None => Value::None,

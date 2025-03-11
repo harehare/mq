@@ -239,6 +239,29 @@ pub enum Node {
     Text(Text),
 }
 
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let (self_node, other_node) = (self, other);
+        let self_pos = self_node.position();
+        let other_pos = other_node.position();
+
+        match (self_pos, other_pos) {
+            (Some(self_pos), Some(other_pos)) => {
+                match self_pos.start.line.cmp(&other_pos.start.line) {
+                    std::cmp::Ordering::Equal => {
+                        // If lines are equal, compare by column
+                        self_pos.start.column.partial_cmp(&other_pos.start.column)
+                    }
+                    ordering => Some(ordering),
+                }
+            }
+            (Some(_), None) => Some(std::cmp::Ordering::Less),
+            (None, Some(_)) => Some(std::cmp::Ordering::Greater),
+            (None, None) => Some(self.name().cmp(&other.name())),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Position {
     pub start: Point,
@@ -492,9 +515,26 @@ impl Node {
         }
     }
 
+    pub fn find_children(&self, index: usize) -> Option<Node> {
+        match self.clone() {
+            Self::Blockquote(v) | Self::Delete(v) | Self::Emphasis(v) | Self::Strong(v) => {
+                v.values.get(index).cloned()
+            }
+            Self::Heading(v) => v.values.get(index).cloned(),
+            Self::List(v) => v.values.get(index).cloned(),
+            Self::TableCell(v) => v.values.get(index).cloned(),
+            Self::TableRow(v) => v.cells.get(index).cloned(),
+            _ => None,
+        }
+    }
+
     pub fn value(&self) -> String {
         match self.clone() {
-            Self::Blockquote(v) => v.values.iter().map(|value| value.value()).join(""),
+            Self::Blockquote(v) => v
+                .values
+                .first()
+                .map(|value| value.value())
+                .unwrap_or_default(),
             Self::Definition(d) => d.ident,
             Self::Delete(v) => v.values.iter().map(|value| value.value()).join(""),
             Self::Heading(h) => h.values.iter().map(|value| value.value()).join(""),
@@ -753,15 +793,24 @@ impl Node {
     pub fn with_value(&self, value: &str) -> Self {
         match self.clone() {
             Self::Blockquote(mut v) => {
-                v.values = v.values.iter().map(|n| n.with_value(value)).collect();
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
                 Self::Blockquote(v)
             }
             Self::Delete(mut v) => {
-                v.values = v.values.iter().map(|n| n.with_value(value)).collect();
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
                 Self::Delete(v)
             }
             Self::Emphasis(mut v) => {
-                v.values = v.values.iter().map(|n| n.with_value(value)).collect();
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
                 Self::Emphasis(v)
             }
             Self::Html(mut html) => {
@@ -788,13 +837,19 @@ impl Node {
                 math.value = value.to_string();
                 Self::Math(math)
             }
-            Self::List(mut list) => {
-                list.values = list.values.iter().map(|n| n.with_value(value)).collect();
-                Self::List(list)
+            Self::List(mut v) => {
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
+                Self::List(v)
             }
-            Self::TableCell(mut cell) => {
-                cell.values = cell.values.iter().map(|n| n.with_value(value)).collect();
-                Self::TableCell(cell)
+            Self::TableCell(mut v) => {
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
+                Self::TableCell(v)
             }
             Self::TableRow(mut row) => {
                 row.cells = row
@@ -806,9 +861,12 @@ impl Node {
 
                 Self::TableRow(row)
             }
-            Self::Strong(mut strong) => {
-                strong.values = strong.values.iter().map(|n| n.with_value(value)).collect();
-                Self::Strong(strong)
+            Self::Strong(mut v) => {
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
+                Self::Strong(v)
             }
             Self::Code(mut code) => {
                 code.value = value.to_string();
@@ -838,9 +896,12 @@ impl Node {
                 footnote.ident = value.to_string();
                 Self::FootnoteRef(footnote)
             }
-            Self::Heading(mut heading) => {
-                heading.values = heading.values.iter().map(|n| n.with_value(value)).collect();
-                Self::Heading(heading)
+            Self::Heading(mut v) => {
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
+                Self::Heading(v)
             }
             Self::Definition(mut def) => {
                 def.ident = value.to_string();
@@ -885,6 +946,61 @@ impl Node {
                     .collect::<Vec<_>>(),
                 ..mdx
             }),
+        }
+    }
+
+    pub fn with_children_value(&self, value: &str, index: usize) -> Self {
+        match self.clone() {
+            Self::Blockquote(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::Blockquote(v)
+            }
+            Self::Delete(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::Delete(v)
+            }
+            Self::Emphasis(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::Emphasis(v)
+            }
+            Self::List(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::List(v)
+            }
+            Self::TableCell(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::TableCell(v)
+            }
+            Self::Strong(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::Strong(v)
+            }
+            Self::Heading(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::Heading(v)
+            }
+            a => a,
         }
     }
 
