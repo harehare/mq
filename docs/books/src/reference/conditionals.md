@@ -10,7 +10,10 @@ mq supports standard conditional operations through the following functions:
 
 ```python
 # Basic comparisons
-and(true, true, true) // true
-or(true, false, true) // true
-not(false) // true
+and(true, true, true)
+# => true
+or(true, false, true)
+# => true
+not(false)
+# => true
 ```

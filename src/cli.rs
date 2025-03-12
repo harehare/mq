@@ -203,6 +203,7 @@ impl Cli {
             None => {
                 let mut engine = mq_lang::Engine::default();
                 engine.load_builtin_module()?;
+                engine.set_filter_none(!self.output.update);
 
                 if let Some(dirs) = &self.input.module_directories {
                     engine.set_paths(dirs.clone());

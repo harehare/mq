@@ -20,10 +20,22 @@ use log::debug;
 use runtime_value::RuntimeValue;
 
 #[derive(Debug, Clone)]
+pub struct Options {
+    pub filter_none: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { filter_none: true }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Evaluator {
     env: Rc<RefCell<Env>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-    pub module_loader: module::ModuleLoader,
+    pub(crate) options: Options,
+    pub(crate) module_loader: module::ModuleLoader,
 }
 
 impl Evaluator {
@@ -35,6 +47,7 @@ impl Evaluator {
             env: Rc::new(RefCell::new(Env::new(None))),
             module_loader,
             token_arena,
+            options: Options::default(),
         }
     }
 
@@ -138,54 +151,65 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         program
             .iter()
-            .try_fold(runtime_value, |runtime_value, ast| match &*ast.expr {
-                ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
-                ast::Expr::Include(module_id) => {
-                    self.eval_include(module_id.to_owned())?;
-                    Ok(runtime_value)
+            .try_fold(runtime_value, |runtime_value, ast| {
+                if self.options.filter_none && runtime_value.is_none() {
+                    return Ok(RuntimeValue::NONE);
                 }
-                ast::Expr::Def(ident, params, program) => {
-                    let function = RuntimeValue::Function(
-                        params.iter().map(Rc::clone).collect::<Vec<_>>(),
-                        program.iter().map(Rc::clone).collect::<Vec<_>>(),
-                        Rc::clone(&env),
-                    );
-                    env.borrow_mut().define(ident, function.clone());
-                    Ok(function)
-                }
-                ast::Expr::Let(ident, node) => {
-                    let let_ = self.eval_expr(&runtime_value, Rc::clone(node), Rc::clone(&env))?;
-                    env.borrow_mut().define(ident, let_);
-                    Ok(runtime_value)
-                }
-                ast::Expr::Call(_, _, _) => {
-                    self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                }
-                ast::Expr::Literal(ast::Literal::Bool(b)) => {
-                    if *b {
-                        Ok(runtime_value)
-                    } else {
-                        Ok(RuntimeValue::NONE)
+
+                match &*ast.expr {
+                    ast::Expr::Selector(ident) => {
+                        Ok(Self::eval_selector_expr(runtime_value, ident))
                     }
-                }
-                ast::Expr::Literal(ast::Literal::String(s)) => {
-                    Ok(RuntimeValue::String(s.to_string()))
-                }
-                ast::Expr::Literal(ast::Literal::Number(n)) => Ok(RuntimeValue::Number(*n)),
-                ast::Expr::Literal(ast::Literal::None) => Ok(RuntimeValue::NONE),
-                ast::Expr::Self_ => Ok(runtime_value),
-                ast::Expr::While(_, _) => {
-                    self.eval_while(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                }
-                ast::Expr::Until(_, _) => {
-                    self.eval_until(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                }
-                ast::Expr::Foreach(_, _, _) => {
-                    self.eval_foreach(&runtime_value, Rc::clone(ast), Rc::clone(&env))
-                }
-                ast::Expr::If(_) => self.eval_if(&runtime_value, Rc::clone(ast), Rc::clone(&env)),
-                ast::Expr::Ident(_) => {
-                    self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    ast::Expr::Include(module_id) => {
+                        self.eval_include(module_id.to_owned())?;
+                        Ok(runtime_value)
+                    }
+                    ast::Expr::Def(ident, params, program) => {
+                        let function = RuntimeValue::Function(
+                            params.iter().map(Rc::clone).collect::<Vec<_>>(),
+                            program.iter().map(Rc::clone).collect::<Vec<_>>(),
+                            Rc::clone(&env),
+                        );
+                        env.borrow_mut().define(ident, function.clone());
+                        Ok(function)
+                    }
+                    ast::Expr::Let(ident, node) => {
+                        let let_ =
+                            self.eval_expr(&runtime_value, Rc::clone(node), Rc::clone(&env))?;
+                        env.borrow_mut().define(ident, let_);
+                        Ok(runtime_value)
+                    }
+                    ast::Expr::Call(_, _, _) => {
+                        self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    }
+                    ast::Expr::Literal(ast::Literal::Bool(b)) => {
+                        if *b {
+                            Ok(runtime_value)
+                        } else {
+                            Ok(RuntimeValue::NONE)
+                        }
+                    }
+                    ast::Expr::Literal(ast::Literal::String(s)) => {
+                        Ok(RuntimeValue::String(s.to_string()))
+                    }
+                    ast::Expr::Literal(ast::Literal::Number(n)) => Ok(RuntimeValue::Number(*n)),
+                    ast::Expr::Literal(ast::Literal::None) => Ok(RuntimeValue::NONE),
+                    ast::Expr::Self_ => Ok(runtime_value),
+                    ast::Expr::While(_, _) => {
+                        self.eval_while(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    }
+                    ast::Expr::Until(_, _) => {
+                        self.eval_until(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    }
+                    ast::Expr::Foreach(_, _, _) => {
+                        self.eval_foreach(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    }
+                    ast::Expr::If(_) => {
+                        self.eval_if(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    }
+                    ast::Expr::Ident(_) => {
+                        self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    }
                 }
             })
     }
@@ -1261,11 +1285,6 @@ mod tests {
             ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
        ],
        Ok(vec![RuntimeValue::String("array".to_string())]))]
-    #[case::type_none(vec![RuntimeValue::NONE],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
-       ],
-       Ok(vec![RuntimeValue::String("None".to_string())]))]
     #[case::min(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("min"), vec![
@@ -1549,7 +1568,7 @@ mod tests {
                 title: Some("Link Title".to_string()),
                 position: None
             }), None)]))]
-    #[case::to_hr(vec![RuntimeValue::NONE],
+    #[case::to_hr(vec![RuntimeValue::String("".to_owned())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_hr"), Vec::new(), false)),
             ],
@@ -1814,6 +1833,24 @@ mod tests {
                 .eval(&program, runtime_values.into_iter()),
             expected
         );
+    }
+
+    #[rstest]
+    #[case::type_none(vec![RuntimeValue::NONE],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
+       ],
+       Ok(vec![RuntimeValue::String("None".to_string())]))]
+    fn test_eval_process_none(
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        #[case] runtime_values: Vec<RuntimeValue>,
+        #[case] program: Program,
+        #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
+    ) {
+        let mut eval = Evaluator::new(ModuleLoader::new(None), token_arena);
+        eval.options.filter_none = false;
+
+        assert_eq!(eval.eval(&program, runtime_values.into_iter()), expected);
     }
 
     #[test]

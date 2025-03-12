@@ -15,25 +15,36 @@ Standard comparison operators are supported:
 
 ### Examples
 
-```jq
+```python
 # Basic comparisons
-eq(1, 1) // true
-gt(2, 1) // true
-lte("a", "b") // true
+eq(1, 1)
+# => true
+gt(2, 1)
+# => true
+lte("a", "b")
+# => true
 
 # String comparisons
-eq("hello", "hello") // true
-gt("xyz", "abc") // true
+eq("hello", "hello")
+# => true
+gt("xyz", "abc")
+# => true
 
 # Numeric comparisons
-gte(5.5, 5.0) // true
-lt(-1, 0) // true
+gte(5.5, 5.0)
+# => true
+lt(-1, 0)
+# => true
 
 # Logical operations
-and(true, false) // false
-or(true, false) // true
-not(false) // true
+and(true, false)
+# => false
+or(true, false)
+# => true
+not(false)
+# => true
 
 # Complex conditions
-and(gt(x, 0), lt(x, 10)) // true if 0 < x < 10
+and(gt(x, 0), lt(x, 10))
+# =>  true if 0 < x < 10
 ```

@@ -46,6 +46,10 @@ impl Engine {
         self.options.optimize = optimize;
     }
 
+    pub fn set_filter_none(&mut self, filter_none: bool) {
+        self.evaluator.options.filter_none = filter_none;
+    }
+
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
         self.evaluator.module_loader.search_paths = Some(paths);
     }
