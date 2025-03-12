@@ -94,9 +94,13 @@ struct InputArgs {
     #[arg(short = 'M', long)]
     module_names: Option<Vec<String>>,
 
-    /// Sets  string  that can be referenced at runtime
-    #[arg(long = "arg", value_names = ["NAME", "VALUE"])]
+    /// Sets string that can be referenced at runtime
+    #[arg(long, value_names = ["NAME", "VALUE"])]
     args: Option<Vec<String>>,
+
+    /// Sets file contents that can be referenced at runtime
+    #[arg(long, value_names = ["NAME", "FILE"])]
+    raw_file: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -219,6 +223,19 @@ impl Cli {
                     args.chunks(2).for_each(|v| {
                         engine.define_string_value(&v[0], &v[1]);
                     });
+                }
+
+                if let Some(raw_file) = &self.input.raw_file {
+                    for v in raw_file.chunks(2) {
+                        let path = PathBuf::from_str(&v[1]).into_diagnostic()?;
+
+                        if !path.exists() {
+                            return Err(miette!("File not found: {}", path.display()));
+                        }
+
+                        let content = fs::read_to_string(&path).into_diagnostic()?;
+                        engine.define_string_value(&v[0], &content);
+                    }
                 }
 
                 let query = self
