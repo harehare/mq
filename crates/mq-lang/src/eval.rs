@@ -211,7 +211,7 @@ impl Evaluator {
     fn eval_selector_expr(runtime_value: RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
         match &runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
-                if builtin::eval_selector(&node_value, ident) {
+                if builtin::eval_selector(node_value, ident) {
                     runtime_value
                 } else {
                     RuntimeValue::NONE
@@ -248,7 +248,7 @@ impl Evaluator {
                 .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena))),
             ast::Expr::Selector(ident) => match runtime_value {
                 RuntimeValue::Markdown(node_value, _) => Ok(RuntimeValue::Bool(
-                    builtin::eval_selector(&node_value, ident),
+                    builtin::eval_selector(node_value, ident),
                 )),
                 _ => Err(EvalError::InvalidTypes {
                     token: (*self.token_arena.borrow()[node.token_id]).clone(),

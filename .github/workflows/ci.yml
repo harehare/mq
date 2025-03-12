@@ -27,8 +27,10 @@ jobs:
       - name: Run tests
         run: just test
       - name: Generate code coverage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
