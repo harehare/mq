@@ -170,7 +170,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     .markdown_node()
                     .map(|md| {
                         base64d(md.value().as_str()).and_then(|o| match o {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s).into()),
+                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
                             a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                         })
                     })
@@ -865,7 +865,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                     .markdown_node()
-                    .map(|md| Ok(split_re(md.value().as_str(), s)?))
+                    .map(|md| split_re(md.value().as_str(), s))
                     .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
                 [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),

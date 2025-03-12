@@ -515,7 +515,7 @@ impl Node {
         }
     }
 
-    pub fn find_children(&self, index: usize) -> Option<Node> {
+    pub fn find_at_index(&self, index: usize) -> Option<Node> {
         match self {
             Self::Blockquote(v) | Self::Delete(v) | Self::Emphasis(v) | Self::Strong(v) => {
                 v.values.get(index).cloned()

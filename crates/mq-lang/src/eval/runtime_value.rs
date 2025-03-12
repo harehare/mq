@@ -174,7 +174,7 @@ impl RuntimeValue {
             RuntimeValue::String(s) => !s.is_empty(),
             RuntimeValue::Array(a) => !a.is_empty(),
             RuntimeValue::Markdown(node, selector) => match selector {
-                Some(Selector::Index(i)) => node.find_children(*i).is_some(),
+                Some(Selector::Index(i)) => node.find_at_index(*i).is_some(),
                 None => true,
             },
             RuntimeValue::Function(_, _, _) => true,
@@ -196,7 +196,7 @@ impl RuntimeValue {
 
     pub fn markdown_node(&self) -> Option<Node> {
         match self {
-            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_children(*i),
+            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_at_index(*i),
             RuntimeValue::Markdown(n, _) => Some(n.clone()),
             _ => None,
         }
