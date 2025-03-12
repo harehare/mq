@@ -2409,44 +2409,20 @@ pub fn eval_builtin(
 }
 
 #[inline(always)]
-pub fn eval_selector(node: mq_markdown::Node, selector: &ast::Selector) -> Vec<RuntimeValue> {
+pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool {
     match selector {
-        ast::Selector::Code(lang) if node.is_code(lang.clone()) => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::InlineCode if node.is_inline_code() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::InlineMath if node.is_inline_math() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Strong if node.is_strong() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Emphasis if node.is_emphasis() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Delete if node.is_delete() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Link if node.is_link() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::LinkRef if node.is_link_ref() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Image if node.is_image() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Heading(depth) if node.is_heading(*depth) => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::HorizontalRule if node.is_horizontal_rule() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Blockquote if node.is_blockquote() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
+        ast::Selector::Code(lang) if node.is_code(lang.clone()) => true,
+        ast::Selector::InlineCode if node.is_inline_code() => true,
+        ast::Selector::InlineMath if node.is_inline_math() => true,
+        ast::Selector::Strong if node.is_strong() => true,
+        ast::Selector::Emphasis if node.is_emphasis() => true,
+        ast::Selector::Delete if node.is_delete() => true,
+        ast::Selector::Link if node.is_link() => true,
+        ast::Selector::LinkRef if node.is_link_ref() => true,
+        ast::Selector::Image if node.is_image() => true,
+        ast::Selector::Heading(depth) if node.is_heading(*depth) => true,
+        ast::Selector::HorizontalRule if node.is_horizontal_rule() => true,
+        ast::Selector::Blockquote if node.is_blockquote() => true,
         ast::Selector::Table(row, column) => match (row, column, node.clone()) {
             (
                 Some(row1),
@@ -2458,51 +2434,25 @@ pub fn eval_selector(node: mq_markdown::Node, selector: &ast::Selector) -> Vec<R
                     last_cell_of_in_table: _,
                     ..
                 }),
-            ) => {
-                if *row1 == row2 && *column1 == column2 {
-                    vec![RuntimeValue::Markdown(node.clone(), None)]
-                } else {
-                    Vec::new()
-                }
-            }
+            ) => *row1 == row2 && *column1 == column2,
             (
                 Some(row1),
                 None,
                 mq_markdown::Node::TableCell(mq_markdown::TableCell { row: row2, .. }),
-            ) => {
-                if *row1 == row2 {
-                    vec![RuntimeValue::Markdown(node, None)]
-                } else {
-                    Vec::new()
-                }
-            }
+            ) => *row1 == row2,
             (
                 None,
                 Some(column1),
                 mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     column: column2, ..
                 }),
-            ) => {
-                if *column1 == column2 {
-                    vec![RuntimeValue::Markdown(node, None)]
-                } else {
-                    Vec::new()
-                }
-            }
-            (None, None, mq_markdown::Node::TableCell(_)) => {
-                vec![RuntimeValue::Markdown(node, None)]
-            }
-            _ => Vec::new(),
+            ) => *column1 == column2,
+            (None, None, mq_markdown::Node::TableCell(_)) => true,
+            _ => false,
         },
-        ast::Selector::Html if node.is_html() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Footnote if node.is_footnote() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::MdxJsxFlowElement if node.is_mdx_jsx_flow_element() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
+        ast::Selector::Html if node.is_html() => true,
+        ast::Selector::Footnote if node.is_footnote() => true,
+        ast::Selector::MdxJsxFlowElement if node.is_mdx_jsx_flow_element() => true,
         ast::Selector::List(index, checked) => match (index, node.clone()) {
             (
                 Some(index),
@@ -2511,55 +2461,23 @@ pub fn eval_selector(node: mq_markdown::Node, selector: &ast::Selector) -> Vec<R
                     checked: list_checked,
                     ..
                 }),
-            ) => {
-                if *index == list_index && *checked == list_checked {
-                    vec![RuntimeValue::Markdown(node, None)]
-                } else {
-                    Vec::new()
-                }
-            }
-            (_, mq_markdown::Node::List(mq_markdown::List { .. })) => {
-                vec![RuntimeValue::Markdown(node, None)]
-            }
-            _ => Vec::new(),
+            ) => *index == list_index && *checked == list_checked,
+            (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
+            _ => false,
         },
-        ast::Selector::MdxJsEsm if node.is_msx_js_esm() => {
-            vec![RuntimeValue::Markdown(node.clone(), None)]
-        }
-        ast::Selector::Text if node.is_text() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Toml if node.is_toml() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Yaml if node.is_yaml() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Break if node.is_break() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::MdxTextExpression if node.is_mdx_text_expression() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::FootnoteRef if node.is_footnote_ref() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::ImageRef if node.is_image_ref() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::MdxJsxTextElement if node.is_mdx_jsx_text_element() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Math if node.is_math() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::MdxFlowExpression if node.is_mdx_flow_expression() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        ast::Selector::Definition if node.is_definition() => {
-            vec![RuntimeValue::Markdown(node, None)]
-        }
-        _ => Vec::new(),
+        ast::Selector::MdxJsEsm if node.is_msx_js_esm() => true,
+        ast::Selector::Text if node.is_text() => true,
+        ast::Selector::Toml if node.is_toml() => true,
+        ast::Selector::Yaml if node.is_yaml() => true,
+        ast::Selector::Break if node.is_break() => true,
+        ast::Selector::MdxTextExpression if node.is_mdx_text_expression() => true,
+        ast::Selector::FootnoteRef if node.is_footnote_ref() => true,
+        ast::Selector::ImageRef if node.is_image_ref() => true,
+        ast::Selector::MdxJsxTextElement if node.is_mdx_jsx_text_element() => true,
+        ast::Selector::Math if node.is_math() => true,
+        ast::Selector::MdxFlowExpression if node.is_mdx_flow_expression() => true,
+        ast::Selector::Definition if node.is_definition() => true,
+        _ => false,
     }
 }
 
