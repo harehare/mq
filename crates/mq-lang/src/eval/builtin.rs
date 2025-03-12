@@ -771,6 +771,12 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         None => Ok(RuntimeValue::None),
                     }
                 }
+                [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
+                    Ok(RuntimeValue::Markdown(
+                        node.clone(),
+                        Some(runtime_value::Selector::Index(i.value() as usize)),
+                    ))
+                }
                 [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1210,18 +1216,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_md_name"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => Ok(node.name().to_string().into()),
-                _ => Ok(RuntimeValue::None),
-            }),
-        );
-        map.insert(
-            CompactString::new("children"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
-                [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-                    Ok(RuntimeValue::Markdown(
-                        node.clone(),
-                        Some(runtime_value::Selector::Index(i.value() as usize + 1)),
-                    ))
-                }
                 _ => Ok(RuntimeValue::None),
             }),
         );
@@ -2213,13 +2207,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Returns the name of the given markdown node.",
                 params: &["markdown"],
-            },
-        );
-        map.insert(
-            CompactString::new("children"),
-            BuiltinFunctionDoc {
-                description: "Retrieves a child element at the specified index from a markdown node.",
-                params: &["markdown_node", "index"],
             },
         );
         map.insert(

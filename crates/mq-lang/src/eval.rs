@@ -1800,18 +1800,18 @@ mod tests {
                  ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
             ],
             Ok(vec![RuntimeValue::NONE]))]
-    #[case::children(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
+    #[case::nth_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
             ], level: 1, index: 0, checked: None, position: None}), None)],
                    vec![
-                        ast_node(ast::Expr::Call(ast::Ident::new("children"), vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))], false))
+                        ast_node(ast::Expr::Call(ast::Ident::new("nth"), vec![ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))], false))
                    ],
                    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
             ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
-    #[case::children(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
+    #[case::nth_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
             ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))],
