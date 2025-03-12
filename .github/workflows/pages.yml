@@ -21,6 +21,7 @@ jobs:
     if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
+      playground: ${{ steps.filter.outputs.playground }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -29,13 +30,16 @@ jobs:
           filters: |
             docs:
               - 'docs/**'
+            playground:
+              - 'playground/**'
+
   deploy:
     needs: changes
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: ${{ needs.changes.outputs.docs == 'true' }}
+    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.playground == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

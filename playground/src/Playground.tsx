@@ -24,6 +24,15 @@ code
 `,
   },
   {
+    name: "Update child node",
+    code: `.h1 | children(0) | add("text")?`,
+    markdown: `# *h1* text
+
+- item1
+- item2
+`,
+  },
+  {
     name: "Markdown Toc",
     code: `.h
 | let link = to_link(add("#", to_text(self)), to_text(self))
