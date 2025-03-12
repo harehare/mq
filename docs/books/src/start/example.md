@@ -6,7 +6,7 @@ under preparation
 
 ```js
 # Hello world
-select(or(.[], .code, .h)) | upcase() | add(" Hello World")?
+select(or(.[], .code, .h)) | upcase() | add(" Hello World")
 ```
 
 ## Markdown TOC

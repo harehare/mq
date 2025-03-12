@@ -58,3 +58,49 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
         None
     }
 }
+#[cfg(test)]
+mod tests {
+    use mq_hir::Hir;
+
+    use super::*;
+
+    #[test]
+    fn test_function_hover() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let position = Position::new(0, 5);
+        hir.add_code(url.clone(), "def func1(): 1;");
+
+        let hover = response(Arc::new(RwLock::new(hir)), url, position);
+
+        assert!(hover.is_some());
+        let hover = hover.unwrap();
+
+        if let HoverContents::Markup(content) = hover.contents {
+            assert_eq!(content.kind, MarkupKind::Markdown);
+            assert!(content.value.contains("func1"));
+        } else {
+            panic!("Expected markup content");
+        }
+    }
+
+    #[test]
+    fn test_no_symbol_at_position() {
+        let hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let position = Position::new(10, 10); // Position where no symbol exists
+
+        let hover = response(Arc::new(RwLock::new(hir)), url, position);
+        assert!(hover.is_none());
+    }
+
+    #[test]
+    fn test_invalid_url() {
+        let hir = Hir::default();
+        let url = Url::parse("file:///nonexistent.mq").unwrap();
+        let position = Position::new(0, 0);
+
+        let hover = response(Arc::new(RwLock::new(hir)), url, position);
+        assert!(hover.is_none());
+    }
+}

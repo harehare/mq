@@ -13,6 +13,10 @@ start-lsp:
 bench: build-bench
     cargo codspeed run
 
+[working-directory: 'crates/mq-lang']
+bench-local:
+    cargo bench
+
 build:
     cargo build --release --workspace
 

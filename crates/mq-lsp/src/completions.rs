@@ -95,3 +95,43 @@ pub fn response(
         None => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use mq_hir::Hir;
+
+    use super::*;
+
+    #[test]
+    fn test_completion_response_none_for_unknown_url() {
+        let hir = Arc::new(RwLock::new(Hir::default()));
+        let source_map = BiMap::new();
+        let url = Url::parse("file:///unknown.mql").unwrap();
+        let position = Position::new(0, 0);
+
+        let result = response(hir, url, position, source_map);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_completion_response_returns_symbols() {
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let url = Url::parse("file:///unknown.mql").unwrap();
+        let (source_id, _) = hir.add_code(url.clone(), "def func1(): 1;");
+
+        source_map.insert(url.to_string(), source_id);
+
+        let result = response(
+            Arc::new(RwLock::new(hir)),
+            url,
+            Position::new(0, 0),
+            source_map,
+        );
+        assert!(result.is_some());
+
+        if let Some(CompletionResponse::Array(items)) = result {
+            assert!(items.iter().any(|item| item.label == "add"));
+        }
+    }
+}
