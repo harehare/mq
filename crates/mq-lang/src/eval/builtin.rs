@@ -41,6 +41,7 @@ pub enum ParamNum {
 }
 
 impl ParamNum {
+    #[inline(always)]
     pub fn to_num(&self) -> u8 {
         match self {
             ParamNum::None => 0,
@@ -58,6 +59,7 @@ impl ParamNum {
         }
     }
 
+    #[inline(always)]
     pub fn is_missing_one_params(&self, num_args: u8) -> bool {
         match self {
             ParamNum::Fixed(n) => num_args == n.checked_sub(1).unwrap_or_default(),
@@ -125,6 +127,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
                     to_date(*ms, Some(format.as_str()))
                 }
+                [RuntimeValue::Number(ms)] => to_date(*ms, None),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -297,6 +300,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             RuntimeValue::Bool(b) => {
                                 Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into()))
                             }
+                            n @ RuntimeValue::Number(_) => Ok(n),
                             a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                         })
                         .collect();
@@ -2416,7 +2420,6 @@ pub fn eval_builtin(
     )
 }
 
-#[inline(always)]
 pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool {
     match selector {
         ast::Selector::Code(lang) if node.is_code(lang.clone()) => true,

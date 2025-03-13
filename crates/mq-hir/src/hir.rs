@@ -202,7 +202,6 @@ impl Hir {
         })
     }
 
-    #[inline(always)]
     fn add_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
