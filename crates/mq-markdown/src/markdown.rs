@@ -31,9 +31,8 @@ impl FromStr for Markdown {
 
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut pre_line = 0;
+        let mut pre_line = 1;
         let mut pre_position = None;
-        let mut first_row = true;
         let text = self
             .nodes
             .iter()
@@ -45,14 +44,13 @@ impl fmt::Display for Markdown {
                 }
 
                 let value = if let Some(pos) = node.position() {
-                    let value = if !first_row && pre_line != pos.start.line {
+                    let value = if pre_line != pos.start.line {
                         if pre_position.is_some() {
                             format!("{}{}", '\n', value)
                         } else {
                             value
                         }
                     } else {
-                        first_row = false;
                         value
                     };
 
@@ -162,13 +160,34 @@ pub fn pretty_markdown(s: &str, options: &RenderOptions) -> miette::Result<Strin
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
-    fn test_markdown_from_str() {
-        let md = "# Hello\n\nWorld".parse::<Markdown>().unwrap();
-        assert_eq!(md.nodes.len(), 2);
-        assert_eq!(md.to_string(), "# Hello\nWorld\n");
+    #[rstest]
+    #[case::header("# Title", 1, "# Title\n")]
+    #[case::header("# Title\nParagraph", 2, "# Title\nParagraph\n")]
+    #[case::header("# Title\n\nParagraph", 2, "# Title\nParagraph\n")]
+    #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
+    #[case::quote("> Quote\n\n> Second line", 2, "> Quote\n> Second line\n")]
+    #[case::code("```rust\nlet x = 1;\n```", 1, "\n```rust\nlet x = 1;\n```\n")]
+    #[case::toml("[test]\ntest=1", 1, "[test]\ntest=1\n")]
+    #[case::code("`inline`", 1, "`inline`\n")]
+    #[case::math("$math$", 1, "$math$\n")]
+    #[case::link("[title](http://example.com)", 1, "[title](http://example.com)\n")]
+    #[case::table(
+        "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",
+        7,
+        "|Column1|Column2|Column3|\n|:---|:---:|---:|\n|Left|Center|Right|\n"
+    )]
+    fn test_markdown_from_str(
+        #[case] input: &str,
+        #[case] expected_nodes: usize,
+        #[case] expected_output: &str,
+    ) {
+        let md = input.parse::<Markdown>().unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
     }
 
     #[test]

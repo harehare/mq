@@ -279,6 +279,32 @@ mod tests {
                     expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                 })
             ])]
+    #[case::constant_folding_add(
+            vec![
+                Rc::new(ast::Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(ast::Expr::Call(
+                        ast::Ident::new("add"),
+                        vec![
+                            Rc::new(ast::Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(ast::Expr::Literal(ast::Literal::String("hello".to_string()))),
+                            }),
+                            Rc::new(ast::Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(ast::Expr::Literal(ast::Literal::String("world".to_string()))),
+                            }),
+                        ],
+                        false
+                    )),
+                })
+            ],
+            vec![
+                Rc::new(ast::Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(ast::Expr::Literal(ast::Literal::String("helloworld".to_string()))),
+                })
+            ])]
     #[case::constant_folding_sub(
             vec![
                 Rc::new(ast::Node {

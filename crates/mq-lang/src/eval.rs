@@ -126,7 +126,7 @@ impl Evaluator {
             });
 
             module.vars.iter().try_for_each(|node| {
-                if let ast::Expr::Let(ident, _) = &*node.expr {
+                if let ast::Expr::Let(ident, node) = &*node.expr {
                     let val =
                         self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
                     self.env.borrow_mut().define(ident, val);
@@ -221,7 +221,6 @@ impl Evaluator {
                     .module_loader
                     .load_from_file(&module_name, Rc::clone(&self.token_arena))
                     .map_err(EvalError::ModuleLoadError)?;
-
                 self.load_module(module)
             }
             _ => Err(EvalError::ModuleLoadError(
@@ -317,22 +316,24 @@ impl Evaluator {
                 });
             }
 
-            let mut runtime_values: Vec<RuntimeValue> = Vec::with_capacity(values.len());
+            let runtime_values: Vec<RuntimeValue> = Vec::with_capacity(values.len());
 
-            if let RuntimeValue::Array(values) = values {
+            let values = if let RuntimeValue::Array(values) = values {
                 let env = Rc::new(RefCell::new(Env::new(Some(Rc::downgrade(&env)))));
+                values
+                    .into_iter()
+                    .try_fold(runtime_values, |mut acc, value| {
+                        env.borrow_mut().define(ident, value);
+                        let result =
+                            self.eval_program(body, runtime_value.clone(), Rc::clone(&env))?;
+                        acc.push(result);
+                        Ok::<Vec<RuntimeValue>, EvalError>(acc)
+                    })?
+            } else {
+                vec![]
+            };
 
-                for value in values.into_iter() {
-                    env.borrow_mut().define(ident, value);
-                    runtime_values.push(self.eval_program(
-                        body,
-                        runtime_value.clone(),
-                        Rc::clone(&env),
-                    )?);
-                }
-            }
-
-            Ok(RuntimeValue::Array(runtime_values))
+            Ok(RuntimeValue::Array(values))
         } else {
             Err(EvalError::InvalidTypes {
                 token: (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -526,7 +527,7 @@ mod tests {
 
     use super::*;
     use Program;
-    use mq_test_support::defer;
+    use mq_test::defer;
     use rstest::{fixture, rstest};
 
     #[fixture]
@@ -1945,6 +1946,75 @@ mod tests {
                  ast_node(ast::Expr::Call(ast::Ident::new("url_encode"), Vec::new(), false))
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test%20string".to_string(), position: None}), None)]))]
+    #[case::update(vec!["".to_string().into()],
+            vec![
+                 ast_node(ast::Expr::Call(ast::Ident::new("update"), vec![
+                  ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+                  ast_node(ast::Expr::Literal(ast::Literal::String("updated".to_string()))),
+                 ], false))
+            ],
+            Ok(vec![RuntimeValue::String("updated".to_string())]))]
+    #[case::sort_string_array(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+            ])],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("sort"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ])]))]
+    #[case::sort_number_array(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(3.into()),
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+            ])],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("sort"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(3.into()),
+            ])]))]
+    #[case::sort_empty_array(vec![RuntimeValue::Array(vec![])],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("sort"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::Array(vec![])]))]
+    #[case::uniq_string_array(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("b".to_string()),
+            ])],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("uniq"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+            ])]))]
+    #[case::uniq_number_array(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(3.into()),
+                RuntimeValue::Number(2.into()),
+            ])],
+            vec![
+                ast_node(ast::Expr::Call(ast::Ident::new("uniq"), Vec::new(), false))
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(3.into()),
+            ])]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
@@ -1984,7 +2054,7 @@ mod tests {
     #[test]
     fn test_include() {
         let (temp_dir, temp_file_path) =
-            mq_test_support::create_file("test_module.mq", "def test(): 42;");
+            mq_test::create_file("test_module.mq", "def func1(): 42; | let val1 = 1");
 
         defer! {
             if temp_file_path.exists() {
@@ -2002,7 +2072,7 @@ mod tests {
             }),
             Rc::new(ast::Node {
                 token_id: 0.into(),
-                expr: Rc::new(ast::Expr::Call(ast::Ident::new("test"), Vec::new(), false)),
+                expr: Rc::new(ast::Expr::Call(ast::Ident::new("func1"), Vec::new(), false)),
             }),
         ];
         assert_eq!(

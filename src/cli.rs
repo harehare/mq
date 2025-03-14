@@ -432,7 +432,7 @@ impl Cli {
 }
 #[cfg(test)]
 mod tests {
-    use mq_test_support::defer;
+    use mq_test::defer;
 
     use super::*;
 
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_cli_raw_input() {
-        let (_, temp_file_path) = mq_test_support::create_file("test1.md", "# test");
+        let (_, temp_file_path) = mq_test::create_file("test1.md", "# test");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_cli_output_formats() {
-        let (_, temp_file_path) = mq_test_support::create_file("test2.md", "# test");
+        let (_, temp_file_path) = mq_test::create_file("test2.md", "# test");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_cli_list_styles() {
-        let (_, temp_file_path) = mq_test_support::create_file("test3.md", "# test");
+        let (_, temp_file_path) = mq_test::create_file("test3.md", "# test");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_cli_fmt_command() {
-        let (_, temp_file_path) = mq_test_support::create_file("test1.mq", "def math(): 42;");
+        let (_, temp_file_path) = mq_test::create_file("test1.mq", "def math(): 42;");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -564,7 +564,7 @@ mod tests {
 
     #[test]
     fn test_cli_fmt_command_with_check() {
-        let (_, temp_file_path) = mq_test_support::create_file("test2.mq", "def math(): 42;");
+        let (_, temp_file_path) = mq_test::create_file("test2.mq", "def math(): 42;");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_cli_update_flag() {
-        let (_, temp_file_path) = mq_test_support::create_file("test4.md", "# test");
+        let (_, temp_file_path) = mq_test::create_file("test4.md", "# test");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -617,8 +617,8 @@ mod tests {
 
     #[test]
     fn test_cli_with_module_names() {
-        let (temp_dir, temp_file_path) = mq_test_support::create_file("math.mq", "def math(): 42;");
-        let (_, temp_md_file_path) = mq_test_support::create_file("test.md", "# test");
+        let (temp_dir, temp_file_path) = mq_test::create_file("math.mq", "def math(): 42;");
+        let (_, temp_md_file_path) = mq_test::create_file("test.md", "# test");
         let temp_md_file_path_clone = temp_md_file_path.clone();
 
         defer! {

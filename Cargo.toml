@@ -33,7 +33,7 @@ members = [
   "crates/mq-formatter",
   "fuzz",
   "crates/mq-wasm",
-  "crates/mq-test-support",
+  "crates/mq-test",
 ]
 
 [dependencies]
@@ -52,7 +52,7 @@ mq-repl = {path = "./crates/mq-repl", version = "0.1.0"}
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
-mq-test-support = {path = "./crates/mq-test-support", version = "0.1.0"}
+mq-test = {path = "./crates/mq-test", version = "0.1.0"}
 rstest = "0.25.0"
 
 [[bin]]

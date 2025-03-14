@@ -12,7 +12,7 @@ use mq_markdown::Node;
 
 use super::env::Env;
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Selector {
     Index(usize),
 }
@@ -85,6 +85,8 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => {
                 match a1.partial_cmp(a2) {
                     Some(Ordering::Equal) => b1.partial_cmp(b2),
+                    Some(Ordering::Greater) => Some(Ordering::Greater),
+                    Some(Ordering::Less) => Some(Ordering::Less),
                     _ => None,
                 }
             }
@@ -233,6 +235,8 @@ impl RuntimeValue {
 }
 #[cfg(test)]
 mod tests {
+    use crate::{AstExpr, AstNode, arena::ArenaId};
+
     use super::*;
 
     #[test]
@@ -301,6 +305,29 @@ mod tests {
         assert!(!RuntimeValue::Number(Number::from(0.0)).is_true());
         assert!(RuntimeValue::String(String::from("test")).is_true());
         assert!(!RuntimeValue::String(String::from("")).is_true());
+        assert!(RuntimeValue::Array(vec!["".to_string().into()]).is_true());
+        assert!(!RuntimeValue::Array(vec![]).is_true());
+        assert!(
+            RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "".to_string(),
+                    position: None
+                }),
+                None
+            )
+            .is_true()
+        );
+        assert!(
+            !RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "".to_string(),
+                    position: None
+                }),
+                Some(Selector::Index(1))
+            )
+            .is_true()
+        );
+        assert!(!RuntimeValue::Array(vec![]).is_true());
         assert!(!RuntimeValue::None.is_true());
     }
 
@@ -308,7 +335,34 @@ mod tests {
     fn test_runtime_value_partial_ord() {
         assert!(RuntimeValue::Number(Number::from(1.0)) < RuntimeValue::Number(Number::from(2.0)));
         assert!(RuntimeValue::String(String::from("a")) < RuntimeValue::String(String::from("b")));
+        assert!(RuntimeValue::Array(vec![]) < RuntimeValue::Array(vec!["a".to_string().into()]));
+        assert!(
+            RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "test".to_string(),
+                    position: None
+                }),
+                None
+            ) < RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "test2".to_string(),
+                    position: None
+                }),
+                None
+            )
+        );
         assert!(RuntimeValue::Bool(false) < RuntimeValue::Bool(true));
+        assert!(
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))))
+                < RuntimeValue::Function(
+                    vec![Rc::new(AstNode {
+                        expr: Rc::new(AstExpr::Ident(AstIdent::new("test"))),
+                        token_id: ArenaId::new(0),
+                    })],
+                    vec![],
+                    Rc::new(RefCell::new(Env::new(None)))
+                )
+        );
     }
 
     #[test]
@@ -317,5 +371,137 @@ mod tests {
         assert_eq!(RuntimeValue::String(String::from("test")).len(), 4);
         assert_eq!(RuntimeValue::Bool(true).len(), 1);
         assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
+    }
+
+    #[test]
+    fn test_runtime_value_debug_output() {
+        let array = RuntimeValue::Array(vec![
+            RuntimeValue::Number(Number::from(1.0)),
+            RuntimeValue::String("hello".to_string()),
+        ]);
+        assert_eq!(format!("{:?}", array), "1\nhello");
+
+        let node = mq_markdown::Node::Text(mq_markdown::Text {
+            value: "test markdown".to_string(),
+            position: None,
+        });
+        let markdown = RuntimeValue::Markdown(node, None);
+        assert_eq!(format!("{:?}", markdown), "test markdown");
+
+        let function =
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))));
+        assert_eq!(format!("{:?}", function), "function0");
+
+        let native_fn = RuntimeValue::NativeFunction(AstIdent::new("debug"));
+        assert_eq!(format!("{:?}", native_fn), "native_function: debug");
+    }
+
+    #[test]
+    fn test_runtime_value_from_value() {
+        let num_value = Value::Number(Number::from(42.0));
+        assert_eq!(
+            RuntimeValue::from(num_value),
+            RuntimeValue::Number(Number::from(42.0))
+        );
+
+        let bool_value = Value::Bool(true);
+        assert_eq!(RuntimeValue::from(bool_value), RuntimeValue::Bool(true));
+
+        let string_value = Value::String("test".to_string());
+        assert_eq!(
+            RuntimeValue::from(string_value),
+            RuntimeValue::String("test".to_string())
+        );
+
+        let array_value = Value::Array(vec![Value::Number(Number::from(1.0)), Value::Bool(false)]);
+        let expected_array = RuntimeValue::Array(vec![
+            RuntimeValue::Number(Number::from(1.0)),
+            RuntimeValue::Bool(false),
+        ]);
+        assert_eq!(RuntimeValue::from(array_value), expected_array);
+
+        let none_value = Value::None;
+        assert_eq!(RuntimeValue::from(none_value), RuntimeValue::None);
+
+        let fn_value = Value::Function(vec![], vec![]);
+        assert_eq!(
+            RuntimeValue::from(fn_value),
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))))
+        );
+
+        let ident = AstIdent::new("test_fn");
+        let native_fn_value = Value::NativeFunction(ident.clone());
+        assert_eq!(
+            RuntimeValue::from(native_fn_value),
+            RuntimeValue::NativeFunction(ident)
+        );
+    }
+
+    #[test]
+    fn test_runtime_value_markdown() {
+        let markdown = RuntimeValue::Markdown("test markdown".to_string().into(), None);
+        assert_eq!(markdown.markdown_node().unwrap().value(), "test markdown");
+
+        let updated = markdown.update_markdown_value("updated markdown");
+        match &updated {
+            RuntimeValue::Markdown(node, selector) => {
+                assert_eq!(node.value(), "updated markdown");
+                assert_eq!(*selector, None);
+            }
+            _ => panic!("Expected Markdown variant"),
+        }
+    }
+
+    #[test]
+    fn test_runtime_value_markdown_with_selector() {
+        let child1 = mq_markdown::Node::Text(mq_markdown::Text {
+            value: "child1".to_string(),
+            position: None,
+        });
+        let child2 = mq_markdown::Node::Text(mq_markdown::Text {
+            value: "child2".to_string(),
+            position: None,
+        });
+
+        let parent = mq_markdown::Node::Strong(mq_markdown::Value {
+            values: vec![child1, child2],
+            position: None,
+        });
+
+        let markdown_with_selector =
+            RuntimeValue::Markdown(parent.clone(), Some(Selector::Index(1)));
+
+        let selected = markdown_with_selector.markdown_node();
+        assert!(selected.is_some());
+        assert_eq!(selected.unwrap().value(), "child2");
+
+        let updated = markdown_with_selector.update_markdown_value("updated child");
+        match &updated {
+            RuntimeValue::Markdown(node, selector) => {
+                assert_eq!(selector, &Some(Selector::Index(1)));
+                assert_eq!(node.find_at_index(1).unwrap().value(), "updated child");
+            }
+            _ => panic!("Expected Markdown variant"),
+        }
+    }
+
+    #[test]
+    fn test_update_markdown_value_non_markdown() {
+        assert_eq!(
+            RuntimeValue::Number(Number::from(42.0)).update_markdown_value("test"),
+            RuntimeValue::NONE
+        );
+        assert_eq!(
+            RuntimeValue::String("hello".to_string()).update_markdown_value("test"),
+            RuntimeValue::NONE
+        );
+        assert_eq!(
+            RuntimeValue::Bool(true).update_markdown_value("test"),
+            RuntimeValue::NONE
+        );
+        assert_eq!(
+            RuntimeValue::None.update_markdown_value("test"),
+            RuntimeValue::NONE
+        );
     }
 }

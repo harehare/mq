@@ -887,7 +887,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
-                    vec.dedup();
+                    let mut unique = FxHashMap::default();
+                    vec.retain(|item| unique.insert(item.to_string(), item.clone()).is_none());
                     Ok(RuntimeValue::Array(vec))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
@@ -2584,5 +2585,134 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
         ))
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use mq_markdown::Node;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::code(
+        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), position: None }),
+        ast::Selector::Code(Some("rust".into())),
+        true
+    )]
+    #[case::code_wrong_lang(
+        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), position: None }),
+        ast::Selector::Code(Some("python".into())),
+        false
+    )]
+    #[case::inline_code(
+        Node::CodeInline(mq_markdown::CodeInline { value: "test".into(), position: None }),
+        ast::Selector::InlineCode,
+        true
+    )]
+    #[case::inline_math(
+        Node::MathInline(mq_markdown::MathInline { value: "test".into(), position: None }),
+        ast::Selector::InlineMath,
+        true
+    )]
+    #[case::strong(
+        Node::Strong(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        ast::Selector::Strong,
+        true
+    )]
+    #[case::emphasis(
+        Node::Emphasis(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        ast::Selector::Emphasis,
+        true
+    )]
+    #[case::delete(
+        Node::Delete(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        ast::Selector::Delete,
+        true
+    )]
+    #[case::link(
+        Node::Link(mq_markdown::Link { url: "https://example.com".into(), title: None, position: None }),
+        ast::Selector::Link,
+        true
+    )]
+    #[case::heading_matching_depth(
+        Node::Heading(mq_markdown::Heading { depth: 2, values: vec!["test".to_string().into()], position: None }),
+        ast::Selector::Heading(Some(2)),
+        true
+    )]
+    #[case::heading_wrong_depth(
+        Node::Heading(mq_markdown::Heading { depth: 2, values: vec!["test".to_string().into()], position: None }),
+        ast::Selector::Heading(Some(3)),
+        false
+    )]
+    #[case::table_cell_with_matching_row_col(
+        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
+                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+        ast::Selector::Table(Some(1), Some(2)),
+        true
+    )]
+    #[case::table_cell_with_wrong_row(
+        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
+                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+        ast::Selector::Table(Some(2), Some(2)),
+        false
+    )]
+    #[case::table_cell_with_only_row(
+        Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
+                                               last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
+        ast::Selector::Table(Some(1), None),
+        true
+    )]
+    #[case::list_with_matching_index_checked(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        ast::Selector::List(Some(1), Some(true)),
+        true
+    )]
+    #[case::list_with_wrong_index(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        ast::Selector::List(Some(2), Some(true)),
+        false
+    )]
+    #[case::list_without_index(
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        ast::Selector::List(None, None),
+        true
+    )]
+    #[case::text(
+        Node::Text(mq_markdown::Text { value: "test".into(), position: None }),
+        ast::Selector::Text,
+        true
+    )]
+    #[case::html(
+        Node::Html(mq_markdown::Html { value: "<div>test</div>".into(), position: None }),
+        ast::Selector::Html,
+        true
+    )]
+    #[case::math(
+        Node::Math(mq_markdown::Math { value: "E=mc^2".into(), position: None }),
+        ast::Selector::Math,
+        true
+    )]
+    #[case::horizontal_rule(
+        Node::HorizontalRule { position: None },
+        ast::Selector::HorizontalRule,
+        true
+    )]
+    #[case::blockquote(
+        Node::Blockquote(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        ast::Selector::Blockquote,
+        true
+    )]
+    #[case::definition(
+        Node::Definition(mq_markdown::Definition { ident: "id".to_string().into(), url: "url".into(), label: None, title: None, position: None }),
+        ast::Selector::Definition,
+        true
+    )]
+    fn test_eval_selector(
+        #[case] node: Node,
+        #[case] selector: ast::Selector,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(eval_selector(&node, &selector), expected);
     }
 }

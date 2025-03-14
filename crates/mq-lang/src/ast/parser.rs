@@ -1277,6 +1277,35 @@ mod tests {
                 )),
             }),
         ]))]
+    #[case::ident4(
+        vec![
+            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::LParen),
+            token(TokenKind::None),
+            token(TokenKind::Comma),
+            token(TokenKind::Self_),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Literal(Literal::None)),
+                        }),
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Self_),
+                        }),
+                    ],
+                    false
+                ))
+            })
+        ]))]
     #[case::error(
         vec![
             token(TokenKind::Ident(CompactString::new("contains"))),
@@ -1733,7 +1762,7 @@ mod tests {
             token_id: 2.into(),
             expr: Rc::new(Expr::Selector(Selector::List(Some(3), Some(true)))),
         })]))]
-    fn test(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
+    fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
             Parser::new(
@@ -1744,5 +1773,232 @@ mod tests {
             .parse(),
             expected
         );
+    }
+
+    #[rstest]
+    #[case::heading(".h1", Selector::Heading(Some(1)))]
+    #[case::heading_sharp(".#", Selector::Heading(Some(1)))]
+    #[case::heading_h3(".h3", Selector::Heading(Some(3)))]
+    #[case::heading_sharp3(".###", Selector::Heading(Some(3)))]
+    #[case::blockquote(".>", Selector::Blockquote)]
+    #[case::blockquote_full(".blockquote", Selector::Blockquote)]
+    #[case::footnote(".^", Selector::Footnote)]
+    #[case::footnote_full(".footnote", Selector::Footnote)]
+    #[case::mdx_jsx_flow(".mdx_jsx_flow_element", Selector::MdxJsxFlowElement)]
+    #[case::mdx_jsx_flow_short(".<", Selector::MdxJsxFlowElement)]
+    #[case::emphasis(".**", Selector::Emphasis)]
+    #[case::emphasis_full(".emphasis", Selector::Emphasis)]
+    #[case::math(".$$", Selector::Math)]
+    #[case::math_full(".math", Selector::Math)]
+    #[case::horizontal_rule(".---", Selector::HorizontalRule)]
+    #[case::horizontal_rule_alt(".***", Selector::HorizontalRule)]
+    #[case::horizontal_rule_full(".horizontal_rule", Selector::HorizontalRule)]
+    #[case::mdx_text_expression(".{}", Selector::MdxTextExpression)]
+    #[case::mdx_text_expression_full(".mdx_text_expression", Selector::MdxTextExpression)]
+    #[case::footnote_ref(".[^]", Selector::FootnoteRef)]
+    #[case::footnote_ref_full(".footnote_ref", Selector::FootnoteRef)]
+    #[case::definition(".definition", Selector::Definition)]
+    #[case::break_selector(".break", Selector::Break)]
+    #[case::delete(".delete", Selector::Delete)]
+    #[case::html(".<>", Selector::Html)]
+    #[case::html_full(".html", Selector::Html)]
+    #[case::image(".image", Selector::Image)]
+    #[case::image_ref(".image_ref", Selector::ImageRef)]
+    #[case::code_inline(".code_inline", Selector::InlineCode)]
+    #[case::math_inline(".math_inline", Selector::InlineMath)]
+    #[case::link(".link", Selector::Link)]
+    #[case::link_ref(".link_ref", Selector::LinkRef)]
+    #[case::list_checked(".list.checked", Selector::List(None, Some(true)))]
+    #[case::list(".list", Selector::List(None, None))]
+    #[case::toml(".toml", Selector::Toml)]
+    #[case::strong(".strong", Selector::Strong)]
+    #[case::yaml(".yaml", Selector::Yaml)]
+    #[case::text(".text", Selector::Text)]
+    #[case::mdx_js_esm(".mdx_js_esm", Selector::MdxJsEsm)]
+    #[case::mdx_jsx_text_element(".mdx_jsx_text_element", Selector::MdxJsxTextElement)]
+    #[case::mdx_flow_expression(".mdx_flow_expression", Selector::MdxFlowExpression)]
+    fn test_parse_selector(#[case] selector_str: &str, #[case] expected_selector: Selector) {
+        let arena = Arena::new(10);
+        let token = Rc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Selector(CompactString::new(selector_str)),
+            module_id: 1.into(),
+        });
+
+        let tokens = vec![
+            Rc::clone(&token),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Selector(selector) = &*program[0].expr {
+                    assert_eq!(*selector, expected_selector);
+                } else {
+                    panic!("Expected Selector expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[rstest]
+    #[case(".code", "rust", Selector::Code(Some(CompactString::new("rust"))))]
+    #[case(".h", "2", Selector::Heading(Some(2)))]
+    #[case(".list", "3", Selector::List(Some(3), None))]
+    #[case(".list.checked", "4", Selector::List(Some(4), Some(true)))]
+    fn test_parse_selector_with_args(
+        #[case] selector_str: &str,
+        #[case] arg: &str,
+        #[case] expected_selector: Selector,
+    ) {
+        let arena = Arena::new(10);
+        let tokens = vec![
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Selector(CompactString::new(selector_str)),
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::LParen,
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: if selector_str == ".code" {
+                    TokenKind::StringLiteral(arg.to_owned())
+                } else {
+                    TokenKind::NumberLiteral(arg.parse::<f64>().unwrap().into())
+                },
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::RParen,
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Selector(selector) = &*program[0].expr {
+                    assert_eq!(*selector, expected_selector);
+                } else {
+                    panic!("Expected Selector expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[rstest]
+    #[case(".", Some(1), None, Selector::List(Some(1), None))]
+    #[case(".", Some(2), Some(3), Selector::Table(Some(2), Some(3)))]
+    fn test_parse_array_selector(
+        #[case] selector_str: &str,
+        #[case] first_idx: Option<usize>,
+        #[case] second_idx: Option<usize>,
+        #[case] expected_selector: Selector,
+    ) {
+        let arena = Arena::new(10);
+        let mut tokens = vec![
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Selector(CompactString::new(selector_str)),
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::LBracket,
+                module_id: 1.into(),
+            }),
+        ];
+
+        if let Some(idx) = first_idx {
+            tokens.push(Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::NumberLiteral(idx.into()),
+                module_id: 1.into(),
+            }));
+        }
+
+        tokens.push(Rc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::RBracket,
+            module_id: 1.into(),
+        }));
+
+        if second_idx.is_some() {
+            tokens.push(Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::LBracket,
+                module_id: 1.into(),
+            }));
+
+            if let Some(idx) = second_idx {
+                tokens.push(Rc::new(Token {
+                    range: Range::default(),
+                    kind: TokenKind::NumberLiteral(idx.into()),
+                    module_id: 1.into(),
+                }));
+            }
+
+            tokens.push(Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::RBracket,
+                module_id: 1.into(),
+            }));
+        }
+
+        tokens.push(Rc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: 1.into(),
+        }));
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Selector(selector) = &*program[0].expr {
+                    assert_eq!(*selector, expected_selector);
+                } else {
+                    panic!("Expected Selector expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
     }
 }
