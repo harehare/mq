@@ -240,7 +240,7 @@ impl Cli {
                 self.print(
                     Some(
                         "| Function Name | Description | Parameters | Example |
-| ---| --- | -- | --- |
+| --- | --- | --- | --- |
 ",
                     ),
                     doc_values,
