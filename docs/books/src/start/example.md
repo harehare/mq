@@ -28,6 +28,12 @@ else:
   None
 ```
 
+## Exclude code
+
+```js
+select(not(.code))
+```
+
 ## Extract js code
 
 ```js

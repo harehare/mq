@@ -104,6 +104,8 @@ $ mq '.code | select(contains("name"))'
 $ mq '.[][] | select(contains("name"))'
 # list or header
 $ mq 'or(.[], .h) | select(contains("name"))'
+# Exclude js code
+$ mq 'select(not(.code("js")))'
 ```
 
 ### Advanced Usage

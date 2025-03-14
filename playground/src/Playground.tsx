@@ -86,6 +86,23 @@ console.log("Hello, World!");
 `,
   },
   {
+    name: "Exclude js code",
+    code: `select(not(.code("js")))`,
+    markdown: `# Sample codes
+\`\`\`js
+console.log("Hello, World!");
+\`\`\`
+
+\`\`\`python
+print("Hello, World!")
+\`\`\`
+
+\`\`\`js
+console.log("Hello, World!");
+\`\`\`
+`,
+  },
+  {
     name: "Custom function",
     code: `def snake_to_camel(x):
   let words = split(x, "_")
