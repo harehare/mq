@@ -1472,11 +1472,13 @@ dependencies = [
  "log",
  "miette",
  "mq-formatter",
+ "mq-hir",
  "mq-lang",
  "mq-markdown",
  "mq-repl",
  "mq-test",
  "rstest",
+ "url",
 ]
 
 [[package]]

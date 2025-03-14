@@ -1,12 +1,15 @@
 use clap::CommandFactory;
 use clap::{Parser, Subcommand};
 use clap_complete::{Shell, generate};
+use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
+use mq_lang::Engine;
 use std::fmt::{self, Display};
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
+use url::Url;
 
 #[derive(Parser, Debug)]
 #[command(name = "mq")]
@@ -144,6 +147,7 @@ enum Commands {
         #[arg(short, long, value_enum)]
         shell: Shell,
     },
+    Docs,
 }
 
 impl Cli {
@@ -204,26 +208,49 @@ impl Cli {
                 generate(*shell, &mut Cli::command(), "mq", &mut std::io::stdout());
                 Ok(())
             }
+            Some(Commands::Docs) => {
+                let query = self.get_query();
+                let mut hir = mq_hir::Hir::default();
+                let file = Url::parse("file:///").into_diagnostic()?;
+                hir.add_code(file, &query);
+
+                let doc_csv = hir
+                    .symbols()
+                    .filter_map(|(_, symbol)| match symbol {
+                        mq_hir::Symbol {
+                            kind: mq_hir::SymbolKind::Function(params),
+                            name: Some(name),
+                            doc,
+                            ..
+                        } => Some(mq_lang::Value::String(
+                            [
+                                format!("`{}`", name),
+                                doc.iter().map(|(_, d)| d.to_string()).join("\n"),
+                                params.iter().map(|p| format!("`{}`", p)).join(", "),
+                                format!("{}({})", name, params.join(", ")),
+                            ]
+                            .join(","),
+                        )),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+
+                let mut engine = self.create_engine()?;
+                let doc_values = engine.eval("csv2table()", doc_csv.into_iter())?;
+                self.print(
+                    Some(
+                        "| Function Name | Description | Parameters | Example |
+| ---| --- | -- | --- |
+",
+                    ),
+                    doc_values,
+                    true,
+                )?;
+
+                Ok(())
+            }
             None => {
-                let mut engine = mq_lang::Engine::default();
-                engine.load_builtin_module()?;
-                engine.set_filter_none(!self.output.update);
-
-                if let Some(dirs) = &self.input.module_directories {
-                    engine.set_paths(dirs.clone());
-                }
-
-                if let Some(modules) = &self.input.module_names {
-                    for module_name in modules {
-                        engine.load_module(module_name)?;
-                    }
-                }
-
-                if let Some(args) = &self.input.args {
-                    args.chunks(2).for_each(|v| {
-                        engine.define_string_value(&v[0], &v[1]);
-                    });
-                }
+                let mut engine = self.create_engine()?;
 
                 if let Some(raw_file) = &self.input.raw_file {
                     for v in raw_file.chunks(2) {
@@ -238,19 +265,7 @@ impl Cli {
                     }
                 }
 
-                let query = self
-                    .input
-                    .from_file
-                    .as_ref()
-                    .and_then(|files| {
-                        files
-                            .iter()
-                            .map(|file| fs::read_to_string(file).into_diagnostic())
-                            .collect::<miette::Result<Vec<String>>>()
-                            .map(|r| r.join("|\n"))
-                            .ok()
-                    })
-                    .unwrap_or_else(|| self.query.clone().unwrap_or_default());
+                let query = self.get_query();
 
                 for (file, content) in self.read_contents()? {
                     self.execute(&mut engine, &query, file, &content)?;
@@ -259,6 +274,58 @@ impl Cli {
                 Ok(())
             }
         }
+    }
+
+    fn create_engine(&self) -> miette::Result<Engine> {
+        let mut engine = mq_lang::Engine::default();
+        engine.load_builtin_module()?;
+        engine.set_filter_none(!self.output.update);
+
+        if let Some(dirs) = &self.input.module_directories {
+            engine.set_paths(dirs.clone());
+        }
+
+        if let Some(modules) = &self.input.module_names {
+            for module_name in modules {
+                engine.load_module(module_name)?;
+            }
+        }
+
+        if let Some(args) = &self.input.args {
+            args.chunks(2).for_each(|v| {
+                engine.define_string_value(&v[0], &v[1]);
+            });
+        }
+
+        if let Some(raw_file) = &self.input.raw_file {
+            for v in raw_file.chunks(2) {
+                let path = PathBuf::from_str(&v[1]).into_diagnostic()?;
+
+                if !path.exists() {
+                    return Err(miette!("File not found: {}", path.display()));
+                }
+
+                let content = fs::read_to_string(&path).into_diagnostic()?;
+                engine.define_string_value(&v[0], &content);
+            }
+        }
+
+        Ok(engine)
+    }
+
+    fn get_query(&self) -> String {
+        self.input
+            .from_file
+            .as_ref()
+            .and_then(|files| {
+                files
+                    .iter()
+                    .map(|file| fs::read_to_string(file).into_diagnostic())
+                    .collect::<miette::Result<Vec<String>>>()
+                    .map(|r| r.join("|\n"))
+                    .ok()
+            })
+            .unwrap_or_else(|| self.query.clone().unwrap_or_default())
     }
 
     fn execute(
@@ -341,7 +408,11 @@ impl Cli {
             }
         }?;
 
-        self.print(runtime_values)
+        self.print(
+            None,
+            runtime_values,
+            self.output.update || !self.output.compact_output,
+        )
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
@@ -371,7 +442,12 @@ impl Cli {
             })
     }
 
-    fn print(&self, runtime_values: mq_lang::Values) -> miette::Result<()> {
+    fn print(
+        &self,
+        header: Option<&str>,
+        runtime_values: mq_lang::Values,
+        pretty: bool,
+    ) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if self.output.unbuffered {
             Box::new(stdout.lock())
@@ -401,6 +477,12 @@ impl Cli {
             },
         });
 
+        if let Some(header) = header {
+            handle
+                .write_all(header.as_bytes())
+                .map_err(|e| miette!(e))?;
+        }
+
         match self.output.output_format {
             Format::Html => handle
                 .write_all(markdown.to_html().as_bytes())
@@ -411,7 +493,7 @@ impl Cli {
                     .map_err(|e| miette!(e))?;
             }
             Format::Markdown => {
-                if self.output.update || !self.output.compact_output {
+                if pretty {
                     handle
                         .write_all(markdown.to_pretty_markdown()?.as_bytes())
                         .map_err(|e| miette!(e))?;
