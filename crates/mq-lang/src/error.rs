@@ -44,7 +44,6 @@ impl Error {
             InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => None,
             InnerError::Parse(err) => match err {
                 ParseError::EnvNotFound(token, _) => Some(token),
-                ParseError::Unclosed(token) => Some(token),
                 ParseError::UnexpectedToken(token) => Some(token),
                 ParseError::UnexpectedEOFDetected(_) => None,
                 ParseError::InsufficientTokens(token) => Some(token),
@@ -70,7 +69,6 @@ impl Error {
                 ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_)) => None,
                 ModuleError::ParseError(err) => match err {
                     ParseError::EnvNotFound(token, _) => Some(token),
-                    ParseError::Unclosed(token) => Some(token),
                     ParseError::UnexpectedToken(token) => Some(token),
                     ParseError::UnexpectedEOFDetected(_) => None,
                     ParseError::InsufficientTokens(token) => Some(token),
@@ -155,35 +153,10 @@ impl Error {
 }
 #[cfg(test)]
 mod test {
+    use rstest::rstest;
+
     use super::*;
     use crate::{Token, TokenKind, arena::ArenaId};
-
-    #[test]
-    fn test_from_error_with_lexer_error() {
-        let cause = InnerError::Lexer(LexerError::UnexpectedToken(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }));
-        let module_loader = ModuleLoader::new(None);
-        let error = Error::from_error("source code", cause, module_loader);
-
-        assert_eq!(error.source_code, "source code");
-        assert_eq!(error.span, Range::default());
-    }
-
-    #[test]
-    fn test_from_error_with_parse_error() {
-        let cause = InnerError::Parse(ParseError::UnexpectedToken(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }));
-        let module_loader = ModuleLoader::new(None);
-        let error = Error::from_error("source code", cause, module_loader);
-
-        assert_eq!(error.source_code, "source code");
-    }
 
     #[test]
     fn test_from_error_with_eof_error() {
@@ -195,26 +168,135 @@ mod test {
         assert_eq!(error.span, Range::default());
     }
 
-    #[test]
-    fn test_from_error_with_eval_error() {
-        let cause = InnerError::Eval(EvalError::ZeroDivision(Token {
+    #[rstest]
+    #[case::lexer_unexpected_token(
+        InnerError::Lexer(LexerError::UnexpectedToken(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }));
+        })),
+        "source code"
+    )]
+    #[case::lexer_unexpected_eof(
+        InnerError::Lexer(LexerError::UnexpectedEOFDetected(ArenaId::new(0))),
+        "line 1\nline 2"
+    )]
+    #[case::parse_unexpected_token(
+        InnerError::Parse(ParseError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })),
+        "source code"
+    )]
+    #[case::parse_unexpected_eof_detected(
+        InnerError::Parse(ParseError::UnexpectedEOFDetected(ArenaId::new(0))),
+        "source code"
+    )]
+    #[case::parse_env_not_found(
+        InnerError::Parse(ParseError::EnvNotFound(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "ENV_VAR".into())),
+        "source code"
+    )]
+    #[case::parse_env_not_found(
+        InnerError::Parse(ParseError::InsufficientTokens(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })),
+        "source code"
+    )]
+    #[case::parse_env_not_found(
+        InnerError::Parse(ParseError::InsufficientTokens(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })),
+        "source code"
+    )]
+    #[case::eval_zero_division(
+        InnerError::Eval(EvalError::ZeroDivision(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })),
+        "source code"
+    )]
+    #[case::eval_invalid_base64_string(
+        InnerError::Eval(EvalError::InvalidBase64String(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string())),
+        "source code"
+    )]
+    #[case::eval_not_defined(
+        InnerError::Eval(EvalError::NotDefined(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string())),
+        "source code"
+    )]
+    #[case::eval_index_out_of_bounds(
+        InnerError::Eval(EvalError::IndexOutOfBounds(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, 1.into())),
+        "source code"
+    )]
+    #[case::eval_invalid_definition(
+        InnerError::Eval(EvalError::InvalidDefinition(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string())),
+        "source code"
+    )]
+    #[case::eval_invalid_number_of_arguments(
+        InnerError::Eval(EvalError::InvalidNumberOfArguments(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string(), 1, 1)),
+        "source code"
+    )]
+    #[case::eval_invalid_regular_expression(
+        InnerError::Eval(EvalError::InvalidRegularExpression(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string())),
+        "source code"
+    )]
+    #[case::eval_internal_error(
+        InnerError::Eval(EvalError::InternalError(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })),
+        "source code"
+    )]
+    #[case::eval_internal_error(
+        InnerError::Eval(EvalError::RuntimeError(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "".to_string())),
+        "source code"
+    )]
+    #[case::module_not_found(
+        InnerError::Module(ModuleError::NotFound("test".to_string())),
+        "source code"
+    )]
+    fn test_from_error(#[case] cause: InnerError, #[case] source_code: &str) {
         let module_loader = ModuleLoader::new(None);
-        let error = Error::from_error("source code", cause, module_loader);
+        let error = Error::from_error(source_code, cause, module_loader);
 
-        assert_eq!(error.source_code, "source code");
-    }
-
-    #[test]
-    fn test_from_error_with_module_error() {
-        let cause = InnerError::Module(ModuleError::NotFound("test".to_string()));
-        let module_loader = ModuleLoader::new(None);
-        let error = Error::from_error("source code", cause, module_loader);
-
-        assert_eq!(error.source_code, "source code");
-        assert_eq!(error.span, Range::default());
+        assert_eq!(error.source_code, source_code);
     }
 }

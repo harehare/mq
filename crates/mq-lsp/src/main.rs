@@ -354,6 +354,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_formatting() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+        let text = "def main():1;";
+
+        let (nodes, errors) = mq_lang::parse_recovery(text);
+        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend
+            .error_map
+            .insert(uri.to_string(), errors.error_ranges(text));
+
+        let result = backend
+            .formatting(DocumentFormattingParams {
+                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+                options: tower_lsp::lsp_types::FormattingOptions {
+                    tab_size: 2,
+                    insert_spaces: true,
+                    ..Default::default()
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        if let Ok(Some(edits)) = result {
+            assert_eq!(edits.len(), 1);
+            assert_eq!(edits[0].new_text, "def main(): 1;");
+        }
+    }
+    #[tokio::test]
     async fn test_completion() {
         let (service, _) = LspService::new(|client| Backend {
             client,

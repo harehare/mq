@@ -5,7 +5,8 @@ use std::{
 
 use compact_str::CompactString;
 
-use crate::{Range, Token, TokenKind};
+use crate::TokenKind;
+use crate::{Range, Token};
 
 type Comment = (Range, String);
 
@@ -174,5 +175,43 @@ impl Node {
                 .cloned()
                 .collect::<Vec<_>>(),
         )
+    }
+}
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::arena::ArenaId;
+
+    use super::*;
+
+    #[rstest]
+    #[case(
+        Trivia::Whitespace(Arc::new(Token {
+            kind: TokenKind::Whitespace(1),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        " "
+    )]
+    #[case(Trivia::NewLine, "\n")]
+    #[case(
+        Trivia::Tab(Arc::new(Token {
+            kind: TokenKind::Tab(1),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        "\t"
+    )]
+    #[case(
+        Trivia::Comment(Arc::new(Token {
+            kind: TokenKind::Comment("comment".to_string()),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        "# comment"
+    )]
+    fn test_trivia_display(#[case] trivia: Trivia, #[case] expected: &str) {
+        assert_eq!(format!("{}", trivia), expected);
     }
 }

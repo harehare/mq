@@ -9,8 +9,6 @@ pub enum ParseError {
     EnvNotFound(Token, CompactString),
     #[error("Unexpected token `{0}`")]
     UnexpectedToken(Token),
-    #[error("Unclosed `{0}`")]
-    Unclosed(Token),
     #[error("Unexpected EOF detected")]
     UnexpectedEOFDetected(ModuleId),
     #[error("Insufficient tokens `{0}`")]

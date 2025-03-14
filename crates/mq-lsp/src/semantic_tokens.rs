@@ -198,4 +198,23 @@ mod tests {
 
         assert_eq!(tokens.len(), 3);
     }
+
+    #[test]
+    fn test_response_with_comment() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        hir.add_code(url.clone(), "# This is a comment\ndef func1(): 1;");
+
+        let hir = Arc::new(RwLock::new(hir));
+        let tokens = response(hir, url);
+
+        assert_eq!(tokens.len(), 4);
+
+        assert_eq!(tokens[0].token_type, token_type(SemanticTokenType::COMMENT));
+        assert_eq!(
+            tokens[0].token_modifiers_bitset,
+            token_modifier(SemanticTokenModifier::DOCUMENTATION)
+        );
+    }
 }

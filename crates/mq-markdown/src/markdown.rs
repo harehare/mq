@@ -171,9 +171,26 @@ mod tests {
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
     #[case::quote("> Quote\n\n> Second line", 2, "> Quote\n> Second line\n")]
     #[case::code("```rust\nlet x = 1;\n```", 1, "\n```rust\nlet x = 1;\n```\n")]
-    #[case::toml("[test]\ntest=1", 1, "[test]\ntest=1\n")]
+    #[case::toml("[test]\ntest = 1", 1, "[test]\ntest = 1\n")]
     #[case::code("`inline`", 1, "`inline`\n")]
     #[case::math("$math$", 1, "$math$\n")]
+    #[case::math("$$$\nmath\n$$$", 1, "$$$\nmath\n$$$\n")]
+    #[case::html("<div>test</div>", 1, "\n<div>test</div>\n")]
+    #[case::image(
+        "![alt text](http://example.com/image.jpg)",
+        1,
+        "![alt text](http://example.com/image.jpg)\n"
+    )]
+    #[case::image_with_title(
+        "![alt text](http://example.com/image.jpg \"title\")",
+        1,
+        "![alt text](http://example.com/image.jpg \"title\")\n"
+    )]
+    #[case::yaml(
+        "title: Test\ndescription: YAML front matter\n",
+        1,
+        "title: Test\ndescription: YAML front matter\n"
+    )]
     #[case::link("[title](http://example.com)", 1, "[title](http://example.com)\n")]
     #[case::table(
         "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",

@@ -106,4 +106,22 @@ mod tests {
         let no_similar = hir.find_similar_names("xyz123");
         assert!(no_similar.is_none());
     }
+    #[test]
+    fn test_errors() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test").unwrap();
+        let _ = hir.add_code(url.clone(), "let abc = 1 | unknown_var | let xyz = 2");
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            HirError::UnresolvedSymbol {
+                symbol,
+                similar_name,
+            } => {
+                assert_eq!(symbol.name.as_deref(), Some("unknown_var"));
+                assert!(similar_name.is_none());
+            }
+        }
+    }
 }

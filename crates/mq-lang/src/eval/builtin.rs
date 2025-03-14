@@ -127,12 +127,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
                     to_date(*ms, Some(format.as_str()))
                 }
-                [RuntimeValue::Number(ms)] => to_date(*ms, None),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
                 )),
-
                 _ => unreachable!(),
             }),
         );
@@ -404,8 +402,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 ] => node
                     .markdown_node()
                     .map(|md| match_re(&md.value(), pattern))
-                    .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
+                    .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -492,17 +490,27 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("repeat"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
-                [RuntimeValue::String(s), RuntimeValue::Number(n)] if !n.is_zero() => {
+                [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                     Ok(s.repeat(n.value() as usize).into())
                 }
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(n)] if !n.is_zero() => {
-                    node.markdown_node()
-                        .map(|md| {
-                            Ok(node.update_markdown_value(
-                                md.value().repeat(n.value() as usize).as_str(),
-                            ))
-                        })
-                        .unwrap_or_else(|| Ok(RuntimeValue::NONE))
+                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(n)] => node
+                    .markdown_node()
+                    .map(|md| {
+                        Ok(node
+                            .update_markdown_value(md.value().repeat(n.value() as usize).as_str()))
+                    })
+                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
+                    let n = n.value() as usize;
+                    if n == 0 {
+                        return Ok(RuntimeValue::EMPTY_ARRAY);
+                    }
+
+                    let mut repeated_array = Vec::with_capacity(array.len() * n);
+                    for _ in 0..n {
+                        repeated_array.extend_from_slice(array);
+                    }
+                    Ok(RuntimeValue::Array(repeated_array))
                 }
                 [RuntimeValue::None, _] => Ok(RuntimeValue::None),
                 [a, b] => Err(Error::InvalidTypes(
@@ -2595,6 +2603,66 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case("type", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::String("string".into())))]
+    #[case("len", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
+    #[case("abs", vec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
+    #[case("ceil", vec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("floor", vec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
+    #[case("round", vec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
+    #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
+    #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
+    #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
+    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
+    fn test_eval_builtin(
+        #[case] func_name: &str,
+        #[case] args: Vec<RuntimeValue>,
+        #[case] expected: Result<RuntimeValue, Error>,
+    ) {
+        let ident = ast::Ident {
+            name: CompactString::new(func_name),
+            token: None,
+        };
+
+        assert_eq!(eval_builtin(&RuntimeValue::None, &ident, &args), expected);
+    }
+
+    #[rstest]
+    #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
+    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
+    #[case("add", vec![], Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+    #[case("add", vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
+        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
+    fn test_eval_builtin_errors(
+        #[case] func_name: &str,
+        #[case] args: Vec<RuntimeValue>,
+        #[case] expected_error: Error,
+    ) {
+        let ident = ast::Ident {
+            name: CompactString::new(func_name),
+            token: None,
+        };
+
+        let result = eval_builtin(&RuntimeValue::None, &ident, &args);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), expected_error);
+    }
+
+    #[test]
+    fn test_implicit_first_arg() {
+        let ident = ast::Ident {
+            name: CompactString::new("starts_with"),
+            token: None,
+        };
+
+        let first_arg = RuntimeValue::String("hello world".into());
+        let args = vec![RuntimeValue::String("hello".into())];
+
+        let result = eval_builtin(&first_arg, &ident, &args);
+        assert_eq!(result, Ok(RuntimeValue::Bool(true)));
+    }
+    #[rstest]
     #[case::code(
         Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), position: None }),
         ast::Selector::Code(Some("rust".into())),
@@ -2686,6 +2754,26 @@ mod tests {
     #[case::html(
         Node::Html(mq_markdown::Html { value: "<div>test</div>".into(), position: None }),
         ast::Selector::Html,
+        true
+    )]
+    #[case::yaml(
+        Node::Yaml(mq_markdown::Yaml { value: "test".into(), position: None }),
+        ast::Selector::Yaml,
+        true
+    )]
+    #[case::toml(
+        Node::Toml(mq_markdown::Toml { value: "test".into(), position: None }),
+        ast::Selector::Toml,
+        true
+    )]
+    #[case::break_(
+        Node::Break{position: None},
+        ast::Selector::Break,
+        true
+    )]
+    #[case::footnote_ref(
+        Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "".to_string(), label: None, position: None}),
+        ast::Selector::FootnoteRef,
         true
     )]
     #[case::math(
