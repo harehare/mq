@@ -144,6 +144,7 @@ pub fn pretty_markdown(s: &str, options: &RenderOptions) -> miette::Result<Strin
                 ListStyle::Plus => ListStyleType::Plus,
                 ListStyle::Star => ListStyleType::Star,
             },
+            experimental_minimize_commonmark: true,
             ..comrak::RenderOptions::default()
         },
         ..comrak::Options::default()
