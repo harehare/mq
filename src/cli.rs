@@ -232,14 +232,14 @@ impl Cli {
                                 params.iter().map(|p| format!("`{}`", p)).join(", "),
                                 format!("{}({})", name, params.join(", ")),
                             ]
-                            .join(","),
+                            .join("\t"),
                         )),
                         _ => None,
                     })
                     .collect::<Vec<_>>();
 
                 let mut engine = self.create_engine()?;
-                let doc_values = engine.eval("csv2table()", doc_csv.into_iter())?;
+                let doc_values = engine.eval("tsv2table()", doc_csv.into_iter())?;
                 self.print(
                     Some(
                         "| Function Name | Description | Parameters | Example |

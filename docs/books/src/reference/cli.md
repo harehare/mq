@@ -3,18 +3,19 @@
 The mq command-line interface provides tools for querying and manipulating markdown content.
 Below is the complete reference for all available commands and options.
 
-```sh
+``` sh
 Usage: mq [OPTIONS] [QUERY] [FILES]... [COMMAND]
 
 Commands:
-  repl
-  fmt
-  completion
+  repl        Start a REPL session for interactive query execution
+  fmt         Format mq or markdown files based on specified formatting options
+  completion  Generate shell completion scripts for supported shells
+  docs        
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY]
-  [FILES]...
+  [QUERY]     
+  [FILES]...  
 
 Options:
   -f, --from-file <FROM_FILE>           load filter from the file
@@ -22,8 +23,8 @@ Options:
   -n, --null-input                      Use empty string as the single input value
   -L, --directory <MODULE_DIRECTORIES>  Search modules from the directory
   -M, --module-names <MODULE_NAMES>     Load additional modules from specified files
-      --arg <NAME> <VALUE>              Sets  string  that can be referenced at runtime
-      --rawfile <NAME> <FILE>           Sets file contents that can be referenced at runtime
+      --args <NAME> <VALUE>             Sets string that can be referenced at runtime
+      --raw-file <NAME> <FILE>          Sets file contents that can be referenced at runtime
   -c, --compact-output                  pretty print
   -F, --output-format <OUTPUT_FORMAT>   Compact instead of pretty-printed output [default: markdown] [possible values: markdown, html, text]
   -U, --update                          Update the input markdown

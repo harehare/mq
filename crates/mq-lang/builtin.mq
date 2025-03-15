@@ -132,3 +132,6 @@ def is_list3(list): and(is_list(list), eq(get_md_list_level(list), 2));
 
 # Convert csv string to markdown table
 def csv2table(csv): split(csv, ",") | to_md_table_row();
+
+# Convert tsv string to markdown table
+def tsv2table(csv): split(csv, "	") | to_md_table_row();
