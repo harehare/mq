@@ -39,7 +39,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.playground == 'true'
+    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.playground == 'true' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
