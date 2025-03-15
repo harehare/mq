@@ -2294,6 +2294,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
+            CompactString::new("to_link"),
+            BuiltinFunctionDoc {
+                description: "Creates a markdown link node  with the given  url and title.",
+                params: &["url", "title"],
+            },
+        );
+        map.insert(
             CompactString::new("to_md_list"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given value and indent level.",
