@@ -131,7 +131,9 @@ struct OutputArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Start a REPL session for interactive query execution
     Repl,
+    /// Format mq or markdown files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
         #[arg(short, long, default_value_t = 2)]
@@ -143,6 +145,7 @@ enum Commands {
         #[arg(short = 'T', long, default_value_t = FormatTarget::Mq)]
         target: FormatTarget,
     },
+    /// Generate shell completion scripts for supported shells
     Completion {
         #[arg(short, long, value_enum)]
         shell: Shell,

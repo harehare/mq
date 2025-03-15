@@ -1809,7 +1809,74 @@ mod tests {
             ErrorReporter { errors: vec![], max_errors: 100 }
         )
     )]
-    fn test(#[case] input: Vec<Arc<Token>>, #[case] expected: (Vec<Arc<Node>>, ErrorReporter)) {
+    #[case::until(
+        vec![
+            Arc::new(token(TokenKind::Until)),
+            Arc::new(token(TokenKind::Whitespace(1))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("condition".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Colon)),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::Comment("comment".into()))),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::Ident("body".into()))),
+            Arc::new(token(TokenKind::Whitespace(4))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Until,
+                    token: Some(Arc::new(token(TokenKind::Until))),
+                    leading_trivia: vec![],
+                    trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(1))))],
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("condition".into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Colon))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("body".into())))),
+                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Arc::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
+                            trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(4))))],
+                            children: vec![],
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter { errors: vec![], max_errors: 100 }
+        )
+    )]
+    fn test_parse(
+        #[case] input: Vec<Arc<Token>>,
+        #[case] expected: (Vec<Arc<Node>>, ErrorReporter),
+    ) {
         let (nodes, errors) = Parser::new(input.iter()).parse();
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);

@@ -808,7 +808,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(s.into_iter().collect::<String>().into())
                 }
                 [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                [a, b] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone()],
+                )),
                 _ => unreachable!(),
             }),
         );
@@ -1179,6 +1182,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .into())
                 }
+                [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
