@@ -218,12 +218,21 @@ export const Playground = () => {
   }, []);
 
   const beforeMount = (monaco: Monaco) => {
+    monaco.editor.addEditorAction({
+      id: "run-script",
+      label: "Run Script",
+      keybindings: [monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter],
+      run: () => {
+        handleRun();
+      },
+    });
+
     monaco.languages.register({ id: "mq" });
     monaco.languages.setMonarchTokensProvider("mq", {
       tokenizer: {
         root: [
           [/^#.*$/, "comment"],
-          [/let|def|while|foreach|if|elif|else|self/, "keyword"],
+          [/let|def|while|foreach|until|if|elif|else|self/, "keyword"],
           [/;/, "delimiter"],
           [/\|/, "operator"],
           [/".*?"/, "string"],
