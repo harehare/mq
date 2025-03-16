@@ -4,6 +4,7 @@ use comrak::{
     Arena, ComrakOptions, ListStyleType, format_commonmark, markdown_to_html, parse_document,
 };
 use itertools::Itertools;
+use markdown::Constructs;
 use miette::{IntoDiagnostic, miette};
 
 use crate::node::{ListStyle, Node};
@@ -18,8 +19,52 @@ impl FromStr for Markdown {
     type Err = miette::Error;
 
     fn from_str(content: &str) -> Result<Self, Self::Err> {
-        let root = markdown::to_mdast(content, &markdown::ParseOptions::gfm())
-            .map_err(|e| miette!(e.reason))?;
+        let root = markdown::to_mdast(
+            content,
+            &markdown::ParseOptions {
+                gfm_strikethrough_single_tilde: true,
+                math_text_single_dollar: true,
+                mdx_expression_parse: None,
+                mdx_esm_parse: None,
+                constructs: Constructs {
+                    attention: true,
+                    autolink: true,
+                    block_quote: true,
+                    character_escape: true,
+                    character_reference: true,
+                    code_indented: true,
+                    code_fenced: true,
+                    code_text: true,
+                    definition: true,
+                    frontmatter: true,
+                    gfm_autolink_literal: true,
+                    gfm_label_start_footnote: true,
+                    gfm_footnote_definition: true,
+                    gfm_strikethrough: true,
+                    gfm_table: true,
+                    gfm_task_list_item: true,
+                    hard_break_escape: true,
+                    hard_break_trailing: true,
+                    heading_atx: true,
+                    heading_setext: true,
+                    html_flow: true,
+                    html_text: true,
+                    label_start_image: true,
+                    label_start_link: true,
+                    label_end: true,
+                    list_item: true,
+                    math_flow: true,
+                    math_text: true,
+                    mdx_esm: true,
+                    mdx_expression_flow: true,
+                    mdx_expression_text: true,
+                    mdx_jsx_flow: true,
+                    mdx_jsx_text: true,
+                    thematic_break: true,
+                },
+            },
+        )
+        .map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
         Ok(Self {
@@ -172,11 +217,13 @@ mod tests {
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
     #[case::quote("> Quote\n\n> Second line", 2, "> Quote\n> Second line\n")]
     #[case::code("```rust\nlet x = 1;\n```", 1, "\n```rust\nlet x = 1;\n```\n")]
-    #[case::toml("[test]\ntest = 1", 1, "[test]\ntest = 1\n")]
+    #[case::toml("+++\n[test]\ntest = 1\n+++", 1, "+++\n[test]\ntest = 1\n+++\n")]
     #[case::code("`inline`", 1, "`inline`\n")]
-    #[case::math("$math$", 1, "$math$\n")]
-    #[case::math("$$$\nmath\n$$$", 1, "$$$\nmath\n$$$\n")]
+    #[case::math_inline("$math$", 1, "$math$\n")]
+    #[case::math("$$\nmath\n$$", 1, "$$\nmath\n$$\n")]
     #[case::html("<div>test</div>", 1, "\n<div>test</div>\n")]
+    #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
+    #[case::image_ref("![a]", 1, "![a]\n")]
     #[case::image(
         "![alt text](http://example.com/image.jpg)",
         1,
@@ -188,11 +235,15 @@ mod tests {
         "![alt text](http://example.com/image.jpg \"title\")\n"
     )]
     #[case::yaml(
-        "title: Test\ndescription: YAML front matter\n",
+        "---\ntitle: Test\ndescription: YAML front matter\n---\n",
         1,
-        "title: Test\ndescription: YAML front matter\n"
+        "---\ntitle: Test\ndescription: YAML front matter\n---\n"
     )]
     #[case::link("[title](http://example.com)", 1, "[title](http://example.com)\n")]
+    #[case::break_("a\\", 1, "a\\\n")]
+    #[case::delete("~~a~~", 1, "~~a~~\n")]
+    #[case::emphasis("*a*", 1, "*a*\n")]
+    #[case::horizontal_rule("---", 1, "---\n")]
     #[case::table(
         "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",
         7,

@@ -12,7 +12,7 @@ version = "0.1.0"
 
 [dependencies]
 compact_str = "0.9.0"
-comrak = { version = "0.36.0", features = ["cli"] }
+comrak = {version = "0.36.0", default-features = false, features = ["cli"]}
 itertools = "0.14.0"
 markdown = "1.0.0-alpha.23"
 miette = {version = "7.5.0", features = ["fancy"]}

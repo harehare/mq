@@ -178,7 +178,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let module_path = temp_dir.join("test_module.mq");
         let mut file = File::create(&module_path).unwrap();
-        write!(file, "def test(): 42;").unwrap();
+        write!(file, "def func1(): 42;").unwrap();
 
         let mut engine = Engine::default();
         engine.set_paths(vec![temp_dir]);
@@ -187,7 +187,7 @@ mod tests {
         assert!(result.is_ok());
 
         let values = engine.defined_values();
-        assert!(values.iter().any(|(name, _)| name.as_str() == "test"));
+        assert!(values.iter().any(|(name, _)| name.as_str() == "func1"));
     }
 
     #[test]

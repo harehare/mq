@@ -293,6 +293,47 @@ mod test {
         InnerError::Module(ModuleError::NotFound("test".to_string())),
         "source code"
     )]
+    #[case::module_io_error(
+        InnerError::Module(ModuleError::IOError("test".to_string())),
+        "source code"
+    )]
+    #[case::module_lexer_error(
+        InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedEOFDetected(
+            ArenaId::new(0)
+        ))),
+        "source code"
+    )]
+    #[case::module_parse_error(
+        InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "test".into()))),
+        "source code"
+    )]
+    #[case::module_parse_error(
+        InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))),
+        "source code"
+    )]
+    #[case::module_parse_error(
+        InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(
+            ArenaId::new(0)
+        ))),
+        "source code"
+    )]
+    #[case::module_parse_error(
+        InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }
+        ))),
+        "source code"
+    )]
     fn test_from_error(#[case] cause: InnerError, #[case] source_code: &str) {
         let module_loader = ModuleLoader::new(None);
         let error = Error::from_error(source_code, cause, module_loader);

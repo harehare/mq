@@ -135,7 +135,7 @@ pub struct FootnoteRef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Footnote {
     pub ident: String,
-    pub label: Option<String>,
+    pub values: Vec<Node>,
     pub position: Option<Position>,
 }
 
@@ -305,13 +305,6 @@ impl Display for Node {
 }
 
 impl Node {
-    pub fn text_type(text: &str) -> Self {
-        Self::Text(Text {
-            value: text.to_string(),
-            position: None,
-        })
-    }
-
     pub fn to_string_with(&self, list_style: &ListStyle) -> String {
         match self.clone() {
             Self::List(List {
@@ -327,10 +320,7 @@ impl Node {
                     checked
                         .map(|it| if it { "[x] " } else { "[] " })
                         .unwrap_or_else(|| ""),
-                    values
-                        .iter()
-                        .map(|value| value.to_string_with(list_style))
-                        .join("")
+                    Self::values_to_string(values, list_style)
                 )
             }
             Self::TableRow(TableRow { cells, .. }) => cells
@@ -344,34 +334,16 @@ impl Node {
                 ..
             }) => {
                 if last_cell_in_row || last_cell_of_in_table {
-                    format!(
-                        "|{}|",
-                        values
-                            .iter()
-                            .map(|value| value.to_string_with(list_style))
-                            .join("")
-                    )
+                    format!("|{}|", Self::values_to_string(values, list_style))
                 } else {
-                    format!(
-                        "|{}",
-                        values
-                            .iter()
-                            .map(|value| value.to_string_with(list_style))
-                            .join("")
-                    )
+                    format!("|{}", Self::values_to_string(values, list_style))
                 }
             }
             Self::TableHeader(TableHeader { align, .. }) => {
                 format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
             Self::Blockquote(Value { values, .. }) => {
-                format!(
-                    "> {}",
-                    values
-                        .iter()
-                        .map(|value| value.to_string_with(list_style))
-                        .join("")
-                )
+                format!("> {}", Self::values_to_string(values, list_style))
             }
             Self::Code(Code { value, lang, .. }) => {
                 let lang_str = lang.as_deref().unwrap_or("");
@@ -381,25 +353,17 @@ impl Node {
                 format!("[{}]: {}", label.unwrap_or_default(), url)
             }
             Self::Delete(Value { values, .. }) => {
-                format!(
-                    "~~{}~~",
-                    values
-                        .iter()
-                        .map(|value| value.to_string_with(list_style))
-                        .join("")
-                )
+                format!("~~{}~~", Self::values_to_string(values, list_style))
             }
             Self::Emphasis(Value { values, .. }) => {
-                format!(
-                    "*{}*",
-                    values
-                        .iter()
-                        .map(|value| value.to_string_with(list_style))
-                        .join("")
-                )
+                format!("*{}*", Self::values_to_string(values, list_style))
             }
-            Self::Footnote(Footnote { label, ident, .. }) => {
-                format!("[^{}]: {}", label.unwrap_or_default(), ident)
+            Self::Footnote(Footnote { values, ident, .. }) => {
+                format!(
+                    "[^{}]: {}",
+                    ident,
+                    Self::values_to_string(values, list_style)
+                )
             }
             Self::FootnoteRef(FootnoteRef { label, .. }) => {
                 format!("[^{}]", label.unwrap_or_default())
@@ -408,10 +372,7 @@ impl Node {
                 format!(
                     "{} {}",
                     "#".repeat(depth as usize),
-                    values
-                        .iter()
-                        .map(|value| value.to_string_with(list_style))
-                        .join("")
+                    Self::values_to_string(values, list_style)
                 )
             }
             Self::Html(Html { value, .. }) => format!("\n{}\n", value),
@@ -496,8 +457,8 @@ impl Node {
                         .join("")
                 )
             }
-            Self::Yaml(Yaml { value, .. }) => format!("\n{}\n", value),
-            Self::Toml(Toml { value, .. }) => format!("\n{}\n", value),
+            Self::Yaml(Yaml { value, .. }) => format!("---\n{}\n---\n", value),
+            Self::Toml(Toml { value, .. }) => format!("+++\n{}\n+++\n", value),
             Self::Break { .. } => "\\".to_string(),
             Self::HorizontalRule { .. } => "---".to_string(),
         }
@@ -1240,13 +1201,16 @@ impl Node {
             }
             mdast::Node::FootnoteDefinition(mdast::FootnoteDefinition {
                 identifier,
-                label,
                 position,
+                children,
                 ..
             }) => {
                 vec![Self::Footnote(Footnote {
                     ident: identifier,
-                    label,
+                    values: children
+                        .into_iter()
+                        .flat_map(Self::from_mdast_node)
+                        .collect::<Vec<_>>(),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
@@ -1501,6 +1465,14 @@ impl Node {
             mdast::Node::Table(_) => "".to_string(),
         }
     }
+
+    #[inline(always)]
+    fn values_to_string(values: Vec<Node>, list_style: &ListStyle) -> String {
+        values
+            .iter()
+            .map(|value| value.to_string_with(list_style))
+            .join("")
+    }
 }
 
 #[cfg(test)]
@@ -1539,9 +1511,9 @@ mod tests {
     #[case::footnoteref(Node::FootnoteRef(FootnoteRef {ident: "test".to_string(), label: None, position: None }),
            "test".to_string(),
            Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None }))]
-    #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), label: None, position: None }),
+    #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), values: vec![], position: None }),
            "test".to_string(),
-           Node::Footnote(Footnote{ident: "test".to_string(), label: None, position: None }))]
+           Node::Footnote(Footnote{ident: "test".to_string(), values: vec![], position: None }))]
     #[case::list(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
            Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None }))]
@@ -1722,12 +1694,27 @@ mod tests {
     #[case(Node::node_values(
            &Node::Text(Text{value: "test".to_string(), position: None})),
            vec!["test".to_string().into()])]
+    #[case(Node::node_values(
+           &Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None})),
+           vec!["test".to_string().into()])]
+    #[case(Node::node_values(
+           &Node::Delete(Value{values: vec!["test".to_string().into()], position: None})),
+           vec!["test".to_string().into()])]
+    #[case(Node::node_values(
+           &Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None})),
+           vec!["test".to_string().into()])]
+    #[case(Node::node_values(
+           &Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None})),
+           vec!["test".to_string().into()])]
+    #[case(Node::node_values(
+           &Node::List(List{values: vec!["test".to_string().into()], level: 1, checked: Some(false), index: 0, position: None})),
+           vec!["test".to_string().into()])]
     fn test_node_value(#[case] actual: Vec<Node>, #[case] expected: Vec<Node>) {
         assert_eq!(actual, expected);
     }
 
     #[rstest]
-    #[case(Node::Footnote(Footnote{ident: "test".to_string(), label: None, position: None}), true)]
+    #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_footnote(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_footnote(), expected);
@@ -1813,7 +1800,7 @@ mod tests {
     #[case(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]
     #[case(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "~~test~~")]
     #[case(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "*test*")]
-    #[case(Node::Footnote(Footnote{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]: id")]
+    #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), ListStyle::Dash, "[^id]: label")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]")]
     #[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "# test")]
     #[case(Node::Heading(Heading{depth: 3, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "### test")]
@@ -1828,8 +1815,8 @@ mod tests {
     #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[id][label]")]
     #[case(Node::Math(Math{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$$\nx^2\n$$")]
     #[case(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "**test**")]
-    #[case(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "\nkey: value\n")]
-    #[case(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "\nkey = \"value\"\n")]
+    #[case(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "---\nkey: value\n---\n")]
+    #[case(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "+++\nkey = \"value\"\n+++\n")]
     #[case(Node::Break{position: None}, ListStyle::Dash, "\\")]
     #[case(Node::HorizontalRule{position: None}, ListStyle::Dash, "---")]
     fn test_to_string_with(
@@ -1912,7 +1899,7 @@ mod tests {
     #[case(Node::Heading(Heading{depth: 5, values: vec![], position: None}), "h5")]
     #[case(Node::Heading(Heading{depth: 6, values: vec![], position: None}), "h")]
     #[case(Node::Emphasis(Value{values: vec![], position: None}), "emphasis")]
-    #[case(Node::Footnote(Footnote{ident: "".to_string(), label: None, position: None}), "footnote")]
+    #[case(Node::Footnote(Footnote{ident: "".to_string(), values: vec![], position: None}), "footnote")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: None}), "footnoteref")]
     #[case(Node::Html(Html{value: "".to_string(), position: None}), "html")]
     #[case(Node::Yaml(Yaml{value: "".to_string(), position: None}), "yaml")]
@@ -1948,7 +1935,7 @@ mod tests {
     #[case(Node::Delete(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Emphasis(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::Footnote(Footnote{ident: "test".to_string(), label: None, position: None}), "test")]
+    #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![], position: None}), "test")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None}), "test")]
     #[case(Node::Html(Html{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Yaml(Yaml{value: "test".to_string(), position: None}), "test")]
@@ -1970,6 +1957,7 @@ mod tests {
     #[case(Node::MdxFlowExpression(mdast::MdxFlowExpression{value: "test".to_string(), position: None, stops: vec![]}), "test")]
     #[case(Node::MdxTextExpression(mdast::MdxTextExpression{value: "test".to_string(), position: None, stops: vec![]}), "test")]
     #[case(Node::MdxjsEsm(mdast::MdxjsEsm{value: "test".to_string(), position: None, stops: vec![]}), "test")]
+    #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "test")]
     fn test_value(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.value(), expected);
     }
@@ -1982,7 +1970,7 @@ mod tests {
     #[case(Node::Delete(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Heading(Heading{depth: 1, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Emphasis(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Footnote(Footnote{ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Footnote(Footnote{ident: "".to_string(), values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Html(Html{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Yaml(Yaml{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2003,5 +1991,54 @@ mod tests {
     #[case(Node::HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     fn test_position(#[case] node: Node, #[case] expected: Option<Position>) {
         assert_eq!(node.position(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Blockquote(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
+    #[case(Node::Blockquote(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
+    #[case(Node::Blockquote(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None})
+    ], position: None}), 1, None)]
+    #[case(Node::Delete(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
+    #[case(Node::Emphasis(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
+    #[case(Node::Strong(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None})
+    ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
+    #[case(Node::Heading(Heading{depth: 1, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+        Node::Text(Text{value: "cell content".to_string(), position: None})
+    ], position: None}), 0, Some(Node::Text(Text{value: "cell content".to_string(), position: None})))]
+    #[case(Node::TableRow(TableRow{cells: vec![
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})
+    ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})))]
+    #[case(Node::Text(Text{value: "plain text".to_string(), position: None}), 0, None)]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), 0, None)]
+    #[case(Node::Html(Html{value: "<div>".to_string(), position: None}), 0, None)]
+    fn test_find_at_index(
+        #[case] node: Node,
+        #[case] index: usize,
+        #[case] expected: Option<Node>,
+    ) {
+        assert_eq!(node.find_at_index(index), expected);
     }
 }
