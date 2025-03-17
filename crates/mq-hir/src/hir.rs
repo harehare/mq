@@ -806,6 +806,9 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::call("foo()", "foo", SymbolKind::Call)]
     #[case::elif_("if (true): 1 elif (false): 2 else: 3;", "elif", SymbolKind::Elif)]
     #[case::else_("if (true): 1 else: 2;", "else", SymbolKind::Else)]
+    #[case::until("until (true): 1;", "until", SymbolKind::Until)]
+    #[case::literal("42", "42", SymbolKind::Number)]
+    #[case::selector(".h", ".h", SymbolKind::Selector)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

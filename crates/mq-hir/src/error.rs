@@ -124,4 +124,14 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_error_ranges() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test").unwrap();
+        let _ = hir.add_code(url.clone(), "let abc = 1 | unknown_var | let xyz = 2");
+
+        let error_ranges = hir.error_ranges();
+        assert_eq!(error_ranges.len(), 1);
+    }
 }

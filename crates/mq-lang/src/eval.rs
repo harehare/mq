@@ -2524,6 +2524,11 @@ mod tests {
             ], false))
        ],
        Ok(vec![RuntimeValue::NONE]))]
+    #[case::slice(vec![RuntimeValue::NONE],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("len"), vec![], false))
+       ],
+       Ok(vec![RuntimeValue::Number(0.into())]))]
     fn test_eval_process_none(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

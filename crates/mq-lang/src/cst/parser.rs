@@ -1881,4 +1881,91 @@ mod tests {
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);
     }
+
+    #[test]
+    fn test_error_reporter_error_ranges() {
+        let text = "def foo():\n bar()\n";
+
+        let mut reporter = ErrorReporter::new(100);
+
+        let unexpected_token = Arc::new(Token {
+            range: Range {
+                start: Position { line: 1, column: 4 },
+                end: Position { line: 1, column: 7 },
+            },
+            kind: TokenKind::Ident("foo".into()),
+            module_id: 1.into(),
+        });
+        reporter.report(ParseError::UnexpectedToken(Arc::clone(&unexpected_token)));
+
+        let insufficient_token = Arc::new(Token {
+            range: Range {
+                start: Position { line: 1, column: 4 },
+                end: Position { line: 1, column: 7 },
+            },
+            kind: TokenKind::Ident("bar".into()),
+            module_id: 1.into(),
+        });
+        reporter.report(ParseError::InsufficientTokens(Arc::clone(
+            &insufficient_token,
+        )));
+
+        reporter.report(ParseError::UnexpectedEOFDetected);
+
+        let ranges = reporter.error_ranges(text);
+
+        assert_eq!(ranges.len(), 3);
+
+        assert_eq!(ranges[0].1.start.line, 1);
+        assert_eq!(ranges[0].1.start.column, 4);
+        assert_eq!(ranges[0].1.end.line, 1);
+        assert_eq!(ranges[0].1.end.column, 7);
+
+        assert_eq!(ranges[1].1.start.line, 1);
+        assert_eq!(ranges[1].1.start.column, 4);
+        assert_eq!(ranges[1].1.end.line, 1);
+        assert_eq!(ranges[1].1.end.column, 7);
+
+        assert_eq!(ranges[2].1.start.line, 2);
+        assert_eq!(ranges[2].1.start.column, 6);
+        assert_eq!(ranges[2].1.end.line, 2);
+        assert_eq!(ranges[2].1.end.column, 6);
+    }
+
+    #[test]
+    fn test_error_reporter_has_errors() {
+        let mut reporter = ErrorReporter::new(100);
+        assert!(!reporter.has_errors());
+
+        reporter.report(ParseError::UnexpectedEOFDetected);
+        assert!(reporter.has_errors());
+    }
+
+    #[test]
+    fn test_error_reporter_max_errors() {
+        let mut reporter = ErrorReporter::new(2);
+
+        reporter.report(ParseError::UnexpectedEOFDetected);
+        reporter.report(ParseError::UnexpectedEOFDetected);
+        reporter.report(ParseError::UnexpectedEOFDetected);
+
+        assert_eq!(reporter.errors.len(), 2);
+    }
+
+    #[test]
+    fn test_error_reporter_display() {
+        let mut reporter = ErrorReporter::new(100);
+
+        reporter.report(ParseError::UnexpectedEOFDetected);
+        let token = Arc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Ident("foo".into()),
+            module_id: 1.into(),
+        });
+        reporter.report(ParseError::UnexpectedToken(token));
+
+        let display = format!("{}", reporter);
+        assert!(display.contains("Unexpected EOF detected"));
+        assert!(display.contains("Unexpected token"));
+    }
 }
