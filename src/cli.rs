@@ -150,6 +150,7 @@ enum Commands {
         #[arg(short, long, value_enum)]
         shell: Shell,
     },
+    /// Show functions documentation for the query
     Docs,
 }
 
