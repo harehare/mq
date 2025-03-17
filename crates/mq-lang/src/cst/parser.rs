@@ -1711,6 +1711,73 @@ mod tests {
             ErrorReporter { errors: vec![], max_errors: 100 }
         )
     )]
+    #[case::selector3(
+        vec![
+            Arc::new(token(TokenKind::Selector(".".into()))),
+            Arc::new(token(TokenKind::LBracket)),
+            Arc::new(token(TokenKind::NumberLiteral(2.into()))),
+            Arc::new(token(TokenKind::RBracket)),
+            Arc::new(token(TokenKind::LBracket)),
+            Arc::new(token(TokenKind::NumberLiteral(2.into()))),
+            Arc::new(token(TokenKind::RBracket)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Selector,
+                    token: Some(Arc::new(token(TokenKind::Selector(".".into())))),
+                    leading_trivia: vec![],
+                    trailing_trivia: vec![],
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LBracket))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::NumberLiteral(2.into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RBracket))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LBracket))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::NumberLiteral(2.into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RBracket))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter { errors: vec![], max_errors: 100 }
+        )
+    )]
     #[case::include(
         vec![
             Arc::new(token(TokenKind::Include)),

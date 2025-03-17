@@ -126,8 +126,7 @@ impl Engine {
 }
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::Write;
+    use mq_test::defer;
 
     use super::*;
 
@@ -175,10 +174,14 @@ mod tests {
 
     #[test]
     fn test_load_module() {
-        let temp_dir = std::env::temp_dir();
-        let module_path = temp_dir.join("test_module.mq");
-        let mut file = File::create(&module_path).unwrap();
-        write!(file, "def func1(): 42;").unwrap();
+        let (temp_dir, temp_file_path) = mq_test::create_file("test_module.mq", "def func1(): 42;");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
 
         let mut engine = Engine::default();
         engine.set_paths(vec![temp_dir]);
@@ -188,6 +191,24 @@ mod tests {
 
         let values = engine.defined_values();
         assert!(values.iter().any(|(name, _)| name.as_str() == "func1"));
+    }
+
+    #[test]
+    fn test_error_load_module() {
+        let (temp_dir, temp_file_path) = mq_test::create_file("error.mq", "error");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = Engine::default();
+        engine.set_paths(vec![temp_dir]);
+
+        let result = engine.load_module("error");
+        assert!(result.is_err());
     }
 
     #[test]
