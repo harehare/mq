@@ -236,6 +236,7 @@ impl RuntimeValue {
 #[cfg(test)]
 mod tests {
     use crate::{AstExpr, AstNode, arena::ArenaId};
+    use rstest::rstest;
 
     use super::*;
 
@@ -251,6 +252,20 @@ mod tests {
             RuntimeValue::from(Number::from(42.0)),
             RuntimeValue::Number(Number::from(42.0))
         );
+    }
+
+    #[rstest]
+    #[case(RuntimeValue::Number(Number::from(42.0)), "42")]
+    #[case(RuntimeValue::Bool(true), "true")]
+    #[case(RuntimeValue::Bool(false), "false")]
+    #[case(RuntimeValue::String("hello".to_string()), "hello")]
+    #[case(RuntimeValue::None, "None")]
+    #[case(RuntimeValue::Array(vec![
+            RuntimeValue::Number(Number::from(1.0)),
+            RuntimeValue::String("test".to_string())
+        ]), "1\ntest")]
+    fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
+        assert_eq!(value.string(), expected);
     }
 
     #[test]
@@ -282,6 +297,42 @@ mod tests {
     }
 
     #[test]
+    fn test_runtime_value_string() {
+        #[rstest]
+        #[case(RuntimeValue::Number(Number::from(42.0)), "42")]
+        #[case(RuntimeValue::Bool(true), "true")]
+        #[case(RuntimeValue::Bool(false), "false")]
+        #[case(RuntimeValue::String("hello".to_string()), "hello")]
+        #[case(RuntimeValue::None, "None")]
+        #[case(RuntimeValue::Array(vec![
+            RuntimeValue::Number(Number::from(1.0)),
+            RuntimeValue::String("test".to_string())
+        ]), "1\ntest")]
+        fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
+            assert_eq!(value.string(), expected);
+        }
+
+        // Test markdown string representation
+        let markdown_node = mq_markdown::Node::Text(mq_markdown::Text {
+            value: "test markdown".to_string(),
+            position: None,
+        });
+        assert_eq!(
+            RuntimeValue::Markdown(markdown_node, None).string(),
+            "test markdown"
+        );
+
+        // Test function string representation
+        let function =
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))));
+        assert_eq!(function.string(), "function");
+
+        // Test native function string representation
+        let native_fn = RuntimeValue::NativeFunction(AstIdent::new("print"));
+        assert_eq!(native_fn.string(), "native_function");
+    }
+
+    #[test]
     fn test_runtime_value_name() {
         assert_eq!(RuntimeValue::Bool(true).name(), "bool");
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).name(), "number");
@@ -294,6 +345,11 @@ mod tests {
         assert_eq!(RuntimeValue::Bool(true).text(), "true");
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).text(), "42");
         assert_eq!(RuntimeValue::String(String::from("test")).text(), "test");
+        assert_eq!(
+            RuntimeValue::Array(vec!["test1".to_string().into(), "test2".to_string().into()])
+                .text(),
+            "test1\ntest2"
+        );
         assert_eq!(RuntimeValue::None.text(), "None");
     }
 

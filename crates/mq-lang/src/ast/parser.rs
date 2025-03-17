@@ -85,8 +85,21 @@ impl<'a> Parser<'a> {
             TokenKind::BoolLiteral(_) => self.parse_literal(token),
             TokenKind::StringLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
+            TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            _ => Err(ParseError::UnexpectedToken((*token).clone())),
+        }
+    }
+
+    fn parse_env(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        match &token.kind {
+            TokenKind::Env(s) => Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: std::env::var(s)
+                    .map_err(|_| ParseError::EnvNotFound((*token).clone(), CompactString::new(s)))
+                    .map(|s| Rc::new(Expr::Literal(Literal::String(s.to_owned()))))?,
+            })),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
     }
@@ -558,17 +571,10 @@ impl<'a> Parser<'a> {
                 }
                 Token {
                     range: _,
-                    kind: TokenKind::Env(s),
+                    kind: TokenKind::Env(_),
                     module_id: _,
                 } => {
-                    args.push(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: std::env::var(s)
-                            .map_err(|_| {
-                                ParseError::EnvNotFound((**token).clone(), CompactString::new(s))
-                            })
-                            .map(|s| Rc::new(Expr::Literal(Literal::String(s.to_owned()))))?,
-                    }));
+                    args.push(self.parse_env(Rc::clone(token))?);
                 }
                 Token {
                     range: _,
@@ -1996,6 +2002,137 @@ mod tests {
                     assert_eq!(*selector, expected_selector);
                 } else {
                     panic!("Expected Selector expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_parse_env() {
+        unsafe { std::env::set_var("MQ_TEST_VAR", "test_value") };
+
+        let arena = Arena::new(10);
+        let tokens = vec![
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Env("MQ_TEST_VAR".into()),
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Literal(Literal::String(value)) = &*program[0].expr {
+                    assert_eq!(value, "test_value");
+                } else {
+                    panic!("Expected String literal, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_parse_env_not_found() {
+        let arena = Arena::new(10);
+        let token = Rc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Env("MQ_NONEXISTENT_VAR".into()),
+            module_id: 1.into(),
+        });
+
+        let tokens = vec![
+            Rc::clone(&token),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        assert!(matches!(
+            result,
+            Err(ParseError::EnvNotFound(_, var)) if var == "MQ_NONEXISTENT_VAR"
+        ));
+    }
+
+    #[test]
+    fn test_parse_env_in_arguments() {
+        unsafe { std::env::set_var("MQ_ARG_TEST", "env_arg_value") };
+
+        let arena = Arena::new(10);
+        let tokens = vec![
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Ident(CompactString::new("function")),
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::LParen,
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Env("MQ_ARG_TEST".into()),
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::RParen,
+                module_id: 1.into(),
+            }),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Call(ident, args, _) = &*program[0].expr {
+                    assert_eq!(ident.name, "function");
+                    assert_eq!(args.len(), 1);
+                    if let Expr::Literal(Literal::String(value)) = &*args[0].expr {
+                        assert_eq!(value, "env_arg_value");
+                    } else {
+                        panic!(
+                            "Expected String literal in argument, got {:?}",
+                            args[0].expr
+                        );
+                    }
+                } else {
+                    panic!("Expected Call expression, got {:?}", program[0].expr);
                 }
             }
             Err(err) => panic!("Parse error: {:?}", err),
