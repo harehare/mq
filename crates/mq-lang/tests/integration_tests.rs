@@ -62,6 +62,12 @@ fn engine() -> Engine {
     ",
       vec![Value::Number(10.into())],
       Ok(vec![Value::Number(55.into())].into()))]
+#[case::if_("let x = 1
+      | let y = if (eq(x, 1)): 2 else: 3
+      | y
+      ",
+        vec![Value::Number(0.into())],
+              Ok(vec![Value::Number(2.into())].into()))]
 #[case::elif_("
       def test_fn(x):
         if (eq(x, 0)):

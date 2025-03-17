@@ -127,6 +127,10 @@ struct OutputArgs {
     /// Set the list style for markdown output
     #[clap(long, value_enum, default_value_t = ListStyle::Dash)]
     list_style: ListStyle,
+
+    /// Output to the specified file
+    #[clap(short = 'o', long = "output", value_name = "FILE")]
+    output_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -453,7 +457,15 @@ impl Cli {
         pretty: bool,
     ) -> miette::Result<()> {
         let stdout = io::stdout();
-        let mut handle: Box<dyn Write> = if self.output.unbuffered {
+        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
+            let file = if output_file.exists() {
+                fs::File::open(&output_file).into_diagnostic()?
+            } else {
+                fs::File::create(&output_file).into_diagnostic()?
+            };
+
+            Box::new(BufWriter::new(file))
+        } else if self.output.unbuffered {
             Box::new(stdout.lock())
         } else {
             Box::new(BufWriter::new(stdout.lock()))

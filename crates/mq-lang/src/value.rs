@@ -175,6 +175,7 @@ impl Values {
 #[cfg(test)]
 mod tests {
     use mq_markdown::Text;
+    use rstest::rstest;
 
     use super::*;
 
@@ -186,6 +187,20 @@ mod tests {
         });
         let value = Value::from(node.clone());
         assert_eq!(value, Value::Markdown(node));
+    }
+
+    #[rstest]
+    #[case(true, Value::TRUE)]
+    #[case(true, Value::TRUE)]
+    fn test_value_from_bool(#[case] input: bool, #[case] expected: Value) {
+        let value = Value::from(input);
+        assert_eq!(value, expected);
+    }
+
+    #[test]
+    fn test_value_from_number() {
+        let value = Value::from(Number::new(42.0));
+        assert_eq!(value, Value::Number(Number::new(42.0)));
     }
 
     #[test]
@@ -222,6 +237,17 @@ mod tests {
             format!("{:?}", Value::String("test".to_string())),
             "\"test\""
         );
+        assert_eq!(
+            format!(
+                "{:?}",
+                Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "test".to_string(),
+                    position: None
+                }))
+            ),
+            "test"
+        );
+        assert_eq!(format!("{:?}", Value::NONE), "None");
     }
 
     #[test]
@@ -250,5 +276,38 @@ mod tests {
                 Value::Number(Number::from(2.0)),
             ]
         );
+    }
+
+    #[test]
+    fn test_value_len() {
+        assert_eq!(Value::Number(Number::from(5.0)).len(), 5);
+        assert_eq!(Value::Bool(true).len(), 1);
+        assert_eq!(Value::Bool(false).len(), 1);
+        assert_eq!(Value::String("hello".to_string()).len(), 5);
+        assert_eq!(
+            Value::Array(vec![
+                Value::Number(Number::from(1.0)),
+                Value::Number(Number::from(2.0))
+            ])
+            .len(),
+            2
+        );
+
+        let markdown_node = Node::Text(Text {
+            value: "test text".to_string(),
+            position: None,
+        });
+        assert_eq!(Value::Markdown(markdown_node).len(), 9);
+    }
+
+    #[test]
+    fn test_values_len_and_empty() {
+        let empty_values = Values(vec![]);
+        assert_eq!(empty_values.len(), 0);
+        assert!(empty_values.is_empty());
+
+        let values = Values(vec![Value::Number(Number::from(1.0)), Value::None]);
+        assert_eq!(values.len(), 2);
+        assert!(!values.is_empty());
     }
 }
