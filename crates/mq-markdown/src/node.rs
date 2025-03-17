@@ -143,6 +143,7 @@ pub struct Footnote {
 pub struct LinkRef {
     pub ident: String,
     pub label: Option<String>,
+    pub values: Vec<Node>,
     pub position: Option<Position>,
 }
 
@@ -400,8 +401,12 @@ impl Node {
                     url.replace(' ', "-")
                 )
             }
-            Self::LinkRef(LinkRef { ident, label, .. }) => {
-                format!("[{}][{}]", ident, label.unwrap_or_default())
+            Self::LinkRef(LinkRef { values, label, .. }) => {
+                format!(
+                    "[{}][{}]",
+                    Self::values_to_string(values, list_style),
+                    label.unwrap_or_default()
+                )
             }
             Self::Math(Math { value, .. }) => format!("$$\n{}\n$$", value),
             Self::Text(Text { value, .. }) => value,
@@ -845,9 +850,12 @@ impl Node {
                 link.url = value.to_string();
                 Self::Link(link)
             }
-            Self::LinkRef(mut link) => {
-                link.ident = value.to_string();
-                Self::LinkRef(link)
+            Self::LinkRef(mut v) => {
+                if let Some(node) = v.values.first() {
+                    v.values[0] = node.with_value(value);
+                }
+
+                Self::LinkRef(v)
             }
             Self::Footnote(mut footnote) => {
                 footnote.ident = value.to_string();
@@ -953,6 +961,13 @@ impl Node {
                 }
 
                 Self::Strong(v)
+            }
+            Self::LinkRef(mut v) => {
+                if v.values.get(index).is_some() {
+                    v.values[index] = v.values[index].with_value(value);
+                }
+
+                Self::LinkRef(v)
             }
             Self::Heading(mut v) => {
                 if v.values.get(index).is_some() {
@@ -1183,10 +1198,15 @@ impl Node {
                 identifier,
                 label,
                 position,
+                children,
                 ..
             }) => {
                 vec![Self::LinkRef(LinkRef {
                     ident: identifier,
+                    values: children
+                        .into_iter()
+                        .flat_map(Self::from_mdast_node)
+                        .collect::<Vec<_>>(),
                     label,
                     position: position.map(|p| p.clone().into()),
                 })]
@@ -1552,9 +1572,9 @@ mod tests {
     #[case::table_cell(Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
             "test2".to_string(),
             Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),)]
-    #[case::link_ref(Node::LinkRef(LinkRef{ident: "test1".to_string(), label: None, position: None}),
+    #[case::link_ref(Node::LinkRef(LinkRef{ident: "test1".to_string(), values: vec!["value".to_string().into()], label: None, position: None}),
             "test2".to_string(),
-            Node::LinkRef(LinkRef{ident: "test2".to_string(), label: None, position: None}),)]
+            Node::LinkRef(LinkRef{ident: "test1".to_string(), values: vec!["test2".to_string().into()], label: None, position: None}),)]
     #[case::image_ref(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test1".to_string(), label: None, position: None}),
             "test2".to_string(),
             Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test2".to_string(), label: None, position: None}),)]
@@ -1738,7 +1758,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), label: None, position: None}), true)]
+    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: vec![], label: None, position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_link_ref(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_link_ref(), expected);
@@ -1947,7 +1967,7 @@ mod tests {
     #[case(Node::MathInline(MathInline{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$x^2$")]
     #[case(Node::Link(Link{url: "url".to_string(), title: Some("title".to_string()), position: None}), ListStyle::Dash, "[title](url)")]
     #[case(Node::Link(Link{url: "url with space".to_string(), title: Some("title with space".to_string()), position: None}), ListStyle::Dash, "[title-with-space](url-with-space)")]
-    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[id][label]")]
+    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["Open".to_string().into()], label: Some("open".to_string()), position: None}), ListStyle::Dash, "[Open][open]")]
     #[case(Node::Math(Math{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$$\nx^2\n$$")]
     #[case(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "**test**")]
     #[case(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "---\nkey: value\n---\n")]
@@ -2044,7 +2064,7 @@ mod tests {
     #[case(Node::CodeInline(CodeInline{value: "".to_string(), position: None}), "code_inline")]
     #[case(Node::MathInline(MathInline{value: "".to_string(), position: None}), "math_inline")]
     #[case(Node::Link(Link{url: "".to_string(), title: None, position: None}), "link")]
-    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), label: None, position: None}), "link_ref")]
+    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
     #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![], position: None}), "list")]
     #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "table_header")]
@@ -2080,7 +2100,7 @@ mod tests {
     #[case(Node::CodeInline(CodeInline{value: "test".to_string(), position: None}), "test")]
     #[case(Node::MathInline(MathInline{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Link(Link{url: "test".to_string(), title: None, position: None}), "test")]
-    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), label: None, position: None}), "test")]
+    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: vec![], label: None, position: None}), "test")]
     #[case(Node::Math(Math{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Code(Code{value: "test".to_string(), lang: None, position: None}), "test")]
     #[case(Node::Strong(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
@@ -2115,7 +2135,7 @@ mod tests {
     #[case(Node::CodeInline(CodeInline{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MathInline(MathInline{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Link(Link{url: "".to_string(), title: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Math(Math{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Strong(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
