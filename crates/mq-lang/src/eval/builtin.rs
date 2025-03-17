@@ -2606,6 +2606,7 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
     }
 }
+
 #[cfg(test)]
 mod tests {
     use mq_markdown::Node;

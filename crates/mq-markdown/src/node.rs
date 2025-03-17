@@ -1572,6 +1572,120 @@ mod tests {
     }
 
     #[rstest]
+    #[case(Node::Blockquote(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        0,
+        Node::Blockquote(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None}),
+            Node::Text(Text{value: "second".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::Blockquote(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        1,
+        Node::Blockquote(Value{values: vec![
+            Node::Text(Text{value: "first".to_string(), position: None}),
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::Delete(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        0,
+        Node::Delete(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None}),
+            Node::Text(Text{value: "second".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::Emphasis(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        1,
+        Node::Emphasis(Value{values: vec![
+            Node::Text(Text{value: "first".to_string(), position: None}),
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::Strong(Value{values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        0,
+        Node::Strong(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None}),
+            Node::Text(Text{value: "second".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::Heading(Heading{depth: 1, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        1,
+        Node::Heading(Heading{depth: 1, values: vec![
+            Node::Text(Text{value: "first".to_string(), position: None}),
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        0,
+        Node::List(List{index: 0, level: 0, checked: None, values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None}),
+            Node::Text(Text{value: "second".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None})
+    ], position: None}),
+        "new",
+        1,
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::Text(Text{value: "first".to_string(), position: None}),
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::Text(Text{value: "plain text".to_string(), position: None}),
+        "new",
+        0,
+        Node::Text(Text{value: "plain text".to_string(), position: None}))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}),
+        "new",
+        0,
+        Node::Code(Code{value: "code".to_string(), lang: None, position: None}))]
+    #[case(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None})
+    ], position: None}),
+        "new",
+        0,
+        Node::List(List{index: 0, level: 1, checked: Some(true), values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None}))]
+    #[case(Node::List(List{index: 0, level: 1, checked: None, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None})
+    ], position: None}),
+        "new",
+        2,
+        Node::List(List{index: 0, level: 1, checked: None, values: vec![
+            Node::Text(Text{value: "first".to_string(), position: None})
+        ], position: None}))]
+    fn test_with_children_value(
+        #[case] node: Node,
+        #[case] value: &str,
+        #[case] index: usize,
+        #[case] expected: Node,
+    ) {
+        assert_eq!(node.with_children_value(value, index), expected);
+    }
+
+    #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None }),
            "test".to_string())]
     #[case(Node::List(List{index: 0, level: 2, checked: None, values: vec!["test".to_string().into()], position: None}),
@@ -1781,6 +1895,27 @@ mod tests {
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_text_expression(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_text_expression(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::MdxJsxFlowElement(mdast::MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_mdx_jsx_flow_element(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_mdx_jsx_flow_element(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::MdxJsxTextElement(mdast::MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_mdx_jsx_text_element(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_mdx_jsx_text_element(), expected);
+    }
+
+    #[rstest]
+    #[case(Node::MdxjsEsm(mdast::MdxjsEsm{value: "test".to_string(), position: None, stops: vec![]}), true)]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
+    fn test_is_msx_js_esm(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_msx_js_esm(), expected);
     }
 
     #[rstest]

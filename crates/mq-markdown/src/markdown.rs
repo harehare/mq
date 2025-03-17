@@ -224,6 +224,7 @@ mod tests {
     #[case::html("<div>test</div>", 1, "\n<div>test</div>\n")]
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
     #[case::image_ref("![a]", 1, "![a]\n")]
+    #[case::footnote_ref("[^a]", 1, "[^a]\n")]
     #[case::image(
         "![alt text](http://example.com/image.jpg)",
         1,
