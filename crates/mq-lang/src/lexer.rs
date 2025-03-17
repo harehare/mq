@@ -438,14 +438,14 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 13}, end: Position {line: 1, column: 14} }, kind: TokenKind::RBracket, module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 15} }, kind: TokenKind::RParen, module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
-    #[case("startswith(\"\u{0061}\")",
+    #[case("startswith(\"\\u{0061}\")",
         Options::default(),
         Ok(vec![
           Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 11} }, kind: TokenKind::Ident(CompactString::new("startswith")), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 11}, end: Position {line: 1, column: 12} }, kind: TokenKind::LParen, module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 15} }, kind: TokenKind::StringLiteral("a".to_string()), module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 16} }, kind: TokenKind::RParen, module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 16}, end: Position {line: 1, column: 16} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+          Token{range: Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 22} }, kind: TokenKind::StringLiteral("a".to_string()), module_id: 1.into()},
+          Token{range: Range { start: Position {line: 1, column: 22}, end: Position {line: 1, column: 23} }, kind: TokenKind::RParen, module_id: 1.into()},
+          Token{range: Range { start: Position {line: 1, column: 23}, end: Position {line: 1, column: 23} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case("endswith($ENV)",
         Options::default(),
         Ok(vec![
@@ -454,7 +454,7 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 11}, end: Position {line: 1, column: 14} }, kind: TokenKind::Env(CompactString::new("ENV")), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 15} }, kind: TokenKind::RParen, module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
-    #[case("def check(arg1, arg2): startswith(\"\u{0061}\")",
+    #[case("def check(arg1, arg2): startswith(\"\\u{0061}\")",
         Options::default(),
         Ok(vec![
           Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::Def, module_id: 1.into()},
@@ -467,9 +467,9 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 22}, end: Position {line: 1, column: 23} }, kind: TokenKind::Colon, module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 24}, end: Position {line: 1, column: 34} }, kind: TokenKind::Ident(CompactString::new("startswith")), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 34}, end: Position {line: 1, column: 35} }, kind: TokenKind::LParen, module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 35}, end: Position {line: 1, column: 38} }, kind: TokenKind::StringLiteral("a".to_string()), module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 38}, end: Position {line: 1, column: 39} }, kind: TokenKind::RParen, module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 39}, end: Position {line: 1, column: 39} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+          Token{range: Range { start: Position {line: 1, column: 35}, end: Position {line: 1, column: 45} }, kind: TokenKind::StringLiteral("a".to_string()), module_id: 1.into()},
+          Token{range: Range { start: Position {line: 1, column: 45}, end: Position {line: 1, column: 46} }, kind: TokenKind::RParen, module_id: 1.into()},
+          Token{range: Range { start: Position {line: 1, column: 46}, end: Position {line: 1, column: 46} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case("\"test",
           Options::default(),
           Err(LexerError::UnexpectedEOFDetected(1.into())))]
@@ -508,7 +508,19 @@ mod tests {
               Token{range: Range { start: Position {line: 3, column: 16}, end: Position {line: 3, column: 17} }, kind: TokenKind::RParen, module_id: 1.into()},
               Token{range: Range { start: Position {line: 3, column: 17}, end: Position {line: 3, column: 18} }, kind: TokenKind::RParen, module_id: 1.into()},
               Token{range: Range { start: Position {line: 3, column: 18}, end: Position {line: 3, column: 18} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
-    fn test(
+    #[case::tab("and(\tcontains(\"test\"))",
+            Options{include_spaces: true, ignore_errors: true},
+            Ok(vec![
+              Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::Ident(CompactString::new("and")), module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::LParen, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 6} }, kind: TokenKind::Tab(1), module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 14} }, kind: TokenKind::Ident(CompactString::new("contains")), module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 15} }, kind: TokenKind::LParen, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 21} }, kind: TokenKind::StringLiteral("test".to_string()), module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 21}, end: Position {line: 1, column: 22} }, kind: TokenKind::RParen, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 22}, end: Position {line: 1, column: 23} }, kind: TokenKind::RParen, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 23}, end: Position {line: 1, column: 23} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
         #[case] expected: Result<Vec<Token>, LexerError>,

@@ -2815,4 +2815,45 @@ mod tests {
     ) {
         assert_eq!(eval_selector(&node, &selector), expected);
     }
+
+    #[rstest]
+    #[case(ParamNum::None, 0, true)]
+    #[case(ParamNum::None, 1, false)]
+    #[case(ParamNum::Fixed(2), 2, true)]
+    #[case(ParamNum::Fixed(2), 1, false)]
+    #[case(ParamNum::Fixed(2), 3, false)]
+    #[case(ParamNum::Range(1, 3), 1, true)]
+    #[case(ParamNum::Range(1, 3), 2, true)]
+    #[case(ParamNum::Range(1, 3), 3, true)]
+    #[case(ParamNum::Range(1, 3), 0, false)]
+    #[case(ParamNum::Range(1, 3), 4, false)]
+    fn test_param_num_is_valid(
+        #[case] param_num: ParamNum,
+        #[case] num_args: u8,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(param_num.is_valid(num_args), expected);
+    }
+
+    #[rstest]
+    #[case(ParamNum::None, 0)]
+    #[case(ParamNum::Fixed(2), 2)]
+    #[case(ParamNum::Range(1, 3), 1)]
+    fn test_param_num_to_num(#[case] param_num: ParamNum, #[case] expected: u8) {
+        assert_eq!(param_num.to_num(), expected);
+    }
+
+    #[rstest]
+    #[case(ParamNum::None, 0, false)]
+    #[case(ParamNum::Fixed(2), 1, true)]
+    #[case(ParamNum::Fixed(2), 0, false)]
+    #[case(ParamNum::Range(1, 3), 0, true)]
+    #[case(ParamNum::Range(1, 3), 1, false)]
+    fn test_param_num_is_missing_one_params(
+        #[case] param_num: ParamNum,
+        #[case] num_args: u8,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(param_num.is_missing_one_params(num_args), expected);
+    }
 }

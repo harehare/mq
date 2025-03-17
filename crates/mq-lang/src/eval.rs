@@ -647,11 +647,6 @@ mod tests {
             ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
-    #[case::downcase(vec![RuntimeValue::NONE],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
-       ],
-       Ok(vec![RuntimeValue::NONE]))]
     #[case::upcase(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("upcase"), Vec::new(), false))
@@ -1413,6 +1408,13 @@ mod tests {
             ast_node(ast::Expr::Call(ast::Ident::new("base64"), vec![], false))
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "dGVzdA==".to_string(), position: None}), None)]))]
+    #[case::base64(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("base64"), vec![], false))
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "base64".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
     #[case::base64d(vec![RuntimeValue::String("dGVzdA==".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("base64d"), vec![
@@ -2509,6 +2511,19 @@ mod tests {
               ], false)),
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::downcase(vec![RuntimeValue::NONE],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
+       ],
+       Ok(vec![RuntimeValue::NONE]))]
+    #[case::slice(vec![RuntimeValue::NONE],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
+            ], false))
+       ],
+       Ok(vec![RuntimeValue::NONE]))]
     fn test_eval_process_none(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

@@ -459,9 +459,9 @@ impl Cli {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
             let file = if output_file.exists() {
-                fs::File::open(&output_file).into_diagnostic()?
+                fs::File::open(output_file).into_diagnostic()?
             } else {
-                fs::File::create(&output_file).into_diagnostic()?
+                fs::File::create(output_file).into_diagnostic()?
             };
 
             Box::new(BufWriter::new(file))
