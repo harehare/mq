@@ -3,7 +3,7 @@
 The mq command-line interface provides tools for querying and manipulating markdown content.
 Below is the complete reference for all available commands and options.
 
-```sh
+``` sh
 Usage: mq [OPTIONS] [QUERY] [FILES]... [COMMAND]
 
 Commands:
@@ -14,8 +14,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY]
-  [FILES]...
+  [QUERY]     
+  [FILES]...  
 
 Options:
   -f, --from-file <FROM_FILE>           load filter from the file
@@ -30,6 +30,7 @@ Options:
   -U, --update                          Update the input markdown
       --unbuffered                      Unbuffered output
       --list-style <LIST_STYLE>         Set the list style for markdown output [default: dash] [possible values: dash, plus, star]
+  -o, --output <FILE>                   Output to the specified file
   -v, --verbose...                      Increase logging verbosity
   -q, --quiet...                        Decrease logging verbosity
   -h, --help                            Print help
