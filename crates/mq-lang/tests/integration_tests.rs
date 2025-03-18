@@ -187,7 +187,7 @@ fn engine() -> Engine {
       ",
         vec![Value::Number(10.into())],
         Ok(vec![Value::Number(15.into())].into()))]
-#[case::map("def test(x): add(x, 1); map(array(1, 2, 3), test)",
+#[case::map("def test(x): add(x, 1); | map(array(1, 2, 3), test)",
             vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
             Ok(vec![Value::Array(vec![Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])].into()))]
 #[case::optional_operator("

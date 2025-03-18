@@ -39,6 +39,13 @@ impl Range {
 
 impl<'a> From<Span<'a>> for Range {
     fn from(span: Span<'a>) -> Self {
+        let fragment = span.fragment();
+        let fragment = if !fragment.starts_with(" ") && fragment.ends_with(" ") {
+            fragment.trim()
+        } else {
+            fragment
+        };
+
         Range {
             start: Position {
                 line: span.location_line(),
@@ -46,7 +53,7 @@ impl<'a> From<Span<'a>> for Range {
             },
             end: Position {
                 line: span.location_line(),
-                column: span.get_utf8_column() + span.fragment().chars().count(),
+                column: span.get_utf8_column() + fragment.chars().count(),
             },
         }
     }

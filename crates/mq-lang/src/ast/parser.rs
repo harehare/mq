@@ -735,7 +735,16 @@ impl<'a> Parser<'a> {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
                 }
             }
+
             prev_token = Some(token);
+
+            if let Some(token) = self.tokens.peek() {
+                if !matches!(token.kind, TokenKind::RParen)
+                    && !matches!(token.kind, TokenKind::Comma)
+                {
+                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                }
+            }
         }
 
         Ok(args)

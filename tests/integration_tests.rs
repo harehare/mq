@@ -94,7 +94,6 @@ fn test_cli_md_format_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 - item2 ",
         )
         .assert();
-    dbg!(&assert);
     assert
         .success()
         .code(0)
