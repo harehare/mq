@@ -1173,19 +1173,26 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_link"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
-                [RuntimeValue::String(url), RuntimeValue::String(title)] => {
-                    Ok(mq_markdown::Node::Link(mq_markdown::Link {
-                        url: url.to_string(),
-                        title: Some(title.to_string()),
-                        position: None,
-                    })
-                    .into())
-                }
-                [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
-                [a, b] => Err(Error::InvalidTypes(
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
+                [
+                    RuntimeValue::String(url),
+                    RuntimeValue::String(value),
+                    RuntimeValue::String(title),
+                ] => Ok(mq_markdown::Node::Link(mq_markdown::Link {
+                    url: url.to_string(),
+                    values: vec![value.to_string().into()],
+                    title: if title.is_empty() {
+                        None
+                    } else {
+                        Some(title.into())
+                    },
+                    position: None,
+                })
+                .into()),
+                [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
+                [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
-                    vec![a.clone(), b.clone()],
+                    vec![a.clone(), b.clone(), c.clone()],
                 )),
                 _ => unreachable!(),
             }),
@@ -2301,7 +2308,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             CompactString::new("to_link"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown link node  with the given  url and title.",
-                params: &["url", "title"],
+                params: &["url", "value", "title"],
             },
         );
         map.insert(
@@ -2711,7 +2718,7 @@ mod tests {
         true
     )]
     #[case::link(
-        Node::Link(mq_markdown::Link { url: "https://example.com".into(), title: None, position: None }),
+        Node::Link(mq_markdown::Link { url: "https://example.com".into(), values: vec![], title: None, position: None }),
         ast::Selector::Link,
         true
     )]

@@ -77,7 +77,7 @@
 | `to_math`           | Creates a markdown math block with the given value.                                                      | `value`                        | to_math(value)                     |
 | `array`             | Creates an array from the given values.                                                                  | `values`                       | array(values)                      |
 | `abs`               | Returns the absolute value of the given number.                                                          | `number`                       | abs(number)                        |
-| `to_link`           | Creates a markdown link node with the given url and title.                                               | `url`, `title`                 | to_link(url, title)                |
+| `to_link`           | Creates a markdown link node with the given url and title.                                               | `url`, `value`, `title`        | to_link(url, value, title)         |
 | `downcase`          | Converts the given string to lowercase.                                                                  | `input`                        | downcase(input)                    |
 | `to_code_inline`    | Creates an inline markdown code node with the given value.                                               | `value`                        | to_code_inline(value)              |
 | `ends_with`         | Checks if the given string ends with the specified substring.                                            | `string`, `substring`          | ends_with(string, substring)       |

@@ -28,7 +28,7 @@ fn main() {
     engine.load_builtin_module().unwrap();
 
     let code = ".h
-| let link = to_link(add(\"#\", to_text(self)), to_text(self))
+| let link = to_link(add(\"#\", to_text(self)), to_text(self), \"\")
 | if (eq(to_md_name(), \"h1\")):
     to_md_list(link, 1)
   elif (eq(to_md_name(), \"h2\")):
