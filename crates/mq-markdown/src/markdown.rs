@@ -327,6 +327,11 @@ mod tests {
     #[case::mdx("<a />", 1, "<a />\n")]
     #[case::mdx("<MyComponent {...props}/>", 1, "<MyComponent {...props} />\n")]
     #[case::mdx(
+        "text<MyComponent {...props}/>text",
+        3,
+        "text<MyComponent {...props} />text\n"
+    )]
+    #[case::mdx(
         "<Chart color=\"#fcb32c\" year={year} />",
         1,
         "<Chart color=\"#fcb32c\" year={year} />\n"

@@ -52,6 +52,12 @@ select(not(.code))
 .[1]
 ```
 
+## Extract MDX
+
+```python
+select(is_mdx())
+```
+
 ## Custom function
 
 ```js

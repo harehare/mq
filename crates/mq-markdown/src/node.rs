@@ -2243,6 +2243,12 @@ mod tests {
         children: vec![],
         position: None
     }), ListStyle::Dash, "<div className=\"container\" />")]
+    #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
+        name: Some("div".to_string()),
+        attributes: vec![],
+        children: vec![],
+        position: None
+    }), ListStyle::Dash, "<div />")]
     #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
         name: Some("span".into()),
         attributes: vec![
@@ -2262,6 +2268,14 @@ mod tests {
         ],
         position: None
     }), ListStyle::Dash, "<span {...props} />")]
+    #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
+        name: Some("span".into()),
+        attributes: vec![
+        ],
+        children: vec![
+        ],
+        position: None
+    }), ListStyle::Dash, "<span />")]
     #[case(Node::MdxTextExpression(MdxTextExpression{
         value: "count + 1".into(),
         position: None,
