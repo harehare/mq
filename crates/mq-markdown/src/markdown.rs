@@ -215,7 +215,7 @@ mod tests {
     #[case::header("# Title\nParagraph", 2, "# Title\nParagraph\n")]
     #[case::header("# Title\n\nParagraph", 2, "# Title\nParagraph\n")]
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
-    #[case::quote("> Quote\n\n> Second line", 2, "> Quote\n> Second line\n")]
+    #[case::quote("> Quote\n\n>Second line", 2, "> Quote\n> Second line\n")]
     #[case::code("```rust\nlet x = 1;\n```", 1, "\n```rust\nlet x = 1;\n```\n")]
     #[case::toml("+++\n[test]\ntest = 1\n+++", 1, "+++\n[test]\ntest = 1\n+++\n")]
     #[case::code("`inline`", 1, "`inline`\n")]
@@ -223,8 +223,11 @@ mod tests {
     #[case::math("$$\nmath\n$$", 1, "$$\nmath\n$$\n")]
     #[case::html("<div>test</div>", 1, "\n<div>test</div>\n")]
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
-    #[case::image_ref("![a]", 1, "![a]\n")]
+    #[case::definition("[a]: b", 1, "[a]: b\n")]
+    #[case::footnote("[^alpha]: bravo and charlie.", 1, "[^alpha]: bravo and charlie.\n")]
     #[case::footnote_ref("[^a]", 1, "[^a]\n")]
+    #[case::mdx("<a />", 1, "\n<a />\n")]
+    #[case::mdx("<MyComponent {...props}/>", 1, "<MyComponent {...props} />\n")]
     #[case::image(
         "![alt text](http://example.com/image.jpg)",
         1,
@@ -235,12 +238,14 @@ mod tests {
         1,
         "![alt text](http://example.com/image.jpg \"title\")\n"
     )]
+    #[case::image_ref("![alpha][bravo]", 1, "![alpha][bravo]\n")]
     #[case::yaml(
         "---\ntitle: Test\ndescription: YAML front matter\n---\n",
         1,
         "---\ntitle: Test\ndescription: YAML front matter\n---\n"
     )]
     #[case::link("[title](http://example.com)", 1, "[title](http://example.com)\n")]
+    #[case::link_ref("[alpha][Bravo]", 1, "[alpha][Bravo]\n")]
     #[case::break_("a\\", 1, "a\\\n")]
     #[case::delete("~~a~~", 1, "~~a~~\n")]
     #[case::emphasis("*a*", 1, "*a*\n")]

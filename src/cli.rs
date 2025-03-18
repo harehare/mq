@@ -102,7 +102,7 @@ struct InputArgs {
     args: Option<Vec<String>>,
 
     /// Sets file contents that can be referenced at runtime
-    #[arg(long, value_names = ["NAME", "FILE"])]
+    #[arg(long="rawfile", value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
 }
 
@@ -160,7 +160,7 @@ enum Commands {
 
 impl Cli {
     pub fn run(&self) -> miette::Result<()> {
-        if self.commands.is_none() && self.query.is_none() {
+        if self.commands.is_none() && self.query.is_none() && self.input.from_file.is_none() {
             return Cli::command().print_help().into_diagnostic();
         }
 

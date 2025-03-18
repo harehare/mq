@@ -190,19 +190,71 @@ pub struct Yaml {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodeInline {
-    pub value: String,
+    pub value: CompactString,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MathInline {
-    pub value: String,
+    pub value: CompactString,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Math {
     pub value: String,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MdxFlowExpression {
+    pub value: CompactString,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MdxJsxFlowElement {
+    pub children: Vec<Node>,
+    pub position: Option<Position>,
+    pub name: Option<String>,
+    pub attributes: Vec<MdxAttributeContent>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MdxAttributeContent {
+    Expression(CompactString),
+    Property(MdxJsxAttribute),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MdxJsxAttribute {
+    pub name: CompactString,
+    pub value: Option<MdxAttributeValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MdxAttributeValue {
+    Expression(CompactString),
+    Literal(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MdxJsxTextElement {
+    pub children: Vec<Node>,
+    pub position: Option<Position>,
+    pub name: Option<CompactString>,
+    pub attributes: Vec<MdxAttributeContent>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MdxTextExpression {
+    pub value: CompactString,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MdxjsEsm {
+    pub value: CompactString,
     pub position: Option<Position>,
 }
 
@@ -233,11 +285,11 @@ pub enum Node {
     Code(Code),
     Strong(Value),
     HorizontalRule { position: Option<Position> },
-    MdxFlowExpression(mdast::MdxFlowExpression),
-    MdxJsxFlowElement(mdast::MdxJsxFlowElement),
-    MdxJsxTextElement(mdast::MdxJsxTextElement),
-    MdxTextExpression(mdast::MdxTextExpression),
-    MdxjsEsm(mdast::MdxjsEsm),
+    MdxFlowExpression(MdxFlowExpression),
+    MdxJsxFlowElement(MdxJsxFlowElement),
+    MdxJsxTextElement(MdxJsxTextElement),
+    MdxTextExpression(MdxTextExpression),
+    MdxjsEsm(MdxjsEsm),
     Text(Text),
 }
 
@@ -421,44 +473,61 @@ impl Node {
             }
             Self::MdxJsxFlowElement(mdx_jsx_flow_element) => {
                 let name = mdx_jsx_flow_element.name.unwrap_or_default();
-                format!(
-                    "<{} {}>{}</{}>",
-                    name,
-                    mdx_jsx_flow_element
-                        .attributes
-                        .into_iter()
-                        .map(Self::attribute_content_to_string)
-                        .join(""),
-                    mdx_jsx_flow_element
-                        .children
-                        .into_iter()
-                        .map(Self::mdast_value)
-                        .join(""),
-                    name
-                )
+
+                if mdx_jsx_flow_element.children.is_empty() {
+                    format!(
+                        "<{} {} />",
+                        name,
+                        mdx_jsx_flow_element
+                            .attributes
+                            .into_iter()
+                            .map(Self::mdx_attribute_content_to_string)
+                            .join(""),
+                    )
+                } else {
+                    format!(
+                        "<{} {}>{}</{}>",
+                        name,
+                        mdx_jsx_flow_element
+                            .attributes
+                            .into_iter()
+                            .map(Self::mdx_attribute_content_to_string)
+                            .join(""),
+                        Self::values_to_string(mdx_jsx_flow_element.children, list_style),
+                        name
+                    )
+                }
             }
             Self::MdxJsxTextElement(mdx_jsx_text_element) => {
                 let name = mdx_jsx_text_element.name.unwrap_or_default();
-                format!(
-                    "<{} {}>{}</{}>",
-                    name,
-                    mdx_jsx_text_element
-                        .attributes
-                        .into_iter()
-                        .map(Self::attribute_content_to_string)
-                        .join(""),
-                    mdx_jsx_text_element
-                        .children
-                        .into_iter()
-                        .map(Self::mdast_value)
-                        .join(""),
-                    name
-                )
+                if mdx_jsx_text_element.children.is_empty() {
+                    format!(
+                        "<{} {} />",
+                        name,
+                        mdx_jsx_text_element
+                            .attributes
+                            .into_iter()
+                            .map(Self::mdx_attribute_content_to_string)
+                            .join(""),
+                    )
+                } else {
+                    format!(
+                        "<{} {}>{}</{}>",
+                        name,
+                        mdx_jsx_text_element
+                            .attributes
+                            .into_iter()
+                            .map(Self::mdx_attribute_content_to_string)
+                            .join(""),
+                        Self::values_to_string(mdx_jsx_text_element.children, list_style),
+                        name
+                    )
+                }
             }
             Self::MdxTextExpression(mdx_text_expression) => {
                 format!("{{{}}}", mdx_text_expression.value)
             }
-            Self::MdxjsEsm(mdxjs_esm) => mdxjs_esm.value,
+            Self::MdxjsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
             Self::Strong(Value { values, .. }) => {
                 format!(
                     "**{}**",
@@ -502,15 +571,11 @@ impl Node {
 
     pub fn value(&self) -> String {
         match self.clone() {
-            Self::Blockquote(v) => v
-                .values
-                .first()
-                .map(|value| value.value())
-                .unwrap_or_default(),
+            Self::Blockquote(v) => Self::values_to_value(v.values),
             Self::Definition(d) => d.ident,
-            Self::Delete(v) => v.values.iter().map(|value| value.value()).join(""),
-            Self::Heading(h) => h.values.iter().map(|value| value.value()).join(""),
-            Self::Emphasis(v) => v.values.iter().map(|value| value.value()).join(""),
+            Self::Delete(v) => Self::values_to_value(v.values),
+            Self::Heading(h) => Self::values_to_value(h.values),
+            Self::Emphasis(v) => Self::values_to_value(v.values),
             Self::Footnote(f) => f.ident,
             Self::FootnoteRef(f) => f.ident,
             Self::Html(v) => v.value,
@@ -518,28 +583,24 @@ impl Node {
             Self::Toml(v) => v.value,
             Self::Image(i) => i.url,
             Self::ImageRef(i) => i.ident,
-            Self::CodeInline(v) => v.value,
-            Self::MathInline(v) => v.value,
+            Self::CodeInline(v) => v.value.to_string(),
+            Self::MathInline(v) => v.value.to_string(),
             Self::Link(l) => l.url,
             Self::LinkRef(l) => l.ident,
             Self::Math(v) => v.value,
-            Self::List(l) => l.values.iter().map(|value| value.value()).join(""),
-            Self::TableCell(c) => c.values.iter().map(|value| value.value()).join(""),
-            Self::TableRow(c) => c.cells.iter().map(|cell| cell.value()).join(","),
+            Self::List(l) => Self::values_to_value(l.values),
+            Self::TableCell(c) => Self::values_to_value(c.values),
+            Self::TableRow(c) => Self::values_to_value(c.cells),
             Self::Code(c) => c.value,
-            Self::Strong(v) => v.values.iter().map(|value| value.value()).join(""),
+            Self::Strong(v) => Self::values_to_value(v.values),
             Self::Text(t) => t.value,
             Self::Break { .. } => String::new(),
             Self::TableHeader(_) => String::new(),
-            Self::MdxFlowExpression(mdx) => mdx.value,
-            Self::MdxJsxFlowElement(mdx) => {
-                mdx.children.into_iter().map(Self::mdast_value).join("")
-            }
-            Self::MdxTextExpression(mdx) => mdx.value,
-            Self::MdxJsxTextElement(mdx) => {
-                mdx.children.into_iter().map(Self::mdast_value).join("")
-            }
-            Self::MdxjsEsm(mdx) => mdx.value,
+            Self::MdxFlowExpression(mdx) => mdx.value.to_string(),
+            Self::MdxJsxFlowElement(mdx) => Self::values_to_value(mdx.children),
+            Self::MdxTextExpression(mdx) => mdx.value.to_string(),
+            Self::MdxJsxTextElement(mdx) => Self::values_to_value(mdx.children),
+            Self::MdxjsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
         }
     }
@@ -612,11 +673,11 @@ impl Node {
             Self::TableHeader(c) => c.position.clone(),
             Self::List(l) => l.position.clone(),
             Self::Strong(s) => s.position.clone(),
-            Self::MdxFlowExpression(m) => m.clone().position.map(|p| p.into()),
-            Self::MdxTextExpression(m) => m.clone().position.map(|p| p.into()),
-            Self::MdxjsEsm(m) => m.clone().position.map(|p| p.into()),
-            Self::MdxJsxFlowElement(m) => m.clone().position.map(|p| p.into()),
-            Self::MdxJsxTextElement(m) => m.clone().position.map(|p| p.into()),
+            Self::MdxFlowExpression(m) => m.position.clone(),
+            Self::MdxTextExpression(m) => m.position.clone(),
+            Self::MdxjsEsm(m) => m.position.clone(),
+            Self::MdxJsxFlowElement(m) => m.position.clone(),
+            Self::MdxJsxTextElement(m) => m.position.clone(),
             Self::Break { position } => position.clone(),
             Self::Text(t) => t.position.clone(),
             Self::HorizontalRule { position } => position.clone(),
@@ -676,14 +737,11 @@ impl Node {
     }
 
     pub fn is_mdx_jsx_flow_element(&self) -> bool {
-        matches!(
-            self,
-            Self::MdxJsxFlowElement(mdast::MdxJsxFlowElement { .. })
-        )
+        matches!(self, Self::MdxJsxFlowElement(MdxJsxFlowElement { .. }))
     }
 
     pub fn is_msx_js_esm(&self) -> bool {
-        matches!(self, Self::MdxjsEsm(mdast::MdxjsEsm { .. }))
+        matches!(self, Self::MdxjsEsm(MdxjsEsm { .. }))
     }
 
     pub fn is_toml(&self) -> bool {
@@ -699,10 +757,7 @@ impl Node {
     }
 
     pub fn is_mdx_text_expression(&self) -> bool {
-        matches!(
-            self,
-            Self::MdxTextExpression(mdast::MdxTextExpression { .. })
-        )
+        matches!(self, Self::MdxTextExpression(MdxTextExpression { .. }))
     }
 
     pub fn is_footnote_ref(&self) -> bool {
@@ -714,10 +769,7 @@ impl Node {
     }
 
     pub fn is_mdx_jsx_text_element(&self) -> bool {
-        matches!(
-            self,
-            Self::MdxJsxTextElement(mdast::MdxJsxTextElement { .. })
-        )
+        matches!(self, Self::MdxJsxTextElement(MdxJsxTextElement { .. }))
     }
 
     pub fn is_math(&self) -> bool {
@@ -725,10 +777,7 @@ impl Node {
     }
 
     pub fn is_mdx_flow_expression(&self) -> bool {
-        matches!(
-            self,
-            Self::MdxFlowExpression(mdast::MdxFlowExpression { .. })
-        )
+        matches!(self, Self::MdxFlowExpression(MdxFlowExpression { .. }))
     }
 
     pub fn is_definition(&self) -> bool {
@@ -798,11 +847,11 @@ impl Node {
                 Self::Toml(toml)
             }
             Self::CodeInline(mut code) => {
-                code.value = value.to_string();
+                code.value = value.into();
                 Self::CodeInline(code)
             }
             Self::MathInline(mut math) => {
-                math.value = value.to_string();
+                math.value = value.into();
                 Self::MathInline(math)
             }
             Self::Math(mut math) => {
@@ -890,37 +939,41 @@ impl Node {
                 Self::Text(text)
             }
             Self::MdxFlowExpression(mut mdx) => {
-                mdx.value = value.to_string();
+                mdx.value = value.into();
                 Self::MdxFlowExpression(mdx)
             }
             Self::MdxTextExpression(mut mdx) => {
-                mdx.value = value.to_string();
+                mdx.value = value.into();
                 Self::MdxTextExpression(mdx)
             }
             Self::MdxjsEsm(mut mdx) => {
-                mdx.value = value.to_string();
+                mdx.value = value.into();
                 Self::MdxjsEsm(mdx)
             }
-            Self::MdxJsxFlowElement(mdx) => Self::MdxJsxFlowElement(mdast::MdxJsxFlowElement {
-                name: mdx.name,
-                attributes: mdx.attributes,
-                children: mdx
-                    .children
-                    .into_iter()
-                    .map(|n| Self::set_mdast_value(n, value))
-                    .collect::<Vec<_>>(),
-                ..mdx
-            }),
-            Self::MdxJsxTextElement(mdx) => Self::MdxJsxTextElement(mdast::MdxJsxTextElement {
-                name: mdx.name,
-                attributes: mdx.attributes,
-                children: mdx
-                    .children
-                    .into_iter()
-                    .map(|n| Self::set_mdast_value(n, value))
-                    .collect::<Vec<_>>(),
-                ..mdx
-            }),
+            Self::MdxJsxFlowElement(mut mdx) => {
+                if let Some(node) = mdx.children.first() {
+                    mdx.children[0] = node.with_value(value);
+                }
+
+                Self::MdxJsxFlowElement(MdxJsxFlowElement {
+                    name: mdx.name,
+                    attributes: mdx.attributes,
+                    children: mdx.children,
+                    ..mdx
+                })
+            }
+            Self::MdxJsxTextElement(mut mdx) => {
+                if let Some(node) = mdx.children.first() {
+                    mdx.children[0] = node.with_value(value);
+                }
+
+                Self::MdxJsxTextElement(MdxJsxTextElement {
+                    name: mdx.name,
+                    attributes: mdx.attributes,
+                    children: mdx.children,
+                    ..mdx
+                })
+            }
         }
     }
 
@@ -981,6 +1034,30 @@ impl Node {
                 }
 
                 Self::Heading(v)
+            }
+            Self::MdxJsxFlowElement(mut mdx) => {
+                if let Some(node) = mdx.children.first() {
+                    mdx.children[index] = node.with_value(value);
+                }
+
+                Self::MdxJsxFlowElement(MdxJsxFlowElement {
+                    name: mdx.name,
+                    attributes: mdx.attributes,
+                    children: mdx.children,
+                    ..mdx
+                })
+            }
+            Self::MdxJsxTextElement(mut mdx) => {
+                if let Some(node) = mdx.children.first() {
+                    mdx.children[index] = node.with_value(value);
+                }
+
+                Self::MdxJsxTextElement(MdxJsxTextElement {
+                    name: mdx.name,
+                    attributes: mdx.attributes,
+                    children: mdx.children,
+                    ..mdx
+                })
             }
             a => a,
         }
@@ -1175,13 +1252,13 @@ impl Node {
                 value, position, ..
             }) => {
                 vec![Self::CodeInline(CodeInline {
-                    value,
+                    value: value.into(),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
             mdast::Node::InlineMath(mdast::InlineMath { value, position }) => {
                 vec![Self::MathInline(MathInline {
-                    value,
+                    value: value.into(),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
@@ -1255,19 +1332,92 @@ impl Node {
                 })]
             }
             mdast::Node::MdxFlowExpression(mdx) => {
-                vec![Self::MdxFlowExpression(mdx)]
+                vec![Self::MdxFlowExpression(MdxFlowExpression {
+                    value: mdx.value.into(),
+                    position: mdx.position.map(|position| position.into()),
+                })]
             }
             mdast::Node::MdxJsxFlowElement(mdx) => {
-                vec![Self::MdxJsxFlowElement(mdx)]
+                vec![Self::MdxJsxFlowElement(MdxJsxFlowElement {
+                    children: mdx
+                        .children
+                        .into_iter()
+                        .flat_map(Self::from_mdast_node)
+                        .collect::<Vec<_>>(),
+                    position: mdx.position.map(|p| p.clone().into()),
+                    name: mdx.name,
+                    attributes: mdx
+                        .attributes
+                        .iter()
+                        .map(|attr| match attr {
+                            mdast::AttributeContent::Expression(
+                                mdast::MdxJsxExpressionAttribute { value, .. },
+                            ) => MdxAttributeContent::Expression(value.into()),
+                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute {
+                                value,
+                                name,
+                                ..
+                            }) => MdxAttributeContent::Property(MdxJsxAttribute {
+                                name: name.into(),
+                                value: value.as_ref().map(|value| match value {
+                                    mdast::AttributeValue::Literal(value) => {
+                                        MdxAttributeValue::Literal(value.into())
+                                    }
+                                    mdast::AttributeValue::Expression(
+                                        mdast::AttributeValueExpression { value, .. },
+                                    ) => MdxAttributeValue::Literal(value.into()),
+                                }),
+                            }),
+                        })
+                        .collect(),
+                })]
             }
             mdast::Node::MdxJsxTextElement(mdx) => {
-                vec![Self::MdxJsxTextElement(mdx)]
+                vec![Self::MdxJsxTextElement(MdxJsxTextElement {
+                    children: mdx
+                        .children
+                        .into_iter()
+                        .flat_map(Self::from_mdast_node)
+                        .collect::<Vec<_>>(),
+                    position: mdx.position.map(|p| p.clone().into()),
+                    name: mdx.name.map(|name| name.into()),
+                    attributes: mdx
+                        .attributes
+                        .iter()
+                        .map(|attr| match attr {
+                            mdast::AttributeContent::Expression(
+                                mdast::MdxJsxExpressionAttribute { value, .. },
+                            ) => MdxAttributeContent::Expression(value.into()),
+                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute {
+                                value,
+                                name,
+                                ..
+                            }) => MdxAttributeContent::Property(MdxJsxAttribute {
+                                name: name.into(),
+                                value: value.as_ref().map(|value| match value {
+                                    mdast::AttributeValue::Literal(value) => {
+                                        MdxAttributeValue::Literal(value.into())
+                                    }
+                                    mdast::AttributeValue::Expression(
+                                        mdast::AttributeValueExpression { value, .. },
+                                    ) => MdxAttributeValue::Literal(value.into()),
+                                }),
+                            }),
+                        })
+                        .collect(),
+                })]
             }
             mdast::Node::MdxTextExpression(mdx) => {
-                vec![Self::MdxTextExpression(mdx)]
+                vec![Self::MdxTextExpression(MdxTextExpression {
+                    value: mdx.value.into(),
+                    position: mdx.position.map(|position| position.into()),
+                })]
             }
             mdast::Node::MdxjsEsm(mdx) => {
-                vec![Self::MdxjsEsm(mdx)]
+                vec![Self::MdxjsEsm(MdxjsEsm {
+                    value: mdx.value.into(),
+                    position: mdx.position.map(|position| position.into()),
+                })]
             }
             mdast::Node::Text(mdast::Text { position, .. }) => {
                 vec![Self::Text(Text {
@@ -1352,60 +1502,16 @@ impl Node {
             .collect()
     }
 
-    fn set_mdast_value(node: mdast::Node, value: &str) -> mdast::Node {
-        match node {
-            mdast::Node::MdxFlowExpression(mdx_flow_expression) => {
-                mdast::Node::MdxFlowExpression(mdast::MdxFlowExpression {
-                    value: value.to_string(),
-                    ..mdx_flow_expression
-                })
-            }
-            mdast::Node::MdxJsxFlowElement(mdx_jsx_flow_element) => {
-                mdast::Node::MdxJsxFlowElement(mdast::MdxJsxFlowElement {
-                    children: mdx_jsx_flow_element
-                        .children
-                        .into_iter()
-                        .map(|children| Self::set_mdast_value(children, value))
-                        .collect::<Vec<_>>(),
-                    ..mdx_jsx_flow_element
-                })
-            }
-            mdast::Node::MdxJsxTextElement(mdx_jsx_text_element) => {
-                mdast::Node::MdxJsxTextElement(mdast::MdxJsxTextElement {
-                    children: mdx_jsx_text_element
-                        .children
-                        .into_iter()
-                        .map(|children| Self::set_mdast_value(children, value))
-                        .collect::<Vec<_>>(),
-                    ..mdx_jsx_text_element
-                })
-            }
-            mdast::Node::MdxTextExpression(mdx_text_expression) => {
-                mdast::Node::MdxTextExpression(mdast::MdxTextExpression {
-                    value: value.to_string(),
-                    ..mdx_text_expression
-                })
-            }
-            mdast::Node::MdxjsEsm(mdxjs_esm) => mdast::Node::MdxjsEsm(mdast::MdxjsEsm {
-                value: value.to_string(),
-                ..mdxjs_esm
-            }),
-            _ => unreachable!(),
-        }
-    }
-
-    fn attribute_content_to_string(attr: mdast::AttributeContent) -> String {
+    fn mdx_attribute_content_to_string(attr: MdxAttributeContent) -> CompactString {
         match attr {
-            mdast::AttributeContent::Expression(expression) => {
-                format!("{{...{}}}", expression.value)
-            }
-            mdast::AttributeContent::Property(property) => match property.value {
+            MdxAttributeContent::Expression(value) => format!("{{{}}}", value).into(),
+            MdxAttributeContent::Property(property) => match property.value {
                 Some(value) => match value {
-                    mdast::AttributeValue::Expression(expression) => {
-                        format!("{}={{{}}}", property.name, expression.value)
+                    MdxAttributeValue::Expression(value) => {
+                        format!("{}={{{}}}", property.name, value).into()
                     }
-                    mdast::AttributeValue::Literal(literal) => {
-                        format!("{}=\"{}\"", property.name, literal)
+                    MdxAttributeValue::Literal(literal) => {
+                        format!("{}=\"{}\"", property.name, literal).into()
                     }
                 },
                 None => property.name,
@@ -1501,6 +1607,11 @@ impl Node {
             .map(|value| value.to_string_with(list_style))
             .join("")
     }
+
+    #[inline(always)]
+    fn values_to_value(values: Vec<Node>) -> String {
+        values.iter().map(|value| value.value()).join("")
+    }
 }
 
 #[cfg(test)]
@@ -1551,12 +1662,12 @@ mod tests {
     #[case::list(Node::List(List{index: 2, level: 2, checked: Some(false), values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
            Node::List(List{index: 2, level: 2, checked: Some(false), values: vec!["test".to_string().into()], position: None }))]
-    #[case::code_inline(Node::CodeInline(CodeInline{ value: "t".to_string(), position: None }),
+    #[case::code_inline(Node::CodeInline(CodeInline{ value: "t".into(), position: None }),
            "test".to_string(),
-           Node::CodeInline(CodeInline{ value: "test".to_string(), position: None }))]
-    #[case::math_inline(Node::MathInline(MathInline{ value: "t".to_string(), position: None }),
+           Node::CodeInline(CodeInline{ value: "test".into(), position: None }))]
+    #[case::math_inline(Node::MathInline(MathInline{ value: "t".into(), position: None }),
            "test".to_string(),
-           Node::MathInline(MathInline{ value: "test".to_string(), position: None }))]
+           Node::MathInline(MathInline{ value: "test".into(), position: None }))]
     #[case::toml(Node::Toml(Toml{ value: "t".to_string(), position: None }),
            "test".to_string(),
            Node::Toml(Toml{ value: "test".to_string(), position: None }))]
@@ -1595,6 +1706,44 @@ mod tests {
     #[case::horizontal_rule(Node::HorizontalRule { position: None},
             "test".to_string(),
             Node::HorizontalRule{position: None})]
+    #[case::mdx_flow_expression(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}),
+           "updated".to_string(),
+           Node::MdxFlowExpression(MdxFlowExpression{value: "updated".into(), position: None}))]
+    #[case::mdx_text_expression(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}),
+           "updated".to_string(),
+           Node::MdxTextExpression(MdxTextExpression{value: "updated".into(), position: None}))]
+    #[case::mdx_js_esm(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: None}),
+           "updated".to_string(),
+           Node::MdxjsEsm(MdxjsEsm{value: "updated".into(), position: None}))]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
+            name: Some("div".to_string()),
+            attributes: vec![],
+            children: vec!["test".to_string().into()],
+            position: None
+        }),
+        "updated".to_string(),
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{
+            name: Some("div".to_string()),
+            attributes: vec![],
+            children: vec!["updated".to_string().into()],
+            position: None
+        }))]
+    #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
+            name: Some("span".into()),
+            attributes: vec![],
+            children: vec!["test".to_string().into()],
+            position: None
+        }),
+        "updated".to_string(),
+        Node::MdxJsxTextElement(MdxJsxTextElement{
+            name: Some("span".into()),
+            attributes: vec![],
+            children: vec!["updated".to_string().into()],
+            position: None
+        }))]
+    #[case(Node::Math(Math{ value: "x^2".to_string(), position: None }),
+           "test".to_string(),
+           Node::Math(Math{ value: "test".to_string(), position: None }))]
     fn test_with_value(#[case] node: Node, #[case] input: String, #[case] expected: Node) {
         assert_eq!(node.with_value(input.as_str()), expected);
     }
@@ -1704,6 +1853,93 @@ mod tests {
         Node::List(List{index: 0, level: 1, checked: None, values: vec![
             Node::Text(Text{value: "first".to_string(), position: None})
         ], position: None}))]
+    #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![
+            Node::Text(Text{value: "first".to_string(), position: None}),
+            Node::Text(Text{value: "second".to_string(), position: None})
+        ], label: None, position: None}), "new", 0, Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None}),
+            Node::Text(Text{value: "second".to_string(), position: None})
+        ], label: None, position: None}))]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
+            name: Some("div".to_string()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "first".to_string(), position: None}),
+                Node::Text(Text{value: "second".to_string(), position: None})
+            ],
+            position: None
+        }),
+        "new",
+        0,
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{
+            name: Some("div".to_string()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "new".to_string(), position: None}),
+                Node::Text(Text{value: "second".to_string(), position: None})
+            ],
+            position: None
+        }))]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
+            name: Some("div".to_string()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "first".to_string(), position: None}),
+                Node::Text(Text{value: "second".to_string(), position: None})
+            ],
+            position: None
+        }),
+        "new",
+        1,
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{
+            name: Some("div".to_string()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "first".to_string(), position: None}),
+                Node::Text(Text{value: "new".to_string(), position: None})
+            ],
+            position: None
+        }))]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{
+            name: Some("span".into()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "first".to_string(), position: None}),
+                Node::Text(Text{value: "second".to_string(), position: None})
+            ],
+            position: None
+        }),
+        "new",
+        0,
+        Node::MdxJsxTextElement(MdxJsxTextElement{
+            name: Some("span".into()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "new".to_string(), position: None}),
+                Node::Text(Text{value: "second".to_string(), position: None})
+            ],
+            position: None
+        }))]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{
+            name: Some("span".into()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "first".to_string(), position: None}),
+                Node::Text(Text{value: "second".to_string(), position: None})
+            ],
+            position: None
+        }),
+        "new",
+        1,
+        Node::MdxJsxTextElement(MdxJsxTextElement{
+            name: Some("span".into()),
+            attributes: vec![],
+            children: vec![
+                Node::Text(Text{value: "first".to_string(), position: None}),
+                Node::Text(Text{value: "new".to_string(), position: None})
+            ],
+            position: None
+        }))]
     fn test_with_children_value(
         #[case] node: Node,
         #[case] value: &str,
@@ -1724,21 +1960,21 @@ mod tests {
 
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), true)]
-    #[case(Node::CodeInline(CodeInline{value: "test".to_string(), position: None}), false)]
-    #[case(Node::MathInline(MathInline{value: "test".to_string(), position: None}), false)]
+    #[case(Node::CodeInline(CodeInline{value: "test".into(), position: None}), false)]
+    #[case(Node::MathInline(MathInline{value: "test".into(), position: None}), false)]
     fn test_is_text(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_text(), expected);
     }
 
     #[rstest]
-    #[case(Node::CodeInline(CodeInline{value: "test".to_string(), position: None}), true)]
+    #[case(Node::CodeInline(CodeInline{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_inline_code(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_inline_code(), expected);
     }
 
     #[rstest]
-    #[case(Node::MathInline(MathInline{value: "test".to_string(), position: None}), true)]
+    #[case(Node::MathInline(MathInline{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_inline_math(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_inline_math(), expected);
@@ -1912,76 +2148,127 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::MdxFlowExpression(mdast::MdxFlowExpression{value: "test".to_string(), position: None, stops: vec![]}), true)]
+    #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_flow_expression(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_flow_expression(), expected);
     }
 
     #[rstest]
-    #[case(Node::MdxTextExpression(mdast::MdxTextExpression{value: "test".to_string(), position: None, stops: vec![]}), true)]
+    #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_text_expression(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_text_expression(), expected);
     }
 
     #[rstest]
-    #[case(Node::MdxJsxFlowElement(mdast::MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_jsx_flow_element(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_jsx_flow_element(), expected);
     }
 
     #[rstest]
-    #[case(Node::MdxJsxTextElement(mdast::MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_jsx_text_element(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_jsx_text_element(), expected);
     }
 
     #[rstest]
-    #[case(Node::MdxjsEsm(mdast::MdxjsEsm{value: "test".to_string(), position: None, stops: vec![]}), true)]
+    #[case(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_msx_js_esm(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_msx_js_esm(), expected);
     }
 
     #[rstest]
-    #[case(Node::Text(Text{value: "test".to_string(), position: None }), ListStyle::Dash, "test")]
-    #[case(Node::List(List{index: 0, level: 2, checked: None, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "    - test")]
-    #[case(Node::List(List{index: 0, level: 1, checked: None, values: vec!["test".to_string().into()], position: None}), ListStyle::Plus, "  + test")]
-    #[case(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None}), ListStyle::Star, "  * [x] test")]
-    #[case(Node::List(List{index: 0, level: 1, checked: Some(false), values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "  - [] test")]
-    #[case(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test")]
-    #[case(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test|")]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test")]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test|")]
-    #[case(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
-    #[case(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "> test")]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "\n```rust\ncode\n```\n")]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "\n```\ncode\n```\n")]
-    #[case(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]
-    #[case(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "~~test~~")]
-    #[case(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "*test*")]
-    #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), ListStyle::Dash, "[^id]: label")]
-    #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]")]
-    #[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "# test")]
-    #[case(Node::Heading(Heading{depth: 3, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "### test")]
-    #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), ListStyle::Dash, "\n<div>test</div>\n")]
-    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}), ListStyle::Dash, "![alt](url)")]
-    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url with space".to_string(), title: Some("title".to_string()), position: None}), ListStyle::Dash, "![alt](url%20with%20space \"title\")")]
-    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: None, position: None}), ListStyle::Dash, "![alt][id]")]
-    #[case(Node::CodeInline(CodeInline{value: "code".to_string(), position: None}), ListStyle::Dash, "`code`")]
-    #[case(Node::MathInline(MathInline{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$x^2$")]
-    #[case(Node::Link(Link{url: "url".to_string(), title: Some("title".to_string()), values: vec!["value".to_string().into()], position: None}), ListStyle::Dash, "[value](url \"title\")")]
-    #[case(Node::Link(Link{url: "url".to_string(), title: None, values: vec!["value".to_string().into()], position: None}), ListStyle::Dash, "[value](url)")]
-    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["Open".to_string().into()], label: Some("open".to_string()), position: None}), ListStyle::Dash, "[Open][open]")]
-    #[case(Node::Math(Math{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$$\nx^2\n$$")]
-    #[case(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "**test**")]
-    #[case(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "---\nkey: value\n---\n")]
-    #[case(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "+++\nkey = \"value\"\n+++\n")]
-    #[case(Node::Break{position: None}, ListStyle::Dash, "\\")]
-    #[case(Node::HorizontalRule{position: None}, ListStyle::Dash, "---")]
+    #[case::text(Node::Text(Text{value: "test".to_string(), position: None }), ListStyle::Dash, "test")]
+    #[case::list(Node::List(List{index: 0, level: 2, checked: None, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "    - test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: None, values: vec!["test".to_string().into()], position: None}), ListStyle::Plus, "  + test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None}), ListStyle::Star, "  * [x] test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "  - [] test")]
+    #[case::table_row(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test")]
+    #[case::table_row(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test|")]
+    #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test")]
+    #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test|")]
+    #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
+    #[case::block_quote(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "> test")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "\n```rust\ncode\n```\n")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "\n```\ncode\n```\n")]
+    #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]
+    #[case::delete(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "~~test~~")]
+    #[case::emphasis(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "*test*")]
+    #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), ListStyle::Dash, "[^id]: label")]
+    #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]")]
+    #[case::heading(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "# test")]
+    #[case::heading(Node::Heading(Heading{depth: 3, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "### test")]
+    #[case::html(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), ListStyle::Dash, "\n<div>test</div>\n")]
+    #[case::image(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}), ListStyle::Dash, "![alt](url)")]
+    #[case::image(Node::Image(Image{alt: "alt".to_string(), url: "url with space".to_string(), title: Some("title".to_string()), position: None}), ListStyle::Dash, "![alt](url%20with%20space \"title\")")]
+    #[case::image_ref(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: None, position: None}), ListStyle::Dash, "![alt][id]")]
+    #[case::code_inline(Node::CodeInline(CodeInline{value: "code".into(), position: None}), ListStyle::Dash, "`code`")]
+    #[case::math_inline(Node::MathInline(MathInline{value: "x^2".into(), position: None}), ListStyle::Dash, "$x^2$")]
+    #[case::link(Node::Link(Link{url: "url".to_string(), title: Some("title".to_string()), values: vec!["value".to_string().into()], position: None}), ListStyle::Dash, "[value](url \"title\")")]
+    #[case::link(Node::Link(Link{url: "url".to_string(), title: None, values: vec!["value".to_string().into()], position: None}), ListStyle::Dash, "[value](url)")]
+    #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["Open".to_string().into()], label: Some("open".to_string()), position: None}), ListStyle::Dash, "[Open][open]")]
+    #[case::math(Node::Math(Math{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$$\nx^2\n$$")]
+    #[case::strong(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "**test**")]
+    #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "---\nkey: value\n---\n")]
+    #[case::toml(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "+++\nkey = \"value\"\n+++\n")]
+    #[case::break_(Node::Break{position: None}, ListStyle::Dash, "\\")]
+    #[case::horizontal_rule(Node::HorizontalRule{position: None}, ListStyle::Dash, "---")]
+    #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
+        name: Some("div".to_string()),
+        attributes: vec![
+            MdxAttributeContent::Property(MdxJsxAttribute {
+                name: "className".into(),
+                value: Some(MdxAttributeValue::Literal("container".to_string()))
+            })
+        ],
+        children: vec![
+            "content".to_string().into()
+        ],
+        position: None
+    }), ListStyle::Dash, "<div className=\"container\">content</div>")]
+    #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
+        name: Some("div".to_string()),
+        attributes: vec![
+            MdxAttributeContent::Property(MdxJsxAttribute {
+                name: "className".into(),
+                value: Some(MdxAttributeValue::Literal("container".to_string()))
+            })
+        ],
+        children: vec![],
+        position: None
+    }), ListStyle::Dash, "<div className=\"container\" />")]
+    #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
+        name: Some("span".into()),
+        attributes: vec![
+            MdxAttributeContent::Expression("...props".into())
+        ],
+        children: vec![
+            "inline".to_string().into()
+        ],
+        position: None
+    }), ListStyle::Dash, "<span {...props}>inline</span>")]
+    #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
+        name: Some("span".into()),
+        attributes: vec![
+            MdxAttributeContent::Expression("...props".into())
+        ],
+        children: vec![
+        ],
+        position: None
+    }), ListStyle::Dash, "<span {...props} />")]
+    #[case(Node::MdxTextExpression(MdxTextExpression{
+        value: "count + 1".into(),
+        position: None,
+    }), ListStyle::Dash, "{count + 1}")]
+    #[case(Node::MdxjsEsm(MdxjsEsm{
+        value: "import React from 'react'".into(),
+        position: None,
+    }), ListStyle::Dash, "import React from 'react'")]
     fn test_to_string_with(
         #[case] node: Node,
         #[case] list_style: ListStyle,
@@ -2069,8 +2356,8 @@ mod tests {
     #[case(Node::Toml(Toml{value: "".to_string(), position: None}), "toml")]
     #[case(Node::Image(Image{alt: "".to_string(), url: "".to_string(), title: None, position: None}), "image")]
     #[case(Node::ImageRef(ImageRef{alt: "".to_string(), ident: "".to_string(), label: None, position: None}), "image_ref")]
-    #[case(Node::CodeInline(CodeInline{value: "".to_string(), position: None}), "code_inline")]
-    #[case(Node::MathInline(MathInline{value: "".to_string(), position: None}), "math_inline")]
+    #[case(Node::CodeInline(CodeInline{value: "".into(), position: None}), "code_inline")]
+    #[case(Node::MathInline(MathInline{value: "".into(), position: None}), "math_inline")]
     #[case(Node::Link(Link{url: "".to_string(), title: None, values: vec![], position: None}), "link")]
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
@@ -2081,11 +2368,11 @@ mod tests {
     #[case(Node::Code(Code{value: "".to_string(), lang: None, position: None}), "code")]
     #[case(Node::Strong(Value{values: vec![], position: None}), "strong")]
     #[case(Node::HorizontalRule{position: None}, "Horizontal_rule")]
-    #[case(Node::MdxFlowExpression(mdast::MdxFlowExpression{value: "".to_string(), position: None, stops: vec![]}), "mdx_flow_expression")]
-    #[case(Node::MdxJsxFlowElement(mdast::MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_flow_element")]
-    #[case(Node::MdxJsxTextElement(mdast::MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_text_element")]
-    #[case(Node::MdxTextExpression(mdast::MdxTextExpression{value: "".to_string(), position: None, stops: vec![]}), "mdx_text_expression")]
-    #[case(Node::MdxjsEsm(mdast::MdxjsEsm{value: "".to_string(), position: None, stops: vec![]}), "mdx_js_esm")]
+    #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "".into(), position: None}), "mdx_flow_expression")]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_flow_element")]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_text_element")]
+    #[case(Node::MdxTextExpression(MdxTextExpression{value: "".into(), position: None}), "mdx_text_expression")]
+    #[case(Node::MdxjsEsm(MdxjsEsm{value: "".into(), position: None}), "mdx_js_esm")]
     #[case(Node::Text(Text{value: "".to_string(), position: None}), "text")]
     fn test_name(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.name(), expected);
@@ -2105,8 +2392,8 @@ mod tests {
     #[case(Node::Toml(Toml{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Image(Image{alt: "alt".to_string(), url: "test".to_string(), title: None, position: None}), "test")]
     #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test".to_string(), label: None, position: None}), "test")]
-    #[case(Node::CodeInline(CodeInline{value: "test".to_string(), position: None}), "test")]
-    #[case(Node::MathInline(MathInline{value: "test".to_string(), position: None}), "test")]
+    #[case(Node::CodeInline(CodeInline{value: "test".into(), position: None}), "test")]
+    #[case(Node::MathInline(MathInline{value: "test".into(), position: None}), "test")]
     #[case(Node::Link(Link{url: "test".to_string(), title: None, values: vec![], position: None}), "test")]
     #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: vec![], label: None, position: None}), "test")]
     #[case(Node::Math(Math{value: "test".to_string(), position: None}), "test")]
@@ -2117,9 +2404,9 @@ mod tests {
     #[case(Node::Break{position: None}, "")]
     #[case(Node::HorizontalRule{position: None}, "")]
     #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "")]
-    #[case(Node::MdxFlowExpression(mdast::MdxFlowExpression{value: "test".to_string(), position: None, stops: vec![]}), "test")]
-    #[case(Node::MdxTextExpression(mdast::MdxTextExpression{value: "test".to_string(), position: None, stops: vec![]}), "test")]
-    #[case(Node::MdxjsEsm(mdast::MdxjsEsm{value: "test".to_string(), position: None, stops: vec![]}), "test")]
+    #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
+    #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
+    #[case(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: None}), "test")]
     #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "test")]
     fn test_value(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.value(), expected);
@@ -2140,8 +2427,8 @@ mod tests {
     #[case(Node::Toml(Toml{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Image(Image{alt: "".to_string(), url: "".to_string(), title: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::ImageRef(ImageRef{alt: "".to_string(), ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::CodeInline(CodeInline{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::MathInline(MathInline{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::CodeInline(CodeInline{value: "".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MathInline(MathInline{value: "".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Link(Link{url: "".to_string(), title: None, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Math(Math{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2152,6 +2439,12 @@ mod tests {
     #[case(Node::TableHeader(TableHeader{align: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Definition(Definition{ident: "".to_string(), url: "".to_string(), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     fn test_position(#[case] node: Node, #[case] expected: Option<Position>) {
         assert_eq!(node.position(), expected);
     }

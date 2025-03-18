@@ -1866,7 +1866,7 @@ mod tests {
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_math_inline"), Vec::new(), false)),
             ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string(), position: None}), None)]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".into(), position: None}), None)]))]
     #[case::to_md_text(vec![RuntimeValue::String("This is a text".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_md_text"), Vec::new(), false)),

@@ -1136,7 +1136,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_code_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
-                    value: a.to_string(),
+                    value: a.to_string().into(),
                     position: None,
                 })
                 .into()),
@@ -1229,7 +1229,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_math_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
-                    value: a.to_string(),
+                    value: a.to_string().into(),
                     position: None,
                 })
                 .into()),
