@@ -30,7 +30,7 @@ build-wasm:
 
 test:
     cargo fmt --all -- --check
-    cargo clippy --workspace
+    cargo clippy  --all-targets --all-features --workspace -- -D clippy::all
     cargo test --examples
     cargo test --workspace
 

@@ -62,10 +62,10 @@ impl Hir {
             .filter_map(|(_, symbol)| {
                 if (matches!(&symbol.kind, SymbolKind::Function(_))
                     || matches!(&symbol.kind, SymbolKind::Variable))
-                    && target != symbol.name.clone().unwrap_or_default()
+                    && symbol.name.as_ref().is_some_and(|name| name != target)
                 {
-                    let similarity =
-                        strsim::jaro_winkler(target, &symbol.name.clone().unwrap_or_default());
+                    let name = symbol.name.as_deref().unwrap_or("");
+                    let similarity = strsim::jaro_winkler(target, name);
                     if similarity > 0.85 {
                         symbol.name.clone()
                     } else {

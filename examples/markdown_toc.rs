@@ -42,5 +42,5 @@ fn main() {
   else:
     None
 ";
-    println!("{:?}", engine.eval(&code, input).unwrap().compact());
+    println!("{:?}", engine.eval(code, input).unwrap().compact());
 }

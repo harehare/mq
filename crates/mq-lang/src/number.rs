@@ -182,11 +182,11 @@ mod tests {
         let num_a = Number::new(a);
         let num_b = Number::new(b);
 
-        assert_eq!(format!("{}", num_a.clone() + num_b.clone()), add_result);
-        assert_eq!(format!("{}", num_a.clone() - num_b.clone()), sub_result);
-        assert_eq!(format!("{}", num_a.clone() * num_b.clone()), mul_result);
-        assert_eq!(format!("{}", num_a.clone() / num_b.clone()), div_result);
-        assert_eq!(format!("{}", num_a.clone() % num_b.clone()), rem_result);
+        assert_eq!(format!("{}", num_a + num_b), add_result);
+        assert_eq!(format!("{}", num_a - num_b), sub_result);
+        assert_eq!(format!("{}", num_a * num_b), mul_result);
+        assert_eq!(format!("{}", num_a / num_b), div_result);
+        assert_eq!(format!("{}", num_a % num_b), rem_result);
     }
 
     #[rstest]

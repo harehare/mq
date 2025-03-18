@@ -1,7 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-use mq_lang;
-
 fn main() {
     divan::main();
 }
@@ -25,7 +23,7 @@ fn eval_fibonacci(n: u64) -> mq_lang::Values {
         .unwrap()
 }
 
-#[divan::bench(args = [1_000_00])]
+#[divan::bench(args = [100_000])]
 fn eval_speed_test(n: u64) -> mq_lang::Values {
     let mut engine = mq_lang::Engine::default();
     engine

@@ -55,7 +55,12 @@ impl Hir {
                     scope.source.source_id.is_some()
                         && scope.source.text_range.is_some()
                         && scope.source.source_id.unwrap() == source_id
-                        && scope.source.text_range.clone().unwrap().contains(&position)
+                        && scope
+                            .source
+                            .text_range
+                            .as_ref()
+                            .unwrap()
+                            .contains(&position)
                 })
                 .map(|(scope_id, scope)| (scope_id, scope.clone()))
         })
@@ -112,7 +117,7 @@ mod tests {
     fn test_find_symbol_in_position() {
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), "let x = 5".into());
+        let (source_id, _) = hir.add_code(url.clone(), "let x = 5");
         let pos = mq_lang::Position::new(1, 4);
 
         assert!(hir.find_symbol_in_position(source_id, pos).is_some());
@@ -122,7 +127,7 @@ mod tests {
     fn test_find_scope_in_position() {
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), "def example(): 5;".into());
+        let (source_id, _) = hir.add_code(url.clone(), "def example(): 5;");
         let pos = mq_lang::Position::new(1, 18);
 
         assert!(
@@ -136,7 +141,7 @@ mod tests {
     fn test_find_symbols_in_scope() {
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
-        let (_, scope_id) = hir.add_code(url.clone(), "let x = 5".into());
+        let (_, scope_id) = hir.add_code(url.clone(), "let x = 5");
         let symbols = hir.find_symbols_in_scope(scope_id);
 
         assert_eq!(symbols.len(), 1);
@@ -146,7 +151,7 @@ mod tests {
     fn test_find_symbols_in_source() {
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), "let x = 5".into());
+        let (source_id, _) = hir.add_code(url.clone(), "let x = 5");
         let symbols = hir.find_symbols_in_source(source_id);
 
         assert_eq!(symbols.len(), 3);
@@ -156,7 +161,7 @@ mod tests {
     fn test_find_scope_by_source() {
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
-        let (source_id, scope_id) = hir.add_code(url.clone(), "let x = 5".into());
+        let (source_id, scope_id) = hir.add_code(url.clone(), "let x = 5");
 
         hir.source_scopes.insert(source_id, scope_id);
         assert_eq!(hir.find_scope_by_source(&source_id), scope_id);

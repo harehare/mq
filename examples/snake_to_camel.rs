@@ -12,5 +12,5 @@ fn main() {
         | join(\"\");
     | snake_to_camel(\"CAMEL_CASE\")";
     let input = vec![mq_lang::Value::String("".to_string())].into_iter();
-    println!("{:?}", engine.eval(&code, input).unwrap());
+    println!("{:?}", engine.eval(code, input).unwrap());
 }

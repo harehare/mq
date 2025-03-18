@@ -205,7 +205,7 @@ impl Optimizer {
                 _ => Rc::clone(&node),
             },
             ast::Expr::Def(ident, params, program) => {
-                let params = params.iter().map(Rc::clone).collect::<Vec<_>>();
+                let params = params.clone();
                 let program = program
                     .iter()
                     .map(|node| self.optimize_node(Rc::clone(node)))
@@ -249,7 +249,6 @@ impl Optimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Program;
     use rstest::rstest;
 
     #[rstest]

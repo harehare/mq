@@ -1831,7 +1831,7 @@ mod tests {
             module_id: 1.into(),
         });
 
-        let tokens = vec![
+        let tokens = [
             Rc::clone(&token),
             Rc::new(Token {
                 range: Range::default(),
@@ -1871,7 +1871,7 @@ mod tests {
         #[case] expected_selector: Selector,
     ) {
         let arena = Arena::new(10);
-        let tokens = vec![
+        let tokens = [
             Rc::new(Token {
                 range: Range::default(),
                 kind: TokenKind::Selector(CompactString::new(selector_str)),
@@ -2013,7 +2013,7 @@ mod tests {
         unsafe { std::env::set_var("MQ_TEST_VAR", "test_value") };
 
         let arena = Arena::new(10);
-        let tokens = vec![
+        let tokens = [
             Rc::new(Token {
                 range: Range::default(),
                 kind: TokenKind::Env("MQ_TEST_VAR".into()),
@@ -2055,7 +2055,7 @@ mod tests {
             module_id: 1.into(),
         });
 
-        let tokens = vec![
+        let tokens = [
             Rc::clone(&token),
             Rc::new(Token {
                 range: Range::default(),
@@ -2082,7 +2082,7 @@ mod tests {
         unsafe { std::env::set_var("MQ_ARG_TEST", "env_arg_value") };
 
         let arena = Arena::new(10);
-        let tokens = vec![
+        let tokens = [
             Rc::new(Token {
                 range: Range::default(),
                 kind: TokenKind::Ident(CompactString::new("function")),

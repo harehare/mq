@@ -58,7 +58,7 @@ impl Symbol {
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name.clone().unwrap_or_default())
+        write!(f, "{}", self.name.as_ref().map_or("", |name| name.as_str()))
     }
 }
 #[cfg(test)]

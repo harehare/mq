@@ -14,5 +14,5 @@ fn main() {
 
     // .[] or .[t ]
     let code = ".[] | select(is_list2()) | to_html()?";
-    println!("{:?}", engine.eval(&code, input).unwrap());
+    println!("{:?}", engine.eval(code, input).unwrap());
 }

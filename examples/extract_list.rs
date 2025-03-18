@@ -12,5 +12,5 @@ fn main() {
     engine.load_builtin_module().unwrap();
 
     let code = ".[] | select(contains(\"2\")) | to_html()?";
-    println!("{:?}", engine.eval(&code, input).unwrap());
+    println!("{:?}", engine.eval(code, input).unwrap());
 }

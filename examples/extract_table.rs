@@ -26,5 +26,5 @@ fn main() {
     engine.load_builtin_module().unwrap();
 
     let code = ".[] []";
-    println!("{:?}", engine.eval(&code, input).unwrap());
+    println!("{:?}", engine.eval(code, input).unwrap());
 }

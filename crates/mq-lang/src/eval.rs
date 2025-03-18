@@ -67,8 +67,8 @@ impl Evaluator {
                         self.env.borrow_mut().define(
                             ident,
                             RuntimeValue::Function(
-                                params.iter().map(Rc::clone).collect::<Vec<_>>(),
-                                program.iter().map(Rc::clone).collect::<Vec<_>>(),
+                                params.clone(),
+                                program.clone(),
                                 Rc::clone(&self.env),
                             ),
                         );
@@ -117,8 +117,8 @@ impl Evaluator {
                     self.env.borrow_mut().define(
                         ident,
                         RuntimeValue::Function(
-                            params.iter().map(Rc::clone).collect::<Vec<_>>(),
-                            program.iter().map(Rc::clone).collect::<Vec<_>>(),
+                            params.clone(),
+                            program.clone(),
                             Rc::clone(&self.env),
                         ),
                     );
@@ -165,8 +165,8 @@ impl Evaluator {
                     }
                     ast::Expr::Def(ident, params, program) => {
                         let function = RuntimeValue::Function(
-                            params.iter().map(Rc::clone).collect::<Vec<_>>(),
-                            program.iter().map(Rc::clone).collect::<Vec<_>>(),
+                            params.clone(),
+                            program.clone(),
                             Rc::clone(&env),
                         );
                         env.borrow_mut().define(ident, function.clone());
@@ -278,11 +278,8 @@ impl Evaluator {
                 }),
             },
             ast::Expr::Def(ident, params, program) => {
-                let function = RuntimeValue::Function(
-                    params.iter().map(Rc::clone).collect::<Vec<_>>(),
-                    program.iter().map(Rc::clone).collect::<Vec<_>>(),
-                    Rc::clone(&env),
-                );
+                let function =
+                    RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
                 env.borrow_mut().define(ident, function.clone());
                 Ok(function)
             }
@@ -526,7 +523,6 @@ mod tests {
     use crate::{Token, TokenKind};
 
     use super::*;
-    use Program;
     use mq_test::defer;
     use rstest::{fixture, rstest};
 
@@ -939,16 +935,16 @@ mod tests {
     #[case::gt(vec![RuntimeValue::Number(1.3.into())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
-                    ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string().into()))),
-                    ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string().into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
                 ], false)),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gt(vec![RuntimeValue::Number(1.3.into())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
-                    ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string().into()))),
-                    ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string().into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
                 ], false)),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
@@ -1375,7 +1371,7 @@ mod tests {
     #[case::split1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("split"), vec![
-                        ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))].into()
+                        ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))]
                         , false))
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
@@ -1916,7 +1912,7 @@ mod tests {
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{
                 url: "https://example.com".to_string(),
-                title: Some("Link Title".to_string().into()),
+                title: Some("Link Title".to_string()),
                 values: vec!["Link Value".to_string().into()],
                 position: None
             }), None)]))]
@@ -1940,19 +1936,19 @@ mod tests {
                   ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
                            vec![
                                  ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                           ].into(), false)),
+                           ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
-                mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1 as u8, checked: None, position: None}), None)]))]
+                mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
     #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
                            vec![
                                  ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                           ].into(), false)),
+                           ], false)),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
-                mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1 as u8, checked: None, position: None}), None)]))]
+                mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
     #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
             vec![
                   ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![

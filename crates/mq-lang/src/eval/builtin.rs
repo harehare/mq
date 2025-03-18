@@ -2811,7 +2811,7 @@ mod tests {
         true
     )]
     #[case::definition(
-        Node::Definition(mq_markdown::Definition { ident: "id".to_string().into(), url: "url".into(), label: None, title: None, position: None }),
+        Node::Definition(mq_markdown::Definition { ident: "id".to_string(), url: "url".into(), label: None, title: None, position: None }),
         ast::Selector::Definition,
         true
     )]

@@ -22,5 +22,5 @@ console.log('Hello, World!')
     engine.load_builtin_module().unwrap();
 
     let code = ".code(\"js\") | to_text()?";
-    println!("{:?}", engine.eval(&code, input).unwrap());
+    println!("{:?}", engine.eval(code, input).unwrap());
 }

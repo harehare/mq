@@ -133,14 +133,14 @@ mod tests {
     #[test]
     fn test_engine_default() {
         let engine = Engine::default();
-        assert_eq!(engine.options.optimize, true);
+        assert!(engine.options.optimize);
     }
 
     #[test]
     fn test_set_optimize() {
         let mut engine = Engine::default();
         engine.set_optimize(false);
-        assert_eq!(engine.options.optimize, false);
+        assert!(!engine.options.optimize);
     }
 
     #[test]
