@@ -24,7 +24,8 @@ Options:
   -L, --directory <MODULE_DIRECTORIES>  Search modules from the directory
   -M, --module-names <MODULE_NAMES>     Load additional modules from specified files
       --args <NAME> <VALUE>             Sets string that can be referenced at runtime
-      --raw-file <NAME> <FILE>          Sets file contents that can be referenced at runtime
+      --rawfile <NAME> <FILE>           Sets file contents that can be referenced at runtime
+      --mdx                             Enable MDX parsing
   -c, --compact-output                  pretty print
   -F, --output-format <OUTPUT_FORMAT>   Compact instead of pretty-printed output [default: markdown] [possible values: markdown, html, text]
   -U, --update                          Update the input markdown

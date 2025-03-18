@@ -38,11 +38,12 @@
 | `is_code`           | Checks if markdown is code block                                                                         | `md`                           | is_code(md)                        |
 | `is_text`           | Checks if markdown is text                                                                               | `text`                         | is_text(text)                      |
 | `is_list`           | Checks if markdown is list                                                                               | `list`                         | is_list(list)                      |
+| `is_mdx`            | Checks if markdown is MDX                                                                                | `mdx`                          | is_mdx(mdx)                        |
 | `is_list1`          | Checks if markdown is list with indentation level 1                                                      | `list`                         | is_list1(list)                     |
 | `is_list2`          | Checks if markdown is list with indentation level 2                                                      | `list`                         | is_list2(list)                     |
 | `is_list3`          | Checks if markdown is list with indentation level 3                                                      | `list`                         | is_list3(list)                     |
 | `csv2table`         | Convert csv string to markdown table                                                                     | `csv`                          | csv2table(csv)                     |
-| `tsv2table`         | Convert tsv string to markdown table                                                                     | `csv`                          | tsv2table(csv)                     |
+| `tsv2table`         | Convert tsv string to markdown table                                                                     | `tsv`                          | tsv2table(tsv)                     |
 | `to_math_inline`    | Creates an inline markdown math node with the given value.                                               | `value`                        | to_math_inline(value)              |
 | `explode`           | Splits the given string into an array of characters.                                                     | `string`                       | explode(string)                    |
 | `to_html`           | Converts the given markdown string to HTML.                                                              | `markdown`                     | to_html(markdown)                  |
