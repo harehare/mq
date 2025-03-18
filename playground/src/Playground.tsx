@@ -22,6 +22,7 @@ select(or(.[], .code, .h)) | upcase() | add(" Hello World")?`,
 code
 \`\`\`
 `,
+    isMdx: false,
   },
   {
     name: "Update child node",
@@ -31,6 +32,7 @@ code
 - item1
 - item2
 `,
+    isMdx: false,
   },
   {
     name: "Markdown Toc",
@@ -67,6 +69,7 @@ else:
 
 - item 1
 - item 2`,
+    isMdx: false,
   },
   {
     name: "Extract js code",
@@ -84,6 +87,7 @@ print("Hello, World!")
 console.log("Hello, World!");
 \`\`\`
 `,
+    isMdx: false,
   },
   {
     name: "Exclude js code",
@@ -101,6 +105,23 @@ print("Hello, World!")
 console.log("Hello, World!");
 \`\`\`
 `,
+    isMdx: false,
+  },
+  {
+    name: "Extract mdx",
+    code: `select(is_mdx())`,
+    markdown: `import {Chart} from './snowfall.js'
+export const year = 2023
+
+# Last year’s snowfall
+
+In {year}, the snowfall was above average.
+It was followed by a warm spring which caused
+flood conditions in many of the nearby rivers.
+
+<Chart color="#fcb32c" year={year} />
+`,
+    isMdx: true,
   },
   {
     name: "Custom function",
@@ -113,6 +134,7 @@ console.log("Hello, World!");
   | join("");
 | snake_to_camel()`,
     markdown: `# sample_codes`,
+    isMdx: false,
   },
   {
     name: "Generate sitemap",
@@ -129,6 +151,7 @@ console.log("Hello, World!");
   - [Chapter3](Chapter3.md)
 - [Chapter4](Chapter4.md)
 `,
+    isMdx: false,
   },
   {
     name: "Extract table",
@@ -151,6 +174,7 @@ console.log("Hello, World!");
 | USB Cable | Accessories | $12 | 89 |
 | Coffee Maker | Appliances | $85 | 24 |
 `,
+    isMdx: false,
   },
   {
     name: "Extract list",
@@ -170,6 +194,7 @@ console.log("Hello, World!");
   - Mouse: $25
   - USB Cable: $12
 `,
+    isMdx: false,
   },
 ];
 
@@ -177,11 +202,10 @@ export const Playground = () => {
   const [code, setCode] = useState<string | undefined>(
     localStorage.getItem(CODE_KEY) || EXAMPLES[0].code
   );
-
   const [markdown, setMarkdown] = useState<string | undefined>(
     localStorage.getItem(MARKDOWN_KEY) || EXAMPLES[0].markdown
   );
-
+  const [isMdx, setIsMdx] = useState(false);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
 
@@ -197,11 +221,11 @@ export const Playground = () => {
     }
 
     try {
-      setResult(await runScript(code, markdown));
+      setResult(await runScript(code, markdown, isMdx));
     } catch (e) {
       setResult((e as Error).toString());
     }
-  }, [code, markdown]);
+  }, [code, markdown, isMdx]);
 
   const handleFormat = useCallback(async () => {
     if (!code) {
@@ -215,6 +239,7 @@ export const Playground = () => {
     const selected = EXAMPLES[index];
     setCode(selected.code);
     setMarkdown(selected.markdown);
+    setIsMdx(selected.isMdx);
   }, []);
 
   const beforeMount = (monaco: Monaco) => {
@@ -361,6 +386,27 @@ export const Playground = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label
+                    style={{
+                      marginLeft: "4px",
+                      display: "flex",
+                      alignItems: "center",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isMdx}
+                      onChange={(e) => setIsMdx(e.target.checked)}
+                      style={{
+                        marginRight: "5px",
+                        cursor: "pointer",
+                      }}
+                    />
+                    <div>Enable MDX</div>
+                  </label>
                 </div>
                 <button
                   className="format-button"

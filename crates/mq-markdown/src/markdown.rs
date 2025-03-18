@@ -19,58 +19,7 @@ impl FromStr for Markdown {
     type Err = miette::Error;
 
     fn from_str(content: &str) -> Result<Self, Self::Err> {
-        let root = markdown::to_mdast(
-            content,
-            &markdown::ParseOptions {
-                gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
-                mdx_expression_parse: None,
-                mdx_esm_parse: None,
-                constructs: Constructs {
-                    attention: true,
-                    autolink: true,
-                    block_quote: true,
-                    character_escape: true,
-                    character_reference: true,
-                    code_indented: true,
-                    code_fenced: true,
-                    code_text: true,
-                    definition: true,
-                    frontmatter: true,
-                    gfm_autolink_literal: true,
-                    gfm_label_start_footnote: true,
-                    gfm_footnote_definition: true,
-                    gfm_strikethrough: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    hard_break_escape: true,
-                    hard_break_trailing: true,
-                    heading_atx: true,
-                    heading_setext: true,
-                    html_flow: true,
-                    html_text: true,
-                    label_start_image: true,
-                    label_start_link: true,
-                    label_end: true,
-                    list_item: true,
-                    math_flow: true,
-                    math_text: true,
-                    mdx_esm: true,
-                    mdx_expression_flow: true,
-                    mdx_expression_text: true,
-                    mdx_jsx_flow: true,
-                    mdx_jsx_text: true,
-                    thematic_break: true,
-                },
-            },
-        )
-        .map_err(|e| miette!(e.reason))?;
-        let nodes = Node::from_mdast_node(root);
-
-        Ok(Self {
-            nodes,
-            options: RenderOptions::default(),
-        })
+        Self::from_str(content)
     }
 }
 
@@ -140,6 +89,61 @@ impl Markdown {
         self.options = options;
     }
 
+    pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
+        let root = markdown::to_mdast(
+            content,
+            &markdown::ParseOptions {
+                gfm_strikethrough_single_tilde: true,
+                math_text_single_dollar: true,
+                mdx_expression_parse: None,
+                mdx_esm_parse: None,
+                constructs: Constructs {
+                    attention: true,
+                    autolink: true,
+                    block_quote: true,
+                    character_escape: true,
+                    character_reference: true,
+                    code_indented: true,
+                    code_fenced: true,
+                    code_text: true,
+                    definition: true,
+                    frontmatter: true,
+                    gfm_autolink_literal: true,
+                    gfm_label_start_footnote: true,
+                    gfm_footnote_definition: true,
+                    gfm_strikethrough: true,
+                    gfm_table: true,
+                    gfm_task_list_item: true,
+                    hard_break_escape: true,
+                    hard_break_trailing: true,
+                    heading_atx: true,
+                    heading_setext: true,
+                    html_flow: false,
+                    html_text: false,
+                    label_start_image: true,
+                    label_start_link: true,
+                    label_end: true,
+                    list_item: true,
+                    math_flow: true,
+                    math_text: true,
+                    mdx_esm: true,
+                    mdx_expression_flow: true,
+                    mdx_expression_text: true,
+                    mdx_jsx_flow: true,
+                    mdx_jsx_text: true,
+                    thematic_break: true,
+                },
+            },
+        )
+        .map_err(|e| miette!(e.reason))?;
+        let nodes = Node::from_mdast_node(root);
+
+        Ok(Self {
+            nodes,
+            options: RenderOptions::default(),
+        })
+    }
+
     pub fn to_pretty_markdown(&self) -> miette::Result<String> {
         pretty_markdown(&self.to_string(), &self.options)
     }
@@ -156,6 +160,61 @@ impl Markdown {
             .iter()
             .map(|node| format!("{}\n", node.value()))
             .join("")
+    }
+
+    fn from_str(content: &str) -> miette::Result<Self> {
+        let root = markdown::to_mdast(
+            content,
+            &markdown::ParseOptions {
+                gfm_strikethrough_single_tilde: true,
+                math_text_single_dollar: true,
+                mdx_expression_parse: None,
+                mdx_esm_parse: None,
+                constructs: Constructs {
+                    attention: true,
+                    autolink: true,
+                    block_quote: true,
+                    character_escape: true,
+                    character_reference: true,
+                    code_indented: true,
+                    code_fenced: true,
+                    code_text: true,
+                    definition: true,
+                    frontmatter: true,
+                    gfm_autolink_literal: true,
+                    gfm_label_start_footnote: true,
+                    gfm_footnote_definition: true,
+                    gfm_strikethrough: true,
+                    gfm_table: true,
+                    gfm_task_list_item: true,
+                    hard_break_escape: true,
+                    hard_break_trailing: true,
+                    heading_atx: true,
+                    heading_setext: true,
+                    html_flow: true,
+                    html_text: true,
+                    label_start_image: true,
+                    label_start_link: true,
+                    label_end: true,
+                    list_item: true,
+                    math_flow: true,
+                    math_text: true,
+                    mdx_esm: false,
+                    mdx_expression_flow: false,
+                    mdx_expression_text: false,
+                    mdx_jsx_flow: false,
+                    mdx_jsx_text: false,
+                    thematic_break: true,
+                },
+            },
+        )
+        .map_err(|e| miette!(e.reason))?;
+        let nodes = Node::from_mdast_node(root);
+
+        Ok(Self {
+            nodes,
+            options: RenderOptions::default(),
+        })
     }
 }
 
@@ -226,8 +285,6 @@ mod tests {
     #[case::definition("[a]: b", 1, "[a]: b\n")]
     #[case::footnote("[^alpha]: bravo and charlie.", 1, "[^alpha]: bravo and charlie.\n")]
     #[case::footnote_ref("[^a]", 1, "[^a]\n")]
-    #[case::mdx("<a />", 1, "\n<a />\n")]
-    #[case::mdx("<MyComponent {...props}/>", 1, "<MyComponent {...props} />\n")]
     #[case::image(
         "![alt text](http://example.com/image.jpg)",
         1,
@@ -261,6 +318,25 @@ mod tests {
         #[case] expected_output: &str,
     ) {
         let md = input.parse::<Markdown>().unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
+    }
+
+    #[rstest]
+    #[case::mdx("{test}", 1, "{test}\n")]
+    #[case::mdx("<a />", 1, "<a />\n")]
+    #[case::mdx("<MyComponent {...props}/>", 1, "<MyComponent {...props} />\n")]
+    #[case::mdx(
+        "<Chart color=\"#fcb32c\" year={year} />",
+        1,
+        "<Chart color=\"#fcb32c\" year={year} />\n"
+    )]
+    fn test_markdown_from_mdx_str(
+        #[case] input: &str,
+        #[case] expected_nodes: usize,
+        #[case] expected_output: &str,
+    ) {
+        let md = Markdown::from_mdx_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);
     }

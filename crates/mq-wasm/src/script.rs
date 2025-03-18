@@ -3,10 +3,16 @@ use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=runScript)]
-pub fn run_script(code: &str, content: &str) -> Result<String, JsValue> {
+pub fn run_script(code: &str, content: &str, mdx: bool) -> Result<String, JsValue> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();
-    mq_markdown::Markdown::from_str(content)
+    let markdown = if mdx {
+        mq_markdown::Markdown::from_mdx_str(content)
+    } else {
+        mq_markdown::Markdown::from_str(content)
+    };
+
+    markdown
         .map_err(|e| JsValue::from_str(&e.to_string()))
         .and_then(move |markdown| {
             engine
@@ -45,6 +51,7 @@ mod tests {
         let result = run_script(
             "downcase() | ltrimstr(\"hello\") | upcase() | trim()",
             "Hello world",
+            false,
         );
         assert_eq!(result.unwrap(), "WORLD\n");
     }
@@ -52,7 +59,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_run_invalid_syntax() {
-        assert!(run_script("invalid syntax", "test").is_err());
+        assert!(run_script("invalid syntax", "test", false).is_err());
     }
 
     #[allow(unused)]

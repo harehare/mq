@@ -104,6 +104,10 @@ struct InputArgs {
     /// Sets file contents that can be referenced at runtime
     #[arg(long="rawfile", value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
+
+    /// Enable MDX parsing
+    #[arg(long, default_value_t = false)]
+    mdx: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -359,7 +363,12 @@ impl Cli {
                 .collect::<Vec<_>>();
             engine.eval(query, runtime_values.into_iter())
         } else {
-            let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(content)?;
+            let markdown: mq_markdown::Markdown = if self.input.mdx {
+                mq_markdown::Markdown::from_mdx_str(content)?
+            } else {
+                mq_markdown::Markdown::from_str(content)?
+            };
+
             let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
 
             if self.output.update {

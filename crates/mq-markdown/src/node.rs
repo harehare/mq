@@ -235,7 +235,7 @@ pub struct MdxJsxAttribute {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MdxAttributeValue {
     Expression(CompactString),
-    Literal(String),
+    Literal(CompactString),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -473,26 +473,26 @@ impl Node {
             }
             Self::MdxJsxFlowElement(mdx_jsx_flow_element) => {
                 let name = mdx_jsx_flow_element.name.unwrap_or_default();
-
-                if mdx_jsx_flow_element.children.is_empty() {
-                    format!(
-                        "<{} {} />",
-                        name,
-                        mdx_jsx_flow_element
-                            .attributes
-                            .into_iter()
-                            .map(Self::mdx_attribute_content_to_string)
-                            .join(""),
-                    )
+                let attributes = if mdx_jsx_flow_element.attributes.is_empty() {
+                    "".to_string()
                 } else {
                     format!(
-                        "<{} {}>{}</{}>",
-                        name,
+                        " {}",
                         mdx_jsx_flow_element
                             .attributes
                             .into_iter()
                             .map(Self::mdx_attribute_content_to_string)
-                            .join(""),
+                            .join(" ")
+                    )
+                };
+
+                if mdx_jsx_flow_element.children.is_empty() {
+                    format!("<{}{} />", name, attributes,)
+                } else {
+                    format!(
+                        "<{}{}>{}</{}>",
+                        name,
+                        attributes,
                         Self::values_to_string(mdx_jsx_flow_element.children, list_style),
                         name
                     )
@@ -500,25 +500,26 @@ impl Node {
             }
             Self::MdxJsxTextElement(mdx_jsx_text_element) => {
                 let name = mdx_jsx_text_element.name.unwrap_or_default();
-                if mdx_jsx_text_element.children.is_empty() {
-                    format!(
-                        "<{} {} />",
-                        name,
-                        mdx_jsx_text_element
-                            .attributes
-                            .into_iter()
-                            .map(Self::mdx_attribute_content_to_string)
-                            .join(""),
-                    )
+                let attributes = if mdx_jsx_text_element.attributes.is_empty() {
+                    "".to_string()
                 } else {
                     format!(
-                        "<{} {}>{}</{}>",
-                        name,
+                        " {}",
                         mdx_jsx_text_element
                             .attributes
                             .into_iter()
                             .map(Self::mdx_attribute_content_to_string)
-                            .join(""),
+                            .join(" ")
+                    )
+                };
+
+                if mdx_jsx_text_element.children.is_empty() {
+                    format!("<{}{} />", name, attributes,)
+                } else {
+                    format!(
+                        "<{}{}>{}</{}>",
+                        name,
+                        attributes,
                         Self::values_to_string(mdx_jsx_text_element.children, list_style),
                         name
                     )
@@ -1365,7 +1366,7 @@ impl Node {
                                     }
                                     mdast::AttributeValue::Expression(
                                         mdast::AttributeValueExpression { value, .. },
-                                    ) => MdxAttributeValue::Literal(value.into()),
+                                    ) => MdxAttributeValue::Expression(value.into()),
                                 }),
                             }),
                         })
@@ -1400,7 +1401,7 @@ impl Node {
                                     }
                                     mdast::AttributeValue::Expression(
                                         mdast::AttributeValueExpression { value, .. },
-                                    ) => MdxAttributeValue::Literal(value.into()),
+                                    ) => MdxAttributeValue::Expression(value.into()),
                                 }),
                             }),
                         })
@@ -2223,7 +2224,7 @@ mod tests {
         attributes: vec![
             MdxAttributeContent::Property(MdxJsxAttribute {
                 name: "className".into(),
-                value: Some(MdxAttributeValue::Literal("container".to_string()))
+                value: Some(MdxAttributeValue::Literal("container".into()))
             })
         ],
         children: vec![
@@ -2236,7 +2237,7 @@ mod tests {
         attributes: vec![
             MdxAttributeContent::Property(MdxJsxAttribute {
                 name: "className".into(),
-                value: Some(MdxAttributeValue::Literal("container".to_string()))
+                value: Some(MdxAttributeValue::Literal("container".into()))
             })
         ],
         children: vec![],
