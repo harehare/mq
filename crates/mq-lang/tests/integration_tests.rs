@@ -274,11 +274,17 @@ fn engine() -> Engine {
             ",
               vec![Value::Number(0.into())],
                     Ok(vec![Value::Number(3.into())].into()))]
-fn test(
+fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
     #[case] input: Vec<Value>,
     #[case] expected: MqResult,
 ) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
+}
+
+#[rstest]
+#[case::empty("", vec![Value::Number(0.into())])]
+fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
+    assert!(engine.eval(program, input.into_iter()).is_err());
 }

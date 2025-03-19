@@ -134,8 +134,8 @@ impl Error {
 
                 let location = if is_eof {
                     let lines = source_code.lines();
-                    let loc_line = lines.clone().count() - 1;
-                    let loc_col = lines.last().unwrap().len();
+                    let loc_line = lines.clone().count().saturating_sub(1);
+                    let loc_col = lines.last().map(|lines| lines.len()).unwrap_or(0);
                     SourceOffset::from_location(&source_code, loc_line, loc_col)
                 } else {
                     SourceOffset::from_location(&source_code, 0, 0)
