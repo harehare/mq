@@ -30,7 +30,10 @@ impl ErrorReporter {
     }
 
     pub fn report(&mut self, error: ParseError) {
-        if self.errors.len() < self.max_errors {
+        if self.errors.len() < self.max_errors
+            && (!matches!(error, ParseError::UnexpectedEOFDetected)
+                || !self.errors.contains(&ParseError::UnexpectedEOFDetected))
+        {
             self.errors.push(error);
         }
     }
@@ -171,6 +174,15 @@ impl<'a> Parser<'a> {
                 }
                 _ => {}
             }
+        }
+
+        if nodes.is_empty() {
+            match self.tokens.peek() {
+                Some(token) => self
+                    .errors
+                    .report(ParseError::UnexpectedToken(Arc::clone(token))),
+                None => self.errors.report(ParseError::UnexpectedEOFDetected),
+            };
         }
 
         (nodes, self.errors.clone())
@@ -408,6 +420,7 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let (mut program, _) = self.parse_program(false);
+
         children.append(&mut program);
 
         node.children = children;
@@ -1183,7 +1196,6 @@ mod tests {
             Arc::new(token(TokenKind::Whitespace(4))),
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::Equal)),
-            // Missing expression token
         ],
         (
             vec![],
@@ -2012,11 +2024,29 @@ mod tests {
     fn test_error_reporter_max_errors() {
         let mut reporter = ErrorReporter::new(2);
 
-        reporter.report(ParseError::UnexpectedEOFDetected);
-        reporter.report(ParseError::UnexpectedEOFDetected);
+        reporter.report(ParseError::UnexpectedToken(Arc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Ident("foo".into()),
+            module_id: 1.into(),
+        })));
+        reporter.report(ParseError::UnexpectedToken(Arc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Ident("bar".into()),
+            module_id: 1.into(),
+        })));
         reporter.report(ParseError::UnexpectedEOFDetected);
 
         assert_eq!(reporter.errors.len(), 2);
+    }
+
+    #[test]
+    fn test_error_reporter_unexpected_eof_detected() {
+        let mut reporter = ErrorReporter::new(2);
+
+        reporter.report(ParseError::UnexpectedEOFDetected);
+        reporter.report(ParseError::UnexpectedEOFDetected);
+
+        assert_eq!(reporter.errors.len(), 1);
     }
 
     #[test]

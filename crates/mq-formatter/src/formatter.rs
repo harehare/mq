@@ -195,6 +195,7 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
+        dbg!(&node.children);
         node.children.iter().for_each(|child| {
             self.visit_node(
                 Arc::clone(child),

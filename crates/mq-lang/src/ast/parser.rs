@@ -42,6 +42,16 @@ impl<'a> Parser<'a> {
     fn parse_program(&mut self, root: bool) -> Result<Program, ParseError> {
         let mut asts = Vec::with_capacity(1_000);
 
+        match self.tokens.peek() {
+            Some(token) => match &token.kind {
+                TokenKind::Pipe | TokenKind::SemiColon => {
+                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                }
+                _ => {}
+            },
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
         while let Some(token) = self.tokens.next() {
             match &token.kind {
                 TokenKind::Pipe | TokenKind::Comment(_) => continue,
@@ -65,6 +75,10 @@ impl<'a> Parser<'a> {
                     asts.push(ast);
                 }
             }
+        }
+
+        if asts.is_empty() {
+            return Err(ParseError::UnexpectedEOFDetected(self.module_id));
         }
 
         Ok(asts)
@@ -231,6 +245,7 @@ impl<'a> Parser<'a> {
         })?;
 
         let program = self.parse_program(false)?;
+
         Ok(Rc::new(Node {
             token_id: def_token_id,
             expr: Rc::new(Expr::Def(
@@ -1371,6 +1386,38 @@ mod tests {
             token(TokenKind::RParen),
         ],
         Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+    #[case::def4(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+    #[case::def5(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+    #[case::def6(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::SemiColon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
     #[case::let_1(
             vec![
                 token(TokenKind::Let),
@@ -1777,6 +1824,38 @@ mod tests {
             token_id: 2.into(),
             expr: Rc::new(Expr::Selector(Selector::List(Some(3), Some(true)))),
         })]))]
+    #[case::foreach_error(
+        vec![
+            token(TokenKind::Foreach),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::Comma),
+            token(TokenKind::StringLiteral("array".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof),
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::while_error(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof),
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::until_error(
+        vec![
+            token(TokenKind::Until),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof),
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
