@@ -285,6 +285,7 @@ fn test_eval(
 
 #[rstest]
 #[case::empty("", vec![Value::Number(0.into())])]
+#[case::error("f()def f(): 1", vec![Value::Number(0.into())])]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

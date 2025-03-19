@@ -188,19 +188,32 @@ impl<'a> Parser<'a> {
                     let _ = self.tokens.next();
                 }
 
-                Ok(Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
-                    expr: Rc::new(Expr::Call(
-                        Ident::new_with_token(ident, Some(Rc::clone(&ident_token))),
-                        args,
-                        optional,
+                match self.tokens.peek().map(|t| &t.kind) {
+                    Some(TokenKind::Comma)
+                    | Some(TokenKind::RParen)
+                    | Some(TokenKind::Pipe)
+                    | Some(TokenKind::Else)
+                    | Some(TokenKind::Elif)
+                    | Some(TokenKind::SemiColon)
+                    | Some(TokenKind::Eof)
+                    | None => Ok(Rc::new(Node {
+                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token(ident, Some(Rc::clone(&ident_token))),
+                            args,
+                            optional,
+                        )),
+                    })),
+                    _ => Err(ParseError::UnexpectedToken(
+                        (***self.tokens.peek().unwrap()).clone(),
                     )),
-                }))
+                }
             }
             Some(TokenKind::Comma)
             | Some(TokenKind::RParen)
             | Some(TokenKind::Pipe)
             | Some(TokenKind::Else)
+            | Some(TokenKind::Elif)
             | Some(TokenKind::SemiColon)
             | Some(TokenKind::Eof)
             | None => Ok(Rc::new(Node {
@@ -1336,6 +1349,28 @@ mod tests {
                 ))
             })
         ]))]
+    #[case::ident5(
+        vec![
+            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::LParen),
+            token(TokenKind::None),
+            token(TokenKind::Comma),
+            token(TokenKind::Self_),
+            token(TokenKind::RParen),
+            token(TokenKind::Ident(CompactString::new("and"))),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(CompactString::new("and"))))))]
+    #[case::ident5(
+        vec![
+            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::LParen),
+            token(TokenKind::None),
+            token(TokenKind::Comma),
+            token(TokenKind::Self_),
+            token(TokenKind::RParen),
+            token(TokenKind::Def),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Def))))]
     #[case::error(
         vec![
             token(TokenKind::Ident(CompactString::new("contains"))),
