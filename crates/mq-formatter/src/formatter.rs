@@ -153,7 +153,7 @@ impl Formatter {
         node.children.iter().take(expr_index).for_each(|child| {
             self.visit_node(
                 Arc::clone(child),
-                if node.has_new_line() {
+                if child.has_new_line() {
                     block_indent_level + 1
                 } else {
                     block_indent_level
@@ -195,11 +195,10 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
-        dbg!(&node.children);
         node.children.iter().for_each(|child| {
             self.visit_node(
                 Arc::clone(child),
-                if node.has_new_line() {
+                if child.has_new_line() {
                     indent_level + 1
                 } else {
                     indent_level
@@ -559,6 +558,12 @@ else:
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\"); | snake_to_camel()"
     )]
     #[case::string("let test = \"test\"", "let test = \"test\"")]
+    #[case::string(
+        "test(
+\"test\")",
+        "test(
+  \"test\")"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
