@@ -674,7 +674,10 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Comma,
                     module_id: _,
-                } => continue,
+                } => match prev_token {
+                    Some(_) => continue,
+                    None => return Err(ParseError::UnexpectedToken((**token).clone())),
+                },
                 Token {
                     range: _,
                     kind: TokenKind::SemiColon,
@@ -1410,7 +1413,7 @@ mod tests {
             token(TokenKind::Comma),
             token(TokenKind::RParen),
         ],
-        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Comma, module_id: 1.into()})))]
     #[case::def3(
         vec![
             token(TokenKind::Def),
