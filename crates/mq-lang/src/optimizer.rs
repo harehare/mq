@@ -26,7 +26,6 @@ impl Optimizer {
             .collect::<Vec<_>>()
     }
 
-    #[inline(always)]
     fn optimize_node(&mut self, node: Rc<ast::Node>) -> Rc<ast::Node> {
         match &*node.expr {
             ast::Expr::Call(ident, args, optional) => {

@@ -62,7 +62,7 @@ impl From<Value> for RuntimeValue {
             Value::Array(a) => RuntimeValue::Array(a.into_iter().map(Into::into).collect()),
             Value::Markdown(m) => RuntimeValue::Markdown(m, None),
             Value::Function(params, program) => {
-                RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::new(None))))
+                RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::default())))
             }
             Value::NativeFunction(ident) => RuntimeValue::NativeFunction(ident),
             Value::None => RuntimeValue::None,
@@ -322,9 +322,8 @@ mod tests {
             "test markdown"
         );
 
-        // Test function string representation
         let function =
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))));
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())));
         assert_eq!(function.string(), "function");
 
         // Test native function string representation
@@ -409,14 +408,14 @@ mod tests {
         );
         assert!(RuntimeValue::Bool(false) < RuntimeValue::Bool(true));
         assert!(
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))))
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())))
                 < RuntimeValue::Function(
                     vec![Rc::new(AstNode {
                         expr: Rc::new(AstExpr::Ident(AstIdent::new("test"))),
                         token_id: ArenaId::new(0),
                     })],
                     vec![],
-                    Rc::new(RefCell::new(Env::new(None)))
+                    Rc::new(RefCell::new(Env::default()))
                 )
         );
     }
@@ -445,7 +444,7 @@ mod tests {
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
         let function =
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))));
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())));
         assert_eq!(format!("{:?}", function), "function0");
 
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("debug"));
@@ -482,7 +481,7 @@ mod tests {
         let fn_value = Value::Function(vec![], vec![]);
         assert_eq!(
             RuntimeValue::from(fn_value),
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::new(None))))
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())))
         );
 
         let ident = AstIdent::new("test_fn");

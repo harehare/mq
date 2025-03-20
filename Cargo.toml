@@ -40,7 +40,6 @@ members = [
 clap = {version = "4.5.32", features = ["derive"]}
 clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.45"
-colored = "3.0.0"
 env_logger = "0.11.6"
 itertools = "0.14.0"
 log = "0.4.26"
@@ -69,5 +68,4 @@ panic = 'abort'
 strip = "symbols"
 
 [profile.bench]
-debug = true
 inherits = "release"

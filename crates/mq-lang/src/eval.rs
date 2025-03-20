@@ -16,17 +16,31 @@ pub mod runtime_value;
 use compact_str::CompactString;
 use env::Env;
 use error::EvalError;
-use log::debug;
 use runtime_value::RuntimeValue;
 
 #[derive(Debug, Clone)]
 pub struct Options {
     pub filter_none: bool,
+    pub max_call_stack_depth: u32,
 }
 
+#[cfg(debug_assertions)]
 impl Default for Options {
     fn default() -> Self {
-        Self { filter_none: true }
+        Self {
+            filter_none: true,
+            max_call_stack_depth: 32,
+        }
+    }
+}
+
+#[cfg(not(debug_assertions))]
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            filter_none: true,
+            max_call_stack_depth: 128,
+        }
     }
 }
 
@@ -34,6 +48,7 @@ impl Default for Options {
 pub struct Evaluator {
     env: Rc<RefCell<Env>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+    call_stack_depth: u32,
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader,
 }
@@ -44,8 +59,9 @@ impl Evaluator {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Self {
         Self {
-            env: Rc::new(RefCell::new(Env::new(None))),
+            env: Rc::new(RefCell::new(Env::default())),
             module_loader,
+            call_stack_depth: 0,
             token_arena,
             options: Options::default(),
         }
@@ -91,7 +107,7 @@ impl Evaluator {
             .collect()
     }
 
-    pub(crate) fn defined_runtime_values(&self) -> Vec<(AstIdentName, Box<RuntimeValue>)> {
+    pub(crate) fn defined_runtime_values(&self) -> Vec<(AstIdentName, RuntimeValue)> {
         self.env.borrow().defined_runtime_values()
     }
 
@@ -150,12 +166,12 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         program
             .iter()
-            .try_fold(runtime_value, |runtime_value, ast| {
+            .try_fold(runtime_value, |runtime_value, expr| {
                 if self.options.filter_none && runtime_value.is_none() {
                     return Ok(RuntimeValue::NONE);
                 }
 
-                match &*ast.expr {
+                match &*expr.expr {
                     ast::Expr::Selector(ident) => {
                         Ok(Self::eval_selector_expr(runtime_value, ident))
                     }
@@ -179,7 +195,7 @@ impl Evaluator {
                         Ok(runtime_value)
                     }
                     ast::Expr::Call(_, _, _) => {
-                        self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                        self.eval_expr(&runtime_value, Rc::clone(expr), Rc::clone(&env))
                     }
                     ast::Expr::Literal(ast::Literal::Bool(b)) => {
                         if *b {
@@ -195,25 +211,35 @@ impl Evaluator {
                     ast::Expr::Literal(ast::Literal::None) => Ok(RuntimeValue::NONE),
                     ast::Expr::Self_ => Ok(runtime_value),
                     ast::Expr::While(_, _) => {
-                        self.eval_while(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                        self.eval_while(&runtime_value, Rc::clone(expr), Rc::clone(&env))
                     }
                     ast::Expr::Until(_, _) => {
-                        self.eval_until(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                        self.eval_until(&runtime_value, Rc::clone(expr), Rc::clone(&env))
                     }
                     ast::Expr::Foreach(_, _, _) => {
-                        self.eval_foreach(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                        self.eval_foreach(&runtime_value, Rc::clone(expr), Rc::clone(&env))
                     }
                     ast::Expr::If(_) => {
-                        self.eval_if(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                        self.eval_if(&runtime_value, Rc::clone(expr), Rc::clone(&env))
                     }
-                    ast::Expr::Ident(_) => {
-                        self.eval_expr(&runtime_value, Rc::clone(ast), Rc::clone(&env))
+                    ast::Expr::Ident(ident) => {
+                        self.eval_ident(ident, Rc::clone(expr), Rc::clone(&env))
                     }
                 }
             })
     }
 
-    #[inline(always)]
+    fn eval_ident(
+        &self,
+        ident: &ast::Ident,
+        node: Rc<ast::Node>,
+        env: Rc<RefCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        env.borrow()
+            .resolve(ident)
+            .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
+    }
+
     fn eval_include(&mut self, module: ast::Literal) -> Result<(), EvalError> {
         match module {
             ast::Literal::String(module_name) => {
@@ -229,7 +255,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_selector_expr(runtime_value: RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
         match &runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
@@ -262,11 +287,7 @@ impl Evaluator {
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
-            ast::Expr::Ident(ident) => env
-                .borrow()
-                .resolve(ident)
-                .map(|o| *o)
-                .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena))),
+            ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
             ast::Expr::Selector(ident) => match runtime_value {
                 RuntimeValue::Markdown(node_value, _) => Ok(RuntimeValue::Bool(
                     builtin::eval_selector(node_value, ident),
@@ -295,7 +316,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_foreach(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -316,7 +336,7 @@ impl Evaluator {
             let runtime_values: Vec<RuntimeValue> = Vec::with_capacity(values.len());
 
             let values = if let RuntimeValue::Array(values) = values {
-                let env = Rc::new(RefCell::new(Env::new(Some(Rc::downgrade(&env)))));
+                let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
                 values
                     .into_iter()
                     .try_fold(runtime_values, |mut acc, value| {
@@ -340,7 +360,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_until(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -349,7 +368,7 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Until(cond, body) = &*node.expr {
             let mut runtime_value = runtime_value.clone();
-            let env = Rc::new(RefCell::new(Env::new(Some(Rc::downgrade(&env)))));
+            let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
 
@@ -368,7 +387,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_while(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -377,7 +395,7 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::While(cond, body) = &*node.expr {
             let mut runtime_value = runtime_value.clone();
-            let env = Rc::new(RefCell::new(Env::new(Some(Rc::downgrade(&env)))));
+            let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
             let mut values = Vec::with_capacity(100_000);
@@ -398,7 +416,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_if(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -430,7 +447,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_fn(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -445,7 +461,9 @@ impl Evaluator {
         }
 
         if let Ok(fn_value) = Rc::clone(&env).borrow().resolve(ident) {
-            if let RuntimeValue::Function(params, program, fn_env) = &*fn_value {
+            if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
+                self.enter_scope()?;
+
                 let mut args = args.to_owned();
 
                 if params.len() == args.len() + 1 {
@@ -465,7 +483,7 @@ impl Evaluator {
                     ));
                 }
 
-                let new_env = Rc::new(RefCell::new(Env::new(Some(Rc::downgrade(fn_env)))));
+                let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
                 args.iter()
                     .zip(params.iter())
@@ -483,9 +501,12 @@ impl Evaluator {
                             ))
                         }
                     })?;
-                debug!("current env: {}", new_env.borrow());
-                self.eval_program(program, runtime_value.clone(), new_env)
-            } else if let RuntimeValue::NativeFunction(ident) = *fn_value {
+
+                let result = self.eval_program(program, runtime_value.clone(), new_env);
+
+                self.exit_scope();
+                result
+            } else if let RuntimeValue::NativeFunction(ident) = fn_value {
                 self.eval_builtin(runtime_value, node, &ident, args, env)
             } else {
                 Err(EvalError::InvalidDefinition(
@@ -498,7 +519,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -513,6 +533,20 @@ impl Evaluator {
             .collect();
         builtin::eval_builtin(runtime_value, ident, &args?)
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
+    }
+
+    fn enter_scope(&mut self) -> Result<(), EvalError> {
+        if self.call_stack_depth >= self.options.max_call_stack_depth {
+            return Err(EvalError::RecursionError(self.options.max_call_stack_depth));
+        }
+        self.call_stack_depth += 1;
+        Ok(())
+    }
+
+    fn exit_scope(&mut self) {
+        if self.call_stack_depth > 0 {
+            self.call_stack_depth -= 1;
+        }
     }
 }
 

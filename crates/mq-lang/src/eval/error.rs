@@ -21,6 +21,8 @@ pub enum EvalError {
     IndexOutOfBounds(ErrorToken, Number),
     #[error("Invalid definition for \"{1}\"")]
     InvalidDefinition(ErrorToken, String),
+    #[error("Maximum recursion depth exceeded \"{0}\"")]
+    RecursionError(u32),
     #[error("Invalid types for \"{}\", got {}", name, args.join(", "))]
     InvalidTypes {
         token: ErrorToken,

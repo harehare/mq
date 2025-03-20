@@ -50,15 +50,19 @@ impl Engine {
         self.evaluator.options.filter_none = filter_none;
     }
 
+    pub fn set_max_call_stack_depth(&mut self, max_call_stack_depth: u32) {
+        self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
+    }
+
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
         self.evaluator.module_loader.search_paths = Some(paths);
     }
 
-    pub fn defined_values(&self) -> Vec<(AstIdentName, Box<Value>)> {
+    pub fn defined_values(&self) -> Vec<(AstIdentName, Value)> {
         self.evaluator
             .defined_runtime_values()
             .iter()
-            .map(|(name, value)| (name.clone(), Box::new(Value::from(*value.clone()))))
+            .map(|(name, value)| (name.clone(), Value::from(value.clone())))
             .collect::<Vec<_>>()
     }
 

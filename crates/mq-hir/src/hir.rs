@@ -249,7 +249,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_literal_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -279,7 +278,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_include_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -311,7 +309,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_while_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -344,7 +341,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_until_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -377,7 +373,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_let_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -416,7 +411,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_ident_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -440,7 +434,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_selector_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -464,7 +457,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_if_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -503,7 +495,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_elif_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -537,7 +528,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_else_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -570,7 +560,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_call_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -609,7 +598,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_foreach_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -666,7 +654,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_def_expr(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
@@ -730,7 +717,6 @@ impl Hir {
         }
     }
 
-    #[inline(always)]
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
         let scope_id = self.scopes.insert(scope.clone());
 
@@ -744,12 +730,10 @@ impl Hir {
         scope_id
     }
 
-    #[inline(always)]
     fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
         self.symbols.insert(symbol)
     }
 
-    #[inline(always)]
     fn add_source(&mut self, source: Source) -> SourceId {
         self.sources.insert(source)
     }

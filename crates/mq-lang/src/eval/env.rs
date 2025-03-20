@@ -31,9 +31,9 @@ impl EnvError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Env {
-    context: FxHashMap<ast::IdentName, Box<RuntimeValue>>,
+    context: FxHashMap<ast::IdentName, RuntimeValue>,
     parent: Option<Weak<RefCell<Env>>>,
 }
 
@@ -51,25 +51,24 @@ impl Display for Env {
 }
 
 impl Env {
-    pub fn new(parent: Option<Weak<RefCell<Env>>>) -> Self {
+    pub fn with_parent(parent: Weak<RefCell<Env>>) -> Self {
         Self {
             context: FxHashMap::default(),
-            parent,
+            parent: Some(parent),
         }
     }
 
     #[inline(always)]
     pub fn define(&mut self, ident: &AstIdent, runtime_value: RuntimeValue) {
-        self.context
-            .insert(ident.name.clone(), Box::new(runtime_value));
+        self.context.insert(ident.name.clone(), runtime_value);
     }
 
     #[inline(always)]
-    pub fn resolve(&self, ident: &AstIdent) -> Result<Box<RuntimeValue>, EnvError> {
+    pub fn resolve(&self, ident: &AstIdent) -> Result<RuntimeValue, EnvError> {
         match self.context.get(&ident.name) {
             Some(o) => Ok(o.clone()),
             None if builtin::BUILTIN_FUNCTIONS.contains_key(&ident.name) => {
-                Ok(Box::new(RuntimeValue::NativeFunction(ident.clone())))
+                Ok(RuntimeValue::NativeFunction(ident.clone()))
             }
             None => match self.parent.as_ref().and_then(|parent| parent.upgrade()) {
                 Some(ref parent_env) => {
@@ -82,7 +81,7 @@ impl Env {
     }
 
     #[inline(always)]
-    pub fn defined_runtime_values(&self) -> Vec<(ast::IdentName, Box<RuntimeValue>)> {
+    pub fn defined_runtime_values(&self) -> Vec<(ast::IdentName, RuntimeValue)> {
         self.context
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -97,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_env_define_and_resolve() {
-        let mut env = Env::new(None);
+        let mut env = Env::default();
         let ident = AstIdent {
             name: AstIdentName::from("x"),
             token: None,
@@ -106,13 +105,13 @@ mod tests {
         env.define(&ident, value.clone());
 
         let resolved = env.resolve(&ident).unwrap();
-        assert_eq!(*resolved, value);
+        assert_eq!(resolved, value);
     }
 
     #[test]
     fn test_env_resolve_from_parent() {
-        let parent_env = Rc::new(RefCell::new(Env::new(None)));
-        let mut child_env = Env::new(Some(Rc::downgrade(&parent_env)));
+        let parent_env = Rc::new(RefCell::new(Env::default()));
+        let mut child_env = Env::with_parent(Rc::downgrade(&parent_env));
 
         let parent_ident = AstIdent {
             name: AstIdentName::from("parent_var"),
@@ -130,8 +129,8 @@ mod tests {
         let child_value = RuntimeValue::Number(200.0.into());
         child_env.define(&child_ident, child_value.clone());
 
-        assert_eq!(*child_env.resolve(&child_ident).unwrap(), child_value);
-        assert_eq!(*child_env.resolve(&parent_ident).unwrap(), parent_value);
+        assert_eq!(child_env.resolve(&child_ident).unwrap(), child_value);
+        assert_eq!(child_env.resolve(&parent_ident).unwrap(), parent_value);
 
         let result = parent_env.borrow().resolve(&child_ident);
         assert!(result.is_err());
@@ -139,8 +138,8 @@ mod tests {
 
     #[test]
     fn test_env_shadow_parent_variable() {
-        let parent_env = Rc::new(RefCell::new(Env::new(None)));
-        let mut child_env = Env::new(Some(Rc::downgrade(&parent_env)));
+        let parent_env = Rc::new(RefCell::new(Env::default()));
+        let mut child_env = Env::with_parent(Rc::downgrade(&parent_env));
 
         let ident = AstIdent {
             name: AstIdentName::from("x"),
@@ -153,12 +152,12 @@ mod tests {
         let child_value = RuntimeValue::Number(200.0.into());
         child_env.define(&ident, child_value.clone());
 
-        assert_eq!(*child_env.resolve(&ident).unwrap(), child_value);
+        assert_eq!(child_env.resolve(&ident).unwrap(), child_value);
     }
 
     #[test]
     fn test_defined_runtime_values() {
-        let mut env = Env::new(None);
+        let mut env = Env::default();
         let ident1 = AstIdent {
             name: AstIdentName::from("x"),
             token: None,
@@ -180,11 +179,11 @@ mod tests {
         let defined_map: FxHashMap<_, _> = defined.into_iter().collect();
         assert_eq!(
             *defined_map.get(&AstIdentName::from("x")).unwrap(),
-            Box::new(RuntimeValue::Number(42.0.into()))
+            RuntimeValue::Number(42.0.into())
         );
         assert_eq!(
             *defined_map.get(&AstIdentName::from("y")).unwrap(),
-            Box::new(RuntimeValue::TRUE)
+            RuntimeValue::TRUE
         );
     }
 }

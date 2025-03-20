@@ -90,7 +90,6 @@ impl Lexer {
     }
 }
 
-#[inline(always)]
 fn unicode(input: Span) -> IResult<Span, char> {
     map_opt(
         map_res(
@@ -109,7 +108,6 @@ fn unicode(input: Span) -> IResult<Span, char> {
     .parse(input)
 }
 
-#[inline(always)]
 fn inline_comment(input: Span) -> IResult<Span, Token> {
     map(preceded(char('#'), is_not("\n\r|")), |span: Span| {
         let module_id = span.extra;
@@ -123,7 +121,6 @@ fn inline_comment(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn newline(input: Span) -> IResult<Span, Token> {
     map(line_ending, |span: Span| {
         let module_id = span.extra;
@@ -136,7 +133,6 @@ fn newline(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn tab(input: Span) -> IResult<Span, Token> {
     map(recognize(many1(char('\t'))), |span: Span| {
         let module_id = span.extra;
@@ -150,7 +146,6 @@ fn tab(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn spaces(input: Span) -> IResult<Span, Token> {
     map(recognize(many1(char(' '))), |span: Span| {
         let module_id = span.extra;
@@ -191,7 +186,6 @@ define_token_parser!(
     TokenKind::StringLiteral(String::new())
 );
 
-#[inline(always)]
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
         l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, equal, pipe, question,
@@ -199,7 +193,6 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
         def, let_, self_, while_, until, if_, elif, else_, none, include, foreach,
@@ -207,7 +200,6 @@ fn keywords(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn number_literal(input: Span) -> IResult<Span, Token> {
     map_res(recognize(pair(opt(char('-')), double)), |span: Span| {
         str::parse(span.fragment()).map(|s| {
@@ -222,7 +214,6 @@ fn number_literal(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn string_literal(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, s) = delimited(
@@ -258,12 +249,10 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
     ))
 }
 
-#[inline(always)]
 fn literals(input: Span) -> IResult<Span, Token> {
     alt((number_literal, empty_string, string_literal)).parse(input)
 }
 
-#[inline(always)]
 fn ident(input: Span) -> IResult<Span, Token> {
     map(
         recognize(pair(
@@ -312,7 +301,6 @@ fn ident(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn env(input: Span) -> IResult<Span, Token> {
     preceded(
         tag("$"),
@@ -332,12 +320,10 @@ fn env(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn token(input: Span) -> IResult<Span, Token> {
     alt((inline_comment, punctuations, keywords, env, literals, ident)).parse(input)
 }
 
-#[inline(always)]
 fn token_include_spaces(input: Span) -> IResult<Span, Token> {
     alt((
         newline,
@@ -353,7 +339,6 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-#[inline(always)]
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
     if options.include_spaces {
         many0(token_include_spaces).parse(input)
