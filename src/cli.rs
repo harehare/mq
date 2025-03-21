@@ -248,7 +248,9 @@ impl Cli {
                     .collect::<Vec<_>>();
 
                 let mut engine = self.create_engine()?;
-                let doc_values = engine.eval("tsv2table()", doc_csv.into_iter())?;
+                let doc_values = engine
+                    .eval("tsv2table()", doc_csv.into_iter())
+                    .map_err(|e| *e)?;
                 self.print(
                     Some(
                         "| Function Name | Description | Parameters | Example |
@@ -290,7 +292,7 @@ impl Cli {
 
     fn create_engine(&self) -> miette::Result<Engine> {
         let mut engine = mq_lang::Engine::default();
-        engine.load_builtin_module()?;
+        engine.load_builtin_module().map_err(|e| *e)?;
         engine.set_filter_none(!self.output.update);
 
         if let Some(dirs) = &self.input.module_directories {
@@ -299,7 +301,7 @@ impl Cli {
 
         if let Some(modules) = &self.input.module_names {
             for module_name in modules {
-                engine.load_module(module_name)?;
+                engine.load_module(module_name).map_err(|e| *e)?;
             }
         }
 
@@ -372,7 +374,7 @@ impl Cli {
             let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
 
             if self.output.update {
-                let results = engine.eval(query, input.clone())?;
+                let results = engine.eval(query, input.clone()).map_err(|e| *e)?;
                 results
                     .values()
                     .iter()
@@ -423,7 +425,8 @@ impl Cli {
             } else {
                 engine.eval(query, input)
             }
-        }?;
+        }
+        .map_err(|e| *e)?;
 
         self.print(
             None,

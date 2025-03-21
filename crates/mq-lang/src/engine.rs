@@ -70,19 +70,17 @@ impl Engine {
         self.evaluator.define_string_value(name, value);
     }
 
-    #[allow(clippy::result_large_err)]
-    pub fn load_builtin_module(&mut self) -> Result<(), error::Error> {
+    pub fn load_builtin_module(&mut self) -> Result<(), Box<error::Error>> {
         self.evaluator.load_builtin_module().map_err(|e| {
-            error::Error::from_error(
+            Box::new(error::Error::from_error(
                 "",
                 InnerError::Eval(e),
                 self.evaluator.module_loader.clone(),
-            )
+            ))
         })
     }
 
-    #[allow(clippy::result_large_err)]
-    pub fn load_module(&mut self, module_name: &str) -> Result<(), error::Error> {
+    pub fn load_module(&mut self, module_name: &str) -> Result<(), Box<error::Error>> {
         let module = self
             .evaluator
             .module_loader
@@ -96,11 +94,11 @@ impl Engine {
             })?;
 
         self.evaluator.load_module(module).map_err(|e| {
-            error::Error::from_error(
+            Box::new(error::Error::from_error(
                 "",
                 InnerError::Eval(e),
                 self.evaluator.module_loader.clone(),
-            )
+            ))
         })
     }
 
@@ -122,7 +120,6 @@ impl Engine {
     /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
     ///
-    #[allow(clippy::result_large_err)]
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let program = parse(code, Rc::clone(&self.token_arena))?;
         let program = if self.options.optimize {
@@ -139,7 +136,13 @@ impl Engine {
                     .collect::<Vec<_>>()
                     .into()
             })
-            .map_err(|e| error::Error::from_error(code, e, self.evaluator.module_loader.clone()))
+            .map_err(|e| {
+                Box::new(error::Error::from_error(
+                    code,
+                    e,
+                    self.evaluator.module_loader.clone(),
+                ))
+            })
     }
 
     pub const fn version() -> &'static str {

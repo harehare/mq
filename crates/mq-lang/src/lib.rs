@@ -78,7 +78,7 @@ pub use lexer::token::{Token, TokenKind};
 pub use range::{Position, Range};
 pub use value::{Value, Values};
 
-pub type MqResult = Result<Values, Error>;
+pub type MqResult = Result<Values, Box<Error>>;
 
 pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     let tokens = tokenize(
@@ -95,11 +95,10 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     (cst_nodes, errors)
 }
 
-#[allow(clippy::result_large_err)]
 pub fn parse(
     code: &str,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-) -> Result<Program, error::Error> {
+) -> Result<Program, Box<error::Error>> {
     AstParser::new(
         tokenize(code, lexer::Options::default())?
             .into_iter()
@@ -110,15 +109,26 @@ pub fn parse(
         Module::TOP_LEVEL_MODULE_ID,
     )
     .parse()
-    .map_err(|e| error::Error::from_error(code, InnerError::Parse(e), ModuleLoader::new(None)))
+    .map_err(|e| {
+        Box::new(error::Error::from_error(
+            code,
+            InnerError::Parse(e),
+            ModuleLoader::new(None),
+        ))
+    })
 }
 
-#[allow(clippy::result_large_err)]
 pub fn tokenize(
     code: &str,
     options: lexer::Options,
-) -> Result<Vec<lexer::token::Token>, error::Error> {
+) -> Result<Vec<lexer::token::Token>, Box<error::Error>> {
     Lexer::new(options)
         .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-        .map_err(|e| error::Error::from_error(code, InnerError::Lexer(e), ModuleLoader::new(None)))
+        .map_err(|e| {
+            Box::new(error::Error::from_error(
+                code,
+                InnerError::Lexer(e),
+                ModuleLoader::new(None),
+            ))
+        })
 }

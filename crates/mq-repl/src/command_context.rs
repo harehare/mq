@@ -175,11 +175,13 @@ impl CommandContext {
 
                 let result = self.engine.eval(&code, self.input.clone().into_iter());
 
-                result.map(|result| {
-                    self.hir
-                        .add_line_of_code(self.source_id, self.scope_id, &code);
-                    Ok(CommandOutput::Value(result.values().clone()))
-                })?
+                result
+                    .map(|result| {
+                        self.hir
+                            .add_line_of_code(self.source_id, self.scope_id, &code);
+                        Ok(CommandOutput::Value(result.values().clone()))
+                    })
+                    .map_err(|e| *e)?
             }
         }
     }
