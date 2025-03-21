@@ -282,11 +282,6 @@ impl<'a> Parser<'a> {
 
         match self.tokens.peek() {
             Some(token) if matches!(token.kind, TokenKind::LParen) => {
-                children.push(self.next_node(
-                    |token_kind| matches!(token_kind, TokenKind::LParen),
-                    NodeKind::Token,
-                )?);
-
                 let mut args = self.parse_args()?;
                 children.append(&mut args);
 
@@ -308,7 +303,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_args(&mut self) -> Result<Vec<Arc<Node>>, ParseError> {
-        let mut nodes: Vec<Arc<Node>> = Vec::new();
+        let mut nodes: Vec<Arc<Node>> = Vec::with_capacity(64);
+
+        nodes.push(self.next_node(
+            |token_kind| matches!(token_kind, TokenKind::LParen),
+            NodeKind::Token,
+        )?);
 
         let token = match self.tokens.peek() {
             Some(token) => Arc::clone(token),
@@ -436,7 +436,6 @@ impl<'a> Parser<'a> {
         };
 
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
 
         let mut params = self.parse_params()?;
         children.append(&mut params);
@@ -590,12 +589,7 @@ impl<'a> Parser<'a> {
 
                 match token.kind {
                     TokenKind::LParen => {
-                        let mut children: Vec<Arc<Node>> = Vec::with_capacity(100);
-                        children.push(self.next_node(
-                            |kind| matches!(kind, TokenKind::LParen),
-                            NodeKind::Token,
-                        )?);
-
+                        let mut children: Vec<Arc<Node>> = Vec::with_capacity(64);
                         let mut args = self.parse_args()?;
 
                         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
@@ -648,8 +642,6 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
-
         let mut args = self.parse_args()?;
 
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
@@ -695,8 +687,6 @@ impl<'a> Parser<'a> {
             trailing_trivia,
             children: Vec::new(),
         };
-
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
 
         let mut args = self.parse_args()?;
 
@@ -877,7 +867,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_params(&mut self) -> Result<Vec<Arc<Node>>, ParseError> {
-        let mut nodes: Vec<Arc<Node>> = Vec::new();
+        let mut nodes: Vec<Arc<Node>> = Vec::with_capacity(8);
+
+        nodes.push(self.next_node(
+            |token_kind| matches!(token_kind, TokenKind::LParen),
+            NodeKind::Token,
+        )?);
+
         let token = match self.tokens.peek() {
             Some(token) => Arc::clone(token),
             None => return Err(ParseError::UnexpectedEOFDetected),
