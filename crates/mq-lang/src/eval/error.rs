@@ -11,6 +11,8 @@ type ErrorToken = Token;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum EvalError {
+    #[error("{}", message)]
+    UserDefinedError { message: String, token: ErrorToken },
     #[error("Invalid base64 string")]
     InvalidBase64String(ErrorToken, String),
     #[error("\"{1}\" is not defined")]

@@ -30,7 +30,7 @@ type ArgType = Vec<RuntimeValue>;
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
     pub num_params: ParamNum,
-    pub func: fn(&ast::Ident, &Vec<RuntimeValue>) -> Result<RuntimeValue, Error>,
+    pub func: fn(&ast::Ident, &RuntimeValue, &Vec<RuntimeValue>) -> Result<RuntimeValue, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +72,7 @@ impl ParamNum {
 impl BuiltinFunction {
     pub fn new(
         num_params: ParamNum,
-        func: fn(&ast::Ident, &Vec<RuntimeValue>) -> Result<RuntimeValue, Error>,
+        func: fn(&ast::Ident, &RuntimeValue, &Vec<RuntimeValue>) -> Result<RuntimeValue, Error>,
     ) -> Self {
         BuiltinFunction { num_params, func }
     }
@@ -84,37 +84,47 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("halt"),
-            BuiltinFunction::new(ParamNum::None, |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::None, |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
         );
         map.insert(
-            CompactString::new("debug"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
-                [runtime_value] => {
-                    eprintln!("DEBUG: {}", runtime_value);
-                    Ok(args.first().unwrap().clone())
-                }
+            CompactString::new("error"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::String(message)] => Err(Error::UserDefinedError(message.clone())),
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
         );
         map.insert(
+            CompactString::new("debug"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, current_value, args| {
+                match args.as_slice() {
+                    [a] => {
+                        eprintln!("DEBUG: {}", a);
+                        Ok(current_value.clone())
+                    }
+                    _ => unreachable!(),
+                }
+            }),
+        );
+        map.insert(
             CompactString::new("type"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| {
                 Ok(args.first().unwrap().name().to_string().into())
             }),
         );
         map.insert(
             CompactString::new("array"),
-            BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, args| {
+            BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
                 Ok(RuntimeValue::Array(args.to_vec()))
             }),
         );
         map.insert(
             CompactString::new("from_date"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(date_str)] => from_date(date_str),
                 [RuntimeValue::Markdown(node_value, _)] => from_date(node_value.value().as_str()),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
@@ -123,7 +133,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_date"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
                     to_date(*ms, Some(format.as_str()))
                 }
@@ -136,7 +146,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("now"),
-            BuiltinFunction::new(ParamNum::None, |_, _| {
+            BuiltinFunction::new(ParamNum::None, |_, _, _| {
                 Ok(RuntimeValue::Number(
                     (std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -148,7 +158,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("base64"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => base64(s),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
@@ -165,7 +175,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("base64d"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => base64d(s),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
@@ -182,7 +192,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("min"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
                     Ok(std::cmp::min(*n1, *n2).into())
                 }
@@ -198,7 +208,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("max"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
                     Ok(std::cmp::max(*n1, *n2).into())
                 }
@@ -214,7 +224,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_html"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
                 [RuntimeValue::Markdown(node_value, _)] => {
                     Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
@@ -225,7 +235,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_csv"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => Ok(array.iter().join(",").into()),
                 [a] => Ok(a.to_string().into()),
                 _ => unreachable!(),
@@ -233,7 +243,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_tsv"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => Ok(array.iter().join("\t").into()),
                 [a] => Ok(a.to_string().into()),
                 _ => unreachable!(),
@@ -241,7 +251,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_string"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.to_string().into()),
                 [RuntimeValue::Array(array)] => {
                     let result_value: Result<Vec<RuntimeValue>, Error> = array
@@ -263,7 +273,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_number"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
                     .map(|md| {
@@ -311,7 +321,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("url_encode"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => url_encode(s),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
@@ -328,7 +338,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_text"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::None] => Ok("".to_owned().into()),
                 [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.value().into()),
                 [RuntimeValue::Array(array)] => Ok(array
@@ -348,7 +358,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("ends_with"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                     .markdown_node()
                     .map(|md| Ok(md.value().ends_with(s).into()))
@@ -370,7 +380,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("starts_with"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                     .markdown_node()
                     .map(|md| Ok(md.value().starts_with(s).into()))
@@ -394,7 +404,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("match"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_re(s, pattern),
                 [
                     node @ RuntimeValue::Markdown(_, _),
@@ -413,7 +423,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("downcase"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
                     .map(|md| Ok(node.update_markdown_value(md.value().to_lowercase().as_str())))
@@ -425,7 +435,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("gsub"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
                 [
                     RuntimeValue::String(s1),
                     RuntimeValue::String(s2),
@@ -457,7 +467,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("replace"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
                 [
                     RuntimeValue::String(s1),
                     RuntimeValue::String(s2),
@@ -489,7 +499,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("repeat"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                     Ok(s.repeat(n.value() as usize).into())
                 }
@@ -522,7 +532,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("explode"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
                     s.chars()
                         .map(|c| RuntimeValue::Number((c as u32).into()))
@@ -544,7 +554,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("implode"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let result: String = array
                         .iter()
@@ -563,7 +573,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("trim"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => Ok(s.trim().to_string().into()),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
@@ -576,7 +586,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("upcase"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
                     .map(|md| Ok(node.update_markdown_value(md.value().to_uppercase().as_str())))
@@ -589,7 +599,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("update"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [
                     node1 @ RuntimeValue::Markdown(_, _),
                     node2 @ RuntimeValue::Markdown(_, _),
@@ -608,7 +618,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("slice"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
                 [
                     RuntimeValue::String(s),
                     RuntimeValue::Number(start),
@@ -658,7 +668,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("pow"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => Ok(
                     RuntimeValue::Number((base.value() as i64).pow(exp.value() as u32).into()),
                 ),
@@ -671,7 +681,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("index"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
                     (s1.find(s2).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
                 )),
@@ -702,7 +712,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("len"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.chars().count().into())),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
@@ -716,7 +726,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("utf8bytelen"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.len().into())),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
@@ -731,7 +741,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("rindex"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
                     s1.rfind(s2)
                         .map(|v| v as isize)
@@ -770,7 +780,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("nth"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
                     match array.get(n.value() as usize) {
                         Some(o) => Ok(o.clone()),
@@ -796,7 +806,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("del"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
                     let mut array = array.clone();
                     array.remove(n.value() as usize);
@@ -817,7 +827,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("join"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array), RuntimeValue::String(s)] => {
                     Ok(array.iter().join(s).into())
                 }
@@ -827,7 +837,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("reverse"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
                     vec.reverse();
@@ -840,7 +850,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("sort"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
                     vec.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -852,7 +862,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("compact"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
                     array
                         .iter()
@@ -866,7 +876,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("range"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(start), RuntimeValue::Number(end)] => {
                     let range: Vec<RuntimeValue> = ((start.value() as u64)..(end.value() as u64))
                         .map(|n| RuntimeValue::Number(n.into()))
@@ -882,7 +892,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("split"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                     .markdown_node()
@@ -895,7 +905,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("uniq"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
                     let mut unique = FxHashMap::default();
@@ -908,7 +918,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("ceil"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ceil().into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -916,7 +926,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("floor"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().floor().into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -924,7 +934,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("round"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().round().into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -932,7 +942,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("trunc"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().trunc().into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -940,7 +950,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("abs"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().abs().into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -948,21 +958,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("eq"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [a, b] => Ok((a == b).into()),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("ne"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [a, b] => Ok((a != b).into()),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("gt"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
                 [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 > b2).into()),
@@ -975,7 +985,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("gte"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
                 [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 >= b2).into()),
@@ -988,7 +998,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("lt"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
                 [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 < b2).into()),
@@ -1001,7 +1011,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("lte"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
                 [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 <= b2).into()),
@@ -1014,7 +1024,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("add"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
                     Ok(format!("{}{}", s1, s2).into())
                 }
@@ -1045,7 +1055,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("sub"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -1056,7 +1066,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("div"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
                     if n2.is_zero() {
                         Err(Error::ZeroDivision)
@@ -1073,7 +1083,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("mul"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -1084,7 +1094,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("mod"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -1095,19 +1105,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("and"),
-            BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, args| {
+            BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
                 Ok(args.iter().all(|arg| arg.is_true()).into())
             }),
         );
         map.insert(
             CompactString::new("or"),
-            BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, args| {
+            BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
                 Ok(args.iter().any(|arg| arg.is_true()).into())
             }),
         );
         map.insert(
             CompactString::new("not"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [a] => Ok((!a.is_true()).into()),
                 _ => unreachable!(),
             }),
@@ -1116,7 +1126,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         // markdown
         map.insert(
             CompactString::new("to_code"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
                     value: a.to_string(),
                     lang: Some(lang.to_string()),
@@ -1136,7 +1146,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_code_inline"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
                     value: a.to_string().into(),
                     position: None,
@@ -1147,7 +1157,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_h"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _), RuntimeValue::Number(depth)] => {
                     Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
                         depth: (*depth).value() as u8,
@@ -1169,13 +1179,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_hr"),
-            BuiltinFunction::new(ParamNum::Fixed(0), |_, _| {
+            BuiltinFunction::new(ParamNum::Fixed(0), |_, _, _| {
                 Ok(mq_markdown::Node::HorizontalRule { position: None }.into())
             }),
         );
         map.insert(
             CompactString::new("to_link"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
                 [
                     RuntimeValue::String(url),
                     RuntimeValue::String(value),
@@ -1201,7 +1211,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_image"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(3), |_, _, args| match args.as_slice() {
                 [
                     RuntimeValue::String(url),
                     RuntimeValue::String(alt),
@@ -1218,7 +1228,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_math"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::Math(mq_markdown::Math {
                     value: a.to_string(),
                     position: None,
@@ -1229,7 +1239,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_math_inline"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
                     value: a.to_string().into(),
                     position: None,
@@ -1240,14 +1250,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_md_name"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => Ok(node.name().to_string().into()),
                 _ => Ok(RuntimeValue::None),
             }),
         );
         map.insert(
             CompactString::new("to_strong"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
                     Ok(mq_markdown::Node::Strong(mq_markdown::Value {
                         values: node.node_values(),
@@ -1265,7 +1275,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_em"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
                     Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
                         values: node.node_values(),
@@ -1283,7 +1293,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_md_text"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [a] => Ok(mq_markdown::Node::Text(mq_markdown::Text {
                     value: a.to_string(),
                     position: None,
@@ -1294,7 +1304,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_md_list"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _), RuntimeValue::Number(level)] => {
                     Ok(mq_markdown::Node::List(mq_markdown::List {
                         values: node.node_values(),
@@ -1320,7 +1330,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_md_table_row"),
-            BuiltinFunction::new(ParamNum::Range(1, u8::MAX), |_, args| {
+            BuiltinFunction::new(ParamNum::Range(1, u8::MAX), |_, _, args| {
                 let args_num = args.len();
                 let mut current_index = 0;
                 let cells = args
@@ -1370,7 +1380,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("get_md_list_level"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(
                         mq_markdown::Node::List(mq_markdown::List { level, .. }),
@@ -1383,7 +1393,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("get_title"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(
                         mq_markdown::Node::Definition(mq_markdown::Definition { title, .. }),
@@ -1407,7 +1417,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("set_md_check"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
                     RuntimeValue::Bool(checked),
@@ -1788,6 +1798,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Terminates the program with the given exit code.",
                 params: &["exit_code"],
+            },
+        );
+        map.insert(
+            CompactString::new("error"),
+            BuiltinFunctionDoc {
+                description: "Raises a user-defined error with the specified message.",
+                params: &["message"],
+            },
+        );
+        map.insert(
+            CompactString::new("assert"),
+            BuiltinFunctionDoc {
+            description: "Asserts that two values are equal, returns the value if true, otherwise raises an error.",
+            params: &["value1", "value2"],
             },
         );
         map.insert(
@@ -2370,6 +2394,8 @@ pub enum Error {
     Runtime(String),
     #[error("Divided by 0")]
     ZeroDivision,
+    #[error("{0}")]
+    UserDefinedError(String),
 }
 
 impl Error {
@@ -2379,6 +2405,10 @@ impl Error {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> EvalError {
         match self {
+            Error::UserDefinedError(message) => EvalError::UserDefinedError {
+                message: message.to_owned(),
+                token: (*token_arena.borrow()[node.token_id]).clone(),
+            },
             Error::InvalidBase64String(e) => EvalError::InvalidBase64String(
                 (*token_arena.borrow()[node.token_id]).clone(),
                 e.to_string(),
@@ -2444,7 +2474,7 @@ pub fn eval_builtin(
                 ));
             };
 
-            (f.func)(ident, args)
+            (f.func)(ident, runtime_value, args)
         },
     )
 }
