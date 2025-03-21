@@ -1123,12 +1123,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                [a, RuntimeValue::None] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
-                    value: a.to_string(),
-                    lang: None,
-                    position: None,
-                })
-                .into()),
+                [a, RuntimeValue::None] if !a.is_none() => {
+                    Ok(mq_markdown::Node::Code(mq_markdown::Code {
+                        value: a.to_string(),
+                        lang: None,
+                        position: None,
+                    })
+                    .into())
+                }
                 _ => Ok(RuntimeValue::None),
             }),
         );
@@ -2790,6 +2792,21 @@ mod tests {
         ast::Selector::Break,
         true
     )]
+    #[case::image(
+        Node::Image(mq_markdown::Image { alt: "".to_string(), url: "".to_string(), title: None, position: None }),
+        ast::Selector::Image,
+        true
+    )]
+    #[case::image_ref(
+        Node::ImageRef(mq_markdown::ImageRef{ alt: "".to_string(), ident: "".to_string(), label: None, position: None }),
+        ast::Selector::ImageRef,
+        true
+    )]
+    #[case::footnote(
+        Node::Footnote(mq_markdown::Footnote{ident: "".to_string(), values: vec!["test".to_string().into()], position: None}),
+        ast::Selector::Footnote,
+        true
+    )]
     #[case::footnote_ref(
         Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "".to_string(), label: None, position: None}),
         ast::Selector::FootnoteRef,
@@ -2813,6 +2830,26 @@ mod tests {
     #[case::definition(
         Node::Definition(mq_markdown::Definition { ident: "id".to_string(), url: "url".into(), label: None, title: None, position: None }),
         ast::Selector::Definition,
+        true
+    )]
+    #[case::mdx_jsx_flow_element(
+        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: vec![], children: vec![], position: None }),
+        ast::Selector::MdxJsxFlowElement,
+        true
+    )]
+    #[case::mdx_flow_expression(
+        Node::MdxFlowExpression(mq_markdown::MdxFlowExpression{ value: "value".into(), position: None }),
+        ast::Selector::MdxFlowExpression,
+        true
+    )]
+    #[case::mdx_text_expression(
+        Node::MdxTextExpression(mq_markdown::MdxTextExpression{ value: "value".into(), position: None }),
+        ast::Selector::MdxTextExpression,
+        true
+    )]
+    #[case::mdx_js_esm(
+        Node::MdxJsEsm(mq_markdown::MdxJsEsm{ value: "value".into(), position: None }),
+        ast::Selector::MdxJsEsm,
         true
     )]
     fn test_eval_selector(

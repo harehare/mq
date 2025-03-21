@@ -16,7 +16,8 @@ mod node;
 pub use markdown::{Markdown, RenderOptions, pretty_markdown};
 pub use node::{
     Code, CodeInline, Definition, Footnote, FootnoteRef, Heading, Html, Image, ImageRef, Link,
-    LinkRef, List, ListStyle, Math, MathInline, Node, TableCell, TableRow, Text, Toml, Value, Yaml,
+    LinkRef, List, ListStyle, Math, MathInline, MdxFlowExpression, MdxJsEsm, MdxJsxFlowElement,
+    MdxTextExpression, Node, TableCell, TableRow, Text, Toml, Value, Yaml,
 };
 
 pub fn to_html(markdown: &str) -> String {

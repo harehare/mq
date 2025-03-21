@@ -253,7 +253,7 @@ pub struct MdxTextExpression {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MdxjsEsm {
+pub struct MdxJsEsm {
     pub value: CompactString,
     pub position: Option<Position>,
 }
@@ -289,7 +289,7 @@ pub enum Node {
     MdxJsxFlowElement(MdxJsxFlowElement),
     MdxJsxTextElement(MdxJsxTextElement),
     MdxTextExpression(MdxTextExpression),
-    MdxjsEsm(MdxjsEsm),
+    MdxJsEsm(MdxJsEsm),
     Text(Text),
 }
 
@@ -528,7 +528,7 @@ impl Node {
             Self::MdxTextExpression(mdx_text_expression) => {
                 format!("{{{}}}", mdx_text_expression.value)
             }
-            Self::MdxjsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
+            Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
             Self::Strong(Value { values, .. }) => {
                 format!(
                     "**{}**",
@@ -601,7 +601,7 @@ impl Node {
             Self::MdxJsxFlowElement(mdx) => Self::values_to_value(mdx.children),
             Self::MdxTextExpression(mdx) => mdx.value.to_string(),
             Self::MdxJsxTextElement(mdx) => Self::values_to_value(mdx.children),
-            Self::MdxjsEsm(mdx) => mdx.value.to_string(),
+            Self::MdxJsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
         }
     }
@@ -644,7 +644,7 @@ impl Node {
             Self::MdxJsxFlowElement(_) => "mdx_jsx_flow_element".into(),
             Self::MdxJsxTextElement(_) => "mdx_jsx_text_element".into(),
             Self::MdxTextExpression(_) => "mdx_text_expression".into(),
-            Self::MdxjsEsm(_) => "mdx_js_esm".into(),
+            Self::MdxJsEsm(_) => "mdx_js_esm".into(),
             Self::Text(_) => "text".into(),
         }
     }
@@ -676,7 +676,7 @@ impl Node {
             Self::Strong(s) => s.position.clone(),
             Self::MdxFlowExpression(m) => m.position.clone(),
             Self::MdxTextExpression(m) => m.position.clone(),
-            Self::MdxjsEsm(m) => m.position.clone(),
+            Self::MdxJsEsm(m) => m.position.clone(),
             Self::MdxJsxFlowElement(m) => m.position.clone(),
             Self::MdxJsxTextElement(m) => m.position.clone(),
             Self::Break { position } => position.clone(),
@@ -742,7 +742,7 @@ impl Node {
     }
 
     pub fn is_msx_js_esm(&self) -> bool {
-        matches!(self, Self::MdxjsEsm(MdxjsEsm { .. }))
+        matches!(self, Self::MdxJsEsm(MdxJsEsm { .. }))
     }
 
     pub fn is_toml(&self) -> bool {
@@ -947,9 +947,9 @@ impl Node {
                 mdx.value = value.into();
                 Self::MdxTextExpression(mdx)
             }
-            Self::MdxjsEsm(mut mdx) => {
+            Self::MdxJsEsm(mut mdx) => {
                 mdx.value = value.into();
-                Self::MdxjsEsm(mdx)
+                Self::MdxJsEsm(mdx)
             }
             Self::MdxJsxFlowElement(mut mdx) => {
                 if let Some(node) = mdx.children.first() {
@@ -1415,7 +1415,7 @@ impl Node {
                 })]
             }
             mdast::Node::MdxjsEsm(mdx) => {
-                vec![Self::MdxjsEsm(MdxjsEsm {
+                vec![Self::MdxJsEsm(MdxJsEsm {
                     value: mdx.value.into(),
                     position: mdx.position.map(|position| position.into()),
                 })]
@@ -1634,9 +1634,9 @@ mod tests {
     #[case::mdx_text_expression(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}),
            "updated".to_string(),
            Node::MdxTextExpression(MdxTextExpression{value: "updated".into(), position: None}))]
-    #[case::mdx_js_esm(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: None}),
+    #[case::mdx_js_esm(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}),
            "updated".to_string(),
-           Node::MdxjsEsm(MdxjsEsm{value: "updated".into(), position: None}))]
+           Node::MdxJsEsm(MdxJsEsm{value: "updated".into(), position: None}))]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
             attributes: vec![],
@@ -2098,7 +2098,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: None}), true)]
+    #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_msx_js_esm(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_msx_js_esm(), expected);
@@ -2201,7 +2201,7 @@ mod tests {
         value: "count + 1".into(),
         position: None,
     }), ListStyle::Dash, "{count + 1}")]
-    #[case(Node::MdxjsEsm(MdxjsEsm{
+    #[case(Node::MdxJsEsm(MdxJsEsm{
         value: "import React from 'react'".into(),
         position: None,
     }), ListStyle::Dash, "import React from 'react'")]
@@ -2308,7 +2308,7 @@ mod tests {
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_flow_element")]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_text_element")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "".into(), position: None}), "mdx_text_expression")]
-    #[case(Node::MdxjsEsm(MdxjsEsm{value: "".into(), position: None}), "mdx_js_esm")]
+    #[case(Node::MdxJsEsm(MdxJsEsm{value: "".into(), position: None}), "mdx_js_esm")]
     #[case(Node::Text(Text{value: "".to_string(), position: None}), "text")]
     fn test_name(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.name(), expected);
@@ -2342,7 +2342,7 @@ mod tests {
     #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
-    #[case(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: None}), "test")]
+    #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), "test")]
     #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "test")]
     fn test_value(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.value(), expected);
@@ -2377,7 +2377,7 @@ mod tests {
     #[case(Node::HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::MdxjsEsm(MdxjsEsm{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Definition(Definition{ident: "".to_string(), url: "".to_string(), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]

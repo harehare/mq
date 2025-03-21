@@ -1088,6 +1088,14 @@ mod tests {
                 ], false))
        ],
        Ok(vec![RuntimeValue::FALSE]))]
+    #[case::lte(vec![RuntimeValue::String("test".to_string())],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                ], false))
+       ],
+       Ok(vec![RuntimeValue::TRUE]))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
@@ -1104,6 +1112,18 @@ mod tests {
                 ], false)),
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
+    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+       vec![
+            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
+                    ast_node(ast::Expr::Call(ast::Ident::new("array"), vec![
+                        ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
+                    ], false)),
+                    ast_node(ast::Expr::Call(ast::Ident::new("array"), vec![
+                        ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
+                    ], false))
+                ], false)),
+       ],
+       Ok(vec![RuntimeValue::Array(vec!["te".to_string().into(), "te".to_string().into()])]))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
@@ -2500,6 +2520,13 @@ mod tests {
             ast_node(ast::Expr::Call(ast::Ident::new("len"), vec![], false))
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
+    #[case::to_code(vec![RuntimeValue::NONE],
+        vec![
+              ast_node(ast::Expr::Call(ast::Ident::new("to_code"), vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ], false)),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
     fn test_eval_process_none(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
