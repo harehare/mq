@@ -1420,9 +1420,11 @@ impl Node {
                     position: mdx.position.map(|position| position.into()),
                 })]
             }
-            mdast::Node::Text(mdast::Text { position, .. }) => {
+            mdast::Node::Text(mdast::Text {
+                position, value, ..
+            }) => {
                 vec![Self::Text(Text {
-                    value: Self::mdast_value(node),
+                    value,
                     position: position.map(|p| p.clone().into()),
                 })]
             }
@@ -1517,87 +1519,6 @@ impl Node {
                 },
                 None => property.name,
             },
-        }
-    }
-
-    fn mdast_value(mdast_node: mdast::Node) -> String {
-        match mdast_node.clone() {
-            mdast::Node::Root(root) => root.children.into_iter().map(Self::mdast_value).join(""),
-            mdast::Node::List(_) => "".to_string(),
-            mdast::Node::ListItem(list_item) => list_item
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::TableCell(table_cell) => table_cell
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::Blockquote(blockquote) => blockquote
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::Code(code) => code.value,
-            mdast::Node::Definition(definition) => definition.url,
-            mdast::Node::Delete(delete) => {
-                delete.children.into_iter().map(Self::mdast_value).join("")
-            }
-            mdast::Node::Emphasis(emphasis) => emphasis
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::FootnoteDefinition(footnote_definition) => footnote_definition
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::FootnoteReference(footnote_ref) => footnote_ref.label.unwrap_or_default(),
-            mdast::Node::Heading(heading) => {
-                heading.children.into_iter().map(Self::mdast_value).join("")
-            }
-            mdast::Node::Html(html) => html.value,
-            mdast::Node::Image(image) => image.url,
-            mdast::Node::ImageReference(image_ref) => image_ref.identifier,
-            mdast::Node::InlineCode(inline_code) => inline_code.value,
-            mdast::Node::InlineMath(inline_math) => inline_math.value,
-            mdast::Node::Link(link) => link.url,
-            mdast::Node::LinkReference(link_ref) => link_ref
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::Math(math) => math.value,
-            mdast::Node::Paragraph(paragraph) => paragraph
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::Text(text) => text.value,
-            mdast::Node::MdxFlowExpression(mdx_flow_expression) => mdx_flow_expression.value,
-            mdast::Node::MdxJsxFlowElement(mdx_jsx_flow_element) => mdx_jsx_flow_element
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::MdxJsxTextElement(mdx_jsx_text_element) => mdx_jsx_text_element
-                .children
-                .into_iter()
-                .map(Self::mdast_value)
-                .join(""),
-            mdast::Node::MdxTextExpression(mdx_text_expression) => mdx_text_expression.value,
-            mdast::Node::MdxjsEsm(mdxjs_esm) => mdxjs_esm.value,
-            mdast::Node::Strong(strong) => {
-                strong.children.into_iter().map(Self::mdast_value).join("")
-            }
-            mdast::Node::Yaml(yaml) => yaml.value,
-            mdast::Node::Toml(toml) => toml.value,
-            mdast::Node::Break(_) => "\\".to_string(),
-            mdast::Node::ThematicBreak(_) => "---".to_string(),
-            mdast::Node::TableRow(_) => "".to_string(),
-            mdast::Node::Table(_) => "".to_string(),
         }
     }
 

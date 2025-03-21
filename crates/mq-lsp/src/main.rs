@@ -534,4 +534,51 @@ mod tests {
             })
         );
     }
+
+    #[tokio::test]
+    async fn test_execute_command() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+
+        let set_input_result = backend
+            .execute_command(tower_lsp::lsp_types::ExecuteCommandParams {
+                command: "mq/setSelectedTextAsInput".to_string(),
+                arguments: vec![serde_json::Value::String("test input".to_string())],
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert!(set_input_result.is_ok());
+        if let Ok(Some(result)) = set_input_result {
+            assert_eq!(
+                result,
+                serde_json::Value::String("Set mq input:\ntest input".to_string())
+            );
+        }
+        assert_eq!(*backend.input.read().unwrap(), "test input");
+
+        let show_input_result = backend
+            .execute_command(tower_lsp::lsp_types::ExecuteCommandParams {
+                command: "mq/showInputText".to_string(),
+                arguments: vec![],
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert!(show_input_result.is_ok());
+        if let Ok(Some(result)) = show_input_result {
+            assert_eq!(
+                result,
+                serde_json::Value::String("mq input:\ntest input".to_string())
+            );
+        }
+    }
 }

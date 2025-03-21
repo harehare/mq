@@ -13,7 +13,6 @@ pub mod error;
 pub mod module;
 pub mod runtime_value;
 
-use compact_str::CompactString;
 use env::Env;
 use error::EvalError;
 use runtime_value::RuntimeValue;
@@ -171,61 +170,7 @@ impl Evaluator {
                     return Ok(RuntimeValue::NONE);
                 }
 
-                match &*expr.expr {
-                    ast::Expr::Selector(ident) => {
-                        Ok(Self::eval_selector_expr(runtime_value, ident))
-                    }
-                    ast::Expr::Include(module_id) => {
-                        self.eval_include(module_id.to_owned())?;
-                        Ok(runtime_value)
-                    }
-                    ast::Expr::Def(ident, params, program) => {
-                        let function = RuntimeValue::Function(
-                            params.clone(),
-                            program.clone(),
-                            Rc::clone(&env),
-                        );
-                        env.borrow_mut().define(ident, function.clone());
-                        Ok(function)
-                    }
-                    ast::Expr::Let(ident, node) => {
-                        let let_ =
-                            self.eval_expr(&runtime_value, Rc::clone(node), Rc::clone(&env))?;
-                        env.borrow_mut().define(ident, let_);
-                        Ok(runtime_value)
-                    }
-                    ast::Expr::Call(_, _, _) => {
-                        self.eval_expr(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-                    }
-                    ast::Expr::Literal(ast::Literal::Bool(b)) => {
-                        if *b {
-                            Ok(runtime_value)
-                        } else {
-                            Ok(RuntimeValue::NONE)
-                        }
-                    }
-                    ast::Expr::Literal(ast::Literal::String(s)) => {
-                        Ok(RuntimeValue::String(s.to_string()))
-                    }
-                    ast::Expr::Literal(ast::Literal::Number(n)) => Ok(RuntimeValue::Number(*n)),
-                    ast::Expr::Literal(ast::Literal::None) => Ok(RuntimeValue::NONE),
-                    ast::Expr::Self_ => Ok(runtime_value),
-                    ast::Expr::While(_, _) => {
-                        self.eval_while(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-                    }
-                    ast::Expr::Until(_, _) => {
-                        self.eval_until(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-                    }
-                    ast::Expr::Foreach(_, _, _) => {
-                        self.eval_foreach(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-                    }
-                    ast::Expr::If(_) => {
-                        self.eval_if(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-                    }
-                    ast::Expr::Ident(ident) => {
-                        self.eval_ident(ident, Rc::clone(expr), Rc::clone(&env))
-                    }
-                }
+                self.eval_expr(&runtime_value, Rc::clone(expr), Rc::clone(&env))
             })
     }
 
@@ -288,16 +233,9 @@ impl Evaluator {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
-            ast::Expr::Selector(ident) => match runtime_value {
-                RuntimeValue::Markdown(node_value, _) => Ok(RuntimeValue::Bool(
-                    builtin::eval_selector(node_value, ident),
-                )),
-                _ => Err(EvalError::InvalidTypes {
-                    token: (*self.token_arena.borrow()[node.token_id]).clone(),
-                    name: TokenKind::Selector(CompactString::new("")).to_string(),
-                    args: vec![runtime_value.to_string().into()],
-                }),
-            },
+            ast::Expr::Selector(ident) => {
+                Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
+            }
             ast::Expr::Def(ident, params, program) => {
                 let function =
                     RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
