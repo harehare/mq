@@ -1,0 +1,17 @@
+name: Setup mq
+description: Setup a mq cli
+author: Takahiro Sato
+branding:
+  icon: play-circle
+  color: blue
+inputs:
+  version:
+    default: '*'
+    required: false
+    description: 'A valid semver specifier of mq version to install.'
+  github-token:
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: node20
+  main: dist/index.js

@@ -1,0 +1,65 @@
+{
+  "name": "setup-mq",
+  "description": "This GitHub Action will setup mq in your GitHub Actions workflow",
+  "version": "0.1.0",
+  "author": "harehare",
+  "type": "module",
+  "private": true,
+  "homepage": "https://harehare.github.io/mq/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harehare/mq.git"
+  },
+  "bugs": {
+    "url": "https://github.com/harehare/mq/issues"
+  },
+  "keywords": [
+    "actions"
+  ],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "format:write": "npx prettier --write .",
+    "format:check": "npx prettier --check .",
+    "package": "npx rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript",
+    "package:watch": "npm run package -- --watch",
+    "test": "vitest --run",
+    "lint": "xo",
+    "bundle": "npm run test && npm run package"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0",
+    "@actions/tool-cache": "^2.0.2"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^1.2.7",
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.1",
+    "@types/node": "^20.17.24",
+    "@typescript-eslint/eslint-plugin": "^8.26.1",
+    "@typescript-eslint/parser": "^8.26.1",
+    "eslint": "^9.22.0",
+    "eslint-config-prettier": "^10.0.2",
+    "eslint-import-resolver-typescript": "^4.1.1",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-jest": "^28.11.0",
+    "eslint-plugin-prettier": "^5.2.3",
+    "make-coverage-badge": "^1.2.0",
+    "prettier": "^3.5.3",
+    "prettier-eslint": "^16.3.0",
+    "rollup": "^4.36.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9",
+    "xo": "^0.60.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "*"
+  }
+}

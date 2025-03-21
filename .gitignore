@@ -47,6 +47,7 @@ jspm_packages/
 *.tgz
 
 .env
+.env.test
 .env.development.local
 .env.test.local
 .env.production.local
@@ -54,9 +55,19 @@ jspm_packages/
 
 .cache/
 .vscode-test
-# Added by goreleaser init:
 dist/
 .intentionally-empty-file.o
 
 
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea
+*.code-workspace
+
+*.tgz
+
+# vscode
 *.vsix
