@@ -93,7 +93,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("error"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(message)] => Err(Error::UserDefinedError(message.clone())),
+                [RuntimeValue::String(message)] => Err(Error::UserDefined(message.clone())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -2395,7 +2395,7 @@ pub enum Error {
     #[error("Divided by 0")]
     ZeroDivision,
     #[error("{0}")]
-    UserDefinedError(String),
+    UserDefined(String),
 }
 
 impl Error {
@@ -2405,7 +2405,7 @@ impl Error {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> EvalError {
         match self {
-            Error::UserDefinedError(message) => EvalError::UserDefinedError {
+            Error::UserDefined(message) => EvalError::UserDefined {
                 message: message.to_owned(),
                 token: (*token_arena.borrow()[node.token_id]).clone(),
             },

@@ -49,7 +49,7 @@ impl Error {
                 ParseError::InsufficientTokens(token) => Some(token),
             },
             InnerError::Eval(err) => match err {
-                EvalError::UserDefinedError { token, .. } => Some(token),
+                EvalError::UserDefined { token, .. } => Some(token),
                 EvalError::InvalidBase64String(token, _) => Some(token),
                 EvalError::NotDefined(token, _) => Some(token),
                 EvalError::DateTimeFormatError(token, _) => Some(token),
