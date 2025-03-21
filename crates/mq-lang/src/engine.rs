@@ -104,6 +104,24 @@ impl Engine {
         })
     }
 
+    /// The main engine for evaluating mq code.
+    ///
+    /// The `Engine` manages parsing, optimization, and evaluation of mq.
+    /// It provides methods for configuration, loading modules, and evaluating code.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Engine;
+    ///
+    /// let mut engine = Engine::default();
+    /// engine.load_builtin_module().expect("Failed to load builtin module");
+    ///
+    /// let input = vec!["hello".to_string().into()];
+    /// let result = engine.eval("add(\" world\")", input.into_iter());
+    /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
+    /// ```
+    ///
     #[allow(clippy::result_large_err)]
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let program = parse(code, Rc::clone(&self.token_arena))?;

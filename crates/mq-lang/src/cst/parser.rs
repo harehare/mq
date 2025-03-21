@@ -290,11 +290,6 @@ impl<'a> Parser<'a> {
                 let mut args = self.parse_args()?;
                 children.append(&mut args);
 
-                children.push(self.next_node(
-                    |token_kind| matches!(token_kind, TokenKind::RParen),
-                    NodeKind::Token,
-                )?);
-
                 if let Some(token) = self.tokens.peek() {
                     if matches!(token.kind, TokenKind::Question) {
                         children.push(self.next_node(
@@ -321,11 +316,24 @@ impl<'a> Parser<'a> {
         };
 
         if matches!(token.kind, TokenKind::RParen) {
+            let token = self.tokens.next().unwrap();
+            let leading_trivia = self.parse_leading_trivia();
+            let trailing_trivia = self.parse_trailing_trivia();
+
+            nodes.push(Arc::new(Node {
+                kind: NodeKind::Token,
+                token: Some(Arc::clone(token)),
+                leading_trivia,
+                trailing_trivia,
+                children: Vec::new(),
+            }));
+
             return Ok(nodes);
         }
 
         loop {
             let arg_node = self.parse_arg()?;
+            let leading_trivia = self.parse_leading_trivia();
             let token = match self.tokens.peek() {
                 Some(token) => Arc::clone(token),
                 None => return Err(ParseError::UnexpectedEOFDetected),
@@ -333,13 +341,31 @@ impl<'a> Parser<'a> {
 
             match &token.kind {
                 TokenKind::Comma => {
+                    let token = self.tokens.next().unwrap();
+                    let trailing_trivia = self.parse_trailing_trivia();
+
                     nodes.push(arg_node);
-                    nodes.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?,
-                    );
+                    nodes.push(Arc::new(Node {
+                        kind: NodeKind::Token,
+                        token: Some(Arc::clone(token)),
+                        leading_trivia,
+                        trailing_trivia,
+                        children: Vec::new(),
+                    }));
                 }
                 TokenKind::RParen => {
+                    let token = self.tokens.next().unwrap();
+                    let trailing_trivia = self.parse_trailing_trivia();
+
                     nodes.push(arg_node);
+                    nodes.push(Arc::new(Node {
+                        kind: NodeKind::Token,
+                        token: Some(Arc::clone(token)),
+                        leading_trivia,
+                        trailing_trivia,
+                        children: Vec::new(),
+                    }));
+
                     break;
                 }
                 _ => return Err(ParseError::UnexpectedToken(Arc::clone(&token))),
@@ -414,8 +440,6 @@ impl<'a> Parser<'a> {
 
         let mut params = self.parse_params()?;
         children.append(&mut params);
-
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
@@ -574,14 +598,11 @@ impl<'a> Parser<'a> {
 
                         let mut args = self.parse_args()?;
 
-                        if args.len() != 1 {
+                        if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
                             return Err(ParseError::UnexpectedToken(Arc::clone(&token)));
                         }
                         children.append(&mut args);
-                        children.push(self.next_node(
-                            |kind| matches!(kind, TokenKind::RParen),
-                            NodeKind::Token,
-                        )?);
+
                         node.children = children;
                         Ok(Arc::new(node))
                     }
@@ -631,12 +652,11 @@ impl<'a> Parser<'a> {
 
         let mut args = self.parse_args()?;
 
-        if args.len() != 1 {
+        if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
             return Err(ParseError::UnexpectedToken(Arc::clone(token.unwrap())));
         }
 
         children.append(&mut args);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
@@ -680,12 +700,11 @@ impl<'a> Parser<'a> {
 
         let mut args = self.parse_args()?;
 
-        if args.len() != 1 {
+        if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
             return Err(ParseError::UnexpectedToken(Arc::clone(token.unwrap())));
         }
 
         children.append(&mut args);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
@@ -786,10 +805,9 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
+
         children.push(self.parse_ident(leading_trivia)?);
-
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
-
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let (mut program, _) = self.parse_program(false);
@@ -816,6 +834,7 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
+
         children.push(self.parse_expr(leading_trivia)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
@@ -844,6 +863,7 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
+
         children.push(self.parse_expr(leading_trivia)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
@@ -859,17 +879,29 @@ impl<'a> Parser<'a> {
     fn parse_params(&mut self) -> Result<Vec<Arc<Node>>, ParseError> {
         let mut nodes: Vec<Arc<Node>> = Vec::new();
         let token = match self.tokens.peek() {
-            Some(token) => token,
+            Some(token) => Arc::clone(token),
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
 
         if matches!(token.kind, TokenKind::RParen) {
+            let token = self.tokens.next().unwrap();
+            let leading_trivia = self.parse_leading_trivia();
+            let trailing_trivia = self.parse_trailing_trivia();
+
+            nodes.push(Arc::new(Node {
+                kind: NodeKind::Token,
+                token: Some(Arc::clone(token)),
+                leading_trivia,
+                trailing_trivia,
+                children: Vec::new(),
+            }));
+
             return Ok(nodes);
         }
 
         loop {
             let param_node = self.parse_param()?;
-
+            let leading_trivia = self.parse_leading_trivia();
             let token = match self.tokens.peek() {
                 Some(token) => token,
                 None => return Err(ParseError::UnexpectedEOFDetected),
@@ -877,13 +909,31 @@ impl<'a> Parser<'a> {
 
             match &token.kind {
                 TokenKind::Comma => {
+                    let token = self.tokens.next().unwrap();
+                    let trailing_trivia = self.parse_trailing_trivia();
+
                     nodes.push(param_node);
-                    nodes.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?,
-                    );
+                    nodes.push(Arc::new(Node {
+                        kind: NodeKind::Token,
+                        token: Some(Arc::clone(token)),
+                        leading_trivia,
+                        trailing_trivia,
+                        children: Vec::new(),
+                    }));
                 }
                 TokenKind::RParen => {
+                    let token = self.tokens.next().unwrap();
+                    let trailing_trivia = self.parse_trailing_trivia();
+
                     nodes.push(param_node);
+                    nodes.push(Arc::new(Node {
+                        kind: NodeKind::Token,
+                        token: Some(Arc::clone(token)),
+                        leading_trivia,
+                        trailing_trivia,
+                        children: Vec::new(),
+                    }));
+
                     break;
                 }
                 _ => return Err(ParseError::UnexpectedToken(Arc::clone(token))),
@@ -1944,6 +1994,70 @@ mod tests {
                             token: Some(Arc::new(token(TokenKind::Ident("body".into())))),
                             leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Arc::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
                             trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(4))))],
+                            children: vec![],
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter { errors: vec![], max_errors: 100 }
+        )
+    )]
+    #[case::call_with_newlines(
+        vec![
+            Arc::new(token(TokenKind::Ident("foo".into()))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::Comment("param comment".into()))),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::Ident("arg1".into()))),
+            Arc::new(token(TokenKind::Comma)),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::Ident("arg2".into()))),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Arc::new(token(TokenKind::Ident("foo".into())))),
+                    leading_trivia: vec![],
+                    trailing_trivia: vec![],
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("arg1".into())))),
+                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Arc::new(token(TokenKind::Comment("param comment".into())))), Trivia::NewLine],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Comma))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("arg2".into())))),
+                            leading_trivia: vec![Trivia::NewLine],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: vec![Trivia::NewLine],
+                            trailing_trivia: vec![],
                             children: vec![],
                         }),
                     ],
