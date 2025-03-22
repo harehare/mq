@@ -4,7 +4,7 @@ pub mod token;
 use compact_str::CompactString;
 use error::LexerError;
 use nom::Parser;
-use nom::bytes::complete::is_not;
+use nom::bytes::complete::{is_not, take_until};
 use nom::character::complete::line_ending;
 use nom::combinator::opt;
 use nom::number::complete::double;
@@ -18,7 +18,7 @@ use nom::{
     sequence::{delimited, pair, preceded},
 };
 use nom_locate::{LocatedSpan, position};
-use token::{Token, TokenKind};
+use token::{StringSegment, Token, TokenKind};
 
 use crate::eval::module::ModuleId;
 use crate::number::Number;
@@ -214,6 +214,84 @@ fn number_literal(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
+fn interpolation_ident(input: Span) -> IResult<Span, Span> {
+    delimited(tag("${"), take_until("}"), char('}')).parse(input)
+}
+
+fn string_segment(input: Span) -> IResult<Span, StringSegment> {
+    alt((
+        map(
+            |input| {
+                let (span, start) = position(input)?;
+                let (span, ident) = interpolation_ident(span)?;
+                let (span, end) = position(span)?;
+                Ok((
+                    span,
+                    (
+                        ident,
+                        Range {
+                            start: start.into(),
+                            end: end.into(),
+                        },
+                    ),
+                ))
+            },
+            |(ident, range)| StringSegment::Ident(ident.to_string().into(), range),
+        ),
+        map(
+            |input| {
+                let (span, start) = position(input)?;
+                let (span, text) = escaped_transform(
+                    none_of("\"\\${"),
+                    '\\',
+                    alt((
+                        value('\\', char('\\')),
+                        value('\"', char('\"')),
+                        value('\r', char('r')),
+                        value('\n', char('n')),
+                        value('\t', char('t')),
+                        unicode,
+                    )),
+                )(span)?;
+                let (span, end) = position(span)?;
+                Ok((
+                    span,
+                    (
+                        text,
+                        Range {
+                            start: start.into(),
+                            end: end.into(),
+                        },
+                    ),
+                ))
+            },
+            |(text, range)| StringSegment::Text(text.to_string(), range),
+        ),
+    ))
+    .parse(input)
+}
+
+fn interpolated_string(input: Span) -> IResult<Span, Token> {
+    let (span, start) = position(input)?;
+    let (span, _) = tag("s\"")(span)?;
+    let (span, segments) = many1(string_segment).parse(span)?;
+    let (span, _) = char('"')(span)?;
+    let (span, end) = position(span)?;
+    let module_id = start.extra;
+
+    Ok((
+        span,
+        Token {
+            range: Range {
+                start: start.into(),
+                end: end.into(),
+            },
+            kind: TokenKind::InterpolatedString(segments),
+            module_id,
+        },
+    ))
+}
+
 fn string_literal(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, s) = delimited(
@@ -250,7 +328,13 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
 }
 
 fn literals(input: Span) -> IResult<Span, Token> {
-    alt((number_literal, empty_string, string_literal)).parse(input)
+    alt((
+        number_literal,
+        empty_string,
+        interpolated_string,
+        string_literal,
+    ))
+    .parse(input)
 }
 
 fn ident(input: Span) -> IResult<Span, Token> {
@@ -505,6 +589,16 @@ mod tests {
               Token{range: Range { start: Position {line: 1, column: 21}, end: Position {line: 1, column: 22} }, kind: TokenKind::RParen, module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 22}, end: Position {line: 1, column: 23} }, kind: TokenKind::RParen, module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 23}, end: Position {line: 1, column: 23} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::interpolated_string("s\"test${val1}test\n\"",
+            Options{include_spaces: true, ignore_errors: true},
+            Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 2, column: 2} },
+                          kind: TokenKind::InterpolatedString(vec![
+                            StringSegment::Text("test".to_string(), Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 7} }),
+                            StringSegment::Ident("val1".to_string().into(), Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }),
+                            StringSegment::Text("test\n".to_string(), Range { start: Position {line: 1, column: 14}, end: Position {line: 2, column: 1 }})
+                          ]), module_id: 1.into()},
+                   Token{range: Range { start: Position {line: 2, column: 2}, end: Position {line: 2, column: 2} }, kind: TokenKind::Eof, module_id: 1.into()}]
+                ))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,

@@ -139,11 +139,12 @@ flood conditions in many of the nearby rivers.
   {
     name: "Generate sitemap",
     code: `def sitemap(item, base_url):
-  let url = "<url>
+  let path = replace(to_text(item), ".md", ".html")
+  | let loc = add(base_url, path)
+  | s"<url>
   <loc>\${loc}</loc>
-</url>"
-  | let path = replace(to_text(item), ".md", ".html")
-  | replace(url, "\${loc}", add(base_url, path)); | sitemap("https://example.com/")`,
+</url>";
+  | sitemap("https://example.com/")`,
     markdown: `# Summary
 
 - [Chapter1](chapter1.md)
@@ -260,7 +261,8 @@ export const Playground = () => {
           [/let|def|while|foreach|until|if|elif|else|self/, "keyword"],
           [/;/, "delimiter"],
           [/\|/, "operator"],
-          [/".*?"/, "string"],
+          [/s"[^"]*"/, "string"],
+          [/"[^"]*"/, "string"],
           [/\d+/, "number"],
           [/[a-zA-Z_]\w*(?=\s*\()/, "function"],
           [/(([a-zA-Z_]\w*)\s*\()/, "function"],
@@ -268,6 +270,8 @@ export const Playground = () => {
           [/[a-zA-Z_]\w*/, "identifier"],
         ],
       },
+      unicode: true,
+      includeLF: true,
     });
 
     monaco.editor.defineTheme("mq-base", {

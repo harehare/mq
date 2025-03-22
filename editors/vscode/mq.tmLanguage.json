@@ -25,6 +25,9 @@
         },
         {
             "include": "#selectors"
+        },
+        {
+            "include": "#interpolatedStrings"
         }
     ],
     "repository": {
@@ -92,6 +95,47 @@
                 {
                     "name": "constant.character.escape.mq",
                     "match": "\\\\."
+                }
+            ]
+        },
+        "interpolatedStrings": {
+            "name": "string.quoted.double.interpolated.mq",
+            "begin": "s\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "include": "#interpolation"
+                },
+                {
+                    "name": "constant.character.escape.mq",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "interpolation": {
+            "name": "string.interpolated.mq",
+            "begin": "\\$\\{",
+            "end": "\\}",
+            "patterns": [
+                {
+                    "name": "variable.other.interpolated.mq",
+                    "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+                }
+            ]
+        },
+        "expressions": {
+            "patterns": [
+                {
+                    "include": "#strings"
+                },
+                {
+                    "include": "#numbers"
+                },
+                {
+                    "include": "#functions"
+                },
+                {
+                    "include": "#keywords"
                 }
             ]
         },

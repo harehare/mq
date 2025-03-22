@@ -53,7 +53,15 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
         if let Some(range) = &symbol.source.text_range {
             let line = range.start.line - 1_u32;
             let start = (range.start.column - 1) as u32;
-            let length = ((range.end.column - 1) - (range.start.column - 1)) as u32;
+            let length = if range.start.line == range.end.line {
+                ((range.end.column - 1) - (range.start.column - 1)) as u32
+            } else {
+                symbol
+                    .name
+                    .as_ref()
+                    .map(|name| name.len())
+                    .unwrap_or_default() as u32
+            };
             let token_type = match symbol.kind {
                 mq_hir::SymbolKind::Function(_) => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::FUNCTION)

@@ -24,6 +24,7 @@
     - [Comments](reference/comments.md)
     - [Include](reference/include.md)
     - [Self](reference/self.md)
+    - [String Interpolation](reference/string_interpolation.md)
   - [Builtin selectors and functions](reference/builtins.md)
     - [Builtin functions](reference/builtin_functions.md)
     - [Builtin selectors](reference/builtin_selectors.md)

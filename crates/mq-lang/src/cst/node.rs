@@ -81,6 +81,7 @@ pub enum NodeKind {
     Def,
     Let,
     Literal,
+    InterpolatedString,
     Ident,
     Include,
     If,

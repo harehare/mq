@@ -1,8 +1,24 @@
 use std::fmt::{self, Display, Formatter};
 
 use compact_str::CompactString;
+use itertools::Itertools;
 
 use crate::{eval::module::ModuleId, number::Number, range::Range};
+
+#[derive(Debug, Clone, PartialOrd, PartialEq, Eq)]
+pub enum StringSegment {
+    Text(String, Range),
+    Ident(CompactString, Range),
+}
+
+impl Display for StringSegment {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            StringSegment::Text(text, _) => write!(f, "{}", text),
+            StringSegment::Ident(ident, _) => write!(f, "${{{}}}", ident),
+        }
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Debug, Clone)]
 pub struct Token {
@@ -40,6 +56,7 @@ pub enum TokenKind {
     Selector(CompactString),
     Ident(CompactString),
     StringLiteral(String),
+    InterpolatedString(Vec<StringSegment>),
     NumberLiteral(Number),
     BoolLiteral(bool),
     Whitespace(usize),
@@ -78,6 +95,9 @@ impl Display for TokenKind {
             TokenKind::Include => write!(f, "include"),
             TokenKind::Question => write!(f, "?"),
             TokenKind::NewLine => writeln!(f),
+            TokenKind::InterpolatedString(segments) => {
+                write!(f, "{}", segments.iter().join(""))
+            }
             TokenKind::Foreach => write!(f, "foreach"),
             TokenKind::Tab(n) => write!(f, "{}", "\t".repeat(*n)),
             TokenKind::Whitespace(n) => write!(f, "{}", " ".repeat(*n)),

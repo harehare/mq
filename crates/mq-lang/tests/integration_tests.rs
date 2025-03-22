@@ -272,6 +272,10 @@ fn engine() -> Engine {
       | add(func1(), func2())",
         vec![Value::Number(0.into())],
               Ok(vec![Value::Number(3.into())].into()))]
+#[case::interpolated_string("let val1 = \"Hello\"
+      | s\"${val1} World!\"",
+        vec![Value::Number(0.into())],
+             Ok(vec!["Hello World!".to_string().into()].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
@@ -285,6 +289,7 @@ fn test_eval(
 #[case::empty("", vec![Value::Number(0.into())])]
 #[case::error("f()def f(): 1", vec![Value::Number(0.into())])]
 #[case::func("def func1(): 1 | func1(); | func1()", vec![Value::Number(0.into())])]
+#[case::interpolated_string("s\"${val1} World!\"", vec![Value::Number(0.into())])]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

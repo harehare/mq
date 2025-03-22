@@ -74,7 +74,7 @@ pub use eval::builtin::{
 pub use eval::module::Module;
 pub use eval::module::ModuleLoader;
 pub use lexer::Options as LexerOptions;
-pub use lexer::token::{Token, TokenKind};
+pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use range::{Position, Range};
 pub use value::{Value, Values};
 

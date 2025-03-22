@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use compact_str::CompactString;
+use mq_lang::{Token, TokenKind};
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use url::Url;
@@ -245,6 +246,9 @@ impl Hir {
             mq_lang::CstNodeKind::Selector => {
                 self.add_selector_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::InterpolatedString => {
+                self.add_interpolated_string(node, source_id, scope_id, parent);
+            }
             _ => {}
         }
     }
@@ -275,6 +279,50 @@ impl Hir {
                 doc: node.comments(),
                 parent,
             });
+        }
+    }
+
+    fn add_interpolated_string(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::InterpolatedString,
+            token: Some(token),
+            ..
+        } = &**node
+        {
+            if let Token {
+                kind: TokenKind::InterpolatedString(segments),
+                ..
+            } = &**token
+            {
+                segments.iter().for_each(|segment| match segment {
+                    mq_lang::StringSegment::Text(text, range) => {
+                        self.add_symbol(Symbol {
+                            name: Some(text.into()),
+                            kind: SymbolKind::String,
+                            source: SourceInfo::new(Some(source_id), Some(range.clone())),
+                            scope: scope_id,
+                            doc: node.comments(),
+                            parent,
+                        });
+                    }
+                    mq_lang::StringSegment::Ident(ident, range) => {
+                        self.symbols.insert(Symbol {
+                            name: Some(ident.clone()),
+                            kind: SymbolKind::Variable,
+                            source: SourceInfo::new(Some(source_id), Some(range.clone())),
+                            scope: scope_id,
+                            doc: node.comments(),
+                            parent,
+                        });
+                    }
+                });
+            }
         }
     }
 
@@ -793,6 +841,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::until("until (true): 1;", "until", SymbolKind::Until)]
     #[case::literal("42", "42", SymbolKind::Number)]
     #[case::selector(".h", ".h", SymbolKind::Selector)]
+    #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
@@ -801,6 +850,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
         hir.add_code(url, code);
+        dbg!(&hir.symbols);
 
         let symbol = hir
             .symbols

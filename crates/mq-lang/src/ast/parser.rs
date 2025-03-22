@@ -93,6 +93,7 @@ impl<'a> Parser<'a> {
             TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
             TokenKind::If => self.parse_if(token),
+            TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
             TokenKind::Include => self.parse_include(token),
             TokenKind::Self_ => self.parse_self(token),
             TokenKind::Ident(name) => self.parse_ident(name, Rc::clone(&token)),
@@ -521,6 +522,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_interpolated_string(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        if let TokenKind::InterpolatedString(segments) = &token.kind {
+            let segments = segments.iter().map(|seg| seg.into()).collect::<Vec<_>>();
+
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::InterpolatedString(segments)),
+            }))
+        } else {
+            Err(ParseError::UnexpectedToken((*token).clone()))
+        }
+    }
+
     fn parse_args(&mut self) -> Result<Vec<Rc<Node>>, ParseError> {
         match self.tokens.peek() {
             Some(token) => match &***token {
@@ -559,43 +573,34 @@ impl<'a> Parser<'a> {
                 }
                 Token {
                     range: _,
-                    kind: TokenKind::BoolLiteral(b),
+                    kind: TokenKind::BoolLiteral(_),
                     module_id: _,
-                } => {
-                    args.push(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: Rc::new(Expr::Literal(Literal::Bool(*b))),
-                    }));
                 }
-                Token {
+                | Token {
                     range: _,
-                    kind: TokenKind::NumberLiteral(n),
+                    kind: TokenKind::NumberLiteral(_),
                     module_id: _,
-                } => {
-                    args.push(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: Rc::new(Expr::Literal(Literal::Number(*n))),
-                    }));
                 }
-                Token {
+                | Token {
                     range: _,
-                    kind: TokenKind::StringLiteral(s),
+                    kind: TokenKind::StringLiteral(_),
                     module_id: _,
-                } => {
-                    args.push(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: Rc::new(Expr::Literal(Literal::String(s.to_owned()))),
-                    }));
                 }
-                Token {
+                | Token {
                     range: _,
                     kind: TokenKind::None,
                     module_id: _,
                 } => {
-                    args.push(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: Rc::new(Expr::Literal(Literal::None)),
-                    }));
+                    let expr = self.parse_literal(Rc::clone(token))?;
+                    args.push(expr);
+                }
+                Token {
+                    range: _,
+                    kind: TokenKind::InterpolatedString(_),
+                    module_id: _,
+                } => {
+                    let expr = self.parse_interpolated_string(Rc::clone(token))?;
+                    args.push(expr);
                 }
                 Token {
                     range: _,
@@ -1936,6 +1941,7 @@ mod tests {
     #[case::html_full(".html", Selector::Html)]
     #[case::image(".image", Selector::Image)]
     #[case::image_ref(".image_ref", Selector::ImageRef)]
+    #[case::code(".code", Selector::Code(None))]
     #[case::code_inline(".code_inline", Selector::InlineCode)]
     #[case::math_inline(".math_inline", Selector::InlineMath)]
     #[case::link(".link", Selector::Link)]

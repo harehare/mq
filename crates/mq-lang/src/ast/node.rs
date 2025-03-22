@@ -9,6 +9,7 @@ use compact_str::CompactString;
 use crate::{
     Token,
     arena::{Arena, ArenaId},
+    lexer,
     number::Number,
     range::Range,
 };
@@ -70,6 +71,7 @@ impl Node {
             | Expr::Ident(_)
             | Expr::Selector(_)
             | Expr::Include(_)
+            | Expr::InterpolatedString(_)
             | Expr::Self_ => arena[self.token_id].range.clone(),
         }
     }
@@ -151,6 +153,21 @@ pub enum Selector {
     MdxJsxFlowElement,
 }
 
+#[derive(Debug, Clone, PartialOrd, PartialEq, Eq)]
+pub enum StringSegment {
+    Text(String),
+    Ident(Ident),
+}
+
+impl From<&lexer::token::StringSegment> for StringSegment {
+    fn from(segment: &lexer::token::StringSegment) -> Self {
+        match segment {
+            lexer::token::StringSegment::Text(text, _) => StringSegment::Text(text.to_owned()),
+            lexer::token::StringSegment::Ident(ident, _) => StringSegment::Ident(Ident::new(ident)),
+        }
+    }
+}
+
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Literal {
     String(String),
@@ -166,6 +183,7 @@ pub enum Expr {
     Let(Ident, Rc<Node>),
     Literal(Literal),
     Ident(Ident),
+    InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
     While(Rc<Node>, Program),
     Until(Rc<Node>, Program),

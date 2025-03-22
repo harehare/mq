@@ -237,7 +237,9 @@ impl Optimizer {
                     expr: Rc::new(ast::Expr::Until(Rc::clone(cond), program)),
                 })
             }
-            ast::Expr::Selector(_)
+            // TODO: implements interpolated string
+            ast::Expr::InterpolatedString(_)
+            | ast::Expr::Selector(_)
             | ast::Expr::Include(_)
             | ast::Expr::Literal(_)
             | ast::Expr::Self_ => Rc::clone(&node),

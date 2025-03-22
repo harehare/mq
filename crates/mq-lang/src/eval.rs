@@ -213,6 +213,36 @@ impl Evaluator {
         }
     }
 
+    fn eval_interpolated_string(
+        &self,
+        node: Rc<ast::Node>,
+        env: Rc<RefCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        if let ast::Expr::InterpolatedString(segments) = &*node.expr {
+            segments
+                .iter()
+                .try_fold(String::new(), |mut acc, segment| {
+                    match segment {
+                        ast::StringSegment::Text(s) => acc.push_str(s),
+                        ast::StringSegment::Ident(ident) => {
+                            let value =
+                                self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
+                            acc.push_str(&value.to_string());
+                        }
+                    }
+
+                    Ok(acc)
+                })
+                .map(|acc| acc.into())
+        } else {
+            Err(EvalError::InvalidTypes {
+                token: (*self.token_arena.borrow()[node.token_id]).clone(),
+                name: TokenKind::InterpolatedString(vec![]).to_string(),
+                args: vec![],
+            })
+        }
+    }
+
     fn eval_expr(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -251,6 +281,7 @@ impl Evaluator {
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
             ast::Expr::Foreach(_, _, _) => self.eval_foreach(runtime_value, node, env),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
+            ast::Expr::InterpolatedString(_) => self.eval_interpolated_string(node, env),
         }
     }
 

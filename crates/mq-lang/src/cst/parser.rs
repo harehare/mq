@@ -261,6 +261,11 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::None,
                     ..
                 } => self.parse_literal(leading_trivia),
+                Token {
+                    range: _,
+                    kind: TokenKind::InterpolatedString(_),
+                    ..
+                } => self.parse_interpolated_string(leading_trivia),
                 token => Err(ParseError::UnexpectedToken(Arc::new(token.clone()))),
             }
         } else {
@@ -411,6 +416,11 @@ impl<'a> Parser<'a> {
             | Token {
                 range: _,
                 kind: TokenKind::Selector(_),
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::InterpolatedString(_),
                 ..
             }
             | Token {
@@ -739,6 +749,31 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn parse_interpolated_string(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+    ) -> Result<Arc<Node>, ParseError> {
+        let token = self.tokens.next().unwrap();
+        let trailing_trivia = self.parse_trailing_trivia();
+
+        if let Token {
+            range: _,
+            kind: TokenKind::InterpolatedString(_),
+            module_id: _,
+        } = &**token
+        {
+            Ok(Arc::new(Node {
+                kind: NodeKind::InterpolatedString,
+                token: Some(Arc::clone(token)),
+                leading_trivia,
+                trailing_trivia,
+                children: Vec::new(),
+            }))
+        } else {
+            Err(ParseError::UnexpectedToken(Arc::clone(token)))
+        }
+    }
+
     fn parse_let(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
@@ -1047,7 +1082,7 @@ impl<'a> Parser<'a> {
 mod tests {
     use std::sync::Arc;
 
-    use crate::range::Range;
+    use crate::{lexer::token::StringSegment, range::Range};
 
     use super::*;
     use rstest::rstest;
@@ -2057,6 +2092,24 @@ mod tests {
                             children: vec![],
                         }),
                     ],
+                }),
+            ],
+            ErrorReporter { errors: vec![], max_errors: 100 }
+        )
+    )]
+    #[case::interpolated_string(
+        vec![
+            Arc::new(token(TokenKind::InterpolatedString(vec![StringSegment::Ident("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())]))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::InterpolatedString,
+                    token: Some(Arc::new(token(TokenKind::InterpolatedString(vec![StringSegment::Ident("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())])))),
+                    leading_trivia: vec![],
+                    trailing_trivia: vec![],
+                    children: vec![],
                 }),
             ],
             ErrorReporter { errors: vec![], max_errors: 100 }

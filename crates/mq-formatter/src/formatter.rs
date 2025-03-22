@@ -103,6 +103,9 @@ impl Formatter {
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
+            mq_lang::CstNodeKind::InterpolatedString => {
+                self.append_interpolated_string(&node, indent_level);
+            }
             mq_lang::CstNodeKind::While => {
                 self.format_expr(&node, indent_level_consider_new_line, indent_level)
             }
@@ -331,6 +334,32 @@ impl Formatter {
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
                 _ => {}
             }
+        }
+    }
+
+    fn append_interpolated_string(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::InterpolatedString,
+            token: Some(token),
+            ..
+        } = &**node
+        {
+            let indent_level = if self.is_prev_pipe() {
+                indent_level.saturating_sub(1)
+            } else {
+                indent_level
+            };
+
+            self.append_indent(indent_level);
+            self.output.push_str(&format!(
+                "s\"{}\"",
+                token
+                    .to_string()
+                    .replace("\"", "\\\"")
+                    .replace("\\n", "\\\\n")
+                    .replace("\\t", "\\\\t")
+                    .replace("\\r", "\\\\r")
+            ))
         }
     }
 
@@ -580,6 +609,14 @@ else:
   )",
         "test(
   \"test\"
+)"
+    )]
+    #[case::interpolated_string(
+        "test(
+s\"test${val1}\"
+  )",
+        "test(
+  s\"test${val1}\"
 )"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
