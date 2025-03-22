@@ -228,6 +228,7 @@ impl Cli {
 
                 let doc_csv = hir
                     .symbols()
+                    .sorted_by_key(|(_, symbol)| symbol.name.clone())
                     .filter_map(|(_, symbol)| match symbol {
                         mq_hir::Symbol {
                             kind: mq_hir::SymbolKind::Function(params),
