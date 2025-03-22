@@ -390,6 +390,16 @@ impl Formatter {
                         self.output.push_str(&format!(" {} ", token))
                     }
                 }
+                mq_lang::TokenKind::RParen => {
+                    if node.has_new_line() {
+                        let indent_level = indent_level.saturating_sub(1);
+                        self.append_leading_trivia(node, indent_level);
+                        self.append_indent(indent_level);
+                        self.output.push_str(&token.to_string());
+                    } else {
+                        self.output.push_str(&token.to_string());
+                    }
+                }
                 _ => self.output.push_str(&token.to_string()),
             }
         }
@@ -557,12 +567,20 @@ else:
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\");| snake_to_camel()",
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\"); | snake_to_camel()"
     )]
-    #[case::string("let test = \"test\"", "let test = \"test\"")]
-    #[case::string(
+    #[case::let_format("let test = \"test\"", "let test = \"test\"")]
+    #[case::func_format(
         "test(
 \"test\")",
         "test(
   \"test\")"
+    )]
+    #[case::func_format(
+        "test(
+\"test\"
+  )",
+        "test(
+  \"test\"
+)"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
