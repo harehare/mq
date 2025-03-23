@@ -1457,7 +1457,10 @@ impl Node {
                             level,
                             index: 0,
                             checked: list.checked,
-                            values: Self::from_mdast_node(n.clone()),
+                            values: Self::from_mdast_node(n.clone())
+                                .into_iter()
+                                .filter(|value| !matches!(value, Self::List(_)))
+                                .collect::<Vec<_>>(),
                             position: n.position().map(|p| p.clone().into()),
                         })],
                         list.children
@@ -1470,7 +1473,10 @@ impl Node {
                                         level: level + 1,
                                         index: 0,
                                         checked: list.checked,
-                                        values: Self::from_mdast_node(n.clone()),
+                                        values: Self::from_mdast_node(n.clone())
+                                            .into_iter()
+                                            .filter(|value| !matches!(value, Self::List(_)))
+                                            .collect::<Vec<_>>(),
                                         position: node.position().map(|p| p.clone().into()),
                                     })]
                                 } else {
