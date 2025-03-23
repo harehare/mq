@@ -27,7 +27,7 @@
             "include": "#selectors"
         },
         {
-            "include": "#interpolatedStrings"
+            "include": "#strings.interpolate"
         }
     ],
     "repository": {
@@ -98,7 +98,7 @@
                 }
             ]
         },
-        "interpolatedStrings": {
+        "strings.interpolate": {
             "name": "string.quoted.double.interpolated.mq",
             "begin": "s\"",
             "end": "\"",
@@ -113,7 +113,7 @@
             ]
         },
         "interpolation": {
-            "name": "string.interpolated.mq",
+            "name": "variable.interpolated.mq",
             "begin": "\\$\\{",
             "end": "\\}",
             "patterns": [
