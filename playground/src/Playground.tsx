@@ -145,6 +145,7 @@ flood conditions in many of the nearby rivers.
   <loc>\${loc}</loc>
   <priority>1.0</priority>
 </url>";
+| .[]
 | sitemap("https://example.com/")`,
     markdown: `# Summary
 

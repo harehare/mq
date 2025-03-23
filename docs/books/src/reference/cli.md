@@ -4,7 +4,7 @@ The mq command-line interface provides tools for querying and manipulating markd
 Below is the complete reference for all available commands and options.
 
 ``` sh
-Usage: mq [OPTIONS] [QUERY] [FILES]... [COMMAND]
+Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
   repl        Start a REPL session for interactive query execution
@@ -14,11 +14,11 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY]     
-  [FILES]...  
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
-  -f, --from-file <FROM_FILE>           load filter from the file
+  -f, --from-file                       load filter from the file
   -R, --raw-input                       Reads each line as a string
   -n, --null-input                      Use empty string as the single input value
   -L, --directory <MODULE_DIRECTORIES>  Search modules from the directory
@@ -41,6 +41,9 @@ Examples:
 
 To filter markdown nodes:
 $ mq 'query' file.md
+
+To read query from file:
+$ mq -f 'file' file.md
 
 To start a REPL session:
 $ mq repl

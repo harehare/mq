@@ -62,7 +62,7 @@ You can install the VSCode extension from the [Visual Studio Marketplace](https:
 <summary>Complete list of options (click to show)</summary>
 
 ```sh
-Usage: mq [OPTIONS] [QUERY] [FILES]... [COMMAND]
+Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
   repl        Start a REPL session for interactive query execution
@@ -72,11 +72,11 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY]
+  [QUERY OR FILE]
   [FILES]...
 
 Options:
-  -f, --from-file <FROM_FILE>           load filter from the file
+  -f, --from-file                       load filter from the file
   -R, --raw-input                       Reads each line as a string
   -n, --null-input                      Use empty string as the single input value
   -L, --directory <MODULE_DIRECTORIES>  Search modules from the directory

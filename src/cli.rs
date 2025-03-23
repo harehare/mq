@@ -41,6 +41,7 @@ pub struct Cli {
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
 
+    #[arg(value_name = "QUERY OR FILE")]
     query: Option<String>,
     files: Option<Vec<PathBuf>>,
 }
@@ -333,7 +334,7 @@ impl Cli {
     fn get_query(&self) -> miette::Result<String> {
         if let Some(query) = self.query.as_ref() {
             if self.input.from_file {
-                let path = PathBuf::from_str(&query).into_diagnostic()?;
+                let path = PathBuf::from_str(query).into_diagnostic()?;
                 fs::read_to_string(path).into_diagnostic()
             } else {
                 Ok(query.clone())
