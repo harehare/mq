@@ -7,6 +7,7 @@
 | `and`                     | Performs a logical AND operation on two boolean values.                                                  | `value1`, `value2`             | and(value1, value2)                |
 | `array`                   | Creates an array from the given values.                                                                  | `values`                       | array(values)                      |
 | `arrays`                  | Returns array if input is array, None otherwise                                                          | `a`                            | arrays(a)                          |
+| `assert`                  | Verifies that a condition is true and raises an error if it's false.                                     | `cond`                         | assert(cond)                       |
 | `assert`                  | Asserts that two values are equal, returns the value if true, otherwise raises an error.                 | `value1`, `value2`             | assert(value1, value2)             |
 | `base64`                  | Encodes the given string to base64.                                                                      | `input`                        | base64(input)                      |
 | `base64d`                 | Decodes the given base64 string.                                                                         | `input`                        | base64d(input)                     |

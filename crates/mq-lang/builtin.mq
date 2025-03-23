@@ -158,3 +158,10 @@ def csv2table(csv): split(csv, ",") | to_md_table_row();
 
 # Convert tsv string to markdown table
 def tsv2table(tsv): split(tsv, "	") | to_md_table_row();
+
+# Verifies that a condition is true and raises an error if it's false.
+def assert(cond):
+  if (cond):
+    self
+  else:
+    error(s"Assertion failed: It is not true.");
