@@ -630,7 +630,9 @@ impl Hir {
             });
 
             node.children_without_token().iter().for_each(|child| {
-                if matches!(child.kind, mq_lang::CstNodeKind::Literal) {
+                if matches!(child.kind, mq_lang::CstNodeKind::Literal)
+                    || matches!(child.kind, mq_lang::CstNodeKind::InterpolatedString)
+                {
                     self.add_literal_expr(child, source_id, scope_id, parent);
                 } else {
                     self.add_symbol(Symbol {

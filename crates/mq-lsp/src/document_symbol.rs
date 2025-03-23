@@ -28,8 +28,8 @@ pub fn response(
                         _ => return None,
                     };
 
-                    Some(DocumentSymbol {
-                        name: symbol.name.clone().unwrap_or_default().to_string(),
+                    symbol.name.as_ref().map(|name| DocumentSymbol {
+                        name: name.to_string(),
                         detail: None,
                         kind,
                         tags: None,
