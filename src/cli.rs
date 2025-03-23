@@ -18,6 +18,8 @@ use url::Url;
 #[command(after_help = "Examples:\n\n\
     To filter markdown nodes:\n\
     $ mq 'query' file.md\n\n\
+    To read query from file:\n\
+    $ mq -f 'file' file.md\n\n\
     To start a REPL session:\n\
     $ mq repl\n\n\
     To format mq file:\n\
@@ -78,8 +80,8 @@ impl Display for FormatTarget {
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// load filter from the file
-    #[arg(short, long)]
-    from_file: Option<Vec<PathBuf>>,
+    #[arg(short, long, default_value_t = false)]
+    from_file: bool,
 
     /// Reads each line as a string
     #[arg(short = 'R', long, group = "input")]
@@ -164,7 +166,7 @@ enum Commands {
 
 impl Cli {
     pub fn run(&self) -> miette::Result<()> {
-        if self.commands.is_none() && self.query.is_none() && self.input.from_file.is_none() {
+        if self.commands.is_none() && self.query.is_none() {
             return Cli::command().print_help().into_diagnostic();
         }
 
@@ -221,7 +223,7 @@ impl Cli {
                 Ok(())
             }
             Some(Commands::Docs) => {
-                let query = self.get_query();
+                let query = self.get_query().unwrap_or_default();
                 let mut hir = mq_hir::Hir::default();
                 let file = Url::parse("file:///").into_diagnostic()?;
                 hir.add_code(file, &query);
@@ -280,7 +282,7 @@ impl Cli {
                     }
                 }
 
-                let query = self.get_query();
+                let query = self.get_query()?;
 
                 for (file, content) in self.read_contents()? {
                     self.execute(&mut engine, &query, file, &content)?;
@@ -328,19 +330,17 @@ impl Cli {
         Ok(engine)
     }
 
-    fn get_query(&self) -> String {
-        self.input
-            .from_file
-            .as_ref()
-            .and_then(|files| {
-                files
-                    .iter()
-                    .map(|file| fs::read_to_string(file).into_diagnostic())
-                    .collect::<miette::Result<Vec<String>>>()
-                    .map(|r| r.join("|\n"))
-                    .ok()
-            })
-            .unwrap_or_else(|| self.query.clone().unwrap_or_default())
+    fn get_query(&self) -> miette::Result<String> {
+        if let Some(query) = self.query.as_ref() {
+            if self.input.from_file {
+                let path = PathBuf::from_str(&query).into_diagnostic()?;
+                fs::read_to_string(path).into_diagnostic()
+            } else {
+                Ok(query.clone())
+            }
+        } else {
+            Err(miette!("Query is required"))
+        }
     }
 
     fn execute(
