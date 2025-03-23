@@ -143,8 +143,9 @@ flood conditions in many of the nearby rivers.
   | let loc = add(base_url, path)
   | s"<url>
   <loc>\${loc}</loc>
+  <priority>1.0</priority>
 </url>";
-  | sitemap("https://example.com/")`,
+| sitemap("https://example.com/")`,
     markdown: `# Summary
 
 - [Chapter1](chapter1.md)

@@ -73,12 +73,12 @@ def snake_to_camel(x):
 
 ## Generate sitemap
 
-```python
+```scala
 def sitemap(item, base_url):
   let path = replace(to_text(item), ".md", ".html")
   | let loc = add(base_url, path)
   | s"<url>
   <loc>${loc}</loc>
+  <priority>1.0</priority>
 </url>";
-  | sitemap("https://example.com/")`
 ```
