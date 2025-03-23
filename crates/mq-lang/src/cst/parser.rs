@@ -321,13 +321,12 @@ impl<'a> Parser<'a> {
         };
 
         if matches!(token.kind, TokenKind::RParen) {
-            let token = self.tokens.next().unwrap();
             let leading_trivia = self.parse_leading_trivia();
+            let token = self.tokens.next().unwrap();
             let trailing_trivia = self.parse_trailing_trivia();
-
             nodes.push(Arc::new(Node {
                 kind: NodeKind::Token,
-                token: Some(Arc::clone(token)),
+                token: Some(Arc::clone(&token)),
                 leading_trivia,
                 trailing_trivia,
                 children: Vec::new(),
@@ -915,10 +914,9 @@ impl<'a> Parser<'a> {
         };
 
         if matches!(token.kind, TokenKind::RParen) {
-            let token = self.tokens.next().unwrap();
             let leading_trivia = self.parse_leading_trivia();
+            let token = self.tokens.next().unwrap();
             let trailing_trivia = self.parse_trailing_trivia();
-
             nodes.push(Arc::new(Node {
                 kind: NodeKind::Token,
                 token: Some(Arc::clone(token)),
