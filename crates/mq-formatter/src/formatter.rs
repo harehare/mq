@@ -528,6 +528,33 @@ else:
         "foreach (x, array(1, 2, 3)): add(x, 1);add(1, 2);"
     )]
     #[case::foreach_one_line(".[]|upcase()", ".[] | upcase()")]
+    #[case::while_multiline(
+        "while(condition()):
+        process();",
+        "while (condition()):
+  process();"
+    )]
+    #[case::while_oneline("while(condition()): process();", "while (condition()): process();")]
+    #[case::while_with_pipe(
+        "while(check_condition()):
+        data
+        | process()
+        | output();",
+        "while (check_condition()):
+  data
+  | process()
+  | output();"
+    )]
+    #[case::until_multiline(
+        "until(finished()):
+        continue_process();",
+        "until (finished()):
+  continue_process();"
+    )]
+    #[case::until_oneline(
+        "until(finished()): continue_process();",
+        "until (finished()): continue_process();"
+    )]
     #[case::test(
         "# Sample
 def hello_world():
@@ -613,6 +640,7 @@ s\"test${val1}\"
   s\"test${val1}\"
 )"
     )]
+    #[case::include("include  \"test.mq\"", "include \"test.mq\"")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

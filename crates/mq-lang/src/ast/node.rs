@@ -194,6 +194,8 @@ pub enum Expr {
 }
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::{Position, TokenKind};
 
     use super::*;
@@ -222,6 +224,196 @@ mod tests {
         };
 
         assert_eq!(node.range(Rc::new(arena)), range);
+    }
+
+    #[test]
+    fn test_node_range_def_with_program() {
+        let mut arena = Arena::new(10);
+
+        let stmt1_range = Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 10),
+        };
+        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
+
+        let stmt2_range = Range {
+            start: Position::new(2, 1),
+            end: Position::new(2, 15),
+        };
+        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
+
+        let stmt1 = Rc::new(Node {
+            token_id: stmt1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("statement1".to_string()))),
+        });
+
+        let stmt2 = Rc::new(Node {
+            token_id: stmt2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("statement2".to_string()))),
+        });
+
+        let def_token_id = arena.alloc(create_token(Range::default()));
+        let def_node = Node {
+            token_id: def_token_id,
+            expr: Rc::new(Expr::Def(
+                Ident::new("test_func"),
+                vec![],
+                vec![stmt1, stmt2],
+            )),
+        };
+
+        assert_eq!(
+            def_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(1, 1),
+                end: Position::new(2, 15)
+            }
+        );
+    }
+
+    #[test]
+    fn test_node_range_while_loop() {
+        let mut arena = Arena::new(10);
+
+        let stmt1_range = Range {
+            start: Position::new(3, 2),
+            end: Position::new(3, 8),
+        };
+        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
+
+        let stmt2_range = Range {
+            start: Position::new(4, 2),
+            end: Position::new(4, 12),
+        };
+        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
+
+        let cond_token_id = arena.alloc(create_token(Range::default()));
+        let cond_node = Rc::new(Node {
+            token_id: cond_token_id,
+            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+        });
+
+        let stmt1 = Rc::new(Node {
+            token_id: stmt1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("loop1".to_string()))),
+        });
+
+        let stmt2 = Rc::new(Node {
+            token_id: stmt2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("loop2".to_string()))),
+        });
+
+        let while_token_id = arena.alloc(create_token(Range::default()));
+        let while_node = Node {
+            token_id: while_token_id,
+            expr: Rc::new(Expr::While(cond_node, vec![stmt1, stmt2])),
+        };
+
+        assert_eq!(
+            while_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(3, 2),
+                end: Position::new(4, 12)
+            }
+        );
+    }
+
+    #[test]
+    fn test_node_range_until_loop() {
+        let mut arena = Arena::new(10);
+
+        let stmt1_range = Range {
+            start: Position::new(5, 4),
+            end: Position::new(5, 9),
+        };
+        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
+
+        let stmt2_range = Range {
+            start: Position::new(6, 4),
+            end: Position::new(6, 15),
+        };
+        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
+
+        let cond_token_id = arena.alloc(create_token(Range::default()));
+        let cond_node = Rc::new(Node {
+            token_id: cond_token_id,
+            expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+        });
+
+        let stmt1 = Rc::new(Node {
+            token_id: stmt1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("until1".to_string()))),
+        });
+
+        let stmt2 = Rc::new(Node {
+            token_id: stmt2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("until2".to_string()))),
+        });
+
+        let until_token_id = arena.alloc(create_token(Range::default()));
+        let until_node = Node {
+            token_id: until_token_id,
+            expr: Rc::new(Expr::Until(cond_node, vec![stmt1, stmt2])),
+        };
+
+        assert_eq!(
+            until_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(5, 4),
+                end: Position::new(6, 15)
+            }
+        );
+    }
+
+    #[test]
+    fn test_node_range_foreach_loop() {
+        let mut arena = Arena::new(10);
+
+        let stmt1_range = Range {
+            start: Position::new(10, 2),
+            end: Position::new(10, 20),
+        };
+        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
+
+        let stmt2_range = Range {
+            start: Position::new(11, 2),
+            end: Position::new(11, 20),
+        };
+        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
+
+        let iterable_token_id = arena.alloc(create_token(Range::default()));
+        let iterable_node = Rc::new(Node {
+            token_id: iterable_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("items".to_string()))),
+        });
+
+        let stmt1 = Rc::new(Node {
+            token_id: stmt1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("foreach1".to_string()))),
+        });
+
+        let stmt2 = Rc::new(Node {
+            token_id: stmt2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("foreach2".to_string()))),
+        });
+
+        let foreach_token_id = arena.alloc(create_token(Range::default()));
+        let foreach_node = Node {
+            token_id: foreach_token_id,
+            expr: Rc::new(Expr::Foreach(
+                Ident::new("item"),
+                iterable_node,
+                vec![stmt1, stmt2],
+            )),
+        };
+
+        assert_eq!(
+            foreach_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(10, 2),
+                end: Position::new(11, 20)
+            }
+        );
     }
 
     #[test]
@@ -325,5 +517,19 @@ mod tests {
                 end: Position::new(3, 3)
             }
         );
+    }
+
+    #[rstest]
+    #[case("abc", "def", std::cmp::Ordering::Less)]
+    #[case("def", "abc", std::cmp::Ordering::Greater)]
+    #[case("abc", "abc", std::cmp::Ordering::Equal)]
+    #[case("0", "abc", std::cmp::Ordering::Less)]
+    #[case("xyz", "abc", std::cmp::Ordering::Greater)]
+    fn test_ident_ordering(
+        #[case] name1: &str,
+        #[case] name2: &str,
+        #[case] expected: std::cmp::Ordering,
+    ) {
+        assert_eq!(name1.partial_cmp(name2), Some(expected));
     }
 }

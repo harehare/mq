@@ -312,7 +312,6 @@ mod tests {
             assert_eq!(value.string(), expected);
         }
 
-        // Test markdown string representation
         let markdown_node = mq_markdown::Node::Text(mq_markdown::Text {
             value: "test markdown".to_string(),
             position: None,
@@ -326,7 +325,6 @@ mod tests {
             RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())));
         assert_eq!(function.string(), "function");
 
-        // Test native function string representation
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("print"));
         assert_eq!(native_fn.string(), "native_function");
     }
@@ -337,6 +335,25 @@ mod tests {
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).name(), "number");
         assert_eq!(RuntimeValue::String(String::from("test")).name(), "string");
         assert_eq!(RuntimeValue::None.name(), "None");
+        assert_eq!(
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default()))).name(),
+            "function"
+        );
+        assert_eq!(
+            RuntimeValue::NativeFunction(AstIdent::new("name")).name(),
+            "native_function"
+        );
+        assert_eq!(
+            RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "".to_string(),
+                    position: None
+                }),
+                None
+            )
+            .name(),
+            "markdown"
+        );
     }
 
     #[test]
@@ -350,6 +367,25 @@ mod tests {
             "test1\ntest2"
         );
         assert_eq!(RuntimeValue::None.text(), "None");
+        assert_eq!(
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default()))).text(),
+            "function"
+        );
+        assert_eq!(
+            RuntimeValue::NativeFunction(AstIdent::new("name")).text(),
+            "native_function"
+        );
+        assert_eq!(
+            RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "value".to_string(),
+                    position: None
+                }),
+                None
+            )
+            .text(),
+            "value"
+        );
     }
 
     #[test]
