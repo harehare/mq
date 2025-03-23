@@ -104,7 +104,7 @@ impl Formatter {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::InterpolatedString => {
-                self.append_interpolated_string(&node, indent_level);
+                self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
             mq_lang::CstNodeKind::While => {
                 self.format_expr(&node, indent_level_consider_new_line, indent_level)
@@ -344,12 +344,6 @@ impl Formatter {
             ..
         } = &**node
         {
-            let indent_level = if self.is_prev_pipe() {
-                indent_level.saturating_sub(1)
-            } else {
-                indent_level
-            };
-
             self.append_indent(indent_level);
             self.output.push_str(&format!(
                 "s\"{}\"",
