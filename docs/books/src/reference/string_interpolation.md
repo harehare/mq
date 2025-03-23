@@ -5,7 +5,7 @@ String Interpolation allow embedding expressions directly inside string literals
 ## Syntax
 
 ```
-s"text ${expression} more text"
+s"text ${ident} more text"
 ```
 
 ## Examples
