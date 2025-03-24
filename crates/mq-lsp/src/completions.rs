@@ -44,7 +44,7 @@ pub fn response(
                                 params
                                     .iter()
                                     .enumerate()
-                                    .map(|(i, name)| format!("${{{}:{}{}}}", i + 1, name, i + 1))
+                                    .map(|(i, name)| format!("${{{}:{}}}", i + 1, name))
                                     .join(", ")
                             )),
                             insert_text_format: Some(InsertTextFormat::SNIPPET),

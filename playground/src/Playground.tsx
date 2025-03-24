@@ -2,8 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 
-import init, { runScript, formatScript } from "./mq-wasm/mq_wasm";
+import init, {
+  runScript,
+  formatScript,
+  definedValues,
+  diagnostics,
+} from "./mq-wasm/mq_wasm";
 import { FaGithub } from "react-icons/fa6";
+import { languages } from "monaco-editor";
 
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
@@ -255,6 +261,66 @@ export const Playground = () => {
       },
     });
 
+    monaco.editor.onDidCreateEditor((editor) => {
+      editor.onDidChangeModelContent(() => {
+        const model = editor.getModel();
+        if (model) {
+          const modelLanguage = model.getLanguageId();
+
+          if (modelLanguage === "markdown") {
+            return;
+          }
+
+          const errors = diagnostics(model.getValue());
+          monaco.editor.setModelMarkers(
+            model,
+            "mq",
+            errors.map((error) => ({
+              startLineNumber: error.startLine,
+              startColumn: error.startColumn,
+              endLineNumber: error.endLine,
+              endColumn: error.endColumn,
+              message: error.message,
+              severity: monaco.MarkerSeverity.Error,
+            }))
+          );
+        }
+      });
+    });
+
+    monaco.languages.registerCompletionItemProvider("mq", {
+      triggerCharacters: [" ", "|"],
+      provideCompletionItems: (model, position) => {
+        const values = definedValues("");
+        const suggestions: languages.CompletionItem[] = values.map((value) => {
+          const wordRange = model.getWordUntilPosition(position);
+          return {
+            label: value.name,
+            kind:
+              value.valueType === "Function"
+                ? monaco.languages.CompletionItemKind.Function
+                : value.valueType === "Variable"
+                ? monaco.languages.CompletionItemKind.Variable
+                : monaco.languages.CompletionItemKind.Property,
+            insertText: `${value.name}(${
+              value.args?.map((name, i) => `$\{${i}:${name}}`).join(", ") || ""
+            })`,
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: value.doc,
+            documentation: value.doc,
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          };
+        });
+
+        return { suggestions };
+      },
+    });
     monaco.languages.register({ id: "mq" });
     monaco.languages.setMonarchTokensProvider("mq", {
       tokenizer: {
