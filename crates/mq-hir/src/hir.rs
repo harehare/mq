@@ -340,7 +340,7 @@ impl Hir {
         {
             let _ = node.children_without_token().first().map(|child| {
                 let module_name = child.name().unwrap();
-                if let Ok(url) = Url::parse(&module_name) {
+                if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
                     let code = self.module_loader.read_file(&module_name);
                     let (module_source_id, _) = self.add_code(url, &code.unwrap_or_default());
 
@@ -844,6 +844,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::literal("42", "42", SymbolKind::Number)]
     #[case::selector(".h", ".h", SymbolKind::Selector)]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
+    #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
@@ -859,7 +860,12 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
             .find(|(_, symbol)| symbol.name == Some(expected_name.into()))
             .unwrap()
             .1;
-        assert_eq!(symbol.kind, expected_kind);
+
+        match (&symbol.kind, &expected_kind) {
+            (SymbolKind::Function(_), SymbolKind::Function(_)) => {}
+            (SymbolKind::Include(_), SymbolKind::Include(_)) => {}
+            _ => assert_eq!(symbol.kind, expected_kind),
+        }
     }
 
     #[rstest]

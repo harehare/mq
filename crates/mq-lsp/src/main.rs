@@ -236,7 +236,6 @@ impl Backend {
         let errors = self.error_map.get(&uri.to_string()).unwrap();
 
         let mut diagnostics = errors
-            .to_vec()
             .iter()
             .cloned()
             .map(|(message, item)| {

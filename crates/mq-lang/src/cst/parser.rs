@@ -323,6 +323,11 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::InterpolatedString(_),
                     ..
                 } => self.parse_interpolated_string(leading_trivia),
+                Token {
+                    range: _,
+                    kind: TokenKind::Eof,
+                    ..
+                } => Err(ParseError::UnexpectedEOFDetected),
                 token => Err(ParseError::UnexpectedToken(Arc::new(token.clone()))),
             }
         } else {
