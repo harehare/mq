@@ -38,7 +38,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             filter_none: true,
-            max_call_stack_depth: 128,
+            max_call_stack_depth: 192,
         }
     }
 }

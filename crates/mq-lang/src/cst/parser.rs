@@ -172,7 +172,11 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                _ => {}
+                token => {
+                    self.errors
+                        .report(ParseError::UnexpectedToken(Arc::new(token.clone())));
+                    break;
+                }
             }
         }
 
