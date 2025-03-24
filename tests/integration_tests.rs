@@ -67,13 +67,13 @@ fn test_cli_format_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
         .write_stdin(
             "def test(x):
 add(x,1);
-map(array(1,2,3),test)",
+| map(array(1,2,3),test)",
         )
         .assert();
     assert.success().code(0).stdout(
         "def test(x):
   add(x, 1);
-map(array(1, 2, 3), test)
+| map(array(1, 2, 3), test)
 ",
     );
 

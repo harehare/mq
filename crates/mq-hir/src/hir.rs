@@ -852,7 +852,6 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let mut hir = Hir::new();
         let url = Url::parse("file:///test").unwrap();
         hir.add_code(url, code);
-        dbg!(&hir.symbols);
 
         let symbol = hir
             .symbols
@@ -890,8 +889,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         SymbolKind::Foreach
     )]
     #[case::call(
-        "def foo():1; foo()",
-        mq_lang::Position::new(1, 15),
+        "def foo():1; | foo()",
+        mq_lang::Position::new(1, 16),
         "foo",
         SymbolKind::Function(Vec::new())
     )]

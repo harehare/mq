@@ -6,7 +6,7 @@ use crate::Token;
 
 type ErrorToken = Arc<Token>;
 
-#[derive(Error, Debug, PartialEq, Clone)]
+#[derive(Error, Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
 pub enum ParseError {
     #[error("Unexpected token `{0}`")]
     UnexpectedToken(ErrorToken),

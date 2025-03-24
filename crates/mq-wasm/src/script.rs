@@ -97,9 +97,9 @@ pub fn diagnostics(code: &str) -> JsValue {
         .error_ranges(code)
         .iter()
         .map(|(message, range)| Diagnostic {
-            start_line: range.start.line as u32,
+            start_line: range.start.line,
             start_column: range.start.column as u32,
-            end_line: range.end.line as u32,
+            end_line: range.end.line,
             end_column: range.end.column as u32,
             message: message.to_owned(),
         })
@@ -112,7 +112,7 @@ pub fn diagnostics(code: &str) -> JsValue {
 pub fn defined_values(code: &str) -> Result<JsValue, JsValue> {
     let mut hir = mq_hir::Hir::default();
     let file = Url::parse("file:///").unwrap();
-    hir.add_code(file, &code);
+    hir.add_code(file, code);
 
     let symbols = hir
         .symbols()

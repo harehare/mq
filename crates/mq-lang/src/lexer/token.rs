@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{eval::module::ModuleId, number::Number, range::Range};
 
-#[derive(Debug, Clone, PartialOrd, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub enum StringSegment {
     Text(String, Range),
     Ident(CompactString, Range),
@@ -20,14 +20,14 @@ impl Display for StringSegment {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Token {
     pub range: Range,
     pub kind: TokenKind,
     pub module_id: ModuleId,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum TokenKind {
     Def,
     Colon,

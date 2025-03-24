@@ -524,8 +524,8 @@ else:
         "foreach (x, array(1, 2, 3)): add(x, 1);"
     )]
     #[case::foreach_one_line(
-        "foreach(x,array(1,2,3)):add(x,1);add(1,2);",
-        "foreach (x, array(1, 2, 3)): add(x, 1);add(1, 2);"
+        "foreach(x,array(1,2,3)):add(x,1);|add(1,2);",
+        "foreach (x, array(1, 2, 3)): add(x, 1); | add(1, 2);"
     )]
     #[case::foreach_one_line(".[]|upcase()", ".[] | upcase()")]
     #[case::while_multiline(
@@ -559,11 +559,11 @@ else:
         "# Sample
 def hello_world():
   add(\" Hello World\")?;
-select(or(.[],.code,.h))|upcase()|hello_world()",
+|select(or(.[],.code,.h))|upcase()|hello_world()",
         "# Sample
 def hello_world():
   add(\" Hello World\")?;
-select(or(.[], .code, .h)) | upcase() | hello_world()"
+| select(or(.[], .code, .h)) | upcase() | hello_world()"
     )]
     #[case::test(
         ".h

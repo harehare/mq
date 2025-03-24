@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable, sync::Arc};
+use std::{collections::BTreeSet, fmt::Display, iter::Peekable, sync::Arc};
 
 use crate::{Position, Range, Token, TokenKind};
 
@@ -9,9 +9,9 @@ use super::{
 use itertools::Itertools;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Default, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub struct ErrorReporter {
-    errors: Vec<ParseError>,
+    errors: BTreeSet<ParseError>,
     max_errors: usize,
 }
 
@@ -21,21 +21,63 @@ impl Display for ErrorReporter {
     }
 }
 
+impl Default for ErrorReporter {
+    fn default() -> Self {
+        Self {
+            errors: BTreeSet::new(),
+            max_errors: 100,
+        }
+    }
+}
+
 impl ErrorReporter {
     pub fn new(max_errors: usize) -> Self {
         Self {
-            errors: Vec::new(),
+            errors: BTreeSet::new(),
+            max_errors,
+        }
+    }
+
+    pub fn with_error(errors: Vec<ParseError>, max_errors: usize) -> Self {
+        let mut h = BTreeSet::new();
+        h.extend(errors);
+
+        Self {
+            errors: h,
             max_errors,
         }
     }
 
     pub fn report(&mut self, error: ParseError) {
-        if self.errors.len() < self.max_errors
-            && (!matches!(error, ParseError::UnexpectedEOFDetected)
-                || !self.errors.contains(&ParseError::UnexpectedEOFDetected))
-        {
-            self.errors.push(error);
+        if self.errors.len() < self.max_errors {
+            self.errors.insert(error);
         }
+    }
+
+    pub fn to_vec(&self) -> Vec<ParseError> {
+        self.errors
+            .iter()
+            .sorted_by(|a, b| {
+                let a_range = match a {
+                    ParseError::UnexpectedToken(token) => &token.range,
+                    ParseError::InsufficientTokens(token) => &token.range,
+                    ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Greater,
+                };
+
+                let b_range = match b {
+                    ParseError::UnexpectedToken(token) => &token.range,
+                    ParseError::InsufficientTokens(token) => &token.range,
+                    ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Less,
+                };
+
+                a_range
+                    .start
+                    .line
+                    .cmp(&b_range.start.line)
+                    .then_with(|| a_range.start.column.cmp(&b_range.start.column))
+            })
+            .cloned()
+            .collect()
     }
 
     pub fn has_errors(&self) -> bool {
@@ -43,7 +85,7 @@ impl ErrorReporter {
     }
 
     pub fn error_ranges(&self, text: &str) -> Vec<(String, Range)> {
-        self.errors
+        self.to_vec()
             .iter()
             .map(|e| {
                 (
@@ -158,6 +200,7 @@ impl<'a> Parser<'a> {
                                 nodes.push(Arc::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Arc::clone(token)),
+
                                     leading_trivia,
                                     trailing_trivia: self.parse_trailing_trivia(),
                                     children: Vec::new(),
@@ -172,6 +215,16 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
+                Token {
+                    range: _,
+                    kind: TokenKind::Def,
+                    ..
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Let,
+                    ..
+                } => {}
                 token => {
                     self.errors
                         .report(ParseError::UnexpectedToken(Arc::new(token.clone())));
@@ -1159,7 +1212,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::let_(
@@ -1204,7 +1257,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::unexpected_token(
@@ -1269,7 +1322,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![ParseError::UnexpectedToken(Arc::new(token(TokenKind::Comma)))], max_errors: 100 }
+            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Arc::new(token(TokenKind::Comma)))], 100)
         )
     )]
     #[case::unexpected_eof(
@@ -1282,7 +1335,7 @@ mod tests {
         ],
         (
             vec![],
-            ErrorReporter { errors: vec![ParseError::UnexpectedEOFDetected], max_errors: 100 }
+            ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected], 100)
         )
     )]
     #[case::if_(
@@ -1366,7 +1419,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::if_elif_else(
@@ -1501,7 +1554,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::multiple_expr_with_trivia(
@@ -1539,7 +1592,7 @@ mod tests {
                     children: vec![],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::args_with_function(
@@ -1599,7 +1652,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::foreach(
@@ -1678,7 +1731,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::while_(
@@ -1742,7 +1795,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::selector1(
@@ -1760,7 +1813,7 @@ mod tests {
                     children: vec![],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::selector2(
@@ -1803,7 +1856,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::selector3(
@@ -1870,7 +1923,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::include(
@@ -1898,7 +1951,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::root_with_token_after_semicolon(
@@ -1925,7 +1978,7 @@ mod tests {
                     children: vec![],
                 }),
             ],
-            ErrorReporter { errors: vec![ParseError::UnexpectedEOFDetected], max_errors: 100 }
+            ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected], 100)
         )
     )]
     #[case::code_selector(
@@ -1968,7 +2021,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::until(
@@ -2032,7 +2085,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::call_with_newlines(
@@ -2096,7 +2149,7 @@ mod tests {
                     ],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     #[case::interpolated_string(
@@ -2114,7 +2167,7 @@ mod tests {
                     children: vec![],
                 }),
             ],
-            ErrorReporter { errors: vec![], max_errors: 100 }
+            ErrorReporter::default()
         )
     )]
     fn test_parse(

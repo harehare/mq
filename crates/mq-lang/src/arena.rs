@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ops::Index};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArenaId<T> {
     id: u32,
     _phantom_data: PhantomData<T>,
