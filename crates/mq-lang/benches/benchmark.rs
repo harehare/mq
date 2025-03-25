@@ -33,9 +33,12 @@ fn eval_speed_test(n: u64) -> mq_lang::Values {
         .unwrap()
 }
 
-#[divan::bench(args = ["# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n"])]
-fn eval_select_h(s: &str) -> mq_lang::Values {
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(s).unwrap();
+#[divan::bench(name = "eval_select_h")]
+fn eval_select_h() -> mq_lang::Values {
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(
+        "# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n",
+    )
+    .unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
     let mut engine = mq_lang::Engine::default();
     engine.eval(".h1", input.into_iter()).unwrap()
