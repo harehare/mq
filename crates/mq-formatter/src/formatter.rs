@@ -114,8 +114,6 @@ impl Formatter {
             }
             mq_lang::CstNodeKind::Eof => {}
         }
-
-        self.append_trailing_trivia(&node, indent_level);
     }
 
     fn format_include(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
@@ -297,17 +295,6 @@ impl Formatter {
         }
     }
 
-    fn append_trailing_trivia(&mut self, node: &Arc<mq_lang::CstNode>, _indent_level: usize) {
-        for trivia in &node.trailing_trivia {
-            match trivia {
-                mq_lang::CstTrivia::Whitespace(_) => {}
-                mq_lang::CstTrivia::Tab(_) => {}
-                mq_lang::CstTrivia::NewLine => {}
-                _ => {}
-            }
-        }
-    }
-
     fn append_indent(&mut self, level: usize) {
         self.output
             .push_str(&" ".repeat(level * self.config.indent_width));
@@ -332,7 +319,7 @@ impl Formatter {
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
-                _ => {}
+                _ => unreachable!(),
             }
         }
     }
@@ -396,6 +383,7 @@ impl Formatter {
             match token.kind {
                 mq_lang::TokenKind::Comma => {
                     if node.has_new_line() {
+                        self.append_leading_trivia(node, indent_level);
                         self.append_indent(indent_level);
                         self.output.push_str(&format!("{}", token))
                     } else {
@@ -565,7 +553,7 @@ def hello_world():
   add(\" Hello World\")?;
 | select(or(.[], .code, .h)) | upcase() | hello_world()"
     )]
-    #[case::test(
+    #[case::def(
         ".h
 | let link = to_link(add(\"#\", to_text(self)), to_text(self), \"\");
 | if (eq(to_md_name(), \"h1\")):
@@ -595,7 +583,7 @@ elif (eq(to_md_name(), \"h5\")):
 else:
   None"
     )]
-    #[case::test(
+    #[case::def(
         "def snake_to_camel(x):
   let words = split(x, \"_\")
   | foreach (word, words):
@@ -613,23 +601,35 @@ else:
   | join(\"\");
 | snake_to_camel()"
     )]
-    #[case::test(
+    #[case::def(
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\");| snake_to_camel()",
         "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\"); | snake_to_camel()"
     )]
-    #[case::let_format("let test = \"test\"", "let test = \"test\"")]
-    #[case::func_format(
+    #[case::let_("let test = \"test\"", "let test = \"test\"")]
+    #[case::call(
         "test(
 \"test\")",
         "test(
   \"test\")"
     )]
-    #[case::func_format(
+    #[case::call(
         "test(
 \"test\"
   )",
         "test(
   \"test\"
+)"
+    )]
+    #[case::call(
+        "test(
+\"test\"
+,\"test\"
+,true
+  )",
+        "test(
+  \"test\"
+  ,\"test\"
+  ,true
 )"
     )]
     #[case::interpolated_string(

@@ -1379,6 +1379,12 @@ mod tests {
             token(TokenKind::Def),
         ],
         Err(ParseError::UnexpectedToken(token(TokenKind::Def))))]
+    #[case::ident6(
+        vec![
+            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Def),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(CompactString::new("and"))))))]
     #[case::error(
         vec![
             token(TokenKind::Ident(CompactString::new("contains"))),
@@ -1461,6 +1467,25 @@ mod tests {
             token(TokenKind::SemiColon),
         ],
         Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+    #[case::def7(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+    #[case::def7(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::LParen, module_id: 1.into()})))]
     #[case::let_1(
             vec![
                 token(TokenKind::Let),
@@ -1550,6 +1575,26 @@ mod tests {
                 token(TokenKind::Equal),
                 token(TokenKind::Ident(CompactString::new("some_var"))),
                 token(TokenKind::Pipe),
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(Expr::Let(
+                        Ident::new_with_token("z", Some(Rc::new(token(TokenKind::Ident("z".into()))))),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(
+                                Expr::Ident(Ident::new_with_token("some_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("some_var")))))))),
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::let_6(
+            vec![
+                token(TokenKind::Let),
+                token(TokenKind::Ident(CompactString::new("z"))),
+                token(TokenKind::Equal),
+                token(TokenKind::Ident(CompactString::new("some_var"))),
             ],
             Ok(vec![
                 Rc::new(Node {
@@ -1681,6 +1726,42 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedEOFDetected(0.into())))]
+    #[case::if_error(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::LParen),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
+                token(TokenKind::Elif),
+                token(TokenKind::LParen),
+                token(TokenKind::BoolLiteral(false)),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("elif branch".to_owned())),
+                token(TokenKind::Else),
+                token(TokenKind::Colon),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::If, module_id: 1.into()})))]
+    #[case::elif_error(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::LParen),
+                token(TokenKind::BoolLiteral(true)),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
+                token(TokenKind::Elif),
+                token(TokenKind::LParen),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("elif branch".to_owned())),
+                token(TokenKind::Else),
+                token(TokenKind::Colon),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Elif, module_id: 1.into()})))]
     #[case::h_selector(
         vec![
             token(TokenKind::Selector(CompactString::new(".h"))),
@@ -1740,6 +1821,25 @@ mod tests {
                 })],
             )),
         })]))]
+    #[case::while_error(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("loop body".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
+    #[case::while_error(
+        vec![
+            token(TokenKind::While),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
     #[case::until(
         vec![
             token(TokenKind::Until),
@@ -1763,6 +1863,25 @@ mod tests {
                 })],
             )),
         })]))]
+    #[case::until_error(
+        vec![
+            token(TokenKind::Until),
+            token(TokenKind::LParen),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof),
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::until_error(
+        vec![
+            token(TokenKind::Until),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Until, module_id: 1.into()})))]
     #[case::foreach(
         vec![
             token(TokenKind::Foreach),
@@ -1810,6 +1929,19 @@ mod tests {
                 })],
             )),
         })]))]
+    #[case::foreach(
+        vec![
+            token(TokenKind::Foreach),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(CompactString::new("print"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::RParen),
+            token(TokenKind::SemiColon),
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Foreach, module_id: 1.into()})))]
     #[case::self_(
         vec![token(TokenKind::Self_), token(TokenKind::Eof)],
         Ok(vec![Rc::new(Node {
@@ -1882,16 +2014,6 @@ mod tests {
     #[case::while_error(
         vec![
             token(TokenKind::While),
-            token(TokenKind::LParen),
-            token(TokenKind::BoolLiteral(true)),
-            token(TokenKind::RParen),
-            token(TokenKind::Colon),
-            token(TokenKind::Eof),
-        ],
-        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
-    #[case::until_error(
-        vec![
-            token(TokenKind::Until),
             token(TokenKind::LParen),
             token(TokenKind::BoolLiteral(true)),
             token(TokenKind::RParen),

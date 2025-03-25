@@ -348,4 +348,15 @@ mod tests {
         let result = ctx.execute("").unwrap();
         assert!(matches!(result, CommandOutput::None));
     }
+
+    #[test]
+    fn test_execute_copy() {
+        let engine = mq_lang::Engine::default();
+        let test_value = mq_lang::Value::from(42);
+        let mut ctx = CommandContext::new(engine, vec![test_value]);
+
+        let result = ctx.execute(".copy").unwrap();
+
+        assert!(matches!(result, CommandOutput::None));
+    }
 }

@@ -535,6 +535,96 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_references() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let code = "def test_func(): 1;\ndef main(): test_func();";
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri.to_string(), source_id);
+
+        let result = backend
+            .references(ReferenceParams {
+                text_document_position: tower_lsp::lsp_types::TextDocumentPositionParams {
+                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier {
+                        uri: uri.clone(),
+                    },
+                    position: Position::new(0, 6),
+                },
+                work_done_progress_params: Default::default(),
+                context: tower_lsp::lsp_types::ReferenceContext {
+                    include_declaration: true,
+                },
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_document_symbol() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let code = "def test_func(): 1;\ndef main(): test_func();";
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri.to_string(), source_id);
+
+        let result = backend
+            .document_symbol(DocumentSymbolParams {
+                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+
+        let symbols = result.unwrap().unwrap();
+
+        if let DocumentSymbolResponse::Nested(symbols) = symbols {
+            let symbol_names: Vec<String> = symbols.iter().map(|s| s.name.clone()).collect();
+
+            assert!(symbol_names.contains(&"test_func".to_string()));
+            assert!(symbol_names.contains(&"main".to_string()));
+            assert_eq!(symbols.len(), 2);
+        } else {
+            panic!("Expected flat symbol response");
+        }
+    }
+
+    #[tokio::test]
     async fn test_execute_command() {
         let (service, _) = LspService::new(|client| Backend {
             client,

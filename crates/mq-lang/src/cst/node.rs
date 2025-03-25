@@ -178,13 +178,14 @@ impl Node {
         )
     }
 }
+
 #[cfg(test)]
 mod tests {
+
     use rstest::rstest;
 
-    use crate::arena::ArenaId;
-
     use super::*;
+    use crate::arena::ArenaId;
 
     #[rstest]
     #[case(
@@ -214,5 +215,132 @@ mod tests {
     )]
     fn test_trivia_display(#[case] trivia: Trivia, #[case] expected: &str) {
         assert_eq!(format!("{}", trivia), expected);
+    }
+
+    #[rstest]
+    #[case(
+        Trivia::Whitespace(Arc::new(Token {
+            kind: TokenKind::Whitespace(1),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        true, false, false, false
+    )]
+    #[case(Trivia::NewLine, false, true, false, false)]
+    #[case(
+        Trivia::Tab(Arc::new(Token {
+            kind: TokenKind::Tab(1),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        false, false, true, false
+    )]
+    #[case(
+        Trivia::Comment(Arc::new(Token {
+            kind: TokenKind::Comment("comment".to_string()),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        false, false, false, true
+    )]
+    fn test_trivia_type_checks(
+        #[case] trivia: Trivia,
+        #[case] is_whitespace: bool,
+        #[case] is_new_line: bool,
+        #[case] is_tab: bool,
+        #[case] is_comment: bool,
+    ) {
+        assert_eq!(trivia.is_whitespace(), is_whitespace);
+        assert_eq!(trivia.is_new_line(), is_new_line);
+        assert_eq!(trivia.is_tab(), is_tab);
+        assert_eq!(trivia.is_comment(), is_comment);
+    }
+
+    #[rstest]
+    #[case(
+        Trivia::Comment(Arc::new(Token {
+            kind: TokenKind::Comment("test comment".to_string()),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        "test comment"
+    )]
+    #[case(
+        Trivia::Whitespace(Arc::new(Token {
+            kind: TokenKind::Whitespace(1),
+            range: Range::default(),
+            module_id: ArenaId::new(0),
+        })),
+        ""
+    )]
+    fn test_trivia_comment(#[case] trivia: Trivia, #[case] expected: &str) {
+        assert_eq!(trivia.comment(), expected);
+    }
+
+    #[rstest]
+    #[case(NodeKind::Token, true)]
+    #[case(NodeKind::Call, false)]
+    #[case(NodeKind::Def, false)]
+    fn test_node_is_token(#[case] kind: NodeKind, #[case] expected: bool) {
+        let node = Node {
+            kind,
+            token: None,
+            leading_trivia: vec![],
+            trailing_trivia: vec![],
+            children: vec![],
+        };
+        assert_eq!(node.is_token(), expected);
+    }
+
+    #[test]
+    fn test_node_has_new_line() {
+        let node = Node {
+            kind: NodeKind::Call,
+            token: None,
+            leading_trivia: vec![Trivia::NewLine],
+            trailing_trivia: vec![],
+            children: vec![],
+        };
+        assert!(node.has_new_line());
+
+        let node_without_newline = Node {
+            kind: NodeKind::Call,
+            token: None,
+            leading_trivia: vec![],
+            trailing_trivia: vec![],
+            children: vec![],
+        };
+        assert!(!node_without_newline.has_new_line());
+    }
+
+    #[test]
+    fn test_children_without_token() {
+        let token_node = Arc::new(Node {
+            kind: NodeKind::Token,
+            token: None,
+            leading_trivia: vec![],
+            trailing_trivia: vec![],
+            children: vec![],
+        });
+
+        let call_node = Arc::new(Node {
+            kind: NodeKind::Call,
+            token: None,
+            leading_trivia: vec![],
+            trailing_trivia: vec![],
+            children: vec![],
+        });
+
+        let parent = Node {
+            kind: NodeKind::Def,
+            token: None,
+            leading_trivia: vec![],
+            trailing_trivia: vec![],
+            children: vec![token_node, call_node.clone()],
+        };
+
+        let result = parent.children_without_token();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], call_node);
     }
 }

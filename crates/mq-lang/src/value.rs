@@ -40,6 +40,12 @@ impl From<Number> for Value {
     }
 }
 
+impl From<i32> for Value {
+    fn from(n: i32) -> Self {
+        Value::Number(n.into())
+    }
+}
+
 impl From<RuntimeValue> for Value {
     fn from(value: RuntimeValue) -> Self {
         match value {

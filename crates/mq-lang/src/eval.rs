@@ -533,921 +533,1031 @@ mod tests {
         })
     }
 
+    fn ast_call(name: &str, args: Vec<Rc<AstNode>>) -> Rc<AstNode> {
+        Rc::new(AstNode {
+            token_id: 0.into(),
+            expr: Rc::new(ast::Expr::Call(ast::Ident::new(name), args, false)),
+        })
+    }
+
     #[rstest]
     #[case::starts_with(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"),
-                    vec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))], false))
+            ast_call("starts_with", vec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::starts_with(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"),
-                     vec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))], false))
+            ast_call("starts_with", vec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::starts_with(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"), vec![
-                ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))
-            ], false))
+            ast_call("starts_with", vec![ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::starts_with(vec![RuntimeValue::Array(vec!["start".to_string().into(), "end".to_string().into()])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"), vec![
+            ast_call("starts_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("start".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::starts_with(vec![RuntimeValue::Array(vec!["start".to_string().into(), "end".to_string().into()])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"), vec![
+            ast_call("starts_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("end".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::starts_with(vec![RuntimeValue::Number(1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"), vec![
+            ast_call("starts_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("end".to_string())))
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "starts_with".to_string(),
                                                     args: vec!["1".into(), "end".to_string().into()]})))]
     #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::ends_with(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::ends_with(vec![RuntimeValue::Array(vec!["start".to_string().into(), "end".to_string().into()])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("end".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::ends_with(vec![RuntimeValue::Array(vec!["start".to_string().into(), "end".to_string().into()])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("start".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::ends_with(vec![RuntimeValue::Number(1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "ends_with".to_string(),
                                                     args: vec![1.to_string().into(), "te".into()]})))]
     #[case::downcase(vec![RuntimeValue::String("TEST".to_string())],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
-       ],
+       vec![ast_call("downcase", Vec::new())],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::downcase(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "TEST".to_string(), position: None}), None)],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
-       ],
+       vec![ast_call("downcase", Vec::new())],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
     #[case::upcase(vec![RuntimeValue::String("test".to_string())],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("upcase"), Vec::new(), false))
-       ],
+       vec![ast_call("upcase", Vec::new())],
        Ok(vec![RuntimeValue::String("TEST".to_string())]))]
     #[case::upcase(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("upcase"), Vec::new(), false))
-       ],
+       vec![ast_call("upcase", Vec::new())],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "TEST".to_string(), position: None}), None)]))]
     #[case::upcase(vec![RuntimeValue::NONE],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("upcase"), Vec::new(), false))
-       ],
+       vec![ast_call("upcase", Vec::new())],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::upcase(vec![RuntimeValue::Number(123.into())],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("upcase"), Vec::new(), false))
-       ],
+       vec![ast_call("upcase", Vec::new())],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "upcase".to_string(),
                                                     args: vec![123.to_string().into()]})))]
     #[case::replace(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("replace"), vec![
+            ast_call("replace", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("exam".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("examString".to_string())]))]
     #[case::replace(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("replace"), vec![
+            ast_call("replace", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("exam".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "examString".to_string(), position: None}), None)]))]
     #[case::replace(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("replace"), vec![
+            ast_call("replace", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("exam".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::replace(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("replace"), vec![
+            ast_call("replace", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("exam".to_string())))
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "replace".to_string(),
                                                     args: vec![123.to_string().into(), "test".to_string().into(), "exam".to_string().into()]})))]
     #[case::gsub_regex(vec![RuntimeValue::String("test123".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gsub"), vec![
+            ast_call("gsub", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("456".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("test456".to_string())]))]
     #[case::gsub_regex(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gsub"), vec![
+            ast_call("gsub", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("456".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test456".to_string(), position: None}), None)]))]
     #[case::gsub_regex(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gsub"), vec![
+            ast_call("gsub", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "gsub".to_string(),
                                                     args: vec![123.to_string().into(), "test".to_string().into(), r"\d+".to_string().into()]})))]
     #[case::len(vec![RuntimeValue::String("testString".to_string())],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("len"), Vec::new(), false))
-       ],
+       vec![ast_call("len", Vec::new())],
        Ok(vec![RuntimeValue::Number(10.into())]))]
     #[case::len(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("len"), Vec::new(), false))
-       ],
+       vec![ast_call("len", Vec::new())],
        Ok(vec![RuntimeValue::Number(10.into())]))]
+    #[case::len(vec![RuntimeValue::TRUE],
+       vec![ast_call("len", Vec::new())],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "len".to_string(),
+                                                    args: vec![true.to_string().into()]})))]
     #[case::len(vec![RuntimeValue::String("テスト".to_string())],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("len"), Vec::new(), false))
-       ],
+       vec![ast_call("len", Vec::new())],
        Ok(vec![RuntimeValue::Number(3.into())]))]
     #[case::len(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "テスト".to_string(), position: None}), None)],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("len"), Vec::new(), false))
-       ],
+       vec![ast_call("len", Vec::new())],
        Ok(vec![RuntimeValue::Number(3.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::String("テスト".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(9.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::String("😊".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "テスト".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(9.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "😊".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".to_string())])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
+    #[case::utf8bytelen(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("utf8bytelen", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "utf8bytelen".to_string(),
+                                                    args: vec![true.to_string().into()]})))]
     #[case::index(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("index"), vec![
+            ast_call("index", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
     #[case::index(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("index"), vec![
+            ast_call("index", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
     #[case::index(vec![RuntimeValue::Number(1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("index"), vec![
+            ast_call("index", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "index".to_string(),
                                                     args: vec!["1".into(), "test".into()]})))]
     #[case::array_index(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("index"), vec![
+              ast_call("index", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test2".to_string())))
-              ], false))
+              ])
         ],
         Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::array_index_not_found(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("index"), vec![
+              ast_call("index", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test4".to_string())))
-              ], false))
+              ])
         ],
         Ok(vec![RuntimeValue::Number((-1).into())]))]
     #[case::rindex(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+            ast_call("rindex", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
     #[case::rindex(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+            ast_call("rindex", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
     #[case::rindex(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+            ast_call("rindex", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "rindex".to_string(),
                                                     args: vec!["123".into(), "String".into()]})))]
     #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test1".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+              ast_call("rindex", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test1".to_string())))
-              ], false))
+              ])
         ],
         Ok(vec![RuntimeValue::Number(2.into())]))]
     #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+              ast_call("rindex", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test4".to_string())))
-              ], false))
+              ])
         ],
         Ok(vec![RuntimeValue::Number((-1).into())]))]
     #[case::array_rindex_empty(vec![RuntimeValue::Array(vec![])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+              ast_call("rindex", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-              ], false))
+              ])
         ],
         Ok(vec![RuntimeValue::Number((-1).into())]))]
     #[case::eq(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("eq"), vec![
+            ast_call("eq", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string())))
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::eq(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("eq"), vec![
+            ast_call("eq", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("eq1".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::ne(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ne"), vec![
+            ast_call("ne", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("eq1".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::ne(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ne"), vec![
+            ast_call("ne", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string())))
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::ne(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ne"), vec![
+            ast_call("ne", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::ne(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ne"), vec![
+            ast_call("ne", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gt(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gt(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.4.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gt(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.4.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gt(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gt(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gt(vec![RuntimeValue::FALSE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gt"), vec![
+            ast_call("gt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                ], false)),
+                ]),
+       ],
+       Ok(vec![RuntimeValue::FALSE]))]
+    #[case::gt(vec![RuntimeValue::FALSE],
+       vec![
+            ast_call("gt", vec![
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                ]),
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
+                ]),
+            ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gte(vec![RuntimeValue::String("test".to_string())],
        vec! [
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gte(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gte(vec![RuntimeValue::Number(1.3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::gte(vec![RuntimeValue::String("test".to_string())],
        vec! [
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::gte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("gte"), vec![
+            ast_call("gte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
+    #[case::gte(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("gte", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                ]),
+       ],
+       Ok(vec![RuntimeValue::TRUE]))]
+    #[case::gte(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("gte", vec![
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                ]),
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                ]),
+            ]),
+       ],
+       Ok(vec![RuntimeValue::TRUE]))]
     #[case::lt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lt"), vec![
+            ast_call("lt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lt"), vec![
+            ast_call("lt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::lt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lt"), vec![
+            ast_call("lt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lt"), vec![
+            ast_call("lt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::lt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lt"), vec![
+            ast_call("lt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lt(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lt"), vec![
+            ast_call("lt", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
-                ], false)),
+                ]),
+       ],
+       Ok(vec![RuntimeValue::FALSE]))]
+    #[case::lt(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("lt", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                ]),
+       ],
+       Ok(vec![RuntimeValue::FALSE]))]
+    #[case::lt(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("lt", vec![
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
+                ]),
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                ]),
+            ]),
+       ],
+       Ok(vec![RuntimeValue::FALSE]))]
+    #[case::lt(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("lt", vec![
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                ]),
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
+                ]),
+            ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::lte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lte(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::lte(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lte(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lte(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.4.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::lte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::lte(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::lte(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("lte"), vec![
+            ast_call("lte", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
+            ast_call("add", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(2.into())]))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
+            ast_call("add", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
-                    ast_node(ast::Expr::Call(ast::Ident::new("array"), vec![
+            ast_call("add", vec![
+                    ast_call("array", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
-                    ], false)),
-                    ast_node(ast::Expr::Call(ast::Ident::new("array"), vec![
+                    ]),
+                    ast_call("array", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
-                    ], false))
-                ], false)),
+                    ])
+                ]),
        ],
        Ok(vec![RuntimeValue::Array(vec!["te".to_string().into(), "te".to_string().into()])]))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
+            ast_call("add", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "add".to_string(),
                                                          args: vec!["te".into(), 1.to_string().into()]})))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("add"), vec![
+            ast_call("add", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(2.6.into())]))]
+    #[case::add(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("add", vec![
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ]),
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ]),
+            ]),
+       ],
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{value: "21".to_string(), lang: None, position: None}), None)]))]
+    #[case::add(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("add", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ]),
+            ]),
+       ],
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{value: "21".to_string(), lang: None, position: None}), None)]))]
+    #[case::add(vec![RuntimeValue::TRUE],
+       vec![
+            ast_call("add", vec![
+                ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ]),
+                ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
+            ]),
+       ],
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{value: "21".to_string(), lang: None, position: None}), None)]))]
     #[case::sub(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("sub"), vec![
+            ast_call("sub", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
     #[case::sub(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("sub"), vec![
+            ast_call("sub", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "sub".to_string(),
                                                          args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::sub(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("sub"), vec![
+            ast_call("sub", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::Number(0.10000000000000009.into())]))]
     #[case::div(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("div"), vec![
+            ast_call("div", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::div(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("div"), vec![
+            ast_call("div", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "div".to_string(),
                                                          args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::div(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("div"), vec![
+            ast_call("div", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
-                ], false))
+                ])
        ],
        Err(InnerError::Eval(EvalError::ZeroDivision(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}))))]
     #[case::div(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("div"), vec![
+            ast_call("div", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.1.into()))),
-                ], false))
+                ])
        ],
        Ok(vec![RuntimeValue::Number(1.1818181818181817.into())]))]
     #[case::mul(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("mul"), vec![
+            ast_call("mul", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(2.into())]))]
     #[case::mul(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("mul"), vec![
+            ast_call("mul", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(2.6.into())]))]
     #[case::mul(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("mul"), vec![
+            ast_call("mul", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "mul".to_string(),
                                                          args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("mod"), vec![
+            ast_call("mod", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("mod"), vec![
+            ast_call("mod", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(1.1.into())]))]
     #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("mod"), vec![
+            ast_call("mod", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "mod".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::pow(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("pow"), vec![
+            ast_call("pow", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::Number(8.into())]))]
     #[case::pow(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("pow"), vec![
+            ast_call("pow", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false)),
+                ]),
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "pow".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::and(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("and"), vec![
+            ast_call("and", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::and(vec![RuntimeValue::TRUE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("and"), vec![
+            ast_call("and", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::and(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("and"), vec![
+            ast_call("and", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::and(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("and"), vec![
+            ast_call("and", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::or(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("or"), vec![
+            ast_call("or", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::or(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("or"), vec![
+            ast_call("or", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::or(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("or"), vec![
+            ast_call("or", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::or(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("or"), vec![
+            ast_call("or", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                ], false)),
-       ],
-       Ok(vec![RuntimeValue::FALSE]))]
-    #[case::not(vec![RuntimeValue::String("test".to_string())],
-       vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("not"), vec![
-                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::not(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("not"), vec![
+            ast_call("not", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                ]),
+       ],
+       Ok(vec![RuntimeValue::FALSE]))]
+    #[case::not(vec![RuntimeValue::String("test".to_string())],
+       vec![
+            ast_call("not", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                ], false)),
+                ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
     #[case::to_string(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("to_string"), Vec::new(), false))
+            ast_call("to_string", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::to_string(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("to_string"), Vec::new(), false))
+            ast_call("to_string", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::split1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("split"), vec![
+            ast_call("split", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))]
-                        , false))
+                        )
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
     #[case::split2(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test1,test2".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("split"), vec![
+            ast_call("split", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
+    #[case::split(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("split", vec![ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))])
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "split".to_string(),
+                                                    args: vec![1.to_string().into(), ",".to_string().into()]})))]
     #[case::join1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("join"), vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("split"), vec![
+            ast_call("join", vec![
+                ast_call("split", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))
-                ], false)),
+                ]),
                 ast_node(ast::Expr::Literal(ast::Literal::String("#".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("test1#test2".to_string())]))]
     #[case::base64(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("base64"), vec![
+            ast_call("base64", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("dGVzdA==".to_string())]))]
     #[case::base64(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value:"test".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("base64"), vec![], false))
+            ast_call("base64", vec![])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "dGVzdA==".to_string(), position: None}), None)]))]
     #[case::base64(vec![RuntimeValue::Number(1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("base64"), vec![], false))
+            ast_call("base64", vec![])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64".to_string(),
                                                     args: vec![1.to_string().into()]})))]
     #[case::base64d(vec![RuntimeValue::String("dGVzdA==".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("base64d"), vec![
+            ast_call("base64d", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("dGVzdA==".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::base64d(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value:"dGVzdA==".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("base64d"), vec![
-            ], false))
+            ast_call("base64d", vec![
+            ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
+    #[case::base64d(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("base64d", vec![
+            ])
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "base64d".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
     #[case::def(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_node(ast::Expr::Def(
@@ -1455,17 +1565,16 @@ mod tests {
                 vec![
                     ast_node(ast::Expr::Ident(ast::Ident::new("str"))),
                 ],
-                vec![ast_node(ast::Expr::Call(
-                    ast::Ident::new("split"),
+                vec![ast_call("split",
                     vec![
                         ast_node(ast::Expr::Ident(ast::Ident::new("str"))),
                         ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string()))),
-                    ], false
-                ))]
+                    ])
+                ]
             )),
-            ast_node(ast::Expr::Call(ast::Ident::new("split2"), vec![
+            ast_call("split2", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test1,test2".to_string()))),
-            ], false)),
+            ]),
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
     #[case::def2(vec![RuntimeValue::String("Hello".to_string())],
@@ -1476,18 +1585,17 @@ mod tests {
                     ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
                     ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
                 ],
-                vec![ast_node(ast::Expr::Call(
-                    ast::Ident::new("add"),
+                vec![ast_call("add",
                     vec![
                         ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
                         ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
-                    ], false
-                ))]
+                    ])
+                ]
             )),
-            ast_node(ast::Expr::Call(ast::Ident::new("concat_self"), vec![
+            ast_call("concat_self", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("Hello".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("World".to_string()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("HelloWorld".to_string())]))]
     #[case::def3(vec![RuntimeValue::String("Test".to_string())],
@@ -1498,183 +1606,189 @@ mod tests {
                     ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
                     ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
                 ],
-                vec![ast_node(ast::Expr::Call(
-                    ast::Ident::new("add"),
+                vec![ast_call("add",
                     vec![
                         ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
                         ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
-                    ], false
-                ))]
+                    ])
+                ]
             )),
-            ast_node(ast::Expr::Call(ast::Ident::new("prepend_self"), vec![
+            ast_call("prepend_self", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("Testtest".to_string())]))]
     #[case::type_string(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
+            ast_call("type", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("string".to_string())]))]
     #[case::type_int(vec![RuntimeValue::Number(42.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
+            ast_call("type", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("number".to_string())]))]
     #[case::type_bool(vec![RuntimeValue::TRUE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
+            ast_call("type", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("bool".to_string())]))]
     #[case::type_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".to_string())])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
+            ast_call("type", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("array".to_string())]))]
     #[case::min(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("min"), vec![
+            ast_call("min", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false))
+                ])
         ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::min(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("min"), vec![
+            ast_call("min", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
-                ], false))
+                ])
         ],
        Ok(vec![RuntimeValue::String("1".into())]))]
     #[case::min(vec![RuntimeValue::Number(1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("min"), vec![
+            ast_call("min", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-            ], false))
+            ])
         ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::min(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("min"), vec![
+            ast_call("min", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
             ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "min".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::max(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("max"), vec![
+            ast_call("max", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                ], false))
+                ])
             ],
        Ok(vec![RuntimeValue::Number(2.into())]))]
     #[case::max(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("max"), vec![
+            ast_call("max", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("2".into()))),
-                ], false))
+                ])
             ],
        Ok(vec![RuntimeValue::String("2".into())]))]
     #[case::max(vec![RuntimeValue::Number(3.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("max"), vec![
+            ast_call("max", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
             ],
        Ok(vec![RuntimeValue::Number(3.into())]))]
     #[case::max(vec![RuntimeValue::String("test".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("max"), vec![
+            ast_call("max", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                ], false))
+                ])
             ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "max".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
     #[case::trim(vec![RuntimeValue::String("  test  ".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("trim"), Vec::new(), false))
+            ast_call("trim", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::trim(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "  test  ".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("trim"), Vec::new(), false))
+            ast_call("trim", Vec::new())
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
+    #[case::trim(vec![RuntimeValue::Number(1.into())],
+       vec![
+            ast_call("trim", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "trim".to_string(),
+                                                    args: vec![1.to_string().into()]})))]
     #[case::slice(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+            ast_call("slice", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
     #[case::slice(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+            ast_call("slice", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::slice(vec![RuntimeValue::String("testString".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+            ast_call("slice", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(10.into()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::String("String".to_string())]))]
     #[case::slice(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+            ast_call("slice", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::slice(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+            ast_call("slice", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "slice".to_string(),
                                                     args: vec![123.to_string().into(), 0.to_string().into(), 4.to_string().into()]})))]
     #[case::match_regex(vec![RuntimeValue::String("test123".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("match"), vec![
+            ast_call("match", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("123".to_string())])]))]
     #[case::match_regex(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("match"), vec![
+            ast_call("match", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Array(vec![123.to_string().into()])]))]
     #[case::match_regex(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("match"), vec![
+            ast_call("match", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
-            ], false))
+            ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "match".to_string(),
                                                     args: vec![123.to_string().into(), r"\d+".to_string().into()]})))]
     #[case::explode(vec![RuntimeValue::String("ABC".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("explode"), Vec::new(), false))
+            ast_call("explode", Vec::new())
        ],
        Ok(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(65.into()),
@@ -1683,7 +1797,7 @@ mod tests {
        ])]))]
     #[case::explode(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("explode"), Vec::new(), false))
+            ast_call("explode", Vec::new())
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "explode".to_string(),
@@ -1694,19 +1808,19 @@ mod tests {
             RuntimeValue::Number(67.into()),
        ])],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("implode"), Vec::new(), false))
+            ast_call("implode", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("ABC".to_string())]))]
     #[case::implode(vec!["test".to_string().into()],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("implode"), Vec::new(), false))
+            ast_call("implode", Vec::new())
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "implode".to_string(),
                                                     args: vec!["test".to_string().into()]})))]
     #[case::explode_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "ABC".to_string(), position: None}), None)],
         vec![
-             ast_node(ast::Expr::Call(ast::Ident::new("explode"), Vec::new(), false))
+             ast_call("explode", Vec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
              RuntimeValue::Number(65.into()),
@@ -1715,10 +1829,10 @@ mod tests {
         ])]))]
     #[case::range(vec![RuntimeValue::Number(1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("range"), vec![
+            ast_call("range", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(0.into()),
@@ -1727,198 +1841,277 @@ mod tests {
             RuntimeValue::Number(3.into()),
             RuntimeValue::Number(4.into()),
        ])]))]
+    #[case::range(vec!["1".to_string().into()],
+       vec![
+            ast_call("range", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+            ])
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "range".to_string(),
+                                                    args: vec!["1".to_string().into(), "0".to_string().into()]})))]
     #[case::to_number(vec![RuntimeValue::String("42".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+            ast_call("to_number", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.into())]))]
     #[case::to_number(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "42".to_string(), position: None}), None)],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+            ast_call("to_number", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.into())]))]
     #[case::to_number(vec![RuntimeValue::String("42.5".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+            ast_call("to_number", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.5.into())]))]
     #[case::to_number(vec![RuntimeValue::String("not a number".to_string())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+            ast_call("to_number", Vec::new())
        ],
        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::to_number_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::String("43".to_string()), RuntimeValue::String("44".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+              ast_call("to_number", Vec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into()), RuntimeValue::Number(43.into()), RuntimeValue::Number(44.into())])]))]
     #[case::to_number_array(vec![RuntimeValue::Array(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "42".to_string(), position: None}), None)])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+              ast_call("to_number", Vec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into())])]))]
     #[case::to_number_array_with_invalid(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::String("not a number".to_string()), RuntimeValue::String("44".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+              ast_call("to_number", Vec::new())
         ],
         Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::to_number_array_empty(vec![RuntimeValue::Array(vec![])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+              ast_call("to_number", Vec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![])]))]
     #[case::to_number_array_mixed_types(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::Number(43.into()), RuntimeValue::String("44".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_number"), Vec::new(), false))
+              ast_call("to_number", Vec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into()), RuntimeValue::Number(43.into()), RuntimeValue::Number(44.into())])]))]
     #[case::trunc(vec![RuntimeValue::Number(42.5.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("trunc"), Vec::new(), false))
+            ast_call("trunc", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.into())]))]
     #[case::trunc(vec![RuntimeValue::Number((-42.5).into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("trunc"), Vec::new(), false))
+            ast_call("trunc", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number((-42).into())]))]
+    #[case::trunc(vec!["42.5".to_string().into()],
+       vec![
+            ast_call("trunc", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "trunc".to_string(),
+                                                    args: vec!["42.5".to_string().into()]})))]
+    #[case::abs_positive(vec![RuntimeValue::Number(42.into())],
+       vec![
+            ast_call("abs", Vec::new())
+       ],
+       Ok(vec![RuntimeValue::Number(42.into())]))]
+    #[case::abs_negative(vec![RuntimeValue::Number((-42).into())],
+       vec![
+           ast_call("abs", Vec::new())
+       ],
+       Ok(vec![RuntimeValue::Number(42.into())]))]
+    #[case::abs_zero(vec![RuntimeValue::Number(0.into())],
+       vec![
+            ast_call("abs", Vec::new())
+       ],
+       Ok(vec![RuntimeValue::Number(0.into())]))]
+    #[case::abs_decimal(vec![RuntimeValue::Number((-42.5).into())],
+       vec![
+            ast_call("abs", Vec::new())
+       ],
+       Ok(vec![RuntimeValue::Number(42.5.into())]))]
+    #[case::abs_invalid_type(vec![RuntimeValue::String("42".to_string())],
+       vec![
+            ast_call("abs", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "abs".to_string(),
+                                                    args: vec!["42".to_string().into()]})))]
     #[case::ceil(vec![RuntimeValue::Number(42.1.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ceil"), Vec::new(), false))
+            ast_call("ceil", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(43.into())]))]
     #[case::ceil(vec![RuntimeValue::Number((-42.1).into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ceil"), Vec::new(), false))
+            ast_call("ceil", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number((-42).into())]))]
+    #[case::ceil(vec!["42".to_string().into()],
+       vec![
+            ast_call("ceil", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "ceil".to_string(),
+                                                    args: vec!["42".to_string().into()]})))]
     #[case::round(vec![RuntimeValue::Number(42.5.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("round"), Vec::new(), false))
+            ast_call("round", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(43.into())]))]
     #[case::round(vec![RuntimeValue::Number(42.4.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("round"), Vec::new(), false))
+            ast_call("round", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.into())]))]
+    #[case::round(vec!["42.4".to_string().into()],
+       vec![
+            ast_call("round", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "round".to_string(),
+                                                    args: vec!["42.4".to_string().into()]})))]
     #[case::floor(vec![RuntimeValue::Number(42.9.into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("floor"), Vec::new(), false))
+            ast_call("floor", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.into())]))]
     #[case::floor(vec![RuntimeValue::Number((-42.9).into())],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("floor"), Vec::new(), false))
+            ast_call("floor", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number((-43).into())]))]
+    #[case::floor(vec!["42.9".to_string().into()],
+       vec![
+            ast_call("floor", Vec::new())
+       ],
+       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                    name: "floor".to_string(),
+                                                    args: vec!["42.9".to_string().into()]})))]
     #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("del"), vec![
+              ast_call("del", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
-              ], false)),
+              ]),
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test2".to_string())])]))]
     #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("del"), vec![
+              ast_call("del", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-              ], false)),
+              ]),
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string())])]))]
     #[case::del(vec![RuntimeValue::String("test1".to_string())],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("del"), vec![
+              ast_call("del", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-              ], false)),
+              ]),
         ],
         Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::del(vec![RuntimeValue::Number(123.into())],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("del"), vec![
+              ast_call("del", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-              ], false)),
+              ]),
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "del".to_string(),
                                                      args: vec!["123".to_string().into(), "4".to_string().into()]})))]
     #[case::to_code(vec![RuntimeValue::String("test1".to_string())],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_code"), vec![
+              ast_call("to_code", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
-              ], false)),
+              ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("elm".to_string()), value: "test1".to_string(), position: None}), None)]))]
+    #[case::to_code(vec![RuntimeValue::String("test1".to_string())],
+        vec![
+              ast_call("to_code", vec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: None, value: "elm".to_string(), position: None}), None)]))]
     #[case::md_h1(vec![RuntimeValue::String("Heading 1".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
+                  ast_call("to_h", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}), None)]))]
     #[case::md_h2(vec![RuntimeValue::String("Heading 2".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
+                  ast_call("to_h", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading 2".to_string().into()], position: None}), None)]))]
     #[case::md_h3(vec![RuntimeValue::String("Heading 3".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
+                  ast_call("to_h", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 3, values: vec!["Heading 3".to_string().into()], position: None}), None)]))]
+    #[case::md_h3(vec![RuntimeValue::String("Heading 3".to_string())],
+            vec![
+                  ast_call("to_h", vec![
+                        ast_node(ast::Expr::Literal(ast::Literal::String("3".into()))),
+                  ]),
+            ],
+            Ok(vec![RuntimeValue::NONE]))]
     #[case::md_h(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Heading".to_string(), position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_h"), vec![
+                  ast_call("to_h", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading".to_string().into()], position: None}), None)]))]
     #[case::to_math(vec![RuntimeValue::String("E=mc^2".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_math"), Vec::new(), false)),
+                  ast_call("to_math", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}), None)]))]
     #[case::to_math_inline(vec![RuntimeValue::String("E=mc^2".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_math_inline"), Vec::new(), false)),
+                  ast_call("to_math_inline", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".into(), position: None}), None)]))]
     #[case::to_md_text(vec![RuntimeValue::String("This is a text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_md_text"), Vec::new(), false)),
+                  ast_call("to_md_text", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "This is a text".to_string(), position: None}), None)]))]
     #[case::to_strong(vec![RuntimeValue::String("Bold text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), Vec::new(), false)),
+                  ast_call("to_strong", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold text".to_string().into()], position: None}), None)]))]
     #[case::to_strong(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Bold text".to_string(), position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), Vec::new(), false)),
+                  ast_call("to_strong", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Bold text".to_string(), position: None})], position: None}), None)]))]
     #[case::to_em(vec![RuntimeValue::String("Italic text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_em"), Vec::new(), false)),
+                  ast_call("to_em", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic text".to_string().into()], position: None}), None)]))]
     #[case::to_em(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_em"), Vec::new(), false)),
+                  ast_call("to_em", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None})], position: None}), None)]))]
     #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_image"), vec![
+                  ast_call("to_image", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("https://example.com/image.png".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Image Alt".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Image Title".to_string()))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{
                 url: "https://example.com/image.png".to_string(),
@@ -1928,11 +2121,11 @@ mod tests {
             }), None)]))]
     #[case::to_link(vec![RuntimeValue::String("Link Text".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_link"), vec![
+                  ast_call("to_link", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("https://example.com".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Link Value".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Link Title".to_string()))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{
                 url: "https://example.com".to_string(),
@@ -1942,49 +2135,49 @@ mod tests {
             }), None)]))]
     #[case::to_link(vec![RuntimeValue::Number(123.into())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_link"), vec![
+                  ast_call("to_link", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("Link Title".to_string()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("Link Value".to_string()))),
-                  ], false)),
+                  ]),
             ],
             Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "to_link".to_string(),
                                                          args: vec![123.to_string().into(), "Link Title".to_string().into(), "Link Value".to_string().into()]})))]
     #[case::to_hr(vec![RuntimeValue::String("".to_owned())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_hr"), Vec::new(), false)),
+                  ast_call("to_hr", Vec::new()),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule{position: None}, None)]))]
     #[case::to_md_list(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "list".to_string(), position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
+                  ast_call("to_md_list",
                            vec![
                                  ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                           ], false)),
+                           ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
                 mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
     #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("to_md_list"),
+                  ast_call("to_md_list",
                            vec![
                                  ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                           ], false)),
+                           ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
                 mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
     #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![
+                  ast_call("set_md_check", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: Some(true), position: None}), None)]))]
     #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("set_md_check"), vec![
+                  ast_call("set_md_check", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
-                  ], false)),
+                  ]),
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: Some(false), position: None}), None)]))]
     #[case::compact(vec![RuntimeValue::Array(vec![
@@ -1995,7 +2188,7 @@ mod tests {
                 RuntimeValue::String("test3".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("compact"), Vec::new(), false))
+                ast_call("compact", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("test1".to_string()),
@@ -2010,7 +2203,7 @@ mod tests {
                 RuntimeValue::String("test3".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("compact"), Vec::new(), false))
+                ast_call("compact", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("test1".to_string()),
@@ -2022,7 +2215,7 @@ mod tests {
                 RuntimeValue::NONE,
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("compact"), Vec::new(), false))
+                ast_call("compact", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![])]))]
     #[case::compact_no_none(vec![RuntimeValue::Array(vec![
@@ -2030,7 +2223,7 @@ mod tests {
                 RuntimeValue::String("test2".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("compact"), Vec::new(), false))
+                ast_call("compact", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("test1".to_string()),
@@ -2042,12 +2235,17 @@ mod tests {
                 RuntimeValue::String("test3".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_csv"), Vec::new(), false))
+                ast_call("to_csv", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test1,test2,test3".to_string())]))]
+    #[case::to_csv(vec![RuntimeValue::String("test1".to_string())],
+            vec![
+                ast_call("to_csv", Vec::new())
+            ],
+            Ok(vec![RuntimeValue::String("test1".to_string())]))]
     #[case::to_csv_empty(vec![RuntimeValue::Array(vec![])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_csv"), Vec::new(), false))
+                ast_call("to_csv", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("".to_string())]))]
     #[case::to_csv_mixed(vec![RuntimeValue::Array(vec![
@@ -2056,7 +2254,7 @@ mod tests {
                 RuntimeValue::Bool(true),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_csv"), Vec::new(), false))
+                ast_call("to_csv", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test1,42,true".to_string())]))]
     #[case::to_tsv(vec![RuntimeValue::Array(vec![
@@ -2065,12 +2263,17 @@ mod tests {
                 RuntimeValue::String("test3".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_tsv"), Vec::new(), false))
+                ast_call("to_tsv", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test1\ttest2\ttest3".to_string())]))]
+    #[case::to_tsv(vec![RuntimeValue::String("test1".to_string())],
+            vec![
+                ast_call("to_tsv", Vec::new())
+            ],
+            Ok(vec![RuntimeValue::String("test1".to_string())]))]
     #[case::to_tsv_empty(vec![RuntimeValue::Array(vec![])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_tsv"), Vec::new(), false))
+                ast_call("to_tsv", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("".to_string())]))]
     #[case::to_tsv_mixed(vec![RuntimeValue::Array(vec![
@@ -2079,12 +2282,12 @@ mod tests {
                 RuntimeValue::Bool(true),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_tsv"), Vec::new(), false))
+                ast_call("to_tsv", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test1\t42\ttrue".to_string())]))]
     #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["List Item".to_string().into()], level: 1, index: 0, checked: None, position: None}), None)],
             vec![
-                  ast_node(ast::Expr::Call(ast::Ident::new("get_md_list_level"), vec![], false)),
+                  ast_call("get_md_list_level", vec![]),
             ],
             Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::text_selector(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
@@ -2103,7 +2306,7 @@ mod tests {
                 RuntimeValue::String("Cell 3".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_md_table_row"), Vec::new(), false))
+                ast_call("to_md_table_row", Vec::new())
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{
                 cells: vec![
@@ -2136,10 +2339,10 @@ mod tests {
             }), None)]))]
     #[case::to_md_table_row(vec![RuntimeValue::String("Cell 4".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_md_table_row"), vec![
+                ast_call("to_md_table_row", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("Cell 1".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("Cell 2".to_string()))),
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{
                 cells: vec![
@@ -2164,22 +2367,22 @@ mod tests {
             }), None)]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                 ast_call("get_title", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("title".to_string())]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: None, values: vec!["Link".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                 ast_call("get_title", Vec::new())
             ],
             Ok(vec![RuntimeValue::NONE]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                 ast_call("get_title", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("Image Title".to_string())]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: None, position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("get_title"), Vec::new(), false))
+                 ast_call("get_title", Vec::new())
             ],
             Ok(vec![RuntimeValue::NONE]))]
     #[case::nth_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
@@ -2187,7 +2390,7 @@ mod tests {
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
             ], level: 1, index: 0, checked: None, position: None}), None)],
                    vec![
-                        ast_node(ast::Expr::Call(ast::Ident::new("nth"), vec![ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))], false))
+                        ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))])
                    ],
                    Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
                 mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
@@ -2195,35 +2398,52 @@ mod tests {
             ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
     #[case::nth_string(vec![RuntimeValue::String("test1".to_string())],
            vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("nth"), vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))], false))
+                ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
            ],
            Ok(vec![RuntimeValue::String("t".to_string())]))]
+    #[case::nth_string(vec![RuntimeValue::String("test1".to_string())],
+           vec![
+                ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(5.into())))])
+           ],
+           Ok(vec![RuntimeValue::NONE]))]
+    #[case::nth_array(vec![RuntimeValue::Array(vec!["test1".to_string().into()])],
+           vec![
+                ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))])
+           ],
+           Ok(vec![RuntimeValue::NONE]))]
+    #[case::nth(vec![RuntimeValue::TRUE],
+           vec![
+                ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
+           ],
+           Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                        name: "nth".to_string(),
+                                                        args: vec![true.to_string().into(), 0.to_string().into()]})))]
     #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_date"), vec![
+                ast_call("to_date", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("%Y-%m-%d".to_string())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::String("2021-01-01".to_string())]))]
     #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_date"), vec![
+                ast_call("to_date", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("%Y/%m/%d %H:%M:%S".to_string())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::String("2021/01/01 00:00:00".to_string())]))]
     #[case::to_date(vec![RuntimeValue::Number(1609488000000_i64.into())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_date"), vec![
+                ast_call("to_date", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("%d %b %Y %H:%M".to_string())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::String("01 Jan 2021 08:00".to_string())]))]
     #[case::to_date(vec![RuntimeValue::String("test".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_date"), vec![
+                ast_call("to_date", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("%Y-%m-%d".to_string())))
-                ], false))
+                ])
             ],
             Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "to_date".to_string(),
@@ -2235,88 +2455,95 @@ mod tests {
                 RuntimeValue::Bool(false),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_string"), Vec::new(), false))
+                ast_call("to_string", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec!["test".to_string().into(), "1".to_string().into(), "2".to_string().into(), "false".to_string().into()])]))]
     #[case::to_string_empty_array(vec![RuntimeValue::Array(vec![])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("to_string"), Vec::new(), false))
+                ast_call("to_string", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![])]))]
     #[case::to_text(vec![RuntimeValue::String("test".to_string())],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"), Vec::new(), false))
+                 ast_call("to_text", Vec::new())
             ],
             Ok(vec!["test".to_string().into()]))]
     #[case::to_text(vec![RuntimeValue::Number(42.into())],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"), Vec::new(), false))
+                 ast_call("to_text", Vec::new())
             ],
             Ok(vec!["42".to_string().into()]))]
     #[case::to_text(vec![RuntimeValue::Bool(true)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"), Vec::new(), false))
+                 ast_call("to_text", Vec::new())
             ],
             Ok(vec!["true".to_string().into()]))]
     #[case::to_text(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"), Vec::new(), false))
+                 ast_call("to_text", Vec::new())
             ],
             Ok(vec!["Heading".to_string().into()]))]
     #[case::to_text(vec![RuntimeValue::String("Original".to_string())],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"),
-                  vec![ast_node(ast::Expr::Literal(ast::Literal::String("Override".to_string())))], false))
+                 ast_call("to_text",
+                  vec![ast_node(ast::Expr::Literal(ast::Literal::String("Override".to_string())))])
             ],
             Ok(vec!["Override".to_string().into()]))]
     #[case::to_text(vec![RuntimeValue::Array(vec!["val1".to_string().into(), "val2".to_string().into()])],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"), vec![], false))
+                 ast_call("to_text", vec![])
             ],
             Ok(vec!["val1,val2".to_string().into()]))]
     #[case::url_encode(vec![RuntimeValue::String("test string with spaces".to_string())],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("url_encode"), Vec::new(), false))
+                 ast_call("url_encode", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test%20string%20with%20spaces".to_string())]))]
     #[case::url_encode(vec![RuntimeValue::String("test!@#$%^&*()".to_string())],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("url_encode"), Vec::new(), false))
+                 ast_call("url_encode", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test%21%40%23%24%25%5E%26%2A%28%29".to_string())]))]
     #[case::url_encode(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test string".to_string(), position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("url_encode"), Vec::new(), false))
+                 ast_call("url_encode", Vec::new())
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test%20string".to_string(), position: None}), None)]))]
+    #[case::url_encode(vec![RuntimeValue::Number(1.into())],
+            vec![
+                 ast_call("url_encode", Vec::new())
+            ],
+            Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                         name: "url_encode".to_string(),
+                                                         args: vec![1.to_string().into()]})))]
     #[case::update(vec!["".to_string().into()],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("update"), vec![
+                 ast_call("update", vec![
                   ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                   ast_node(ast::Expr::Literal(ast::Literal::String("updated".to_string()))),
-                 ], false))
+                 ])
             ],
             Ok(vec![RuntimeValue::String("updated".to_string())]))]
     #[case::update(vec!["".to_string().into()],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("update"), vec![
-                    ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), vec![
+                 ast_call("update", vec![
+                    ast_call("to_strong", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("text1".to_string()))),
-                    ], false)),
-                    ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), vec![
+                    ]),
+                    ast_call("to_strong", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("text2".to_string()))),
-                    ], false))
-                 ], false))
+                    ])
+                 ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
     #[case::update(vec!["".to_string().into()],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("update"), vec![
-                    ast_node(ast::Expr::Call(ast::Ident::new("to_strong"), vec![
+                 ast_call("update", vec![
+                    ast_call("to_strong", vec![
                         ast_node(ast::Expr::Literal(ast::Literal::String("text1".to_string()))),
-                    ], false)),
+                    ]),
                     ast_node(ast::Expr::Literal(ast::Literal::String("text2".to_string()))),
-                 ], false))
+                 ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
     #[case::sort_string_array(vec![RuntimeValue::Array(vec![
@@ -2325,7 +2552,7 @@ mod tests {
                 RuntimeValue::String("b".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("sort"), Vec::new(), false))
+                ast_call("sort", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("a".to_string()),
@@ -2338,7 +2565,7 @@ mod tests {
                 RuntimeValue::Number(2.into()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("sort"), Vec::new(), false))
+                ast_call("sort", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::Number(1.into()),
@@ -2347,7 +2574,7 @@ mod tests {
             ])]))]
     #[case::sort_empty_array(vec![RuntimeValue::Array(vec![])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("sort"), Vec::new(), false))
+                ast_call("sort", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![])]))]
     #[case::uniq_string_array(vec![RuntimeValue::Array(vec![
@@ -2358,7 +2585,7 @@ mod tests {
                 RuntimeValue::String("b".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("uniq"), Vec::new(), false))
+                ast_call("uniq", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("a".to_string()),
@@ -2373,67 +2600,74 @@ mod tests {
                 RuntimeValue::Number(2.into()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("uniq"), Vec::new(), false))
+                ast_call("uniq", Vec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Number(2.into()),
                 RuntimeValue::Number(3.into()),
             ])]))]
+    #[case::uniq(vec![RuntimeValue::Number(1.into())],
+            vec![
+                ast_call("uniq", Vec::new())
+            ],
+            Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                         name: "uniq".to_string(),
+                                                         args: vec![1.to_string().into()]})))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<p>test</p>\n".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<h1>Heading 1</h1>\n".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<p><strong>Bold</strong></p>\n".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<p><em>Italic</em></p>\n".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("Link Title".to_string()), values: vec!["Link Title".to_string().into()], position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<p><a href=\"https://example.com\" title=\"Link Title\">Link Title</a></p>\n".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("rust".to_string()), value: "println!(\"Hello\");".to_string(), position: None}), None)],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<pre><code class=\"language-rust\">println!(&quot;Hello&quot;);\n</code></pre>\n".to_string())]))]
     #[case::to_html(vec![RuntimeValue::String("Plain text".to_string())],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_html"), Vec::new(), false))
+                 ast_call("to_html", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("<p>Plain text</p>\n".to_string())]))]
     #[case::repeat_string(vec![RuntimeValue::String("abc".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(3.into())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::String("abcabcabc".to_string())]))]
     #[case::repeat_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "abc".to_string(), position: None}), None)],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(3.into())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "abcabcabc".to_string(), position: None}), None)]))]
     #[case::repeat_string_zero(vec![RuntimeValue::String("abc".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::String("".to_string())]))]
     #[case::repeat_array(vec![RuntimeValue::Array(vec![
@@ -2441,9 +2675,9 @@ mod tests {
                 RuntimeValue::String("b".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("a".to_string()),
@@ -2456,42 +2690,56 @@ mod tests {
                 RuntimeValue::String("b".to_string()),
             ])],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))
-                ], false))
+                ])
             ],
             Ok(vec![RuntimeValue::Array(vec![])]))]
     #[case::repeat_invalid_count(vec![RuntimeValue::String("abc".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into())))
-                ], false))
+                ])
             ],
             Ok(vec!["".to_string().into()]))]
     #[case::repeat_invalid_type(vec![RuntimeValue::Number(42.into())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("repeat"), vec![
+                ast_call("repeat", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(3.into())))
-                ], false))
+                ])
             ],
             Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "repeat".to_string(),
                                                     args: vec![42.to_string().into(), 3.to_string().into()]})))]
     #[case::debug(vec![RuntimeValue::String("test".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("debug"), Vec::new(), false))
+                ast_call("debug", Vec::new())
             ],
             Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::from_date(vec![RuntimeValue::String("2025-03-15T20:00:00+09:00".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("from_date"), vec![], false))
+                ast_call("from_date", vec![])
             ],
             Ok(vec![RuntimeValue::Number(1742036400000_i64.into())]))]
     #[case::from_date_invalid_format(vec![RuntimeValue::String("2021-01-01".to_string())],
             vec![
-                ast_node(ast::Expr::Call(ast::Ident::new("from_date"), vec![], false))
+                ast_call("from_date", vec![])
             ],
             Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "premature end of input".to_string()))))]
+    #[case::from_date(vec![RuntimeValue::Number(1.into())],
+            vec![
+                ast_call("from_date", vec![])
+            ],
+            Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                         name: "from_date".to_string(),
+                                                         args: vec![1.to_string().into()]})))]
+    #[case::to_code_inline(vec![RuntimeValue::String("test1".to_string())],
+            vec![
+                  ast_call("to_code_inline", vec![
+                        ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
+                  ]),
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::CodeInline(mq_markdown::CodeInline{value: "elm".into(), position: None}), None)]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
@@ -2508,77 +2756,134 @@ mod tests {
     #[rstest]
     #[case::type_none(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("type"), Vec::new(), false))
+            ast_call("type", Vec::new())
        ],
        Ok(vec![RuntimeValue::String("None".to_string())]))]
     #[case::to_text(vec![RuntimeValue::NONE],
             vec![
-                 ast_node(ast::Expr::Call(ast::Ident::new("to_text"), Vec::new(), false))
+                 ast_call("to_text", Vec::new())
             ],
             Ok(vec!["".to_string().into()]))]
     #[case::starts_with(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("starts_with"), vec![
+            ast_call("starts_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::ends_with(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("ends_with"), vec![
+            ast_call("ends_with", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
     #[case::rindex(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("rindex"), vec![
+            ast_call("rindex", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Number((-1).into())]))]
     #[case::utf8bytelen(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("utf8bytelen"), Vec::new(), false))
+            ast_call("utf8bytelen", Vec::new())
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
     #[case::index(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("index"), vec![
+            ast_call("index", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::Number((-1).into())]))]
     #[case::del(vec![RuntimeValue::NONE],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("del"), vec![
+              ast_call("del", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-              ], false)),
+              ]),
         ],
         Ok(vec![RuntimeValue::NONE]))]
     #[case::downcase(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("downcase"), Vec::new(), false))
+            ast_call("downcase", Vec::new())
        ],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::slice(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("slice"), vec![
+            ast_call("slice", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
-            ], false))
+            ])
        ],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::slice(vec![RuntimeValue::NONE],
        vec![
-            ast_node(ast::Expr::Call(ast::Ident::new("len"), vec![], false))
+            ast_call("len", vec![])
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
+    #[case::slice(vec![RuntimeValue::NONE],
+       vec![
+            ast_call("upcase", vec![])
+       ],
+       Ok(vec![RuntimeValue::NONE]))]
     #[case::to_code(vec![RuntimeValue::NONE],
         vec![
-              ast_node(ast::Expr::Call(ast::Ident::new("to_code"), vec![
+              ast_call("to_code", vec![
                 ast_node(ast::Expr::Literal(ast::Literal::None)),
-              ], false)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_code(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("update", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_code_inline(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("to_code_inline", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_link(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("to_link", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_strong(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("to_strong", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_em(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("to_em", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_md_text(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("to_md_text", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::to_md_list(vec![RuntimeValue::NONE],
+        vec![
+              ast_call("to_md_list", vec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+              ]),
         ],
         Ok(vec![RuntimeValue::NONE]))]
     fn test_eval_process_none(
@@ -2614,7 +2919,7 @@ mod tests {
             }),
             Rc::new(ast::Node {
                 token_id: 0.into(),
-                expr: Rc::new(ast::Expr::Call(ast::Ident::new("func1"), Vec::new(), false)),
+                expr: Rc::new(ast::Expr::Call(ast::Ident::new("func1"), vec![], false)),
             }),
         ];
         assert_eq!(

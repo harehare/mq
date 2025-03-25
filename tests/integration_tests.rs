@@ -59,6 +59,16 @@ fn test_cli_run_with_raw_file_and_stdin() -> Result<(), Box<dyn std::error::Erro
 }
 
 #[test]
+fn test_cli_completion() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("mq")?;
+
+    let assert = cmd.arg("completion").arg("--shell").arg("zsh").assert();
+    assert.success().code(0);
+
+    Ok(())
+}
+
+#[test]
 fn test_cli_format_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
 
@@ -170,6 +180,24 @@ fn test_cli_run_with_update_file() -> Result<(), Box<dyn std::error::Error>> {
         .arg("--unbuffered")
         .arg("--update")
         .arg(".h | select(contains(\"title\")?) | ltrimstr(\"titl\")")
+        .write_stdin("# **title**\n\n- test1\n- test2")
+        .assert();
+    assert
+        .success()
+        .code(0)
+        .stdout("# **e**\n\n- test1\n- test2\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_cli_run_with_update_text() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("mq")?;
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg(".h | select(contains(\"title\")?) | ltrimstr(\"titl\") | to_text()?")
         .write_stdin("# **title**\n\n- test1\n- test2")
         .assert();
     assert

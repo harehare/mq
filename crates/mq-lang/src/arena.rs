@@ -132,4 +132,16 @@ mod tests {
         }
         assert_eq!(arena.is_empty(), expected);
     }
+
+    #[test]
+    fn test_from() {
+        let id_u32: ArenaId<i32> = 5u32.into();
+        assert_eq!(id_u32.id, 5);
+
+        let id_usize: ArenaId<i32> = 10usize.into();
+        assert_eq!(id_usize.id, 10);
+
+        let id_i32: ArenaId<i32> = 15i32.into();
+        assert_eq!(id_i32.id, 15);
+    }
 }

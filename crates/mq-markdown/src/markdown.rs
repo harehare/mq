@@ -99,11 +99,11 @@ impl Markdown {
                 mdx_esm_parse: None,
                 constructs: Constructs {
                     attention: true,
-                    autolink: true,
+                    autolink: false,
                     block_quote: true,
                     character_escape: true,
                     character_reference: true,
-                    code_indented: true,
+                    code_indented: false,
                     code_fenced: true,
                     code_text: true,
                     definition: true,
