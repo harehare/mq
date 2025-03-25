@@ -301,10 +301,17 @@ export const Playground = () => {
                 ? monaco.languages.CompletionItemKind.Function
                 : value.valueType === "Variable"
                 ? monaco.languages.CompletionItemKind.Variable
+                : value.valueType === "Selector"
+                ? monaco.languages.CompletionItemKind.Method
                 : monaco.languages.CompletionItemKind.Property,
-            insertText: `${value.name}(${
-              value.args?.map((name, i) => `$\{${i}:${name}}`).join(", ") || ""
-            })`,
+            insertText:
+              value.valueType === "Function"
+                ? `${value.name}(${
+                    value.args
+                      ?.map((name, i) => `$\{${i}:${name}}`)
+                      .join(", ") || ""
+                  })`
+                : value.name,
             insertTextRules:
               monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
             detail: value.doc,
