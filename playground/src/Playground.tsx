@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
-
 import init, {
   runScript,
   formatScript,
@@ -10,7 +9,6 @@ import init, {
 } from "./mq-wasm/mq_wasm";
 import { FaGithub } from "react-icons/fa6";
 import { languages } from "monaco-editor";
-
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -122,8 +120,6 @@ export const year = 2023
 # Last year’s snowfall
 
 In {year}, the snowfall was above average.
-It was followed by a warm spring which caused
-flood conditions in many of the nearby rivers.
 
 <Chart color="#fcb32c" year={year} />
 `,
@@ -426,7 +422,7 @@ export const Playground = () => {
           >
             <img src="./logo.svg" className="logo-icon" />
           </a>
-          <h1>mq Playground</h1>
+          <h1>Playground</h1>
         </div>
         <a
           href="https://github.com/harehare/mq"
