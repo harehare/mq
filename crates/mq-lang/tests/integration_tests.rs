@@ -289,7 +289,10 @@ fn test_eval(
 #[case::empty("", vec![Value::Number(0.into())])]
 #[case::error("f()def f(): 1", vec![Value::Number(0.into())])]
 #[case::func("def func1(): 1 | func1(); | func1()", vec![Value::Number(0.into())])]
+#[case::func("def func1(x): 1; | func1(1, 2)", vec![Value::Number(0.into())])]
+#[case::invalid_definition("func1(1, 2)", vec![Value::Number(0.into())])]
 #[case::interpolated_string("s\"${val1} World!\"", vec![Value::Number(0.into())])]
+#[case::foreach("foreach(x, 1): add(x, 1);", vec![Value::Number(10.into())])]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

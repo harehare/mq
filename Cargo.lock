@@ -1410,6 +1410,7 @@ name = "mq-lang-fuzz"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "itertools",
  "libfuzzer-sys",
  "mq-lang",
 ]

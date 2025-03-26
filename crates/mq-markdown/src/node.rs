@@ -303,7 +303,6 @@ impl PartialOrd for Node {
             (Some(self_pos), Some(other_pos)) => {
                 match self_pos.start.line.cmp(&other_pos.start.line) {
                     std::cmp::Ordering::Equal => {
-                        // If lines are equal, compare by column
                         self_pos.start.column.partial_cmp(&other_pos.start.column)
                     }
                     ordering => Some(ordering),
@@ -396,9 +395,10 @@ impl Node {
             Self::TableHeader(TableHeader { align, .. }) => {
                 format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
-            Self::Blockquote(Value { values, .. }) => {
-                format!("> {}", Self::values_to_string(values, list_style))
-            }
+            Self::Blockquote(Value { values, .. }) => Self::values_to_string(values, list_style)
+                .split('\n')
+                .map(|line| format!("> {}", line))
+                .join("\n"),
             Self::Code(Code { value, lang, .. }) => {
                 let lang_str = lang.as_deref().unwrap_or("");
                 format!("\n```{}\n{}\n```\n", lang_str, value)
@@ -2122,6 +2122,7 @@ mod tests {
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test|")]
     #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
     #[case::block_quote(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "> test")]
+    #[case::block_quote(Node::Blockquote(Value{values: vec!["test\ntest2".to_string().into()], position: None}), ListStyle::Dash, "> test\n> test2")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "\n```rust\ncode\n```\n")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "\n```\ncode\n```\n")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]

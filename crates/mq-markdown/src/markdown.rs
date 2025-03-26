@@ -7,7 +7,7 @@ use itertools::Itertools;
 use markdown::Constructs;
 use miette::{IntoDiagnostic, miette};
 
-use crate::node::{ListStyle, Node};
+use crate::node::{ListStyle, Node, Position};
 
 #[derive(Debug, Clone)]
 pub struct Markdown {
@@ -25,32 +25,28 @@ impl FromStr for Markdown {
 
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut pre_line = 1;
         let mut pre_position = None;
+
         let text = self
             .nodes
             .iter()
-            .filter_map(|node| {
+            .enumerate()
+            .filter_map(|(i, node)| {
                 let value = node.to_string_with(&self.options.list_style);
 
-                if value.is_empty() {
+                if value.is_empty() || value == "\n" {
                     return None;
                 }
 
                 let value = if let Some(pos) = node.position() {
-                    let value = if pre_line != pos.start.line {
-                        if pre_position.is_some() {
-                            format!("{}{}", '\n', value)
-                        } else {
-                            value
-                        }
-                    } else {
-                        value
-                    };
+                    let new_line_count = pre_position
+                        .as_ref()
+                        .map(|p: &Position| pos.start.line - p.start.line)
+                        .unwrap_or_else(|| if i == 0 { 0 } else { 1 });
 
-                    pre_line = pos.start.line;
                     pre_position = Some(pos);
-                    value
+
+                    format!("{}{}", "\n".repeat(new_line_count), value)
                 } else {
                     pre_position = None;
                     format!("{}{}", value, '\n')
@@ -272,37 +268,29 @@ mod tests {
     #[rstest]
     #[case::header("# Title", 1, "# Title\n")]
     #[case::header("# Title\nParagraph", 2, "# Title\nParagraph\n")]
-    #[case::header("# Title\n\nParagraph", 2, "# Title\nParagraph\n")]
+    #[case::header("# Title\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
-    #[case::quote("> Quote\n\n>Second line", 2, "> Quote\n> Second line\n")]
+    #[case::quote("> Quote\n>Second line", 1, "> Quote\n> Second line\n")]
     #[case::code("```rust\nlet x = 1;\n```", 1, "\n```rust\nlet x = 1;\n```\n")]
     #[case::toml("+++\n[test]\ntest = 1\n+++", 1, "+++\n[test]\ntest = 1\n+++\n")]
-    #[case::code("`inline`", 1, "`inline`\n")]
+    #[case::code_inline("`inline`", 1, "`inline`\n")]
     #[case::math_inline("$math$", 1, "$math$\n")]
     #[case::math("$$\nmath\n$$", 1, "$$\nmath\n$$\n")]
     #[case::html("<div>test</div>", 1, "\n<div>test</div>\n")]
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
     #[case::definition("[a]: b", 1, "[a]: b\n")]
-    #[case::footnote("[^alpha]: bravo and charlie.", 1, "[^alpha]: bravo and charlie.\n")]
-    #[case::footnote_ref("[^a]", 1, "[^a]\n")]
-    #[case::image(
-        "![alt text](http://example.com/image.jpg)",
-        1,
-        "![alt text](http://example.com/image.jpg)\n"
-    )]
-    #[case::image_with_title(
-        "![alt text](http://example.com/image.jpg \"title\")",
-        1,
-        "![alt text](http://example.com/image.jpg \"title\")\n"
-    )]
-    #[case::image_ref("![alpha][bravo]", 1, "![alpha][bravo]\n")]
+    #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
+    #[case::footnote_ref("[^a]: b\n\n[^a]", 2, "[^a]: b\n\n[^a]\n")]
+    #[case::image("![a](b)", 1, "![a](b)\n")]
+    #[case::image_with_title("![a](b \"c\")", 1, "![a](b \"c\")\n")]
+    #[case::image_ref("[a]: b\n\n ![c][a]", 2, "[a]: b\n\n![c][a]\n")]
     #[case::yaml(
         "---\ntitle: Test\ndescription: YAML front matter\n---\n",
         1,
         "---\ntitle: Test\ndescription: YAML front matter\n---\n"
     )]
-    #[case::link("[title](http://example.com)", 1, "[title](http://example.com)\n")]
-    #[case::link_ref("[alpha][Bravo]", 1, "[alpha][Bravo]\n")]
+    #[case::link("[a](b)", 1, "[a](b)\n")]
+    #[case::link_ref("[a]: b\n\n[c][a]", 2, "[a]: b\n\n[c][a]\n")]
     #[case::break_("a\\", 1, "a\\\n")]
     #[case::delete("~~a~~", 1, "~~a~~\n")]
     #[case::emphasis("*a*", 1, "*a*\n")]
@@ -400,7 +388,7 @@ mod tests {
         let md = "# Header\n\nParagraph 1\n\nParagraph 2"
             .parse::<Markdown>()
             .unwrap();
-        assert_eq!(md.to_string(), "# Header\nParagraph 1\nParagraph 2\n");
+        assert_eq!(md.to_string(), "# Header\n\nParagraph 1\n\nParagraph 2\n");
     }
 
     #[test]

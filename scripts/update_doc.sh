@@ -1,7 +1,8 @@
 #!/bin/bash
 
+CLI_HELP=`mq -h | tail -n +3`
 # Update the documentation with the latest CLI help and builtin functions
-mq -U -o docs/books/src/reference/cli.md --args mq_cli_help "`mq -h | tail -n +3`" '.code("sh") | update(mq_cli_help)' docs/books/src/reference/cli.md
+mq -U -o docs/books/src/reference/cli.md --args mq_cli_help "$CLI_HELP" '.code("sh") | update(mq_cli_help)' docs/books/src/reference/cli.md
 
 # Update the builtin functions documentation
 mq '.h' docs/books/src/reference/builtin_functions.md > docs/books/src/reference/builtin_functions.md.tmp \

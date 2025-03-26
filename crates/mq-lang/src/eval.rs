@@ -289,19 +289,10 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Foreach(ident, values, body) = &*node.expr {
             let values = self.eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?;
-
-            if !values.is_array() {
-                return Err(EvalError::InvalidTypes {
-                    token: (*self.token_arena.borrow()[node.token_id]).clone(),
-                    name: TokenKind::Foreach.to_string(),
-                    args: vec![values.to_string().into()],
-                });
-            }
-
-            let runtime_values: Vec<RuntimeValue> = Vec::with_capacity(values.len());
-
             let values = if let RuntimeValue::Array(values) = values {
+                let runtime_values: Vec<RuntimeValue> = Vec::with_capacity(values.len());
                 let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
+
                 values
                     .into_iter()
                     .try_fold(runtime_values, |mut acc, value| {
@@ -312,7 +303,11 @@ impl Evaluator {
                         Ok::<Vec<RuntimeValue>, EvalError>(acc)
                     })?
             } else {
-                vec![]
+                return Err(EvalError::InvalidTypes {
+                    token: (*self.token_arena.borrow()[node.token_id]).clone(),
+                    name: TokenKind::Foreach.to_string(),
+                    args: vec![values.to_string().into()],
+                });
             };
 
             Ok(RuntimeValue::Array(values))
@@ -340,11 +335,7 @@ impl Evaluator {
 
             Ok(runtime_value)
         } else {
-            Err(EvalError::InvalidTypes {
-                token: (*self.token_arena.borrow()[node.token_id]).clone(),
-                name: TokenKind::While.to_string(),
-                args: vec![runtime_value.to_string().into()],
-            })
+            unreachable!()
         }
     }
 
