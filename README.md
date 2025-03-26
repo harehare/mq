@@ -38,7 +38,7 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 
 To install `mq`, you can use `cargo`:
 
-```sh
+``` sh
 cargo install --git https://github.com/harehare/mq.git mq-cli
 # Installing from cargo is under preparation.
 cargo install mq-cli
@@ -46,7 +46,7 @@ cargo install mq-cli
 
 ### Docker
 
-```sh
+``` sh
 $ docker run --rm ghcr.io/harehare/mq:0.1.0-preview
 ```
 
@@ -61,7 +61,7 @@ You can install the VSCode extension from the [Visual Studio Marketplace](https:
 <details>
 <summary>Complete list of options (click to show)</summary>
 
-```sh
+``` sh
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
@@ -72,8 +72,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -f, --from-file                       load filter from the file
@@ -94,13 +94,27 @@ Options:
   -q, --quiet...                        Decrease logging verbosity
   -h, --help                            Print help
   -V, --version                         Print version
+
+Examples:
+
+To filter markdown nodes:
+$ mq 'query' file.md
+
+To read query from file:
+$ mq -f 'file' file.md
+
+To start a REPL session:
+$ mq repl
+
+To format mq file:
+$ mq fmt --check file.mq
 ```
 
 </details>
 
 Here's a basic example of how to use `mq`:
 
-```sh
+``` sh
 # code
 $ mq '.code | select(contains("name"))'
 # table
@@ -115,7 +129,7 @@ $ mq 'select(not(.code("js")))'
 
 You can chain multiple operations to perform complex transformations:
 
-```sh
+``` sh
 # Markdown TOC
 $ mq 'select(or(.h1, .h2, .h3)) | let link = to_link(add($__FILE__, add("#", to_text(self))), to_text(self), "") | if (is_h1()): to_md_list(link, 1)  elif (is_h2()): to_md_list(link, 2) elif (is_h3()): to_md_list(link, 3) else: None' docs/book/*.md
 # String Interpolation
