@@ -37,7 +37,7 @@ test:
 test-cov:
     cargo llvm-cov --open --html --workspace
 
-test-fazz:
+test-fuzz:
     cargo +nightly fuzz run interpreter
 
 [working-directory: 'crates/mq-wasm']
