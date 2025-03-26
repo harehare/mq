@@ -420,6 +420,10 @@ mod tests {
         );
         assert!(!RuntimeValue::Array(vec![]).is_true());
         assert!(!RuntimeValue::None.is_true());
+        assert!(RuntimeValue::NativeFunction(AstIdent::new("name")).is_true());
+        assert!(
+            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default()))).is_true()
+        );
     }
 
     #[test]
@@ -462,6 +466,17 @@ mod tests {
         assert_eq!(RuntimeValue::String(String::from("test")).len(), 4);
         assert_eq!(RuntimeValue::Bool(true).len(), 1);
         assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
+        assert_eq!(
+            RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "a".to_string(),
+                    position: None
+                }),
+                None
+            )
+            .len(),
+            1
+        );
     }
 
     #[test]

@@ -914,4 +914,11 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         assert_eq!(symbol.name, Some(expected_name.into()));
         assert_eq!(symbol.kind, expected_kind);
     }
+
+    #[test]
+    fn test_builtin() {
+        let mut hir = Hir::new();
+        hir.add_builtin();
+        assert!(hir.builtin.loaded);
+    }
 }
