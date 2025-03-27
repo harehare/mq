@@ -942,7 +942,7 @@ impl Node {
                 Self::Heading(v)
             }
             Self::Definition(mut def) => {
-                def.ident = value.to_string();
+                def.url = value.to_string();
                 Self::Definition(def)
             }
             node @ Self::Break { .. } => node,
@@ -1669,7 +1669,7 @@ mod tests {
             Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test2".to_string(), label: None, position: None}),)]
     #[case::definition(Node::Definition(Definition{ url: "url".to_string(), title: None, ident: "test1".to_string(), label: None, position: None}),
             "test2".to_string(),
-            Node::Definition(Definition{url: "url".to_string(), title: None, ident: "test2".to_string(), label: None, position: None}),)]
+            Node::Definition(Definition{url: "test2".to_string(), title: None, ident: "test1".to_string(), label: None, position: None}),)]
     #[case::break_(Node::Break{ position: None},
             "test".to_string(),
             Node::Break{position: None})]
