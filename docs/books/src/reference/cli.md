@@ -3,7 +3,7 @@
 The mq command-line interface provides tools for querying and manipulating markdown content.
 Below is the complete reference for all available commands and options.
 
-``` sh
+```sh
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
@@ -26,7 +26,6 @@ Options:
       --args <NAME> <VALUE>             Sets string that can be referenced at runtime
       --rawfile <NAME> <FILE>           Sets file contents that can be referenced at runtime
       --mdx                             Enable MDX parsing
-  -c, --compact-output                  pretty print
   -F, --output-format <OUTPUT_FORMAT>   Compact instead of pretty-printed output [default: markdown] [possible values: markdown, html, text]
   -U, --update                          Update the input markdown
       --unbuffered                      Unbuffered output

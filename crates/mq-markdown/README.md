@@ -10,6 +10,6 @@ use mq_markdown::to_html;
 
 let markdown = "# Hello, world!";
 let html = to_html(markdown);
-assert_eq!(html, "<h1>Hello, world!</h1>\n");
+assert_eq!(html, "<h1>Hello, world!</h1>");
 ```
 
