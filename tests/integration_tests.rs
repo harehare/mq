@@ -91,28 +91,6 @@ add(x,1);
 }
 
 #[test]
-fn test_cli_md_format_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-
-    let assert = cmd
-        .arg("fmt")
-        .arg("--target")
-        .arg("markdown")
-        .write_stdin(
-            "# test
-- item1
-- item2 ",
-        )
-        .assert();
-    assert
-        .success()
-        .code(0)
-        .stdout("# test\n\n- item1\n- item2\n\n");
-
-    Ok(())
-}
-
-#[test]
 fn test_cli_docs() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
     let assert = cmd.arg("docs").assert();

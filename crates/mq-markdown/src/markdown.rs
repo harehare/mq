@@ -1,11 +1,8 @@
 use std::{fmt, str::FromStr};
 
-use comrak::{
-    Arena, ComrakOptions, ListStyleType, format_commonmark, markdown_to_html, parse_document,
-};
 use itertools::Itertools;
 use markdown::Constructs;
-use miette::{IntoDiagnostic, miette};
+use miette::miette;
 
 use crate::node::{ListStyle, Node, Position};
 
@@ -34,6 +31,7 @@ impl fmt::Display for Markdown {
                 let value = node.to_string_with(&self.options.list_style);
 
                 if value.is_empty() || value == "\n" {
+                    pre_position = None;
                     return None;
                 }
 
@@ -139,15 +137,8 @@ impl Markdown {
         })
     }
 
-    pub fn to_pretty_markdown(&self) -> miette::Result<String> {
-        pretty_markdown(&self.to_string(), &self.options)
-    }
-
     pub fn to_html(&self) -> String {
-        let options = ComrakOptions::default();
-        let formatted_html = markdown_to_html(self.to_string().as_str(), &options);
-
-        formatted_html
+        markdown::to_html(self.to_string().as_str())
     }
 
     pub fn to_text(&self) -> String {
@@ -213,49 +204,8 @@ impl Markdown {
     }
 }
 
-pub fn pretty_markdown(s: &str, options: &RenderOptions) -> miette::Result<String> {
-    let options = comrak::Options {
-        extension: {
-            comrak::ExtensionOptions {
-                strikethrough: true,
-                tagfilter: true,
-                table: true,
-                autolink: true,
-                tasklist: true,
-                superscript: true,
-                footnotes: true,
-                description_lists: true,
-                multiline_block_quotes: true,
-                math_dollars: true,
-                math_code: true,
-                wikilinks_title_after_pipe: true,
-                wikilinks_title_before_pipe: true,
-                underline: true,
-                subscript: true,
-                spoiler: true,
-                greentext: true,
-                ..comrak::ExtensionOptions::default()
-            }
-        },
-        render: comrak::RenderOptions {
-            list_style: match options.list_style.clone() {
-                ListStyle::Dash => ListStyleType::Dash,
-                ListStyle::Plus => ListStyleType::Plus,
-                ListStyle::Star => ListStyleType::Star,
-            },
-            experimental_minimize_commonmark: true,
-            ..comrak::RenderOptions::default()
-        },
-        ..comrak::Options::default()
-    };
-
-    let arena = Arena::new();
-    let root = parse_document(&arena, s, &options);
-    let mut formatted_markdown = Vec::new();
-
-    format_commonmark(root, &options, &mut formatted_markdown).unwrap();
-
-    String::from_utf8(formatted_markdown).into_diagnostic()
+pub fn to_html(s: &str) -> String {
+    markdown::to_html(s)
 }
 
 #[cfg(test)]
@@ -334,15 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn test_markdown_to_pretty_markdown() {
-        let md = "# Hello\n* Item 1\n* Item 2".parse::<Markdown>().unwrap();
-        assert_eq!(
-            md.to_pretty_markdown().unwrap(),
-            "# Hello\n\n- Item 1\n- Item 2\n"
-        );
-    }
-
-    #[test]
     fn test_markdown_to_html() {
         let md = "# Hello".parse::<Markdown>().unwrap();
         let html = md.to_html();
@@ -366,7 +307,7 @@ mod tests {
         });
         assert_eq!(md.options.list_style, ListStyle::Plus);
 
-        let pretty = md.to_pretty_markdown().unwrap();
+        let pretty = md.to_string();
         assert!(pretty.contains("+ Item 1"));
     }
 
@@ -404,7 +345,7 @@ mod tests {
             list_style: ListStyle::Star,
         });
 
-        let formatted = md.to_pretty_markdown().unwrap();
+        let formatted = md.to_string();
         assert!(formatted.contains("* Item 1"));
         assert!(formatted.contains("* Item 2"));
     }

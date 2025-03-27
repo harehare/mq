@@ -2691,37 +2691,37 @@ mod tests {
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p>test</p>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<p>test</p>".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<h1>Heading 1</h1>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<h1>Heading 1</h1>".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p><strong>Bold</strong></p>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<p><strong>Bold</strong></p>".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p><em>Italic</em></p>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<p><em>Italic</em></p>".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("Link Title".to_string()), values: vec!["Link Title".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p><a href=\"https://example.com\" title=\"Link Title\">Link Title</a></p>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<p><a href=\"https://example.com\" title=\"Link Title\">Link Title</a></p>".to_string())]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("rust".to_string()), value: "println!(\"Hello\");".to_string(), position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<pre><code class=\"language-rust\">println!(&quot;Hello&quot;);\n</code></pre>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<pre><code class=\"language-rust\">println!(&quot;Hello&quot;);\n</code></pre>".to_string())]))]
     #[case::to_html(vec![RuntimeValue::String("Plain text".to_string())],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p>Plain text</p>\n".to_string())]))]
+        Ok(vec![RuntimeValue::String("<p>Plain text</p>".to_string())]))]
     #[case::repeat_string(vec![RuntimeValue::String("abc".to_string())],
         vec![
             ast_call("repeat", vec![

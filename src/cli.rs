@@ -5,7 +5,6 @@ use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::Engine;
-use std::fmt::{self, Display};
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
@@ -62,22 +61,6 @@ pub enum ListStyle {
     Star,
 }
 
-#[derive(Debug, Clone, Default, clap::ValueEnum)]
-pub enum FormatTarget {
-    #[default]
-    Mq,
-    Markdown,
-}
-
-impl Display for FormatTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FormatTarget::Mq => write!(f, "mq"),
-            FormatTarget::Markdown => write!(f, "markdown"),
-        }
-    }
-}
-
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// load filter from the file
@@ -115,10 +98,6 @@ struct InputArgs {
 
 #[derive(Clone, Debug, clap::Args, Default)]
 struct OutputArgs {
-    /// pretty print
-    #[clap(short, long, default_value = "false")]
-    compact_output: bool,
-
     /// Compact instead of pretty-printed output
     #[arg(short = 'F', long, value_enum, default_value_t)]
     output_format: Format,
@@ -152,9 +131,6 @@ enum Commands {
         /// Check if files are formatted without modifying them
         #[arg(short, long)]
         check: bool,
-        /// Specify the target format type
-        #[arg(short = 'T', long, default_value_t = FormatTarget::Mq)]
-        target: FormatTarget,
     },
     /// Generate shell completion scripts for supported shells
     Completion {
@@ -178,42 +154,18 @@ impl Cli {
             Some(Commands::Fmt {
                 indent_width,
                 check,
-                target,
             }) => {
-                match target {
-                    FormatTarget::Mq => {
-                        let mut formatter =
-                            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-                                indent_width: *indent_width,
-                            }));
-                        for (_, content) in self.read_contents()? {
-                            let formatted = formatter.format(&content).into_diagnostic()?;
+                let mut formatter =
+                    mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+                        indent_width: *indent_width,
+                    }));
+                for (_, content) in self.read_contents()? {
+                    let formatted = formatter.format(&content).into_diagnostic()?;
 
-                            if *check && formatted != content {
-                                return Err(miette!("The input is not formatted"));
-                            } else {
-                                println!("{}", formatted);
-                            }
-                        }
-                    }
-                    FormatTarget::Markdown => {
-                        let options = mq_markdown::RenderOptions {
-                            list_style: match self.output.list_style.clone() {
-                                ListStyle::Dash => mq_markdown::ListStyle::Dash,
-                                ListStyle::Plus => mq_markdown::ListStyle::Plus,
-                                ListStyle::Star => mq_markdown::ListStyle::Star,
-                            },
-                        };
-
-                        for (_, content) in self.read_contents()? {
-                            let formatted = mq_markdown::pretty_markdown(&content, &options)?;
-
-                            if *check && formatted != content {
-                                return Err(miette!("The input is not formatted"));
-                            } else {
-                                println!("{}", formatted);
-                            }
-                        }
+                    if *check && formatted != content {
+                        return Err(miette!("The input is not formatted"));
+                    } else {
+                        println!("{}", formatted);
                     }
                 }
 
@@ -262,7 +214,6 @@ impl Cli {
 ",
                     ),
                     doc_values,
-                    true,
                 )?;
 
                 Ok(())
@@ -430,11 +381,7 @@ impl Cli {
         }
         .map_err(|e| *e)?;
 
-        self.print(
-            None,
-            runtime_values,
-            self.output.update || !self.output.compact_output,
-        )
+        self.print(None, runtime_values)
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
@@ -464,12 +411,7 @@ impl Cli {
             })
     }
 
-    fn print(
-        &self,
-        header: Option<&str>,
-        runtime_values: mq_lang::Values,
-        pretty: bool,
-    ) -> miette::Result<()> {
+    fn print(&self, header: Option<&str>, runtime_values: mq_lang::Values) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
             let file = fs::File::create(output_file).into_diagnostic()?;
@@ -518,15 +460,9 @@ impl Cli {
                     .map_err(|e| miette!(e))?;
             }
             Format::Markdown => {
-                if pretty {
-                    handle
-                        .write_all(markdown.to_pretty_markdown()?.as_bytes())
-                        .map_err(|e| miette!(e))?;
-                } else {
-                    handle
-                        .write_all(markdown.to_string().as_bytes())
-                        .map_err(|e| miette!(e))?;
-                }
+                handle
+                    .write_all(markdown.to_string().as_bytes())
+                    .map_err(|e| miette!(e))?;
             }
         }
 
@@ -659,7 +595,6 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: false,
-                target: FormatTarget::Mq,
             }),
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
@@ -686,7 +621,6 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: true,
-                target: FormatTarget::Mq,
             }),
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,

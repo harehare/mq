@@ -407,7 +407,7 @@ impl Node {
                 .join("\n"),
             Self::Code(Code { value, lang, .. }) => {
                 let lang_str = lang.as_deref().unwrap_or("");
-                format!("```{}\n{}\n```\n", lang_str, value)
+                format!("```{}\n{}\n```", lang_str, value)
             }
             Self::Definition(Definition { label, url, .. }) => {
                 format!("[{}]: {}", label.unwrap_or_default(), url)
@@ -435,7 +435,7 @@ impl Node {
                     Self::values_to_string(values, list_style)
                 )
             }
-            Self::Html(Html { value, .. }) => format!("{}\n", value),
+            Self::Html(Html { value, .. }) => value,
             Self::Image(Image {
                 alt, url, title, ..
             }) => format!(
@@ -551,8 +551,8 @@ impl Node {
                         .join("")
                 )
             }
-            Self::Yaml(Yaml { value, .. }) => format!("---\n{}\n---\n", value),
-            Self::Toml(Toml { value, .. }) => format!("+++\n{}\n+++\n", value),
+            Self::Yaml(Yaml { value, .. }) => format!("---\n{}\n---", value),
+            Self::Toml(Toml { value, .. }) => format!("+++\n{}\n+++", value),
             Self::Break { .. } => "\\".to_string(),
             Self::HorizontalRule { .. } => "---".to_string(),
         }
@@ -2165,8 +2165,8 @@ mod tests {
     #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
     #[case::block_quote(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "> test")]
     #[case::block_quote(Node::Blockquote(Value{values: vec!["test\ntest2".to_string().into()], position: None}), ListStyle::Dash, "> test\n> test2")]
-    #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "```rust\ncode\n```\n")]
-    #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "```\ncode\n```\n")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "```rust\ncode\n```")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "```\ncode\n```")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]
     #[case::delete(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "~~test~~")]
     #[case::emphasis(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "*test*")]
@@ -2174,7 +2174,7 @@ mod tests {
     #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[^label]")]
     #[case::heading(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "# test")]
     #[case::heading(Node::Heading(Heading{depth: 3, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "### test")]
-    #[case::html(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), ListStyle::Dash, "<div>test</div>\n")]
+    #[case::html(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), ListStyle::Dash, "<div>test</div>")]
     #[case::image(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}), ListStyle::Dash, "![alt](url)")]
     #[case::image(Node::Image(Image{alt: "alt".to_string(), url: "url with space".to_string(), title: Some("title".to_string()), position: None}), ListStyle::Dash, "![alt](url%20with%20space \"title\")")]
     #[case::image_ref(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: None, position: None}), ListStyle::Dash, "![alt][id]")]
@@ -2186,8 +2186,8 @@ mod tests {
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["open".to_string().into()], label: Some("open".to_string()), position: None}), ListStyle::Dash, "[open]")]
     #[case::math(Node::Math(Math{value: "x^2".to_string(), position: None}), ListStyle::Dash, "$$\nx^2\n$$")]
     #[case::strong(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "**test**")]
-    #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "---\nkey: value\n---\n")]
-    #[case::toml(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "+++\nkey = \"value\"\n+++\n")]
+    #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), ListStyle::Dash, "---\nkey: value\n---")]
+    #[case::toml(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), ListStyle::Dash, "+++\nkey = \"value\"\n+++")]
     #[case::break_(Node::Break{position: None}, ListStyle::Dash, "\\")]
     #[case::horizontal_rule(Node::HorizontalRule{position: None}, ListStyle::Dash, "---")]
     #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
