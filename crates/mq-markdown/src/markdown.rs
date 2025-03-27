@@ -279,7 +279,7 @@ mod tests {
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
     #[case::definition("[a]: b", 1, "[a]: b\n")]
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
-    #[case::footnote_ref("[^a]: b\n\n[^a]", 2, "[^a]: b\n\n[^a]\n")]
+    #[case::footnote_ref("[^a]: b\n\n[^a]", 2, "[^a]: b\n[^a]\n")]
     #[case::image("![a](b)", 1, "![a](b)\n")]
     #[case::image_with_title("![a](b \"c\")", 1, "![a](b \"c\")\n")]
     #[case::image_ref("[a]: b\n\n ![c][a]", 2, "[a]: b\n\n![c][a]\n")]
