@@ -26,7 +26,6 @@ impl FromStr for Markdown {
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut pre_position = None;
-
         let text = self
             .nodes
             .iter()
@@ -41,7 +40,7 @@ impl fmt::Display for Markdown {
                 let value = if let Some(pos) = node.position() {
                     let new_line_count = pre_position
                         .as_ref()
-                        .map(|p: &Position| pos.start.line - p.start.line)
+                        .map(|p: &Position| pos.start.line - p.end.line)
                         .unwrap_or_else(|| if i == 0 { 0 } else { 1 });
 
                     pre_position = Some(pos);

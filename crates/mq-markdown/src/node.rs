@@ -258,7 +258,7 @@ pub struct MdxJsEsm {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Node {
     Blockquote(Value),
     Break { position: Option<Position> },
@@ -291,6 +291,12 @@ pub enum Node {
     MdxTextExpression(MdxTextExpression),
     MdxJsEsm(MdxJsEsm),
     Text(Text),
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
 }
 
 impl PartialOrd for Node {
@@ -439,7 +445,11 @@ impl Node {
                 title.map(|it| format!(" \"{}\"", it)).unwrap_or_default()
             ),
             Self::ImageRef(ImageRef { alt, ident, .. }) => {
-                format!("![{}][{}]", alt, ident)
+                if alt == ident {
+                    format!("![{}]", ident)
+                } else {
+                    format!("![{}][{}]", alt, ident)
+                }
             }
             Self::CodeInline(CodeInline { value, .. }) => {
                 format!("`{}`", value)
@@ -1455,16 +1465,31 @@ impl Node {
             .iter()
             .flat_map(|n| {
                 if let mdast::Node::ListItem(list) = n {
+                    let values = Self::from_mdast_node(n.clone())
+                        .into_iter()
+                        .filter(|value| !matches!(value, Self::List(_)))
+                        .collect::<Vec<_>>();
+                    let position = if values.is_empty() {
+                        n.position().map(|p| p.clone().into())
+                    } else {
+                        let first_pos = values.first().and_then(|v| v.position());
+                        let last_pos = values.last().and_then(|v| v.position());
+                        match (first_pos, last_pos) {
+                            (Some(start), Some(end)) => Some(Position {
+                                start: start.start.clone(),
+                                end: end.end.clone(),
+                            }),
+                            _ => n.position().map(|p| p.clone().into()),
+                        }
+                    };
+
                     itertools::concat(vec![
                         vec![Self::List(List {
                             level,
                             index: 0,
                             checked: list.checked,
-                            values: Self::from_mdast_node(n.clone())
-                                .into_iter()
-                                .filter(|value| !matches!(value, Self::List(_)))
-                                .collect::<Vec<_>>(),
-                            position: n.position().map(|p| p.clone().into()),
+                            values,
+                            position,
                         })],
                         list.children
                             .iter()
@@ -1472,15 +1497,29 @@ impl Node {
                                 if let mdast::Node::List(sub_list) = node {
                                     Self::mdast_list_items(sub_list, level + 1)
                                 } else if let mdast::Node::ListItem(list) = node {
+                                    let values = Self::from_mdast_node(n.clone())
+                                        .into_iter()
+                                        .filter(|value| !matches!(value, Self::List(_)))
+                                        .collect::<Vec<_>>();
+                                    let position = if values.is_empty() {
+                                        n.position().map(|p| p.clone().into())
+                                    } else {
+                                        let first_pos = values.first().and_then(|v| v.position());
+                                        let last_pos = values.last().and_then(|v| v.position());
+                                        match (first_pos, last_pos) {
+                                            (Some(start), Some(end)) => Some(Position {
+                                                start: start.start.clone(),
+                                                end: end.end.clone(),
+                                            }),
+                                            _ => n.position().map(|p| p.clone().into()),
+                                        }
+                                    };
                                     vec![Self::List(List {
                                         level: level + 1,
                                         index: 0,
                                         checked: list.checked,
-                                        values: Self::from_mdast_node(n.clone())
-                                            .into_iter()
-                                            .filter(|value| !matches!(value, Self::List(_)))
-                                            .collect::<Vec<_>>(),
-                                        position: node.position().map(|p| p.clone().into()),
+                                        values,
+                                        position,
                                     })]
                                 } else {
                                     Vec::new()
