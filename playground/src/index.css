@@ -89,7 +89,7 @@ body {
   background: transparent;
   color: var(--light-color);
   padding: 4px;
-  gap: 8px;
+  gap: 4px;
 }
 
 .editor-header h2 {
@@ -105,6 +105,7 @@ body {
   overflow: hidden;
 }
 
+.share-button,
 .format-button,
 .run-button {
   background-color: transparent;
@@ -121,6 +122,7 @@ body {
   padding: 4px 16px;
 }
 
+.share-button:hover,
 .format-button:hover,
 .run-button:hover {
   color: #88acd2;

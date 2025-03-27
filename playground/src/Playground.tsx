@@ -9,6 +9,14 @@ import init, {
 } from "./mq-wasm/mq_wasm";
 import { FaGithub } from "react-icons/fa6";
 import { languages } from "monaco-editor";
+import LZString from "lz-string";
+
+type SharedData = {
+  code: string;
+  markdown: string;
+  isMdx: boolean;
+};
+
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -218,6 +226,30 @@ export const Playground = () => {
     init().then(() => {
       setWasmLoaded(true);
     });
+
+    if (window.location.hash) {
+      try {
+        const compressed = window.location.hash.substring(1);
+        const decompressed =
+          LZString.decompressFromEncodedURIComponent(compressed);
+        if (decompressed) {
+          const parsedData = JSON.parse(decompressed);
+          const data: SharedData = {
+            code: typeof parsedData.code === "string" ? parsedData.code : "",
+            markdown:
+              typeof parsedData.markdown === "string"
+                ? parsedData.markdown
+                : "",
+            isMdx: !!parsedData.isMdx,
+          };
+          setCode(data.code);
+          setMarkdown(data.markdown);
+          setIsMdx(data.isMdx === true);
+        }
+      } catch {
+        alert("Failed to load shared playground");
+      }
+    }
   }, []);
 
   const handleRun = useCallback(async () => {
@@ -246,6 +278,28 @@ export const Playground = () => {
     setMarkdown(selected.markdown);
     setIsMdx(selected.isMdx);
   }, []);
+
+  const handleShare = useCallback(() => {
+    const shareData: SharedData = {
+      code: code || "",
+      markdown: markdown || "",
+      isMdx,
+    };
+    const compressed = LZString.compressToEncodedURIComponent(
+      JSON.stringify(shareData)
+    );
+    const url = `${window.location.origin}${window.location.pathname}#${compressed}`;
+    window.location.hash = compressed;
+
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        alert("Share URL copied to clipboard!");
+      })
+      .catch(() => {
+        prompt("Copy this URL to share your playground:", url);
+      });
+  }, [code, markdown, isMdx]);
 
   const beforeMount = (monaco: Monaco) => {
     monaco.editor.addEditorAction({
@@ -476,6 +530,7 @@ export const Playground = () => {
                       display: "flex",
                       alignItems: "center",
                       fontSize: "13px",
+                      cursor: "pointer",
                     }}
                   >
                     <input
@@ -490,6 +545,9 @@ export const Playground = () => {
                     <div>Enable MDX</div>
                   </label>
                 </div>
+                <button className="share-button" onClick={handleShare}>
+                  Share
+                </button>
                 <button
                   className="format-button"
                   onClick={handleFormat}
