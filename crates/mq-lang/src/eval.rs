@@ -2823,6 +2823,19 @@ mod tests {
               ast_call("to_md_name", Vec::new()),
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{ident: "ident".into(), url: "url".to_string(), title: None, label: None, position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("definition-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{
+                ident: "definition-ref".to_string(),
+                label: None,
+                url: "url".to_string(),
+                title: None,
+                position: None
+            }), None)]))]
     #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{ident: "ident".into(), label: None, values: vec![], position: None}), None)],
             vec![
                  ast_call("set_ref", vec![
