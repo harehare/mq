@@ -1438,7 +1438,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("set_md_check"),
+            CompactString::new("set_check"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
@@ -1446,6 +1446,53 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 ] => Ok(mq_markdown::Node::List(mq_markdown::List {
                     checked: Some(*checked),
                     ..list.clone()
+                })
+                .into()),
+                [a, ..] => Ok(a.clone()),
+                _ => Ok(RuntimeValue::None),
+            }),
+        );
+        map.insert(
+            CompactString::new("set_ref"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
+                    RuntimeValue::String(s),
+                ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
+                    ident: s.to_owned(),
+                    ..def.clone()
+                })
+                .into()),
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::ImageRef(image_ref), _),
+                    RuntimeValue::String(s),
+                ] => Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
+                    ident: s.to_owned(),
+                    ..image_ref.clone()
+                })
+                .into()),
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::LinkRef(link_ref), _),
+                    RuntimeValue::String(s),
+                ] => Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
+                    ident: s.to_owned(),
+                    ..link_ref.clone()
+                })
+                .into()),
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::Footnote(footnote), _),
+                    RuntimeValue::String(s),
+                ] => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
+                    ident: s.to_owned(),
+                    ..footnote.clone()
+                })
+                .into()),
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
+                    RuntimeValue::String(s),
+                ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
+                    ident: s.to_owned(),
+                    ..footnote_ref.clone()
                 })
                 .into()),
                 [a, ..] => Ok(a.clone()),
@@ -2388,13 +2435,19 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("set_md_check"),
+            CompactString::new("set_check"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given checked state.",
                 params: &["list", "checked"],
             },
         );
-
+        map.insert(
+            CompactString::new("set_ref"),
+            BuiltinFunctionDoc {
+            description: "Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).",
+            params: &["node", "reference_id"],
+            },
+        );
         map
     });
 

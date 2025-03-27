@@ -2225,16 +2225,16 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
             mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
-    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
+    #[case::set_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
         vec![
-              ast_call("set_md_check", vec![
+              ast_call("set_check", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: Some(true), position: None}), None)]))]
-    #[case::set_md_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
+    #[case::set_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
         vec![
-              ast_call("set_md_check", vec![
+              ast_call("set_check", vec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
               ]),
         ],
@@ -2823,6 +2823,80 @@ mod tests {
               ast_call("to_md_name", Vec::new()),
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{ident: "ident".into(), label: None, values: vec![], position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("link-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{
+                ident: "link-ref".to_string(),
+                label: None,
+                values: vec![],
+                position: None
+            }), None)]))]
+    #[case::set_ref_markdown_image(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{alt: "Image Alt".to_string(), ident: "ident".into(), label: None, position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("image-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{
+                ident: "image-ref".to_string(),
+                alt: "Image Alt".to_string(),
+                label: None,
+                position: None
+            }), None)]))]
+    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "ident".into(), label: None, position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("footnote-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{
+                ident: "footnote-ref".to_string(),
+                label: None,
+                position: None
+            }), None)]))]
+    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Footnote(mq_markdown::Footnote{ident: "ident".into(), values: vec![], position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("footnote".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Footnote(mq_markdown::Footnote{
+               ident: "footnote".to_string(),
+                values: vec![],
+                position: None
+            }), None)]))]
+    #[case::set_ref_not_link_or_image(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Simple text".to_string(), position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("text-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Simple text".to_string(), position: None}), None)]))]
+    #[case::set_ref_plain_string(vec![RuntimeValue::String("Not a markdown".to_string())],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("string-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::String("Not a markdown".to_string())]))]
+    #[case::set_ref_none(vec![RuntimeValue::NONE],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("none-ref".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::NONE]))]
+    #[case::set_ref_with_empty_id(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
+            vec![
+                 ast_call("set_ref", vec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
