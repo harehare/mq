@@ -383,7 +383,7 @@ export const Playground = () => {
       tokenizer: {
         root: [
           [/^#.*$/, "comment"],
-          [/let|def|while|foreach|until|if|elif|else|self|None/, "keyword"],
+          [/\b(let|def|while|foreach|until|if|elif|else|self|None)\b/, "keyword"],
           [/;/, "delimiter"],
           [/\|/, "operator"],
           [/"/, { token: "string", next: "@multilineString" }],

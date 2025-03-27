@@ -586,11 +586,11 @@ impl Node {
     pub fn value(&self) -> String {
         match self.clone() {
             Self::Blockquote(v) => Self::values_to_value(v.values),
-            Self::Definition(d) => d.ident,
+            Self::Definition(d) => d.url,
             Self::Delete(v) => Self::values_to_value(v.values),
             Self::Heading(h) => Self::values_to_value(h.values),
             Self::Emphasis(v) => Self::values_to_value(v.values),
-            Self::Footnote(f) => f.ident,
+            Self::Footnote(f) => Self::values_to_value(f.values),
             Self::FootnoteRef(f) => f.ident,
             Self::Html(v) => v.value,
             Self::Yaml(v) => v.value,
@@ -2371,7 +2371,7 @@ mod tests {
     #[case(Node::Delete(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Emphasis(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![], position: None}), "test")]
+    #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None}), "test")]
     #[case(Node::Html(Html{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Yaml(Yaml{value: "test".to_string(), position: None}), "test")]
@@ -2393,7 +2393,7 @@ mod tests {
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), "test")]
-    #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "test")]
+    #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "url")]
     fn test_value(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.value(), expected);
     }
