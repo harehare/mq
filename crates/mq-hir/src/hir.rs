@@ -56,7 +56,7 @@ impl Hir {
         }
     }
 
-    pub fn is_builtin_symbol(&self, symbol: Arc<Symbol>) -> bool {
+    pub fn is_builtin_symbol(&self, symbol: &Symbol) -> bool {
         symbol.source.source_id == Some(self.builtin.source_id)
     }
 

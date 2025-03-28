@@ -3,6 +3,7 @@ use std::fmt;
 use crate::source::SourceInfo;
 use crate::{SourceId, scope::ScopeId};
 use compact_str::CompactString;
+use itertools::Itertools;
 
 slotmap::new_key_type! { pub struct SymbolId; }
 
@@ -58,7 +59,11 @@ impl Symbol {
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name.as_ref().map_or("", |name| name.as_str()))
+        let s = match &self.kind {
+            SymbolKind::Function(args) => &format!("function({})", args.iter().join(", ")),
+            _ => self.name.as_ref().map_or("", |name| name.as_str()),
+        };
+        write!(f, "{}", s)
     }
 }
 #[cfg(test)]

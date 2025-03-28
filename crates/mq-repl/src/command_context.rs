@@ -167,10 +167,45 @@ impl CommandContext {
                     Ok(CommandOutput::None)
                 }),
             Command::Vars => Ok(CommandOutput::String(
-                self.engine
-                    .defined_values()
-                    .iter()
-                    .map(|(ident, runtime_value)| format!("{} = {}", ident, runtime_value))
+                self.hir
+                    .symbols()
+                    .filter_map(|(_, symbol)| {
+                        if self.hir.is_builtin_symbol(symbol) {
+                            None
+                        } else {
+                            match &symbol.kind {
+                                mq_hir::SymbolKind::Function(_) if symbol.parent.is_none() => {
+                                    let name = symbol
+                                        .name
+                                        .as_ref()
+                                        .map(|name| name.to_string())
+                                        .unwrap_or_default();
+                                    Some(format!("{}: {}", name, symbol))
+                                }
+                                mq_hir::SymbolKind::Call
+                                | mq_hir::SymbolKind::Function(_)
+                                | mq_hir::SymbolKind::String
+                                | mq_hir::SymbolKind::Number
+                                | mq_hir::SymbolKind::Boolean
+                                | mq_hir::SymbolKind::None => symbol.parent.and_then(|parent| {
+                                    self.hir.symbol(parent).and_then(|parent_symbol| {
+                                        match parent_symbol.kind {
+                                            mq_hir::SymbolKind::Variable => {
+                                                let name = parent_symbol
+                                                    .name
+                                                    .as_ref()
+                                                    .map(|name| name.to_string())
+                                                    .unwrap_or_default();
+                                                Some(format!("{}: {}", name, symbol))
+                                            }
+                                            _ => None,
+                                        }
+                                    })
+                                }),
+                                _ => None,
+                            }
+                        }
+                    })
                     .collect(),
             )),
             Command::Version => Ok(CommandOutput::String(vec![
@@ -303,16 +338,17 @@ mod tests {
 
     #[test]
     fn test_execute_vars() {
-        let mut engine = mq_lang::Engine::default();
-        engine
-            .eval("let x = 42", vec!["".to_string().into()].into_iter())
+        let mut ctx = CommandContext::new(mq_lang::Engine::default(), vec![]);
+
+        ctx.execute("let x = 42 | let x2 = def fun1(x): add(x, 2); | def fun(): 1;")
             .unwrap();
-        let mut ctx = CommandContext::new(engine, vec![]);
 
         let result = ctx.execute(".vars").unwrap();
         if let CommandOutput::String(vars) = result {
             assert!(!vars.is_empty());
-            assert!(vars.iter().any(|s| s.contains("x = 42")));
+            assert!(vars.iter().any(|s| s.contains("x: 42")));
+            assert!(vars.iter().any(|s| s.contains("x2: function(x)")));
+            assert!(vars.iter().any(|s| s.contains("fun: function()")));
         } else {
             panic!("Expected String output");
         }

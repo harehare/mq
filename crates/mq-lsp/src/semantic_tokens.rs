@@ -121,7 +121,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 delta_start,
                 length,
                 token_type,
-                token_modifiers_bitset: if hir.read().unwrap().is_builtin_symbol(symbol) {
+                token_modifiers_bitset: if hir.read().unwrap().is_builtin_symbol(&symbol) {
                     token_modifier(tower_lsp::lsp_types::SemanticTokenModifier::DEFAULT_LIBRARY)
                 } else {
                     0
