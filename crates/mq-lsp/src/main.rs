@@ -345,7 +345,7 @@ mod tests {
                 .read()
                 .unwrap()
                 .symbols()
-                .map(|(_, s)| s.name.clone().unwrap().to_owned())
+                .map(|(_, s)| s.value.clone().unwrap().to_owned())
                 .collect::<Vec<_>>()
                 .contains(&"main".into()),
         );

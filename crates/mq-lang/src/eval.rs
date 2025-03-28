@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    AstIdentName, Program, Token, TokenKind,
+    Program, Token, TokenKind,
     arena::Arena,
     ast::node::{self as ast, Args},
     error::InnerError,
@@ -104,10 +104,6 @@ impl Evaluator {
                     .map_err(InnerError::Eval)
             })
             .collect()
-    }
-
-    pub(crate) fn defined_runtime_values(&self) -> Vec<(AstIdentName, RuntimeValue)> {
-        self.env.borrow().defined_runtime_values()
     }
 
     pub fn define_string_value(&self, name: &str, value: &str) {

@@ -57,7 +57,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 ((range.end.column - 1) - (range.start.column - 1)) as u32
             } else {
                 symbol
-                    .name
+                    .value
                     .as_ref()
                     .map(|name| name.len())
                     .unwrap_or_default() as u32

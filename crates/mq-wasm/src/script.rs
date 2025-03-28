@@ -120,33 +120,33 @@ pub fn defined_values(code: &str) -> Result<JsValue, JsValue> {
         .filter_map(|(_, symbol)| match symbol {
             mq_hir::Symbol {
                 kind: mq_hir::SymbolKind::Function(params),
-                name: Some(name),
+                value: Some(value),
                 doc,
                 ..
             } => Some(DefinedValue {
-                name: name.to_string(),
+                name: value.to_string(),
                 args: Some(params.iter().map(|param| param.to_string()).collect()),
                 doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
                 value_type: DefinedValueType::Function,
             }),
             mq_hir::Symbol {
                 kind: mq_hir::SymbolKind::Selector,
-                name: Some(name),
+                value: Some(value),
                 doc,
                 ..
             } => Some(DefinedValue {
-                name: name.to_string(),
+                name: value.to_string(),
                 args: None,
                 doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
                 value_type: DefinedValueType::Selector,
             }),
             mq_hir::Symbol {
                 kind: mq_hir::SymbolKind::Variable,
-                name: Some(name),
+                value: Some(value),
                 doc,
                 ..
             } => Some(DefinedValue {
-                name: name.to_string(),
+                name: value.to_string(),
                 args: None,
                 doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
                 value_type: DefinedValueType::Variable,

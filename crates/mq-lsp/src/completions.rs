@@ -35,12 +35,12 @@ pub fn response(
                     .iter()
                     .filter_map(|symbol| match &symbol.kind {
                         mq_hir::SymbolKind::Function(params) => Some(CompletionItem {
-                            label: symbol.name.clone().unwrap_or_default().to_string(),
+                            label: symbol.value.clone().unwrap_or_default().to_string(),
                             kind: Some(CompletionItemKind::FUNCTION),
                             detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                             insert_text: Some(format!(
                                 "{}({})",
-                                symbol.name.clone().unwrap_or_default(),
+                                symbol.value.clone().unwrap_or_default(),
                                 params
                                     .iter()
                                     .enumerate()
@@ -59,7 +59,7 @@ pub fn response(
                         }),
                         mq_hir::SymbolKind::Parameter | mq_hir::SymbolKind::Variable => {
                             Some(CompletionItem {
-                                label: symbol.name.clone().unwrap_or_default().to_string(),
+                                label: symbol.value.clone().unwrap_or_default().to_string(),
                                 kind: Some(CompletionItemKind::VARIABLE),
                                 detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                                 documentation: Some(Documentation::MarkupContent(MarkupContent {
@@ -73,10 +73,10 @@ pub fn response(
                             })
                         }
                         mq_hir::SymbolKind::Selector => Some(CompletionItem {
-                            label: symbol.name.clone().unwrap_or_default().to_string(),
+                            label: symbol.value.clone().unwrap_or_default().to_string(),
                             kind: Some(CompletionItemKind::METHOD),
                             detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            insert_text: Some(symbol.name.clone().unwrap_or_default().into()),
+                            insert_text: Some(symbol.value.clone().unwrap_or_default().into()),
                             insert_text_format: Some(InsertTextFormat::SNIPPET),
                             documentation: Some(Documentation::MarkupContent(MarkupContent {
                                 kind: MarkupKind::Markdown,

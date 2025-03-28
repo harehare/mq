@@ -14,7 +14,7 @@ pub type Doc = (mq_lang::Range, String);
 pub struct Symbol {
     pub doc: Vec<Doc>,
     pub kind: SymbolKind,
-    pub name: Option<CompactString>,
+    pub value: Option<CompactString>,
     pub scope: ScopeId,
     pub source: SourceInfo,
     pub parent: Option<SymbolId>,
@@ -61,7 +61,7 @@ impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match &self.kind {
             SymbolKind::Function(args) => &format!("function({})", args.iter().join(", ")),
-            _ => self.name.as_ref().map_or("", |name| name.as_str()),
+            _ => self.value.as_ref().map_or("", |value| value.as_str()),
         };
         write!(f, "{}", s)
     }
@@ -72,11 +72,11 @@ mod tests {
 
     use super::*;
 
-    fn create_test_symbol(kind: SymbolKind, name: Option<&str>) -> Symbol {
+    fn create_test_symbol(kind: SymbolKind, value: Option<&str>) -> Symbol {
         Symbol {
             doc: Vec::new(),
             kind,
-            name: name.map(CompactString::from),
+            value: value.map(CompactString::from),
             scope: ScopeId::default(),
             source: SourceInfo::new(None, None),
             parent: None,

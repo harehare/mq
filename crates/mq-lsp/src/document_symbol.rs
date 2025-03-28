@@ -28,7 +28,7 @@ pub fn response(
                         _ => return None,
                     };
 
-                    symbol.name.as_ref().map(|name| DocumentSymbol {
+                    symbol.value.as_ref().map(|name| DocumentSymbol {
                         name: name.to_string(),
                         detail: None,
                         kind,

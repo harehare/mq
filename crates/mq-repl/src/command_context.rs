@@ -1,7 +1,7 @@
 use std::{fmt, fs, str::FromStr};
 
 use arboard::Clipboard;
-use miette::IntoDiagnostic;
+use miette::{IntoDiagnostic, miette};
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone)]
@@ -21,21 +21,23 @@ pub enum Command {
     Vars,
     Eval(String),
     Version,
+    NotFound(String),
 }
 
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Command::Copy => write!(f, ".copy"),
+            Command::Copy => write!(f, ":copy"),
             Command::Env(_, _) => {
-                write!(f, ".env")
+                write!(f, ":env")
             }
-            Command::Help => write!(f, ".help"),
-            Command::Quit => write!(f, ".quit"),
-            Command::LoadFile(_) => write!(f, ".load_file"),
-            Command::Vars => write!(f, ".vars"),
-            Command::Eval(_) => write!(f, ".eval"),
-            Command::Version => write!(f, ".version"),
+            Command::Help => write!(f, ":help"),
+            Command::Quit => write!(f, ":quit"),
+            Command::LoadFile(_) => write!(f, ":load_file"),
+            Command::Vars => write!(f, ":vars"),
+            Command::Eval(_) => write!(f, ":eval"),
+            Command::Version => write!(f, ":version"),
+            Command::NotFound(_) => write!(f, ":not_found"),
         }
     }
 }
@@ -45,17 +47,18 @@ impl Command {
         match self {
             Command::Copy => format!(
                 "{:<12}{}",
-                ".copy", "Copy the execution results to the clipboard"
+                ":copy", "Copy the execution results to the clipboard"
             ),
             Command::Env(_, _) => {
-                format!("{:<12}{}", ".env", "Set environment variables (key value)")
+                format!("{:<12}{}", ":env", "Set environment variables (key value)")
             }
-            Command::Help => format!("{:<12}{}", ".help", "Print command help"),
-            Command::Quit => format!("{:<12}{}", ".quit", "Quit evaluation and exit"),
-            Command::LoadFile(_) => format!("{:<12}{}", ".load_file", "Load a markdown file"),
-            Command::Vars => format!("{:<12}{}", ".vars", "List bound variables"),
-            Command::Eval(_) => format!("{:<12}{}", ".eval", ""),
-            Command::Version => format!("{:<12}{}", ".version", "Print mq version"),
+            Command::Help => format!("{:<12}{}", ":help", "Print command help"),
+            Command::Quit => format!("{:<12}{}", ":quit", "Quit evaluation and exit"),
+            Command::LoadFile(_) => format!("{:<12}{}", ":load_file", "Load a markdown file"),
+            Command::Vars => format!("{:<12}{}", ":vars", "List bound variables"),
+            Command::Eval(_) => format!("{:<12}{}", ":eval", ""),
+            Command::NotFound(_) => format!("{:<12}{}", ":not_found", ""),
+            Command::Version => format!("{:<12}{}", ":version", "Print mq version"),
         }
     }
 }
@@ -68,13 +71,14 @@ impl From<String> for Command {
             .collect::<Vec<&str>>()
             .as_slice()
         {
-            [".copy"] => Command::Copy,
-            [".env", name, value] => Command::Env(name.to_string(), value.to_string()),
-            [".help"] => Command::Help,
-            [".quit"] => Command::Quit,
-            [".load_file", file_path] => Command::LoadFile(file_path.to_string()),
-            [".vars"] => Command::Vars,
-            [".version"] => Command::Version,
+            [":copy"] => Command::Copy,
+            [":env", name, value] => Command::Env(name.to_string(), value.to_string()),
+            [":help"] => Command::Help,
+            [":quit"] => Command::Quit,
+            [":load_file", file_path] => Command::LoadFile(file_path.to_string()),
+            [":vars"] => Command::Vars,
+            [":version"] => Command::Version,
+            _ if s.starts_with(":") => Command::NotFound(s),
             _ => Command::Eval(s),
         }
     }
@@ -111,7 +115,7 @@ impl CommandContext {
             .symbols()
             .filter_map(|(_, symbol)| {
                 let name = symbol
-                    .name
+                    .value
                     .as_ref()
                     .map(|name| name.to_string())
                     .unwrap_or_default();
@@ -142,7 +146,7 @@ impl CommandContext {
             Command::Help => Ok(CommandOutput::String(
                 Command::iter()
                     .filter_map(|c| {
-                        if matches!(c, Command::Eval(_)) {
+                        if matches!(c, Command::Eval(_)) || matches!(c, Command::NotFound(_)) {
                             None
                         } else {
                             Some(c.help().to_string())
@@ -153,6 +157,7 @@ impl CommandContext {
             Command::Quit => {
                 std::process::exit(0);
             }
+            Command::NotFound(s) => Err(miette!(format!("Command not found: {}", s))),
             Command::LoadFile(file_path) => fs::read_to_string(file_path)
                 .into_diagnostic()
                 .and_then(|markdown_content| {
@@ -176,7 +181,7 @@ impl CommandContext {
                             match &symbol.kind {
                                 mq_hir::SymbolKind::Function(_) if symbol.parent.is_none() => {
                                     let name = symbol
-                                        .name
+                                        .value
                                         .as_ref()
                                         .map(|name| name.to_string())
                                         .unwrap_or_default();
@@ -192,7 +197,7 @@ impl CommandContext {
                                         match parent_symbol.kind {
                                             mq_hir::SymbolKind::Variable => {
                                                 let name = parent_symbol
-                                                    .name
+                                                    .value
                                                     .as_ref()
                                                     .map(|name| name.to_string())
                                                     .unwrap_or_default();
@@ -235,12 +240,12 @@ mod tests {
 
     #[test]
     fn test_command_from_string() {
-        assert!(matches!(Command::from(".copy".to_string()), Command::Copy));
-        assert!(matches!(Command::from(".help".to_string()), Command::Help));
-        assert!(matches!(Command::from(".quit".to_string()), Command::Quit));
-        assert!(matches!(Command::from(".vars".to_string()), Command::Vars));
+        assert!(matches!(Command::from(":copy".to_string()), Command::Copy));
+        assert!(matches!(Command::from(":help".to_string()), Command::Help));
+        assert!(matches!(Command::from(":quit".to_string()), Command::Quit));
+        assert!(matches!(Command::from(":vars".to_string()), Command::Vars));
         assert!(matches!(
-            Command::from(".version".to_string()),
+            Command::from(":version".to_string()),
             Command::Version
         ));
 
@@ -250,14 +255,14 @@ mod tests {
             panic!("Expected Eval command");
         }
 
-        if let Command::Env(name, value) = Command::from(".env TEST_VAR test_value".to_string()) {
+        if let Command::Env(name, value) = Command::from(":env TEST_VAR test_value".to_string()) {
             assert_eq!(name, "TEST_VAR");
             assert_eq!(value, "test_value");
         } else {
             panic!("Expected Env command");
         }
 
-        if let Command::LoadFile(path) = Command::from(".load_file test.md".to_string()) {
+        if let Command::LoadFile(path) = Command::from(":load_file test.md".to_string()) {
             assert_eq!(path, "test.md");
         } else {
             panic!("Expected LoadFile command");
@@ -266,20 +271,20 @@ mod tests {
 
     #[test]
     fn test_command_display() {
-        assert_eq!(format!("{}", Command::Copy), ".copy");
-        assert_eq!(format!("{}", Command::Help), ".help");
-        assert_eq!(format!("{}", Command::Quit), ".quit");
-        assert_eq!(format!("{}", Command::Vars), ".vars");
-        assert_eq!(format!("{}", Command::Version), ".version");
+        assert_eq!(format!("{}", Command::Copy), ":copy");
+        assert_eq!(format!("{}", Command::Help), ":help");
+        assert_eq!(format!("{}", Command::Quit), ":quit");
+        assert_eq!(format!("{}", Command::Vars), ":vars");
+        assert_eq!(format!("{}", Command::Version), ":version");
         assert_eq!(
             format!("{}", Command::LoadFile("test.md".to_string())),
-            ".load_file"
+            ":load_file"
         );
         assert_eq!(
             format!("{}", Command::Env("key".to_string(), "value".to_string())),
-            ".env"
+            ":env"
         );
-        assert_eq!(format!("{}", Command::Eval("code".to_string())), ".eval");
+        assert_eq!(format!("{}", Command::Eval("code".to_string())), ":eval");
     }
 
     #[test]
@@ -289,14 +294,15 @@ mod tests {
             assert!(!help.is_empty());
 
             match cmd {
-                Command::Copy => assert!(help.contains(".copy")),
-                Command::Help => assert!(help.contains(".help")),
-                Command::Quit => assert!(help.contains(".quit")),
-                Command::Vars => assert!(help.contains(".vars")),
-                Command::Version => assert!(help.contains(".version")),
-                Command::LoadFile(_) => assert!(help.contains(".load_file")),
-                Command::Env(_, _) => assert!(help.contains(".env")),
-                Command::Eval(_) => assert!(help.contains(".eval")),
+                Command::Copy => assert!(help.contains(":copy")),
+                Command::Help => assert!(help.contains(":help")),
+                Command::Quit => assert!(help.contains(":quit")),
+                Command::Vars => assert!(help.contains(":vars")),
+                Command::Version => assert!(help.contains(":version")),
+                Command::LoadFile(_) => assert!(help.contains(":load_file")),
+                Command::Env(_, _) => assert!(help.contains(":env")),
+                Command::Eval(_) => assert!(help.contains(":eval")),
+                Command::NotFound(_) => assert!(help.contains(":not_found")),
             }
         }
     }
@@ -315,7 +321,7 @@ mod tests {
         let engine = mq_lang::Engine::default();
         let mut ctx = CommandContext::new(engine, vec![]);
 
-        let result = ctx.execute(".env TEST_VAR test_value");
+        let result = ctx.execute(":env TEST_VAR test_value");
         assert!(matches!(result, Ok(CommandOutput::None)));
         assert_eq!(std::env::var("TEST_VAR").unwrap(), "test_value");
     }
@@ -325,12 +331,12 @@ mod tests {
         let engine = mq_lang::Engine::default();
         let mut ctx = CommandContext::new(engine, vec![]);
 
-        let result = ctx.execute(".help").unwrap();
+        let result = ctx.execute(":help").unwrap();
         if let CommandOutput::String(help_strings) = result {
             assert!(!help_strings.is_empty());
-            assert!(help_strings.iter().any(|s| s.contains(".copy")));
-            assert!(help_strings.iter().any(|s| s.contains(".env")));
-            assert!(help_strings.iter().any(|s| s.contains(".help")));
+            assert!(help_strings.iter().any(|s| s.contains(":copy")));
+            assert!(help_strings.iter().any(|s| s.contains(":env")));
+            assert!(help_strings.iter().any(|s| s.contains(":help")));
         } else {
             panic!("Expected String output");
         }
@@ -343,7 +349,7 @@ mod tests {
         ctx.execute("let x = 42 | let x2 = def fun1(x): add(x, 2); | def fun(): 1;")
             .unwrap();
 
-        let result = ctx.execute(".vars").unwrap();
+        let result = ctx.execute(":vars").unwrap();
         if let CommandOutput::String(vars) = result {
             assert!(!vars.is_empty());
             assert!(vars.iter().any(|s| s.contains("x: 42")));
@@ -359,7 +365,7 @@ mod tests {
         let engine = mq_lang::Engine::default();
         let mut ctx = CommandContext::new(engine, vec![]);
 
-        let result = ctx.execute(".version").unwrap();
+        let result = ctx.execute(":version").unwrap();
         if let CommandOutput::String(version) = result {
             assert_eq!(version.len(), 1);
             assert!(!version[0].is_empty());

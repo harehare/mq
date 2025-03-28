@@ -79,14 +79,6 @@ impl Env {
             },
         }
     }
-
-    #[inline(always)]
-    pub fn defined_runtime_values(&self) -> Vec<(ast::IdentName, RuntimeValue)> {
-        self.context
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
-    }
 }
 #[cfg(test)]
 mod tests {
@@ -153,37 +145,5 @@ mod tests {
         child_env.define(&ident, child_value.clone());
 
         assert_eq!(child_env.resolve(&ident).unwrap(), child_value);
-    }
-
-    #[test]
-    fn test_defined_runtime_values() {
-        let mut env = Env::default();
-        let ident1 = AstIdent {
-            name: AstIdentName::from("x"),
-            token: None,
-        };
-        let ident2 = AstIdent {
-            name: AstIdentName::from("y"),
-            token: None,
-        };
-
-        let value1 = RuntimeValue::Number(42.0.into());
-        let value2 = RuntimeValue::TRUE;
-
-        env.define(&ident1, value1);
-        env.define(&ident2, value2);
-
-        let defined = env.defined_runtime_values();
-        assert_eq!(defined.len(), 2);
-
-        let defined_map: FxHashMap<_, _> = defined.into_iter().collect();
-        assert_eq!(
-            *defined_map.get(&AstIdentName::from("x")).unwrap(),
-            RuntimeValue::Number(42.0.into())
-        );
-        assert_eq!(
-            *defined_map.get(&AstIdentName::from("y")).unwrap(),
-            RuntimeValue::TRUE
-        );
     }
 }

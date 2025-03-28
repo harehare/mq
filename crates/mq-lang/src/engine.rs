@@ -3,7 +3,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use crate::MqResult;
 
 use crate::{
-    AstIdentName, ModuleLoader, Token, Value,
+    ModuleLoader, Token, Value,
     arena::Arena,
     error::{self, InnerError},
     eval::Evaluator,
@@ -56,14 +56,6 @@ impl Engine {
 
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
         self.evaluator.module_loader.search_paths = Some(paths);
-    }
-
-    pub fn defined_values(&self) -> Vec<(AstIdentName, Value)> {
-        self.evaluator
-            .defined_runtime_values()
-            .iter()
-            .map(|(name, value)| (name.clone(), Value::from(value.clone())))
-            .collect::<Vec<_>>()
     }
 
     pub fn define_string_value(&self, name: &str, value: &str) {
@@ -177,14 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn test_define_string_value() {
-        let engine = Engine::default();
-        engine.define_string_value("test_var", "test_value");
-        let values = engine.defined_values();
-        assert!(values.iter().any(|(name, _)| name.as_str() == "test_var"));
-    }
-
-    #[test]
     fn test_version() {
         let version = Engine::version();
         assert!(!version.is_empty());
@@ -213,9 +197,6 @@ mod tests {
 
         let result = engine.load_module("test_module");
         assert!(result.is_ok());
-
-        let values = engine.defined_values();
-        assert!(values.iter().any(|(name, _)| name.as_str() == "func1"));
     }
 
     #[test]

@@ -28,7 +28,7 @@ impl Hir {
                         Some(HirError::UnresolvedSymbol {
                             symbol: symbol.clone(),
                             similar_name: self
-                                .find_similar_names(&symbol.clone().name.unwrap_or_default()),
+                                .find_similar_names(&symbol.clone().value.unwrap_or_default()),
                         })
                     } else {
                         None
@@ -62,12 +62,12 @@ impl Hir {
             .filter_map(|(_, symbol)| {
                 if (matches!(&symbol.kind, SymbolKind::Function(_))
                     || matches!(&symbol.kind, SymbolKind::Variable))
-                    && symbol.name.as_ref().is_some_and(|name| name != target)
+                    && symbol.value.as_ref().is_some_and(|name| name != target)
                 {
-                    let name = symbol.name.as_deref().unwrap_or("");
+                    let name = symbol.value.as_deref().unwrap_or("");
                     let similarity = strsim::jaro_winkler(target, name);
                     if similarity > 0.85 {
-                        symbol.name.clone()
+                        symbol.value.clone()
                     } else {
                         None
                     }
@@ -119,7 +119,7 @@ mod tests {
                 symbol,
                 similar_name,
             } => {
-                assert_eq!(symbol.name.as_deref(), Some("unknown_var"));
+                assert_eq!(symbol.value.as_deref(), Some("unknown_var"));
                 assert!(similar_name.is_none());
             }
         }

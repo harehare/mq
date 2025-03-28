@@ -24,7 +24,7 @@
 //!
 //! // Print the symbols
 //! for (symbol_id, symbol) in symbols {
-//!   println!("{:?}, {:?}, {:?}", symbol_id, symbol.name, symbol.kind);
+//!   println!("{:?}, {:?}, {:?}", symbol_id, symbol.value, symbol.kind);
 //! }
 //! ```
 mod builtin;

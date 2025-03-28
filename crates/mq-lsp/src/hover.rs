@@ -23,7 +23,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                                 mq_hir::SymbolKind::Function(args) => {
                                     format!(
                                         "```mq\n{}({})\n```\n\n{doc}",
-                                        &symbol.name.unwrap_or_default(),
+                                        &symbol.value.unwrap_or_default(),
                                         args.join(", "),
                                         doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
                                     )
@@ -31,7 +31,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                                 mq_hir::SymbolKind::Variable => {
                                     format!(
                                         "```mq\n{}```\n\n{doc}",
-                                        &symbol.name.unwrap_or_default(),
+                                        &symbol.value.unwrap_or_default(),
                                         doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
                                     )
                                 }

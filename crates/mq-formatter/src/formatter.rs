@@ -58,13 +58,13 @@ impl Formatter {
         nodes: Vec<Arc<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
         for node in &nodes {
-            self.visit_node(Arc::clone(node), 0);
+            self.format_node(Arc::clone(node), 0);
         }
 
         Ok(self.output.clone())
     }
 
-    fn visit_node(&mut self, node: Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_node(&mut self, node: Arc<mq_lang::CstNode>, indent_level: usize) {
         let has_leading_new_line = node.has_new_line();
 
         let indent_level_consider_new_line = if has_leading_new_line {
@@ -122,7 +122,7 @@ impl Formatter {
         self.append_space();
 
         node.children.iter().for_each(|child| {
-            self.visit_node(Arc::clone(child), indent_level);
+            self.format_node(Arc::clone(child), indent_level);
         });
     }
 
@@ -152,7 +152,7 @@ impl Formatter {
             .unwrap();
 
         node.children.iter().take(expr_index).for_each(|child| {
-            self.visit_node(
+            self.format_node(
                 Arc::clone(child),
                 if child.has_new_line() {
                     block_indent_level + 1
@@ -165,7 +165,7 @@ impl Formatter {
         let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
         let colon_node = expr_nodes.next().unwrap();
 
-        self.visit_node(Arc::clone(colon_node), block_indent_level + 1);
+        self.format_node(Arc::clone(colon_node), block_indent_level + 1);
 
         if !expr_nodes.peek().unwrap().has_new_line() {
             self.append_space();
@@ -178,7 +178,7 @@ impl Formatter {
         };
 
         expr_nodes.for_each(|child| {
-            self.visit_node(Arc::clone(child), block_indent_level);
+            self.format_node(Arc::clone(child), block_indent_level);
         });
     }
 
@@ -188,7 +188,7 @@ impl Formatter {
         self.append_space();
 
         node.children.iter().for_each(|child| {
-            self.visit_node(Arc::clone(child), indent_level);
+            self.format_node(Arc::clone(child), indent_level);
         });
     }
 
@@ -197,7 +197,7 @@ impl Formatter {
         self.output.push_str(&node.to_string());
 
         node.children.iter().for_each(|child| {
-            self.visit_node(
+            self.format_node(
                 Arc::clone(child),
                 if child.has_new_line() {
                     indent_level + 1
@@ -215,19 +215,19 @@ impl Formatter {
 
         if let [l_param, cond, r_param, then_colon, then_expr, rest @ ..] = node.children.as_slice()
         {
-            self.visit_node(Arc::clone(l_param), 0);
-            self.visit_node(Arc::clone(cond), 0);
-            self.visit_node(Arc::clone(r_param), 0);
-            self.visit_node(Arc::clone(then_colon), 0);
+            self.format_node(Arc::clone(l_param), 0);
+            self.format_node(Arc::clone(cond), 0);
+            self.format_node(Arc::clone(r_param), 0);
+            self.format_node(Arc::clone(then_colon), 0);
 
             if !then_expr.has_new_line() {
                 self.append_space();
             }
 
-            self.visit_node(Arc::clone(then_expr), indent_level + 1);
+            self.format_node(Arc::clone(then_expr), indent_level + 1);
 
             for child in rest {
-                self.visit_node(Arc::clone(child), indent_level);
+                self.format_node(Arc::clone(child), indent_level);
             }
         }
     }
@@ -242,16 +242,16 @@ impl Formatter {
         self.append_space();
 
         if let [l_param, cond, r_param, then_colon, then_expr] = node.children.as_slice() {
-            self.visit_node(Arc::clone(l_param), 0);
-            self.visit_node(Arc::clone(cond), 0);
-            self.visit_node(Arc::clone(r_param), 0);
-            self.visit_node(Arc::clone(then_colon), 0);
+            self.format_node(Arc::clone(l_param), 0);
+            self.format_node(Arc::clone(cond), 0);
+            self.format_node(Arc::clone(r_param), 0);
+            self.format_node(Arc::clone(then_colon), 0);
 
             if !then_expr.has_new_line() {
                 self.append_space();
             }
 
-            self.visit_node(Arc::clone(then_expr), indent_level + 1);
+            self.format_node(Arc::clone(then_expr), indent_level + 1);
         }
     }
 
@@ -264,13 +264,13 @@ impl Formatter {
         self.output.push_str(&node.to_string());
 
         if let [then_colon, then_expr] = node.children.as_slice() {
-            self.visit_node(Arc::clone(then_colon), 0);
+            self.format_node(Arc::clone(then_colon), 0);
 
             if !then_expr.has_new_line() {
                 self.append_space();
             }
 
-            self.visit_node(Arc::clone(then_expr), indent_level + 1);
+            self.format_node(Arc::clone(then_expr), indent_level + 1);
         }
     }
 
@@ -356,7 +356,7 @@ impl Formatter {
             self.output.push_str(&token.to_string());
 
             children.iter().for_each(|child| {
-                self.visit_node(Arc::clone(child), indent_level);
+                self.format_node(Arc::clone(child), indent_level);
             });
         }
     }

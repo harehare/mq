@@ -121,7 +121,7 @@ impl Hir {
 
         self.builtin.functions.clone().keys().for_each(|name| {
             self.add_symbol(Symbol {
-                name: Some(name.clone()),
+                value: Some(name.clone()),
                 kind: SymbolKind::Function(
                     mq_lang::BUILTIN_FUNCTION_DOC[name]
                         .params
@@ -141,7 +141,7 @@ impl Hir {
 
         self.builtin.selectors.clone().keys().for_each(|name| {
             self.add_symbol(Symbol {
-                name: Some(name.clone()),
+                value: Some(name.clone()),
                 kind: SymbolKind::Selector,
                 source: SourceInfo::new(Some(self.builtin.source_id), None),
                 scope: self.builtin.scope_id,
@@ -266,7 +266,7 @@ impl Hir {
         } = &**node
         {
             self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: match &node.token.clone().unwrap().kind {
                     mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
                     mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
@@ -303,7 +303,7 @@ impl Hir {
                 segments.iter().for_each(|segment| match segment {
                     mq_lang::StringSegment::Text(text, range) => {
                         self.add_symbol(Symbol {
-                            name: Some(text.into()),
+                            value: Some(text.into()),
                             kind: SymbolKind::String,
                             source: SourceInfo::new(Some(source_id), Some(range.clone())),
                             scope: scope_id,
@@ -313,7 +313,7 @@ impl Hir {
                     }
                     mq_lang::StringSegment::Ident(ident, range) => {
                         self.symbols.insert(Symbol {
-                            name: Some(ident.clone()),
+                            value: Some(ident.clone()),
                             kind: SymbolKind::Variable,
                             source: SourceInfo::new(Some(source_id), Some(range.clone())),
                             scope: scope_id,
@@ -345,7 +345,7 @@ impl Hir {
                     let (module_source_id, _) = self.add_code(url, &code.unwrap_or_default());
 
                     self.add_symbol(Symbol {
-                        name: Some(module_name.clone()),
+                        value: Some(module_name.clone()),
                         kind: SymbolKind::Include(module_source_id),
                         source: SourceInfo::new(Some(source_id), Some(node.range())),
                         scope: scope_id,
@@ -370,7 +370,7 @@ impl Hir {
         } = &**node
         {
             let symbol_id = self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::While,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -402,7 +402,7 @@ impl Hir {
         } = &**node
         {
             let symbol_id = self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Until,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -434,7 +434,7 @@ impl Hir {
         } = &**node
         {
             self.symbols.insert(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -445,7 +445,7 @@ impl Hir {
             let children = node.children_without_token();
             let ident = children.first().unwrap();
             let symbol_id = self.symbols.insert(Symbol {
-                name: ident.name(),
+                value: ident.name(),
                 kind: SymbolKind::Variable,
                 source: SourceInfo::new(Some(source_id), Some(ident.range())),
                 scope: scope_id,
@@ -472,7 +472,7 @@ impl Hir {
         } = &**node
         {
             self.symbols.insert(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Ref,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -495,7 +495,7 @@ impl Hir {
         } = &**node
         {
             self.symbols.insert(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Selector,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -518,7 +518,7 @@ impl Hir {
         } = &**node
         {
             let symbol_id = self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::If,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -556,7 +556,7 @@ impl Hir {
         } = &**node
         {
             let symbol_id = self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Elif,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -589,7 +589,7 @@ impl Hir {
         } = &**node
         {
             let symbol_id = self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Else,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -621,7 +621,7 @@ impl Hir {
         } = &**node
         {
             self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Call,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -636,7 +636,7 @@ impl Hir {
                     self.add_literal_expr(child, source_id, scope_id, parent);
                 } else {
                     self.add_symbol(Symbol {
-                        name: child.name(),
+                        value: child.name(),
                         kind: SymbolKind::Argument,
                         source: SourceInfo::new(Some(source_id), Some(child.range())),
                         scope: scope_id,
@@ -661,7 +661,7 @@ impl Hir {
         } = &**node
         {
             let symbol_id = self.add_symbol(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Foreach,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -679,7 +679,7 @@ impl Hir {
             let arg = params.get(1).unwrap();
 
             self.add_symbol(Symbol {
-                name: loop_val.name(),
+                value: loop_val.name(),
                 kind: SymbolKind::Variable,
                 source: SourceInfo::new(Some(source_id), Some(loop_val.range())),
                 scope: scope_id,
@@ -688,7 +688,7 @@ impl Hir {
             });
 
             self.add_symbol(Symbol {
-                name: arg.name(),
+                value: arg.name(),
                 kind: SymbolKind::Ref,
                 source: SourceInfo::new(Some(source_id), Some(arg.range())),
                 scope: scope_id,
@@ -717,7 +717,7 @@ impl Hir {
         } = &**node
         {
             self.symbols.insert(Symbol {
-                name: node.name(),
+                value: node.name(),
                 kind: SymbolKind::Keyword,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -729,7 +729,7 @@ impl Hir {
             let ident = params.first().unwrap();
 
             let symbol_id = self.add_symbol(Symbol {
-                name: ident.name(),
+                value: ident.name(),
                 kind: SymbolKind::Function(Vec::new()),
                 source: SourceInfo::new(Some(source_id), Some(ident.range())),
                 scope: scope_id,
@@ -748,7 +748,7 @@ impl Hir {
             params.iter().skip(1).for_each(|child| {
                 param_names.push(child.name().unwrap_or("arg".into()));
                 self.add_symbol(Symbol {
-                    name: child.name(),
+                    value: child.name(),
                     kind: SymbolKind::Parameter,
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
                     scope: scope_id,
@@ -857,7 +857,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let symbol = hir
             .symbols
             .iter()
-            .find(|(_, symbol)| symbol.name == Some(expected_name.into()))
+            .find(|(_, symbol)| symbol.value == Some(expected_name.into()))
             .unwrap()
             .1;
 
@@ -911,7 +911,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let (source_id, _) = hir.add_code(url.clone(), code);
 
         let (_, symbol) = hir.find_symbol_in_position(source_id, pos).unwrap();
-        assert_eq!(symbol.name, Some(expected_name.into()));
+        assert_eq!(symbol.value, Some(expected_name.into()));
         assert_eq!(symbol.kind, expected_kind);
     }
 

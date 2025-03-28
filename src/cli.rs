@@ -183,19 +183,19 @@ impl Cli {
 
                 let doc_csv = hir
                     .symbols()
-                    .sorted_by_key(|(_, symbol)| symbol.name.clone())
+                    .sorted_by_key(|(_, symbol)| symbol.value.clone())
                     .filter_map(|(_, symbol)| match symbol {
                         mq_hir::Symbol {
                             kind: mq_hir::SymbolKind::Function(params),
-                            name: Some(name),
+                            value: Some(value),
                             doc,
                             ..
                         } => Some(mq_lang::Value::String(
                             [
-                                format!("`{}`", name),
+                                format!("`{}`", value),
                                 doc.iter().map(|(_, d)| d.to_string()).join("\n"),
                                 params.iter().map(|p| format!("`{}`", p)).join(", "),
-                                format!("{}({})", name, params.join(", ")),
+                                format!("{}({})", value, params.join(", ")),
                             ]
                             .join("\t"),
                         )),

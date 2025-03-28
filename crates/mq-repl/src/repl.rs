@@ -152,7 +152,7 @@ impl Repl {
             }
         }
 
-        println!("Welcome to mq. For help, type .help");
+        println!("Welcome to mq. For help, type :help");
 
         loop {
             let prompt = format!("{}", PROMPT.cyan());

@@ -11,7 +11,7 @@ impl Hir {
                 SymbolKind::Ref => {
                     self.resolve_ref_symbol_of_scope(
                         ref_symbol.scope,
-                        ref_symbol.name.as_ref().unwrap(),
+                        ref_symbol.value.as_ref().unwrap(),
                         ref_symbol_id,
                     )
                     .map(|(symbol_id, _)| {
@@ -20,7 +20,7 @@ impl Hir {
                     .or(self
                         .resolve_ref_symbol_of_source(
                             self.include_source_ids(ref_symbol.scope),
-                            ref_symbol.name.as_ref().unwrap(),
+                            ref_symbol.value.as_ref().unwrap(),
                         )
                         .map(|(symbol_id, _)| {
                             self.references.insert(ref_symbol_id, symbol_id);
@@ -30,7 +30,7 @@ impl Hir {
                     let _ = self
                         .resolve_ref_symbol_of_scope(
                             ref_symbol.scope,
-                            ref_symbol.name.as_ref().unwrap(),
+                            ref_symbol.value.as_ref().unwrap(),
                             ref_symbol_id,
                         )
                         .map(|(symbol_id, _)| {
@@ -39,7 +39,7 @@ impl Hir {
                         .or(self
                             .resolve_ref_symbol_of_source(
                                 self.include_source_ids(ref_symbol.scope),
-                                ref_symbol.name.as_ref().unwrap(),
+                                ref_symbol.value.as_ref().unwrap(),
                             )
                             .map(|(symbol_id, _)| {
                                 self.references.insert(ref_symbol_id, symbol_id);
@@ -79,7 +79,7 @@ impl Hir {
         for (symbol_id, symbol) in &self.symbols {
             if let Some(source_id) = symbol.source.source_id {
                 if source_ids.contains(&source_id)
-                    && symbol.name.as_ref() == Some(ref_name)
+                    && symbol.value.as_ref() == Some(ref_name)
                     && (symbol.is_function() || symbol.is_parameter() || symbol.is_variable())
                 {
                     symbols.push((symbol_id, symbol.clone()));
@@ -102,7 +102,7 @@ impl Hir {
         for (symbol_id, symbol) in &self.symbols {
             if symbol_id != ref_symbol_id
                 && symbol.scope == scope_id
-                && symbol.name.as_ref() == Some(ref_name)
+                && symbol.value.as_ref() == Some(ref_name)
                 && (symbol.is_function() || symbol.is_parameter() || symbol.is_variable())
             {
                 symbols.push((symbol_id, symbol.clone()));
