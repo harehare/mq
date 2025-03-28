@@ -44,7 +44,7 @@
     "@rollup/plugin-typescript": "^12.1.1",
     "@types/node": "^22.13.14",
     "@typescript-eslint/eslint-plugin": "^8.28.0",
-    "@typescript-eslint/parser": "^8.26.1",
+    "@typescript-eslint/parser": "^8.28.0",
     "eslint": "^9.22.0",
     "eslint-config-prettier": "^10.0.2",
     "eslint-import-resolver-typescript": "^4.2.5",
