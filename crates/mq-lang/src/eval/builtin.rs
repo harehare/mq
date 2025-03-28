@@ -1438,6 +1438,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("get_url"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _)] => {
+                    Ok(def.url.to_owned().into())
+                }
+                [RuntimeValue::Markdown(mq_markdown::Node::Image(image), _)] => {
+                    Ok(image.url.to_owned().into())
+                }
+                [RuntimeValue::Markdown(mq_markdown::Node::Link(link), _)] => {
+                    Ok(link.url.to_owned().into())
+                }
+                _ => Ok(RuntimeValue::None),
+            }),
+        );
+        map.insert(
             CompactString::new("set_check"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [
@@ -2431,6 +2446,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             CompactString::new("get_title"),
             BuiltinFunctionDoc {
                 description: "Returns the title of a markdown node.",
+                params: &["node"],
+            },
+        );
+        map.insert(
+            CompactString::new("get_url"),
+            BuiltinFunctionDoc {
+                description: "Returns the url of a markdown node.",
                 params: &["node"],
             },
         );

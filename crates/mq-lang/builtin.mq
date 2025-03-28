@@ -121,6 +121,9 @@ def is_text(text): eq(to_md_name(text), "text");
 # Checks if markdown is list
 def is_list(list): eq(to_md_name(list), "list");
 
+# Checks if markdown node's URL matches a specified URL
+def matches_url(node, url): eq(get_url(node), url);
+
 # Checks if markdown is MDX
 def is_mdx(mdx): or(
   eq(to_md_name(mdx), "mdx_flow_expression"), 
@@ -164,4 +167,4 @@ def assert(cond):
   if (cond):
     self
   else:
-    error(s"Assertion failed: It is not true.");
+    error("Assertion failed: It is not true.")

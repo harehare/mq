@@ -2904,12 +2904,37 @@ mod tests {
             ],
             Ok(vec![RuntimeValue::NONE]))]
     #[case::set_ref_with_empty_id(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
-            vec![
-                 ast_call("set_ref", vec![
-                     ast_node(ast::Expr::Literal(ast::Literal::String("".to_string())))
-                 ])
-            ],
-            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)]))]
+        vec![
+             ast_call("set_ref", vec![
+                 ast_node(ast::Expr::Literal(ast::Literal::String("".to_string())))
+             ])
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)]))]
+    #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{url: "https://example.com".to_string(), ident: "ident".to_string(), label: None, title: Some("title".to_string()), position: None}), None)],
+        vec![
+             ast_call("get_url", Vec::new())
+        ],
+        Ok(vec![RuntimeValue::String("https://example.com".to_string())]))]
+    #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
+        vec![
+             ast_call("get_url", Vec::new())
+        ],
+        Ok(vec![RuntimeValue::String("https://example.com".to_string())]))]
+    #[case::get_url_image(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}), None)],
+        vec![
+             ast_call("get_url", Vec::new())
+        ],
+        Ok(vec![RuntimeValue::String("https://example.com/image.png".to_string())]))]
+    #[case::get_url_not_link_or_image(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Simple text".to_string(), position: None}), None)],
+        vec![
+             ast_call("get_url", Vec::new())
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::get_url_string(vec![RuntimeValue::String("Not a markdown".to_string())],
+        vec![
+             ast_call("get_url", Vec::new())
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
@@ -3101,6 +3126,11 @@ mod tests {
     #[case::to_md_name(vec![RuntimeValue::NONE],
         vec![
               ast_call("to_md_name", Vec::new()),
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
+    #[case::get_url_none(vec![RuntimeValue::NONE],
+        vec![
+             ast_call("get_url", Vec::new())
         ],
         Ok(vec![RuntimeValue::NONE]))]
     fn test_eval_process_none(

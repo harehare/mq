@@ -276,6 +276,18 @@ fn engine() -> Engine {
       | s\"${val1} World!\"",
         vec![Value::Number(0.into())],
              Ok(vec!["Hello World!".to_string().into()].into()))]
+#[case::matches_url("matches_url(\"https://github.com\")",
+      vec![Value::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: "https://github.com".to_string(), title: None, ident: "ident".to_string(), label: None }))],
+      Ok(vec![Value::TRUE].into()))]
+#[case::matches_url("matches_url(\"https://github.com\")",
+      vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: "https://github.com".to_string(), title: None, values: vec![]}))],
+      Ok(vec![Value::TRUE].into()))]
+#[case::matches_url("matches_url(\"https://github.com\")",
+      vec![Value::Markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
+      Ok(vec![Value::TRUE].into()))]
+#[case::matches_url("matches_url(\"https://gitlab.com\")",
+      vec![Value::String("https://gitlab.com".to_string())],
+      Ok(vec![Value::FALSE].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
