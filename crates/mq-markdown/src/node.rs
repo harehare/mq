@@ -297,6 +297,7 @@ pub enum Node {
     MdxJsEsm(MdxJsEsm),
     Text(Text),
     Fragment(Fragment),
+    Empty,
 }
 
 impl PartialEq for Node {
@@ -370,8 +371,6 @@ impl Display for Node {
 }
 
 impl Node {
-    pub const EMPTY_FRAGMENT: Node = Node::Fragment(Fragment { values: vec![] });
-
     pub fn map_values<E, F>(&self, f: &mut F) -> Result<Node, E>
     where
         E: std::error::Error,
@@ -418,7 +417,7 @@ impl Node {
             | Node::Emphasis(Value { values, .. })
             | Node::Strong(Value { values, .. }) => Node::Fragment(Fragment { values }),
             node @ Node::Fragment(_) => node,
-            _ => Self::EMPTY_FRAGMENT,
+            _ => Self::Empty,
         }
     }
 
@@ -617,6 +616,7 @@ impl Node {
                 .iter()
                 .map(|value| value.to_string_with(list_style))
                 .join(""),
+            Self::Empty => String::new(),
         }
     }
 
@@ -679,6 +679,7 @@ impl Node {
             Self::MdxJsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
             Self::Fragment(v) => Self::values_to_value(v.values),
+            Self::Empty => String::new(),
         }
     }
 
@@ -722,7 +723,7 @@ impl Node {
             Self::MdxTextExpression(_) => "mdx_text_expression".into(),
             Self::MdxJsEsm(_) => "mdx_js_esm".into(),
             Self::Text(_) => "text".into(),
-            Self::Fragment(_) => "".into(),
+            Self::Fragment(_) | Self::Empty => "".into(),
         }
     }
 
@@ -773,15 +774,12 @@ impl Node {
                     _ => None,
                 }
             }
+            Self::Empty => None,
         }
     }
 
-    pub fn is_empty_fragment(&self) -> bool {
-        if let Node::Fragment(f) = self {
-            f.values.is_empty()
-        } else {
-            false
-        }
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
     }
 
     pub fn is_inline_code(&self) -> bool {
@@ -1086,7 +1084,7 @@ impl Node {
                     ..mdx
                 })
             }
-            node @ Self::Fragment(_) => node,
+            node @ Self::Fragment(_) | node @ Self::Empty => node,
         }
     }
 

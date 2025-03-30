@@ -113,7 +113,7 @@ impl Evaluator {
                         Ok(match value {
                             RuntimeValue::None => child_node.to_fragment(),
                             RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) => {
-                                mq_markdown::Node::EMPTY_FRAGMENT
+                                mq_markdown::Node::Empty
                             }
                             RuntimeValue::Array(_)
                             | RuntimeValue::Bool(_)
@@ -2456,7 +2456,7 @@ mod tests {
         vec![
              ast_call("get_title", Vec::new())
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::EMPTY_FRAGMENT, None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}), None)],
             vec![
                  ast_call("get_title", Vec::new())
@@ -2466,7 +2466,7 @@ mod tests {
         vec![
              ast_call("get_title", Vec::new())
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::EMPTY_FRAGMENT, None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
     #[case::nth_string(vec![RuntimeValue::String("test1".to_string())],
         vec![
             ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
@@ -2934,7 +2934,7 @@ mod tests {
         vec![
              ast_call("get_url", Vec::new())
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::EMPTY_FRAGMENT, None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
     #[case::get_url_string(vec![RuntimeValue::String("Not a markdown".to_string())],
         vec![
              ast_call("get_url", Vec::new())
