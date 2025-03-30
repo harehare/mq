@@ -338,8 +338,15 @@ impl Cli {
                                 mq_lang::Value::None
                                 | mq_lang::Value::Function(_, _)
                                 | mq_lang::Value::NativeFunction(_) => Ok(vec![runtime_value]),
+                                mq_lang::Value::Markdown(node) if node.is_empty_fragment() => {
+                                    Ok(vec![runtime_value.clone()])
+                                }
                                 mq_lang::Value::Markdown(_) => {
-                                    Ok(vec![updated_runtime_value.clone()])
+                                    if updated_runtime_value.to_string().is_empty() {
+                                        Ok(vec![runtime_value.clone()])
+                                    } else {
+                                        Ok(vec![updated_runtime_value.clone()])
+                                    }
                                 }
                                 mq_lang::Value::String(s) => {
                                     Ok(vec![mq_lang::Value::Markdown(node.clone().with_value(s))])

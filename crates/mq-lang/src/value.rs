@@ -161,7 +161,7 @@ impl Values {
     pub fn compact(&self) -> Vec<Value> {
         self.0
             .iter()
-            .filter(|v| !v.is_none())
+            .filter(|v| !v.is_none() && !v.is_empty())
             .cloned()
             .collect::<Vec<_>>()
     }

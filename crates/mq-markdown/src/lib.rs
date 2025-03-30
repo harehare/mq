@@ -15,9 +15,9 @@ mod markdown;
 mod node;
 pub use markdown::{Markdown, RenderOptions, to_html};
 pub use node::{
-    Code, CodeInline, Definition, Footnote, FootnoteRef, Heading, Html, Image, ImageRef, Link,
-    LinkRef, List, ListStyle, Math, MathInline, MdxFlowExpression, MdxJsEsm, MdxJsxFlowElement,
-    MdxTextExpression, Node, TableCell, TableRow, Text, Toml, Value, Yaml,
+    Code, CodeInline, Definition, Footnote, FootnoteRef, Fragment, Heading, Html, Image, ImageRef,
+    Link, LinkRef, List, ListStyle, Math, MathInline, MdxFlowExpression, MdxJsEsm,
+    MdxJsxFlowElement, MdxTextExpression, Node, TableCell, TableRow, Text, Toml, Value, Yaml,
 };
 
 #[cfg(test)]

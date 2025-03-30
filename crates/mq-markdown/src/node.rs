@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 use compact_str::CompactString;
 use itertools::Itertools;
-use markdown::mdast;
+use markdown::mdast::{self};
 
 type Level = u8;
 
@@ -80,7 +80,7 @@ pub struct TableCell {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableRow {
-    pub cells: Vec<Node>,
+    pub values: Vec<Node>,
     pub position: Option<Position>,
 }
 
@@ -94,6 +94,11 @@ pub struct TableHeader {
 pub struct Value {
     pub values: Vec<Node>,
     pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fragment {
+    pub values: Vec<Node>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -291,6 +296,7 @@ pub enum Node {
     MdxTextExpression(MdxTextExpression),
     MdxJsEsm(MdxJsEsm),
     Text(Text),
+    Fragment(Fragment),
 }
 
 impl PartialEq for Node {
@@ -364,6 +370,58 @@ impl Display for Node {
 }
 
 impl Node {
+    pub const EMPTY_FRAGMENT: Node = Node::Fragment(Fragment { values: vec![] });
+
+    pub fn map_values<E, F>(&self, f: &mut F) -> Result<Node, E>
+    where
+        E: std::error::Error,
+        F: FnMut(&Node) -> Result<Node, E>,
+    {
+        Self::_map_values(self.clone(), f)
+    }
+
+    fn _map_values<E, F>(node: Node, f: &mut F) -> Result<Node, E>
+    where
+        E: std::error::Error,
+        F: FnMut(&Node) -> Result<Node, E>,
+    {
+        match f(&node)? {
+            Node::Fragment(mut v) => {
+                let values = v
+                    .values
+                    .into_iter()
+                    .map(|node| Self::_map_values(node, f))
+                    .collect::<Result<Vec<_>, _>>();
+                match values {
+                    Ok(values) => {
+                        v.values = values;
+                        Ok(Node::Fragment(v))
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            node => Ok(node),
+        }
+    }
+
+    pub fn to_fragment(&self) -> Node {
+        match self.clone() {
+            Node::List(List { values, .. })
+            | Node::TableCell(TableCell { values, .. })
+            | Node::TableRow(TableRow { values, .. })
+            | Node::Link(Link { values, .. })
+            | Node::Footnote(Footnote { values, .. })
+            | Node::LinkRef(LinkRef { values, .. })
+            | Node::Heading(Heading { values, .. })
+            | Node::Blockquote(Value { values, .. })
+            | Node::Delete(Value { values, .. })
+            | Node::Emphasis(Value { values, .. })
+            | Node::Strong(Value { values, .. }) => Node::Fragment(Fragment { values }),
+            node @ Node::Fragment(_) => node,
+            _ => Self::EMPTY_FRAGMENT,
+        }
+    }
+
     pub fn to_string_with(&self, list_style: &ListStyle) -> String {
         match self.clone() {
             Self::List(List {
@@ -382,7 +440,7 @@ impl Node {
                     Self::values_to_string(values, list_style)
                 )
             }
-            Self::TableRow(TableRow { cells, .. }) => cells
+            Self::TableRow(TableRow { values, .. }) => values
                 .iter()
                 .map(|cell| cell.to_string_with(list_style))
                 .join(""),
@@ -555,6 +613,10 @@ impl Node {
             Self::Toml(Toml { value, .. }) => format!("+++\n{}\n+++", value),
             Self::Break { .. } => "\\".to_string(),
             Self::HorizontalRule { .. } => "---".to_string(),
+            Self::Fragment(Fragment { values }) => values
+                .iter()
+                .map(|value| value.to_string_with(list_style))
+                .join(""),
         }
     }
 
@@ -578,7 +640,7 @@ impl Node {
             Self::Heading(v) => v.values.get(index).cloned(),
             Self::List(v) => v.values.get(index).cloned(),
             Self::TableCell(v) => v.values.get(index).cloned(),
-            Self::TableRow(v) => v.cells.get(index).cloned(),
+            Self::TableRow(v) => v.values.get(index).cloned(),
             _ => None,
         }
     }
@@ -604,7 +666,7 @@ impl Node {
             Self::Math(v) => v.value,
             Self::List(l) => Self::values_to_value(l.values),
             Self::TableCell(c) => Self::values_to_value(c.values),
-            Self::TableRow(c) => Self::values_to_value(c.cells),
+            Self::TableRow(c) => Self::values_to_value(c.values),
             Self::Code(c) => c.value,
             Self::Strong(v) => Self::values_to_value(v.values),
             Self::Text(t) => t.value,
@@ -616,6 +678,7 @@ impl Node {
             Self::MdxJsxTextElement(mdx) => Self::values_to_value(mdx.children),
             Self::MdxJsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
+            Self::Fragment(v) => Self::values_to_value(v.values),
         }
     }
 
@@ -659,6 +722,7 @@ impl Node {
             Self::MdxTextExpression(_) => "mdx_text_expression".into(),
             Self::MdxJsEsm(_) => "mdx_js_esm".into(),
             Self::Text(_) => "text".into(),
+            Self::Fragment(_) => "".into(),
         }
     }
 
@@ -695,6 +759,28 @@ impl Node {
             Self::Break { position } => position.clone(),
             Self::Text(t) => t.position.clone(),
             Self::HorizontalRule { position } => position.clone(),
+            Self::Fragment(v) => {
+                let positions: Vec<Position> =
+                    v.values.iter().filter_map(|node| node.position()).collect();
+
+                match (positions.first(), positions.last()) {
+                    (Some(start), Some(end)) => Some(Position {
+                        start: start.start.clone(),
+                        end: end.end.clone(),
+                    }),
+                    (Some(start), None) => Some(start.clone()),
+                    (None, Some(end)) => Some(end.clone()),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    pub fn is_empty_fragment(&self) -> bool {
+        if let Node::Fragment(f) = self {
+            f.values.is_empty()
+        } else {
+            false
         }
     }
 
@@ -708,6 +794,18 @@ impl Node {
 
     pub fn is_strong(&self) -> bool {
         matches!(self, Self::Strong(_))
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(self, Self::List(_))
+    }
+
+    pub fn is_table_cell(&self) -> bool {
+        matches!(self, Self::TableCell(_))
+    }
+
+    pub fn is_table_row(&self) -> bool {
+        matches!(self, Self::TableRow(_))
     }
 
     pub fn is_emphasis(&self) -> bool {
@@ -887,8 +985,8 @@ impl Node {
                 Self::TableCell(v)
             }
             Self::TableRow(mut row) => {
-                row.cells = row
-                    .cells
+                row.values = row
+                    .values
                     .iter()
                     .zip(value.split(","))
                     .map(|(cell, value)| cell.with_value(value))
@@ -988,6 +1086,7 @@ impl Node {
                     ..mdx
                 })
             }
+            node @ Self::Fragment(_) => node,
         }
     }
 
@@ -1647,13 +1746,13 @@ mod tests {
     #[case::html(Node::Html(Html{ value: "t".to_string(), position: None }),
            "test".to_string(),
            Node::Html(Html{ value: "test".to_string(), position: None }))]
-    #[case::table_row(Node::TableRow(TableRow{ cells: vec![
+    #[case::table_row(Node::TableRow(TableRow{ values: vec![
                         Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
                         Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:2, last_cell_in_row: true, last_cell_of_in_table: false, position: None})
                     ]
                     , position: None }),
            "test3,test4".to_string(),
-           Node::TableRow(TableRow{ cells: vec![
+           Node::TableRow(TableRow{ values: vec![
                         Node::TableCell(TableCell{values: vec!["test3".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
                         Node::TableCell(TableCell{values: vec!["test4".to_string().into()], row:0, column:2, last_cell_in_row: true, last_cell_of_in_table: false, position: None})
                     ]
@@ -2158,8 +2257,8 @@ mod tests {
     #[case::list(Node::List(List{index: 0, level: 1, checked: None, values: vec!["test".to_string().into()], position: None}), ListStyle::Plus, "  + test")]
     #[case::list(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None}), ListStyle::Star, "  * [x] test")]
     #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "  - [] test")]
-    #[case::table_row(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test")]
-    #[case::table_row(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test|")]
+    #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test")]
+    #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), ListStyle::Dash, "|test|")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "|test|")]
     #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
@@ -2349,7 +2448,7 @@ mod tests {
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
     #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![], position: None}), "list")]
     #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "table_header")]
-    #[case(Node::TableRow(TableRow{cells: vec![], position: None}), "table_row")]
+    #[case(Node::TableRow(TableRow{values: vec![], position: None}), "table_row")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, position: None}), "code")]
     #[case(Node::Strong(Value{values: vec![], position: None}), "strong")]
@@ -2386,7 +2485,7 @@ mod tests {
     #[case(Node::Code(Code{value: "test".to_string(), lang: None, position: None}), "test")]
     #[case(Node::Strong(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::TableRow(TableRow{cells: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
+    #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
     #[case(Node::Break{position: None}, "")]
     #[case(Node::HorizontalRule{position: None}, "")]
     #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "")]
@@ -2421,7 +2520,7 @@ mod tests {
     #[case(Node::Code(Code{value: "".to_string(), lang: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Strong(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::TableRow(TableRow{cells: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::TableRow(TableRow{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableHeader(TableHeader{align: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2469,7 +2568,7 @@ mod tests {
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
         Node::Text(Text{value: "cell content".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "cell content".to_string(), position: None})))]
-    #[case(Node::TableRow(TableRow{cells: vec![
+    #[case(Node::TableRow(TableRow{values: vec![
         Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
         Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})
     ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})))]

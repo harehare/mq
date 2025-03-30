@@ -175,7 +175,7 @@ fn test_cli_run_with_update_text() -> Result<(), Box<dyn std::error::Error>> {
     let assert = cmd
         .arg("--unbuffered")
         .arg("--update")
-        .arg(".h | select(contains(\"title\")?) | ltrimstr(\"titl\") | to_text()?")
+        .arg(".h | select(contains(\"title\")?) | ltrimstr(\"titl\")")
         .write_stdin("# **title**\n\n- test1\n- test2")
         .assert();
     assert

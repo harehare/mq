@@ -214,7 +214,7 @@ fn engine() -> Engine {
 #[case::csv2table("csv2table()",
             vec![Value::String("a,b,c".to_string()), Value::String("1,2,3".to_string())],
             Ok(vec![
-              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{cells: vec![
+              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
@@ -240,7 +240,7 @@ fn engine() -> Engine {
                         position: None
                     }),
               ], position: None})),
-              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{cells: vec![
+              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
@@ -278,16 +278,22 @@ fn engine() -> Engine {
              Ok(vec!["Hello World!".to_string().into()].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: "https://github.com".to_string(), title: None, ident: "ident".to_string(), label: None }))],
-      Ok(vec![Value::TRUE].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: "https://github.com".to_string(), title: None, values: vec![]}))],
-      Ok(vec![Value::TRUE].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
-      Ok(vec![Value::TRUE].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://gitlab.com\")",
       vec![Value::String("https://gitlab.com".to_string())],
       Ok(vec![Value::FALSE].into()))]
+#[case::nest(".link | update(\"test\")",
+      vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
+           mq_markdown::Node::Link(mq_markdown::Link { url: "url".to_string(), title: None, values: vec![], position: None }),
+           mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
+      ], position: None, depth: 1 }))],
+      Ok(vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: "test".to_string(), title: None, values: vec![], position: None }))].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
