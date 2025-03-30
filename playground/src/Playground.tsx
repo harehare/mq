@@ -219,6 +219,7 @@ export const Playground = () => {
     localStorage.getItem(MARKDOWN_KEY) || EXAMPLES[0].markdown
   );
   const [isMdx, setIsMdx] = useState(false);
+  const [isUpdate, setUpdate] = useState(true);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
 
@@ -258,11 +259,11 @@ export const Playground = () => {
     }
 
     try {
-      setResult(await runScript(code, markdown, isMdx));
+      setResult(await runScript(code, markdown, isMdx, isUpdate));
     } catch (e) {
       setResult((e as Error).toString());
     }
-  }, [code, markdown, isMdx]);
+  }, [code, markdown, isMdx, isUpdate]);
 
   const handleFormat = useCallback(async () => {
     if (!code) {
@@ -383,7 +384,10 @@ export const Playground = () => {
       tokenizer: {
         root: [
           [/^#.*$/, "comment"],
-          [/\b(let|def|while|foreach|until|if|elif|else|self|None)\b/, "keyword"],
+          [
+            /\b(let|def|while|foreach|until|if|elif|else|self|None)\b/,
+            "keyword",
+          ],
           [/;/, "delimiter"],
           [/\|/, "operator"],
           [/"/, { token: "string", next: "@multilineString" }],
@@ -531,6 +535,7 @@ export const Playground = () => {
                       alignItems: "center",
                       fontSize: "13px",
                       cursor: "pointer",
+                      userSelect: "none",
                     }}
                   >
                     <input
@@ -543,6 +548,29 @@ export const Playground = () => {
                       }}
                     />
                     <div>Enable MDX</div>
+                  </label>
+                </div>
+                <div>
+                  <label
+                    style={{
+                      marginLeft: "4px",
+                      display: "flex",
+                      alignItems: "center",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isUpdate}
+                      onChange={(e) => setUpdate(e.target.checked)}
+                      style={{
+                        marginRight: "5px",
+                        cursor: "pointer",
+                      }}
+                    />
+                    <div>Update Markdown</div>
                   </label>
                 </div>
                 <button className="share-button" onClick={handleShare}>

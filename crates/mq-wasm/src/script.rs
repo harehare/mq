@@ -55,10 +55,15 @@ pub struct Diagnostic {
 }
 
 #[wasm_bindgen(js_name=runScript)]
-pub fn run_script(code: &str, content: &str, mdx: bool) -> Result<String, JsValue> {
+pub fn run_script(
+    code: &str,
+    content: &str,
+    is_mdx: bool,
+    is_update: bool,
+) -> Result<String, JsValue> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module().unwrap();
-    let markdown = if mdx {
+    let markdown = if is_mdx {
         mq_markdown::Markdown::from_mdx_str(content)
     } else {
         mq_markdown::Markdown::from_str(content)
@@ -68,11 +73,27 @@ pub fn run_script(code: &str, content: &str, mdx: bool) -> Result<String, JsValu
         .map_err(|e| JsValue::from_str(&e.to_string()))
         .and_then(move |markdown| {
             engine
-                .eval(code, markdown.nodes.into_iter().map(mq_lang::Value::from))
+                .eval(
+                    code,
+                    markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
+                )
                 .map_err(|e| JsValue::from_str(&format!("{}", &e.cause)))
-                .map(|r| {
+                .map(|result_values| {
+                    let values = if is_update {
+                        let values: mq_lang::Values = markdown
+                            .nodes
+                            .into_iter()
+                            .map(mq_lang::Value::from)
+                            .collect::<Vec<_>>()
+                            .into();
+                        values.update_with(result_values)
+                    } else {
+                        result_values
+                    };
+
                     let markdown = mq_markdown::Markdown::new(
-                        r.into_iter()
+                        values
+                            .into_iter()
                             .map(|runtime_value| match runtime_value {
                                 mq_lang::Value::Markdown(node) => node.clone(),
                                 _ => runtime_value.to_string().into(),
@@ -171,6 +192,7 @@ mod tests {
             "downcase() | ltrimstr(\"hello\") | upcase() | trim()",
             "Hello world",
             false,
+            true,
         );
         assert_eq!(result.unwrap(), "WORLD\n");
     }
@@ -178,7 +200,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_run_invalid_syntax() {
-        assert!(run_script("invalid syntax", "test", false).is_err());
+        assert!(run_script("invalid syntax", "test", false, true).is_err());
     }
 
     #[allow(unused)]
