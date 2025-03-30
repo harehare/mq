@@ -187,6 +187,24 @@ fn test_cli_run_with_update_text() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_cli_run_with_update_nested_nodes() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("mq")?;
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--update")
+        .arg(".strong | select(contains(\"title\")?) | ltrimstr(\"titl\")")
+        .write_stdin("# [**title**](url)\n\n- test1\n- test2")
+        .assert();
+    assert
+        .success()
+        .code(0)
+        .stdout("# [**e**](url)\n\n- test1\n- test2\n");
+
+    Ok(())
+}
+
+#[test]
 fn test_cli_run_with_null_input() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
 

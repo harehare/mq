@@ -421,6 +421,46 @@ impl Node {
         }
     }
 
+    pub fn apply_fragment(&mut self, fragment: Node) {
+        Self::_apply_fragment(self, fragment)
+    }
+
+    fn _apply_fragment(node: &mut Node, fragment: Node) {
+        match node {
+            Node::List(List { values, .. })
+            | Node::TableCell(TableCell { values, .. })
+            | Node::TableRow(TableRow { values, .. })
+            | Node::Link(Link { values, .. })
+            | Node::Footnote(Footnote { values, .. })
+            | Node::LinkRef(LinkRef { values, .. })
+            | Node::Heading(Heading { values, .. })
+            | Node::Blockquote(Value { values, .. })
+            | Node::Delete(Value { values, .. })
+            | Node::Emphasis(Value { values, .. })
+            | Node::Strong(Value { values, .. }) => {
+                if let Node::Fragment(Fragment { values: new_values }) = fragment {
+                    let new_values = values
+                        .iter()
+                        .zip(new_values)
+                        .map(|(current_value, new_value)| {
+                            if new_value.is_empty() {
+                                current_value.clone()
+                            } else if new_value.is_fragment() {
+                                let mut current_value = current_value.clone();
+                                Self::_apply_fragment(&mut current_value, new_value);
+                                current_value
+                            } else {
+                                new_value
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    *values = new_values;
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn to_string_with(&self, list_style: &ListStyle) -> String {
         match self.clone() {
             Self::List(List {
@@ -780,6 +820,10 @@ impl Node {
 
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
+    }
+
+    pub fn is_fragment(&self) -> bool {
+        matches!(self, Self::Fragment(_))
     }
 
     pub fn is_inline_code(&self) -> bool {

@@ -158,14 +158,6 @@ impl IntoIterator for Values {
 }
 
 impl Values {
-    pub fn compact(&self) -> Vec<Value> {
-        self.0
-            .iter()
-            .filter(|v| !v.is_none() && !v.is_empty())
-            .cloned()
-            .collect::<Vec<_>>()
-    }
-
     pub fn values(&self) -> &Vec<Value> {
         &self.0
     }
@@ -177,7 +169,62 @@ impl Values {
     pub fn is_empty(&self) -> bool {
         self.0.len() == 0
     }
+
+    pub fn update_with(&self, other: Values) -> Self {
+        self.0
+            .clone()
+            .into_iter()
+            .zip(other)
+            .map(|(current_value, updated_value)| {
+                if let Value::Markdown(node) = &current_value {
+                    match &updated_value {
+                        Value::None | Value::Function(_, _) | Value::NativeFunction(_) => {
+                            current_value.clone()
+                        }
+                        Value::Markdown(node) if node.is_empty() => current_value.clone(),
+                        Value::Markdown(node) => {
+                            if node.is_fragment() {
+                                if let Value::Markdown(mut current_node) = current_value {
+                                    current_node.apply_fragment(node.clone());
+                                    Value::Markdown(current_node)
+                                } else {
+                                    updated_value
+                                }
+                            } else {
+                                updated_value
+                            }
+                        }
+                        Value::String(s) => Value::Markdown(node.clone().with_value(s)),
+                        Value::Bool(b) => {
+                            Value::Markdown(node.clone().with_value(b.to_string().as_str()))
+                        }
+                        Value::Number(n) => {
+                            Value::Markdown(node.clone().with_value(n.to_string().as_str()))
+                        }
+                        Value::Array(array) => Value::Array(
+                            array
+                                .iter()
+                                .filter_map(|o| {
+                                    if !matches!(o, Value::None) {
+                                        Some(Value::Markdown(
+                                            node.clone().with_value(o.to_string().as_str()),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
+                    }
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect::<Vec<_>>()
+            .into()
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use mq_markdown::Text;
@@ -266,22 +313,6 @@ mod tests {
         assert_eq!(array.len(), 3);
         assert!(array.is_array());
         assert!(!array.is_empty());
-    }
-
-    #[test]
-    fn test_values_compact() {
-        let values = Values(vec![
-            Value::Number(Number::from(1.0)),
-            Value::None,
-            Value::Number(Number::from(2.0)),
-        ]);
-        assert_eq!(
-            values.compact(),
-            vec![
-                Value::Number(Number::from(1.0)),
-                Value::Number(Number::from(2.0)),
-            ]
-        );
     }
 
     #[test]
