@@ -68,6 +68,11 @@ fn engine() -> Engine {
       ",
         vec![Value::Number(0.into())],
               Ok(vec![Value::Number(2.into())].into()))]
+#[case::if_("let x = 2
+      | let y = if (eq(x, 1)): 1
+      | y
+      ",
+        vec![Value::Number(0.into())], Ok(vec![Value::NONE].into()))]
 #[case::elif_("
       def test_fn(x):
         if (eq(x, 0)):
@@ -104,14 +109,12 @@ fn engine() -> Engine {
       ",
         vec![Value::Number(2.into())],
         Ok(vec![Value::Number(2.into())].into()))]
-// contains
 #[case::contains("contains(\"test\")",
       vec![Value::String("testString".to_string())],
       Ok(vec![Value::TRUE].into()))]
 #[case::contains("contains(\"test\")",
       vec![Value::String("String".to_string())],
       Ok(vec![Value::FALSE].into()))]
-// is_array
 #[case::is_array("is_array()",
       vec![Value::Array(Vec::new())],
       Ok(vec![Value::TRUE].into()))]
@@ -121,15 +124,12 @@ fn engine() -> Engine {
 #[case::is_array("is_string(array(\"test\"))",
       vec![Value::Array(Vec::new())],
       Ok(vec![Value::FALSE].into()))]
-// ltrimstr
 #[case::ltrimstr("ltrimstr(\"test\")",
       vec![Value::String("testString".to_string())],
       Ok(vec![Value::String("String".to_string())].into()))]
-// rtrimstr
 #[case::rtrimstr("rtrimstr(\"test\")",
       vec![Value::String("Stringtest".to_string())],
       Ok(vec![Value::String("String".to_string())].into()))]
-// is_empty
 #[case::is_empty("is_empty(\"\")",
       vec![Value::String("String".to_string())],
       Ok(vec![Value::TRUE].into()))]
@@ -139,25 +139,21 @@ fn engine() -> Engine {
 #[case::is_empty("is_empty(array(\"test\"))",
       vec![Value::String("String".to_string())],
       Ok(vec![Value::FALSE].into()))]
-// test
 #[case::test("test(\"^hello.*\")",
       vec![Value::String("helloWorld".to_string())],
       Ok(vec![Value::TRUE].into()))]
 #[case::test("test(\"^world.*\")",
       vec![Value::String("helloWorld".to_string())],
       Ok(vec![Value::FALSE].into()))]
-// select
 #[case::test("select(contains(\"hello\"))",
       vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))].into()))]
-// first
 #[case::first("first(array(1, 2, 3))",
       vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
       Ok(vec![Value::Number(1.into())].into()))]
 #[case::first("first(array())",
       vec![Value::Array(Vec::new())],
       Ok(vec![Value::None].into()))]
-// last
 #[case::last("last(array(1, 2, 3))",
       vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
       Ok(vec![Value::Number(3.into())].into()))]
@@ -214,7 +210,7 @@ fn engine() -> Engine {
 #[case::csv2table("csv2table()",
             vec![Value::String("a,b,c".to_string()), Value::String("1,2,3".to_string())],
             Ok(vec![
-              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{cells: vec![
+              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
@@ -240,7 +236,7 @@ fn engine() -> Engine {
                         position: None
                     }),
               ], position: None})),
-              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{cells: vec![
+              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
                     mq_markdown::Node::TableCell(mq_markdown::TableCell{
                         row: 0,
                         column: 0,
@@ -278,16 +274,22 @@ fn engine() -> Engine {
              Ok(vec!["Hello World!".to_string().into()].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: "https://github.com".to_string(), title: None, ident: "ident".to_string(), label: None }))],
-      Ok(vec![Value::TRUE].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: "https://github.com".to_string(), title: None, values: vec![]}))],
-      Ok(vec![Value::TRUE].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
-      Ok(vec![Value::TRUE].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://gitlab.com\")",
       vec![Value::String("https://gitlab.com".to_string())],
       Ok(vec![Value::FALSE].into()))]
+#[case::nest(".link | update(\"test\")",
+      vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
+           mq_markdown::Node::Link(mq_markdown::Link { url: "url".to_string(), title: None, values: vec![], position: None }),
+           mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
+      ], position: None, depth: 1 }))],
+      Ok(vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: "test".to_string(), title: None, values: vec![], position: None }))].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

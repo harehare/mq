@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use mq_test::defer;
+use rstest::rstest;
 
 #[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,19 +16,71 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[test]
-fn test_cli_run_with_args_and_stdin() -> Result<(), Box<dyn std::error::Error>> {
+#[rstest]
+#[case::args(
+    vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],
+    "# **title**\n\n- test1\n- test2",
+    "- test1\n- test2\n"
+)]
+#[case::completion(
+    vec!["completion", "--shell", "zsh"],
+    "",
+    ""
+)]
+#[case::format(
+    vec!["fmt"],
+    "def test(x):\nadd(x,1);\n| map(array(1,2,3),test)",
+    "def test(x):\n  add(x, 1);\n| map(array(1, 2, 3), test)\n"
+)]
+#[case::docs(
+    vec!["docs"],
+    "",
+    ""
+)]
+#[case::update_file(
+    vec!["--unbuffered", "--update", ".h | select(contains(\"title\")?) | ltrimstr(\"titl\")"],
+    "# **title**\n\n- test1\n- test2",
+    "# **e**\n\n- test1\n- test2\n"
+)]
+#[case::update_nested(
+    vec!["--unbuffered", "--update", ".strong | select(contains(\"title\")?) | ltrimstr(\"titl\")"],
+    "# [**title**](url)\n\n- test1\n- test2",
+    "# [**e**](url)\n\n- test1\n- test2\n"
+)]
+#[case::null_input(
+    vec!["--unbuffered", "--null-input", "1 | add(2)"],
+    "",
+    "3\n"
+)]
+#[case::nested_item(
+    vec!["--unbuffered", "--update" , "if (and(or(.link, .definition), matches_url(\"a/b/c.html\"))): update(\"x/y/z.html\")"],
+    "- another item\n\n  [another link]: a/b/c.html",
+    "- another item\n\n  [another link]: x/y/z.html\n"
+)]
+#[case::nested_item(
+    vec!["--unbuffered", "--update" , ".code_inline | update(\"test\")"],
+    "# `title`\n# `title`",
+    "# `test`\n# `test`\n"
+)]
+fn test_cli_commands(
+    #[case] args: Vec<&str>,
+    #[case] input: &str,
+    #[case] expected_output: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
+    let mut assert = cmd.args(args);
 
-    let assert = cmd
-        .arg("--unbuffered")
-        .arg("--args")
-        .arg("val1")
-        .arg("test")
-        .arg("select(contains(val1))")
-        .write_stdin("# **title**\n\n- test1\n- test2")
-        .assert();
-    assert.success().code(0).stdout("- test1\n- test2\n");
+    if !input.is_empty() {
+        assert = assert.write_stdin(input);
+    }
+
+    let assert = assert.assert();
+
+    if !expected_output.is_empty() {
+        assert.success().code(0).stdout(expected_output.to_owned());
+    } else {
+        assert.success().code(0);
+    }
 
     Ok(())
 }
@@ -54,47 +107,6 @@ fn test_cli_run_with_raw_file_and_stdin() -> Result<(), Box<dyn std::error::Erro
         .write_stdin("# **title**\n\n- test1\n- test2")
         .assert();
     assert.success().code(0).stdout("- test1\n- test2\n");
-
-    Ok(())
-}
-
-#[test]
-fn test_cli_completion() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-
-    let assert = cmd.arg("completion").arg("--shell").arg("zsh").assert();
-    assert.success().code(0);
-
-    Ok(())
-}
-
-#[test]
-fn test_cli_format_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-
-    let assert = cmd
-        .arg("fmt")
-        .write_stdin(
-            "def test(x):
-add(x,1);
-| map(array(1,2,3),test)",
-        )
-        .assert();
-    assert.success().code(0).stdout(
-        "def test(x):
-  add(x, 1);
-| map(array(1, 2, 3), test)
-",
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_cli_docs() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-    let assert = cmd.arg("docs").assert();
-    assert.success().code(0);
 
     Ok(())
 }
@@ -147,55 +159,5 @@ fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>>
         .assert();
 
     assert.success().code(0).stdout("# **title**\n");
-    Ok(())
-}
-
-#[test]
-fn test_cli_run_with_update_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-
-    let assert = cmd
-        .arg("--unbuffered")
-        .arg("--update")
-        .arg(".h | select(contains(\"title\")?) | ltrimstr(\"titl\")")
-        .write_stdin("# **title**\n\n- test1\n- test2")
-        .assert();
-    assert
-        .success()
-        .code(0)
-        .stdout("# **e**\n\n- test1\n- test2\n");
-
-    Ok(())
-}
-
-#[test]
-fn test_cli_run_with_update_text() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-
-    let assert = cmd
-        .arg("--unbuffered")
-        .arg("--update")
-        .arg(".h | select(contains(\"title\")?) | ltrimstr(\"titl\") | to_text()?")
-        .write_stdin("# **title**\n\n- test1\n- test2")
-        .assert();
-    assert
-        .success()
-        .code(0)
-        .stdout("# **e**\n\n- test1\n- test2\n");
-
-    Ok(())
-}
-
-#[test]
-fn test_cli_run_with_null_input() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
-
-    let assert = cmd
-        .arg("--unbuffered")
-        .arg("--null-input")
-        .arg("1 | add(2)")
-        .assert();
-    assert.success().code(0).stdout("3\n");
-
     Ok(())
 }

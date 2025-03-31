@@ -23,11 +23,11 @@ impl FromStr for Markdown {
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut pre_position = None;
+        let mut is_first = true;
         let text = self
             .nodes
             .iter()
-            .enumerate()
-            .filter_map(|(i, node)| {
+            .filter_map(|node| {
                 let value = node.to_string_with(&self.options.list_style);
 
                 if value.is_empty() || value == "\n" {
@@ -39,15 +39,18 @@ impl fmt::Display for Markdown {
                     let new_line_count = pre_position
                         .as_ref()
                         .map(|p: &Position| pos.start.line - p.end.line)
-                        .unwrap_or_else(|| if i == 0 { 0 } else { 1 });
+                        .unwrap_or_else(|| if is_first { 0 } else { 1 });
 
                     pre_position = Some(pos);
-
                     format!("{}{}", "\n".repeat(new_line_count), value)
                 } else {
                     pre_position = None;
                     format!("{}{}", value, '\n')
                 };
+
+                if is_first {
+                    is_first = false;
+                }
 
                 Some(value)
             })
@@ -240,7 +243,7 @@ mod tests {
     )]
     #[case::link("[a](b)", 1, "[a](b)\n")]
     #[case::link_ref("[a]: b\n\n[c][a]", 2, "[a]: b\n\n[c][a]\n")]
-    #[case::break_("a\\", 1, "a\\\n")]
+    #[case::break_("a\\b", 1, "a\\b\n")]
     #[case::delete("~~a~~", 1, "~~a~~\n")]
     #[case::emphasis("*a*", 1, "*a*\n")]
     #[case::horizontal_rule("---", 1, "---\n")]

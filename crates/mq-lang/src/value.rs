@@ -161,7 +161,7 @@ impl Values {
     pub fn compact(&self) -> Vec<Value> {
         self.0
             .iter()
-            .filter(|v| !v.is_none())
+            .filter(|v| !v.is_none() && !v.is_empty())
             .cloned()
             .collect::<Vec<_>>()
     }
@@ -177,7 +177,62 @@ impl Values {
     pub fn is_empty(&self) -> bool {
         self.0.len() == 0
     }
+
+    pub fn update_with(&self, other: Values) -> Self {
+        self.0
+            .clone()
+            .into_iter()
+            .zip(other)
+            .map(|(current_value, updated_value)| {
+                if let Value::Markdown(node) = &current_value {
+                    match &updated_value {
+                        Value::None | Value::Function(_, _) | Value::NativeFunction(_) => {
+                            current_value.clone()
+                        }
+                        Value::Markdown(node) if node.is_empty() => current_value.clone(),
+                        Value::Markdown(node) => {
+                            if node.is_fragment() {
+                                if let Value::Markdown(mut current_node) = current_value {
+                                    current_node.apply_fragment(node.clone());
+                                    Value::Markdown(current_node)
+                                } else {
+                                    updated_value
+                                }
+                            } else {
+                                updated_value
+                            }
+                        }
+                        Value::String(s) => Value::Markdown(node.clone().with_value(s)),
+                        Value::Bool(b) => {
+                            Value::Markdown(node.clone().with_value(b.to_string().as_str()))
+                        }
+                        Value::Number(n) => {
+                            Value::Markdown(node.clone().with_value(n.to_string().as_str()))
+                        }
+                        Value::Array(array) => Value::Array(
+                            array
+                                .iter()
+                                .filter_map(|o| {
+                                    if !matches!(o, Value::None) {
+                                        Some(Value::Markdown(
+                                            node.clone().with_value(o.to_string().as_str()),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
+                    }
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect::<Vec<_>>()
+            .into()
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use mq_markdown::Text;
@@ -206,6 +261,9 @@ mod tests {
     #[test]
     fn test_value_from_number() {
         let value = Value::from(Number::new(42.0));
+        assert_eq!(value, Value::Number(Number::new(42.0)));
+
+        let value = Value::from(42);
         assert_eq!(value, Value::Number(Number::new(42.0)));
     }
 
@@ -269,22 +327,6 @@ mod tests {
     }
 
     #[test]
-    fn test_values_compact() {
-        let values = Values(vec![
-            Value::Number(Number::from(1.0)),
-            Value::None,
-            Value::Number(Number::from(2.0)),
-        ]);
-        assert_eq!(
-            values.compact(),
-            vec![
-                Value::Number(Number::from(1.0)),
-                Value::Number(Number::from(2.0)),
-            ]
-        );
-    }
-
-    #[test]
     fn test_value_len() {
         assert_eq!(Value::Number(Number::from(5.0)).len(), 5);
         assert_eq!(Value::Bool(true).len(), 1);
@@ -315,5 +357,91 @@ mod tests {
         let values = Values(vec![Value::Number(Number::from(1.0)), Value::None]);
         assert_eq!(values.len(), 2);
         assert!(!values.is_empty());
+    }
+
+    #[test]
+    fn test_values_compact() {
+        let values = Values(vec![
+            Value::Number(Number::from(1.0)),
+            Value::None,
+            Value::Number(Number::from(2.0)),
+        ]);
+        assert_eq!(
+            values.compact(),
+            vec![
+                Value::Number(Number::from(1.0)),
+                Value::Number(Number::from(2.0)),
+            ]
+        );
+    }
+    #[rstest]
+    #[case(Value::Markdown(Node::Text(Text {
+        value: "test".to_string(),
+        position: None,
+    })), Value::String("updated".to_string()),
+       Value::Markdown(Node::Text(Text {
+           value: "updated".to_string(),
+           position: None,
+       })))]
+    #[case(Value::Markdown(Node::Text(Text {
+        value: "test".to_string(),
+        position: None,
+    })), Value::Bool(true),
+       Value::Markdown(Node::Text(Text {
+           value: "true".to_string(),
+           position: None,
+       })))]
+    #[case(Value::Markdown(Node::Text(Text {
+        value: "test".to_string(),
+        position: None,
+    })), Value::Number(Number::from(42.0)),
+       Value::Markdown(Node::Text(Text {
+           value: "42".to_string(),
+           position: None,
+       })))]
+    #[case(Value::Markdown(Node::Text(Text {
+        value: "test".to_string(),
+        position: None,
+    })), Value::None,
+       Value::Markdown(Node::Text(Text {
+           value: "test".to_string(),
+           position: None,
+       })))]
+    #[case(Value::Markdown(Node::Text(Text {
+                value: "test".to_string(),
+                position: None,
+           })),
+           Value::Array(vec![
+                Value::String("item1".to_string()),
+                Value::String("item2".to_string()),
+           ]),
+           Value::Array(vec![
+               Value::Markdown(Node::Text(Text {
+                    value: "item1".to_string(),
+                    position: None,
+               })),
+               Value::Markdown(Node::Text(Text {
+                    value: "item2".to_string(),
+                    position: None,
+               })),
+        ]))]
+    #[case(Value::Markdown(Node::Text(Text {
+               value: "updated".to_string(),
+               position: None,
+           })), Value::Function(vec![], vec![]),
+           Value::Markdown(Node::Text(Text {
+               value: "updated".to_string(),
+               position: None,
+           }))
+       )]
+    fn test_values_update_with(
+        #[case] original: Value,
+        #[case] update: Value,
+        #[case] expected: Value,
+    ) {
+        let values = Values(vec![original]);
+        let update_values = Values(vec![update]);
+        let result = values.update_with(update_values);
+        assert_eq!(result.0[0], expected);
     }
 }

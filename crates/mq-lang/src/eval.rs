@@ -99,9 +99,33 @@ impl Evaluator {
         )?;
 
         input
-            .map(|runtime_value| {
-                self.eval_program(&program, runtime_value, Rc::clone(&self.env))
-                    .map_err(InnerError::Eval)
+            .map(|runtime_value| match &runtime_value {
+                RuntimeValue::Markdown(node, _) => node
+                    .map_values(&mut |child_node| {
+                        let value = self
+                            .eval_program(
+                                &program,
+                                RuntimeValue::Markdown(child_node.clone(), None),
+                                Rc::clone(&self.env),
+                            )
+                            .map_err(InnerError::Eval)?;
+
+                        Ok(match value {
+                            RuntimeValue::None => child_node.to_fragment(),
+                            RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) => {
+                                mq_markdown::Node::Empty
+                            }
+                            RuntimeValue::Array(_)
+                            | RuntimeValue::Bool(_)
+                            | RuntimeValue::Number(_)
+                            | RuntimeValue::String(_) => value.to_string().into(),
+                            RuntimeValue::Markdown(node, _) => node,
+                        })
+                    })
+                    .map(|node| RuntimeValue::Markdown(node, None)),
+                _ => self
+                    .eval_program(&program, runtime_value, Rc::clone(&self.env))
+                    .map_err(InnerError::Eval),
             })
             .collect()
     }
@@ -537,7 +561,7 @@ mod tests {
        vec![
             ast_call("starts_with", vec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))])
        ],
-       Ok(vec![RuntimeValue::TRUE]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "true".to_string(), position: None}), None)]))]
     #[case::starts_with(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("starts_with", vec![ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))])
@@ -579,7 +603,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::TRUE]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "true".to_string(), position: None}), None)]))]
     #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("ends_with", vec![
@@ -695,7 +719,7 @@ mod tests {
        Ok(vec![RuntimeValue::Number(10.into())]))]
     #[case::len(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
        vec![ast_call("len", Vec::new())],
-       Ok(vec![RuntimeValue::Number(10.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "10".to_string(), position: None}), None)]))]
     #[case::len(vec![RuntimeValue::TRUE],
        vec![ast_call("len", Vec::new())],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
@@ -706,7 +730,7 @@ mod tests {
        Ok(vec![RuntimeValue::Number(3.into())]))]
     #[case::len(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "テスト".to_string(), position: None}), None)],
        vec![ast_call("len", Vec::new())],
-       Ok(vec![RuntimeValue::Number(3.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "3".to_string(), position: None}), None)]))]
     #[case::utf8bytelen(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("utf8bytelen", Vec::new())
@@ -726,17 +750,17 @@ mod tests {
        vec![
             ast_call("utf8bytelen", Vec::new())
        ],
-       Ok(vec![RuntimeValue::Number(4.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "4".to_string(), position: None}), None)]))]
     #[case::utf8bytelen(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "テスト".to_string(), position: None}), None)],
        vec![
             ast_call("utf8bytelen", Vec::new())
        ],
-       Ok(vec![RuntimeValue::Number(9.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "9".to_string(), position: None}), None)]))]
     #[case::utf8bytelen(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "😊".to_string(), position: None}), None)],
        vec![
             ast_call("utf8bytelen", Vec::new())
        ],
-       Ok(vec![RuntimeValue::Number(4.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "4".to_string(), position: None}), None)]))]
     #[case::utf8bytelen(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".to_string())])],
        vec![
             ast_call("utf8bytelen", Vec::new())
@@ -762,7 +786,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::Number(0.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "0".to_string(), position: None}), None)]))]
     #[case::index(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("index", vec![
@@ -799,7 +823,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::Number(4.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "4".to_string(), position: None}), None)]))]
     #[case::rindex(vec![RuntimeValue::Number(123.into())],
        vec![
             ast_call("rindex", vec![
@@ -1497,7 +1521,7 @@ mod tests {
        vec![
             ast_call("to_string", Vec::new())
        ],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
     #[case::split1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_call("split", vec![
@@ -1511,7 +1535,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test1\ntest2".to_string(), position: None}), None)]))]
     #[case::split(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("split", vec![ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))])
@@ -1831,7 +1855,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
-       Ok(vec![RuntimeValue::Array(vec![123.to_string().into()])]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "123".to_string(), position: None}), None)]))]
     #[case::match_regex(vec![RuntimeValue::Number(123.into())],
        vec![
             ast_call("match", vec![
@@ -1877,11 +1901,7 @@ mod tests {
         vec![
              ast_call("explode", Vec::new())
         ],
-        Ok(vec![RuntimeValue::Array(vec![
-             RuntimeValue::Number(65.into()),
-             RuntimeValue::Number(66.into()),
-             RuntimeValue::Number(67.into()),
-        ])]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "65\n66\n67".to_string(), position: None}), None)]))]
     #[case::range(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("range", vec![
@@ -1914,7 +1934,7 @@ mod tests {
        vec![
             ast_call("to_number", Vec::new())
        ],
-       Ok(vec![RuntimeValue::Number(42.into())]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "42".to_string(), position: None}), None)]))]
     #[case::to_number(vec![RuntimeValue::String("42.5".to_string())],
        vec![
             ast_call("to_number", Vec::new())
@@ -2351,7 +2371,7 @@ mod tests {
         vec![
             ast_call("get_md_list_level", vec![]),
         ],
-        Ok(vec![RuntimeValue::Number(1.into())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "1".to_string(), position: None}), None)]))]
     #[case::text_selector(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
         vec![
             ast_node(ast::Expr::Selector(ast::Selector::Text)),
@@ -2361,7 +2381,7 @@ mod tests {
         vec![
             ast_node(ast::Expr::Selector(ast::Selector::Text)),
         ],
-        Ok(vec![RuntimeValue::NONE]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment { values: vec!["Heading 1".to_string().into()] }), None)]))]
     #[case::to_md_table_row(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("Cell 1".to_string()),
             RuntimeValue::String("Cell 2".to_string()),
@@ -2371,7 +2391,7 @@ mod tests {
             ast_call("to_md_table_row", Vec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{
-            cells: vec![
+            values: vec![
                 mq_markdown::Node::TableCell(mq_markdown::TableCell{
                     row: 0,
                     column: 0,
@@ -2407,7 +2427,7 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{
-            cells: vec![
+            values: vec![
                 mq_markdown::Node::TableCell(mq_markdown::TableCell{
                     row: 0,
                     column: 0,
@@ -2431,33 +2451,22 @@ mod tests {
         vec![
              ast_call("get_title", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("title".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "title".to_string(), position: None}), None)]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: None, values: vec!["Link".to_string().into()], position: None}), None)],
         vec![
              ast_call("get_title", Vec::new())
         ],
-        Ok(vec![RuntimeValue::NONE]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}), None)],
             vec![
                  ast_call("get_title", Vec::new())
             ],
-            Ok(vec![RuntimeValue::String("Image Title".to_string())]))]
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Image Title".to_string(), position: None}), None)]))]
     #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: None, position: None}), None)],
         vec![
              ast_call("get_title", Vec::new())
         ],
-        Ok(vec![RuntimeValue::NONE]))]
-    #[case::nth_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
-            mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
-            mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
-        ], level: 1, index: 0, checked: None, position: None}), None)],
-               vec![
-                    ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))])
-               ],
-               Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec![
-            mq_markdown::Node::Text(mq_markdown::Text{value: "Item 1".to_string(), position: None}),
-            mq_markdown::Node::Text(mq_markdown::Text{value: "Item 2".to_string(), position: None})
-        ], level: 1, index: 0, checked: None, position: None}), Some(runtime_value::Selector::Index(1)))]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
     #[case::nth_string(vec![RuntimeValue::String("test1".to_string())],
         vec![
             ast_call("nth", vec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
@@ -2544,7 +2553,7 @@ mod tests {
         vec![
              ast_call("to_text", Vec::new())
         ],
-        Ok(vec!["Heading".to_string().into()]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Heading".to_string(), position: None}), None)]))]
     #[case::to_text(vec![RuntimeValue::String("Original".to_string())],
         vec![
              ast_call("to_text",
@@ -2687,37 +2696,44 @@ mod tests {
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p>test</p>".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<p>test</p>".to_string(), position: None}), None)]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<h1>Heading 1</h1>".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<h1>Heading 1</h1>".to_string(), position: None}), None)]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p><strong>Bold</strong></p>".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<p><strong>Bold</strong></p>".to_string(), position: None}), None)]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p><em>Italic</em></p>".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<p><em>Italic</em></p>".to_string(), position: None}), None)]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("Link Title".to_string()), values: vec!["Link Title".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p><a href=\"https://example.com\" title=\"Link Title\">Link Title</a></p>".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<p><a href=\"https://example.com\" title=\"Link Title\">Link Title</a></p>".to_string(), position: None}), None)]))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("rust".to_string()), value: "println!(\"Hello\");".to_string(), position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<pre><code class=\"language-rust\">println!(&quot;Hello&quot;);\n</code></pre>".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<pre><code class=\"language-rust\">println!(&quot;Hello&quot;);\n</code></pre>".to_string(), position: None}), None)]))]
     #[case::to_html(vec![RuntimeValue::String("Plain text".to_string())],
         vec![
              ast_call("to_html", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("<p>Plain text</p>".to_string())]))]
+        Ok(vec!["<p>Plain text</p>".to_string().into()]))]
+    #[case::to_html(vec![RuntimeValue::Number(1.into())],
+        vec![
+             ast_call("to_html", Vec::new())
+        ],
+        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                     name: "to_html".to_string(),
+                                                     args: vec![1.to_string().into()]})))]
     #[case::repeat_string(vec![RuntimeValue::String("abc".to_string())],
         vec![
             ast_call("repeat", vec![
@@ -2813,7 +2829,7 @@ mod tests {
         vec![
               ast_call("to_md_name", Vec::new()),
         ],
-        Ok(vec!["text".to_string().into()]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "text".to_string(), position: None}), None)]))]
     #[case::to_md_name(vec![RuntimeValue::Number(123.into())],
         vec![
               ast_call("to_md_name", Vec::new()),
@@ -2910,22 +2926,22 @@ mod tests {
         vec![
              ast_call("get_url", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("https://example.com".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "https://example.com".to_string(), position: None}), None)]))]
     #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
         vec![
              ast_call("get_url", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("https://example.com".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "https://example.com".to_string(), position: None}), None)]))]
     #[case::get_url_image(vec![RuntimeValue::Markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "https://example.com/image.png".to_string(), alt: "Image Alt".to_string(), title: Some("Image Title".to_string()), position: None}), None)],
         vec![
              ast_call("get_url", Vec::new())
         ],
-        Ok(vec![RuntimeValue::String("https://example.com/image.png".to_string())]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "https://example.com/image.png".to_string(), position: None}), None)]))]
     #[case::get_url_not_link_or_image(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Simple text".to_string(), position: None}), None)],
         vec![
              ast_call("get_url", Vec::new())
         ],
-        Ok(vec![RuntimeValue::NONE]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
     #[case::get_url_string(vec![RuntimeValue::String("Not a markdown".to_string())],
         vec![
              ast_call("get_url", Vec::new())

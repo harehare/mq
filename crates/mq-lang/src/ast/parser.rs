@@ -370,7 +370,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if(&mut self, if_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        let mut nodes = Vec::with_capacity(8);
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&if_token));
         let args = self.parse_args()?;
 
@@ -379,55 +378,52 @@ impl<'a> Parser<'a> {
                 (*self.token_arena.borrow()[token_id]).clone(),
             ));
         }
-
-        let token_id = self.next_token(token_id, |token_kind| {
-            matches!(token_kind, TokenKind::Colon)
-        })?;
-
-        let if_expr_token = match self.tokens.next() {
-            Some(token) => Ok(token),
-            None => Err(ParseError::UnexpectedToken(
-                (*self.token_arena.borrow()[token_id]).clone(),
-            )),
-        }?;
-
         let cond = args.first().unwrap();
-        let then_expr = self.parse_expr(Rc::clone(if_expr_token))?;
-
-        nodes.push((Some(Rc::clone(cond)), then_expr));
-
-        let elif_nodes = self.parse_elif(token_id)?;
-
-        nodes.extend(elif_nodes);
-
-        let token_id =
-            self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Else))?;
         let token_id = self.next_token(token_id, |token_kind| {
             matches!(token_kind, TokenKind::Colon)
         })?;
+        let then_expr = self.parse_next_expr(token_id)?;
 
-        let else_expr_token = match self.tokens.next() {
-            Some(token) => Ok(token),
-            None => Err(ParseError::UnexpectedToken(
-                (*self.token_arena.borrow()[token_id]).clone(),
-            )),
-        }?;
+        let mut branches = Vec::with_capacity(8);
+        branches.push((Some(Rc::clone(cond)), then_expr));
 
-        let else_expr = self.parse_expr(Rc::clone(else_expr_token))?;
+        let elif_branches = self.parse_elif(token_id)?;
+        branches.extend(elif_branches);
 
-        nodes.push((None, else_expr));
+        if let Some(token) = self.tokens.peek() {
+            if matches!(token.kind, TokenKind::Else) {
+                let token_id =
+                    self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Else))?;
+                let token_id = self.next_token(token_id, |token_kind| {
+                    matches!(token_kind, TokenKind::Colon)
+                })?;
+                let else_expr = self.parse_next_expr(token_id)?;
+                branches.push((None, else_expr));
+            }
+        }
 
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&if_token)),
-            expr: Rc::new(Expr::If(nodes)),
+            expr: Rc::new(Expr::If(branches)),
         }))
+    }
+
+    fn parse_next_expr(&mut self, token_id: TokenId) -> Result<Rc<Node>, ParseError> {
+        let expr_token = match self.tokens.next() {
+            Some(token) => Ok(token),
+            None => Err(ParseError::UnexpectedToken(
+                (*self.token_arena.borrow()[token_id]).clone(),
+            )),
+        }?;
+
+        self.parse_expr(Rc::clone(expr_token))
     }
 
     fn parse_elif(&mut self, token_id: TokenId) -> Result<Vec<IfExpr>, ParseError> {
         let mut nodes = Vec::with_capacity(8);
 
         while let Some(token) = self.tokens.peek() {
-            if matches!(token.kind, TokenKind::Else) {
+            if !matches!(token.kind, TokenKind::Elif) {
                 break;
             }
 
@@ -1704,6 +1700,76 @@ mod tests {
                                 expr: Rc::new(Expr::Literal(Literal::String("else branch".to_owned()))),
                             })
                         )
+                    ])),
+                })
+            ]))]
+    #[case::if_only(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::LParen),
+                token(TokenKind::BoolLiteral(true)),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 4.into(),
+                    expr: Rc::new(Expr::If(vec![
+                        (
+                            Some(Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                            })),
+                            Rc::new(Node {
+                                token_id: 3.into(),
+                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                            })
+                        ),
+                    ])),
+                })
+            ]))]
+    #[case::if_elif(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::LParen),
+                token(TokenKind::BoolLiteral(true)),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
+                token(TokenKind::Elif),
+                token(TokenKind::LParen),
+                token(TokenKind::BoolLiteral(true)),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("true branch".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 8.into(),
+                    expr: Rc::new(Expr::If(vec![
+                        (
+                            Some(Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                            })),
+                            Rc::new(Node {
+                                token_id: 3.into(),
+                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                            })
+                        ),
+                        (
+                            Some(Rc::new(Node {
+                                token_id: 5.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                            })),
+                            Rc::new(Node {
+                                token_id: 7.into(),
+                                expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                            })
+                        ),
                     ])),
                 })
             ]))]

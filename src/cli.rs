@@ -328,53 +328,9 @@ impl Cli {
 
             if self.output.update {
                 let results = engine.eval(query, input.clone()).map_err(|e| *e)?;
-                results
-                    .values()
-                    .iter()
-                    .zip(input.into_iter())
-                    .flat_map(|(updated_runtime_value, runtime_value)| {
-                        if let mq_lang::Value::Markdown(node) = &runtime_value {
-                            match updated_runtime_value {
-                                mq_lang::Value::None
-                                | mq_lang::Value::Function(_, _)
-                                | mq_lang::Value::NativeFunction(_) => Ok(vec![runtime_value]),
-                                mq_lang::Value::Markdown(_) => {
-                                    Ok(vec![updated_runtime_value.clone()])
-                                }
-                                mq_lang::Value::String(s) => {
-                                    Ok(vec![mq_lang::Value::Markdown(node.clone().with_value(s))])
-                                }
-                                mq_lang::Value::Bool(b) => Ok(vec![mq_lang::Value::Markdown(
-                                    node.clone().with_value(b.to_string().as_str()),
-                                )]),
-                                mq_lang::Value::Number(n) => Ok(vec![mq_lang::Value::Markdown(
-                                    node.clone().with_value(n.to_string().as_str()),
-                                )]),
-                                mq_lang::Value::Array(array) => Ok(array
-                                    .iter()
-                                    .filter_map(|o| {
-                                        if !matches!(o, mq_lang::Value::None) {
-                                            Some(mq_lang::Value::Markdown(
-                                                node.clone().with_value(o.to_string().as_str()),
-                                            ))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect()),
-                            }
-                        } else {
-                            Err(miette!("Internal error"))
-                        }
-                    })
-                    .try_fold(
-                        Vec::with_capacity(results.values().len()),
-                        |mut acc, res| {
-                            acc.extend(res);
-                            Ok(acc)
-                        },
-                    )
-                    .map(Into::into)
+                let current_values: mq_lang::Values = input.clone().collect::<Vec<_>>().into();
+
+                Ok(current_values.update_with(results))
             } else {
                 engine.eval(query, input)
             }
@@ -421,12 +377,7 @@ impl Cli {
         } else {
             Box::new(BufWriter::new(stdout.lock()))
         };
-        let runtime_values = if self.output.update {
-            runtime_values.values()
-        } else {
-            &runtime_values.compact()
-        };
-
+        let runtime_values = runtime_values.values();
         let mut markdown = mq_markdown::Markdown::new(
             runtime_values
                 .iter()

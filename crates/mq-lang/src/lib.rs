@@ -118,7 +118,7 @@ pub fn parse(
     })
 }
 
-pub fn tokenize(
+fn tokenize(
     code: &str,
     options: lexer::Options,
 ) -> Result<Vec<lexer::token::Token>, Box<error::Error>> {

@@ -1355,7 +1355,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Range(1, u8::MAX), |_, _, args| {
                 let args_num = args.len();
                 let mut current_index = 0;
-                let cells = args
+                let values = args
                     .iter()
                     .enumerate()
                     .flat_map(|(i, arg)| match arg {
@@ -1393,7 +1393,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                 Ok(RuntimeValue::Markdown(
                     mq_markdown::Node::TableRow(mq_markdown::TableRow {
-                        cells,
+                        values,
                         position: None,
                     }),
                     None,

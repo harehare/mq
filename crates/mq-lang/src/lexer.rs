@@ -599,6 +599,9 @@ mod tests {
                           ]), module_id: 1.into()},
                    Token{range: Range { start: Position {line: 2, column: 2}, end: Position {line: 2, column: 2} }, kind: TokenKind::Eof, module_id: 1.into()}]
                 ))]
+    #[case::error("\"test",
+            Options{include_spaces: false, ignore_errors: false},
+            Err(LexerError::UnexpectedEOFDetected(1.into())))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
