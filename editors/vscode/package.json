@@ -119,7 +119,7 @@
     "@types/node": "22.x",
     "@types/vscode": "^1.97.0",
     "@types/which": "^3.0.4",
-    "@typescript-eslint/eslint-plugin": "^8.28.0",
+    "@typescript-eslint/eslint-plugin": "^8.29.0",
     "@typescript-eslint/parser": "^8.29.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
