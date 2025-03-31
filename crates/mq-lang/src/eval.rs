@@ -2727,6 +2727,13 @@ mod tests {
              ast_call("to_html", Vec::new())
         ],
         Ok(vec!["<p>Plain text</p>".to_string().into()]))]
+    #[case::to_html(vec![RuntimeValue::Number(1.into())],
+        vec![
+             ast_call("to_html", Vec::new())
+        ],
+        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                     name: "to_html".to_string(),
+                                                     args: vec![1.to_string().into()]})))]
     #[case::repeat_string(vec![RuntimeValue::String("abc".to_string())],
         vec![
             ast_call("repeat", vec![

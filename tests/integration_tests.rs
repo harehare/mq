@@ -57,6 +57,11 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     "- another item\n\n  [another link]: a/b/c.html",
     "- another item\n\n  [another link]: x/y/z.html\n"
 )]
+#[case::nested_item(
+    vec!["--unbuffered", "--update" , ".code_inline | update(\"test\")"],
+    "# `title`\n# `title`",
+    "# `test`\n# `test`\n"
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

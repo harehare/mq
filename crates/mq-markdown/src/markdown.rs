@@ -243,7 +243,7 @@ mod tests {
     )]
     #[case::link("[a](b)", 1, "[a](b)\n")]
     #[case::link_ref("[a]: b\n\n[c][a]", 2, "[a]: b\n\n[c][a]\n")]
-    #[case::break_("a\\", 1, "a\\\n")]
+    #[case::break_("a\\b", 1, "a\\b\n")]
     #[case::delete("~~a~~", 1, "~~a~~\n")]
     #[case::emphasis("*a*", 1, "*a*\n")]
     #[case::horizontal_rule("---", 1, "---\n")]

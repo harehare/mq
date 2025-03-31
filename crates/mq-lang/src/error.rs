@@ -154,10 +154,15 @@ impl Error {
 }
 #[cfg(test)]
 mod test {
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
     use super::*;
     use crate::{Token, TokenKind, arena::ArenaId};
+
+    #[fixture]
+    fn module_loader() -> ModuleLoader {
+        ModuleLoader::new(None)
+    }
 
     #[test]
     fn test_from_error_with_eof_error() {
@@ -335,10 +340,12 @@ mod test {
         ))),
         "source code"
     )]
-    fn test_from_error(#[case] cause: InnerError, #[case] source_code: &str) {
-        let module_loader = ModuleLoader::new(None);
+    fn test_from_error(
+        module_loader: ModuleLoader,
+        #[case] cause: InnerError,
+        #[case] source_code: &str,
+    ) {
         let error = Error::from_error(source_code, cause, module_loader);
-
         assert_eq!(error.source_code, source_code);
     }
 }
