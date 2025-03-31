@@ -246,8 +246,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
-        if let Some(token) = self.tokens.peek().cloned() {
-            match &**token {
+        if let Some(token) = &self.tokens.peek() {
+            match &****token {
                 Token {
                     range: _,
                     kind: TokenKind::Def,
@@ -725,24 +725,24 @@ impl<'a> Parser<'a> {
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia)?);
 
-        let mut leading_trivia = self.parse_leading_trivia();
-
         loop {
-            let token = match self.tokens.peek().cloned() {
-                Some(token) => token,
-                None => return Err(ParseError::UnexpectedEOFDetected),
-            };
-
-            if matches!(token.kind, TokenKind::Else) {
+            if !self.try_next_token(|kind| matches!(kind, TokenKind::Elif)) {
                 break;
             }
 
+            let leading_trivia = self.parse_leading_trivia();
             children.push(self.parse_elif(leading_trivia)?);
-            leading_trivia = self.parse_leading_trivia();
         }
 
+        if !self.try_next_token(|kind| matches!(kind, TokenKind::Else)) {
+            node.children = children;
+            return Ok(Arc::new(node));
+        }
+
+        let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_else(leading_trivia)?);
         node.children = children;
+
         Ok(Arc::new(node))
     }
 
@@ -1061,6 +1061,40 @@ impl<'a> Parser<'a> {
         }
 
         trivia
+    }
+
+    fn try_parse_leading_trivia(
+        tokens: &mut Peekable<core::slice::Iter<'a, Arc<Token>>>,
+    ) -> Vec<Trivia> {
+        let mut trivia = Vec::with_capacity(100);
+
+        while let Some(token) = tokens.peek() {
+            match &token.kind {
+                TokenKind::Whitespace(_) => trivia.push(Trivia::Whitespace(Arc::clone(token))),
+                TokenKind::Tab(_) => trivia.push(Trivia::Tab(Arc::clone(token))),
+                TokenKind::Comment(_) => trivia.push(Trivia::Comment(Arc::clone(token))),
+                TokenKind::NewLine => trivia.push(Trivia::NewLine),
+                _ => break,
+            };
+            tokens.next();
+        }
+
+        trivia
+    }
+
+    fn try_next_token(&mut self, match_token_kind: fn(&TokenKind) -> bool) -> bool {
+        let tokens = &mut self.tokens.clone();
+        Self::try_parse_leading_trivia(tokens);
+
+        let token = tokens
+            .peek()
+            .ok_or_else(|| ParseError::UnexpectedEOFDetected);
+
+        if token.is_err() {
+            return false;
+        }
+
+        match_token_kind(&token.unwrap().kind)
     }
 
     fn parse_trailing_trivia(&mut self) -> Vec<Trivia> {
@@ -1550,6 +1584,176 @@ mod tests {
                                 Arc::new(Node {
                                     kind: NodeKind::Ident,
                                     token: Some(Arc::new(token(TokenKind::Ident("else_branch".into())))),
+                                    leading_trivia: vec![],
+                                    trailing_trivia: vec![],
+                                    children: vec![],
+                                }),
+                            ],
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::if_only(
+        vec![
+            Arc::new(token(TokenKind::If)),
+            Arc::new(token(TokenKind::Whitespace(2))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("condition1".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Colon)),
+            Arc::new(token(TokenKind::Ident("then_branch1".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::If,
+                    token: Some(Arc::new(token(TokenKind::If))),
+                    leading_trivia: vec![],
+                    trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(2))))],
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("condition1".into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Colon))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("then_branch1".into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::if_elif_else(
+        vec![
+            Arc::new(token(TokenKind::If)),
+            Arc::new(token(TokenKind::Whitespace(2))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("condition1".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Colon)),
+            Arc::new(token(TokenKind::Ident("then_branch1".into()))),
+            Arc::new(token(TokenKind::Elif)),
+            Arc::new(token(TokenKind::Whitespace(2))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("condition2".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Colon)),
+            Arc::new(token(TokenKind::Ident("then_branch2".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::If,
+                    token: Some(Arc::new(token(TokenKind::If))),
+                    leading_trivia: vec![],
+                    trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(2))))],
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("condition1".into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Colon))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("then_branch1".into())))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![],
+                            children: vec![],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Elif,
+                            token: Some(Arc::new(token(TokenKind::Elif))),
+                            leading_trivia: vec![],
+                            trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(2))))],
+                            children: vec![
+                                Arc::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Arc::new(token(TokenKind::LParen))),
+                                    leading_trivia: vec![],
+                                    trailing_trivia: vec![],
+                                    children: vec![],
+                                }),
+                                Arc::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Arc::new(token(TokenKind::Ident("condition2".into())))),
+                                    leading_trivia: vec![],
+                                    trailing_trivia: vec![],
+                                    children: vec![],
+                                }),
+                                Arc::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Arc::new(token(TokenKind::RParen))),
+                                    leading_trivia: vec![],
+                                    trailing_trivia: vec![],
+                                    children: vec![],
+                                }),
+                                Arc::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Arc::new(token(TokenKind::Colon))),
+                                    leading_trivia: vec![],
+                                    trailing_trivia: vec![],
+                                    children: vec![],
+                                }),
+                                Arc::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Arc::new(token(TokenKind::Ident("then_branch2".into())))),
                                     leading_trivia: vec![],
                                     trailing_trivia: vec![],
                                     children: vec![],

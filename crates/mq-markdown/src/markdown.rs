@@ -48,7 +48,10 @@ impl fmt::Display for Markdown {
                     format!("{}{}", value, '\n')
                 };
 
-                is_first = false;
+                if is_first {
+                    is_first = false;
+                }
+
                 Some(value)
             })
             .join("");
