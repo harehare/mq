@@ -39,8 +39,6 @@ fn main() {
     to_md_list(link, 4)
   elif (eq(to_md_name(), \"h5\")):
     to_md_list(link, 5)
-  else:
-    None
 ";
-    println!("{:?}", engine.eval(code, input).unwrap());
+    println!("{:?}", engine.eval(code, input).unwrap().compact());
 }

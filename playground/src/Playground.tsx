@@ -15,6 +15,7 @@ type SharedData = {
   code: string;
   markdown: string;
   isMdx: boolean;
+  isUpdate: boolean;
 };
 
 const CODE_KEY = "mq-playground.code";
@@ -219,7 +220,7 @@ export const Playground = () => {
     localStorage.getItem(MARKDOWN_KEY) || EXAMPLES[0].markdown
   );
   const [isMdx, setIsMdx] = useState(false);
-  const [isUpdate, setUpdate] = useState(true);
+  const [isUpdate, setIsUpdate] = useState(true);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
 
@@ -242,10 +243,12 @@ export const Playground = () => {
                 ? parsedData.markdown
                 : "",
             isMdx: !!parsedData.isMdx,
+            isUpdate: !!parsedData.isUpdate,
           };
           setCode(data.code);
           setMarkdown(data.markdown);
           setIsMdx(data.isMdx === true);
+          setIsUpdate(data.isUpdate === true);
         }
       } catch {
         alert("Failed to load shared playground");
@@ -285,6 +288,7 @@ export const Playground = () => {
       code: code || "",
       markdown: markdown || "",
       isMdx,
+      isUpdate,
     };
     const compressed = LZString.compressToEncodedURIComponent(
       JSON.stringify(shareData)
@@ -300,7 +304,7 @@ export const Playground = () => {
       .catch(() => {
         prompt("Copy this URL to share your playground:", url);
       });
-  }, [code, markdown, isMdx]);
+  }, [code, markdown, isMdx, isUpdate]);
 
   const beforeMount = (monaco: Monaco) => {
     monaco.editor.addEditorAction({
@@ -564,7 +568,7 @@ export const Playground = () => {
                     <input
                       type="checkbox"
                       checked={isUpdate}
-                      onChange={(e) => setUpdate(e.target.checked)}
+                      onChange={(e) => setIsUpdate(e.target.checked)}
                       style={{
                         marginRight: "5px",
                         cursor: "pointer",

@@ -1713,9 +1713,34 @@ impl Node {
 
     #[inline(always)]
     fn values_to_string(values: Vec<Node>, list_style: &ListStyle) -> String {
+        let mut pre_position: Option<Position> = None;
         values
             .iter()
-            .map(|value| value.to_string_with(list_style))
+            .map(|value| {
+                if let Some(pos) = value.position() {
+                    let new_line_count = pre_position
+                        .as_ref()
+                        .map(|p: &Position| pos.start.line - p.end.line)
+                        .unwrap_or_default();
+
+                    let space = if new_line_count > 0 && pos.start.line == pos.end.line {
+                        " ".repeat(pos.start.column.saturating_sub(1))
+                    } else {
+                        "".to_string()
+                    };
+
+                    pre_position = Some(pos);
+                    format!(
+                        "{}{}{}",
+                        "\n".repeat(new_line_count),
+                        space,
+                        value.to_string_with(list_style)
+                    )
+                } else {
+                    pre_position = None;
+                    value.to_string_with(list_style)
+                }
+            })
             .join("")
     }
 
@@ -2534,7 +2559,9 @@ mod tests {
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), "test")]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("name".to_string()), attributes: vec![], children: vec![Node::Text(Text{value: "test".to_string(), position: None})],  position: None}), "test")]
     #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "url")]
+    #[case(Node::Fragment(Fragment {values: vec![Node::Text(Text{value: "test".to_string(), position: None})]}), "test")]
     fn test_value(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.value(), expected);
     }
@@ -2572,6 +2599,24 @@ mod tests {
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Definition(Definition{ident: "".to_string(), url: "".to_string(), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Fragment(Fragment{values: vec![]}), None)]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "test1".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}),
+        Node::Text(Text{value: "test2".to_string(), position: Some(Position{start: Point{line: 1, column: 6}, end: Point{line: 1, column: 10}})})
+    ]}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}}))]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}),
+        Node::Text(Text{value: "test2".to_string(), position: None})
+    ]}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "test".to_string(), position: None}),
+        Node::Text(Text{value: "test2".to_string(), position: Some(Position{start: Point{line: 1, column: 6}, end: Point{line: 1, column: 10}})})
+    ]}), Some(Position{start: Point{line: 1, column: 6}, end: Point{line: 1, column: 10}}))]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "test".to_string(), position: None}),
+        Node::Text(Text{value: "test2".to_string(), position: None})
+    ]}), None)]
+    #[case(Node::Empty, None)]
     fn test_position(#[case] node: Node, #[case] expected: Option<Position>) {
         assert_eq!(node.position(), expected);
     }
@@ -2623,5 +2668,227 @@ mod tests {
         #[case] expected: Option<Node>,
     ) {
         assert_eq!(node.find_at_index(index), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Link(Link{url: "url".to_string(), title: None, values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["test".to_string().into()], label: None, position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::TableRow(TableRow{values: vec!["test".to_string().into()], position: None}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Fragment(Fragment{values: vec!["test".to_string().into()]}),
+           Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
+    #[case(Node::Text(Text{value: "test".to_string(), position: None}),
+           Node::Empty)]
+    #[case(Node::Code(Code{value: "test".to_string(), lang: None, position: None}),
+           Node::Empty)]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}),
+           Node::Empty)]
+    #[case(Node::Empty, Node::Empty)]
+    fn test_to_fragment(#[case] node: Node, #[case] expected: Node) {
+        assert_eq!(node.to_fragment(), expected);
+    }
+
+    #[rstest]
+    #[case(
+        &mut Node::Blockquote(Value{values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Blockquote(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Delete(Value{values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Delete(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Emphasis(Value{values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Emphasis(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Strong(Value{values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Strong(Value{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::List(List{index: 0, level: 0, checked: None, values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::List(List{index: 0, level: 0, checked: None, values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Heading(Heading{depth: 1, values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Heading(Heading{depth: 1, values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Link(Link{url: "url".to_string(), title: None, values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Link(Link{url: "url".to_string(), title: None, values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], label: None, position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], label: None, position: None})
+    )]
+    #[case(
+        &mut Node::Footnote(Footnote{ident: "id".to_string(), values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Footnote(Footnote{ident: "id".to_string(), values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::Text(Text{value: "old".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::TableRow(TableRow{values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+                Node::Text(Text{value: "old".to_string(), position: None})
+            ], position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+                Node::Text(Text{value: "new".to_string(), position: None})
+            ], position: None})
+        ]}),
+        Node::TableRow(TableRow{values: vec![
+            Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![
+                Node::Text(Text{value: "new".to_string(), position: None})
+            ], position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Text(Text{value: "old".to_string(), position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new".to_string(), position: None})
+        ]}),
+        Node::Text(Text{value: "old".to_string(), position: None})
+    )]
+    #[case(
+        &mut Node::Blockquote(Value{values: vec![
+            Node::Text(Text{value: "text1".to_string(), position: None}),
+            Node::Text(Text{value: "text2".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new1".to_string(), position: None}),
+            Node::Text(Text{value: "new2".to_string(), position: None})
+        ]}),
+        Node::Blockquote(Value{values: vec![
+            Node::Text(Text{value: "new1".to_string(), position: None}),
+            Node::Text(Text{value: "new2".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::Strong(Value{values: vec![
+            Node::Text(Text{value: "text1".to_string(), position: None}),
+            Node::Text(Text{value: "text2".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Empty,
+            Node::Text(Text{value: "new2".to_string(), position: None})
+        ]}),
+        Node::Strong(Value{values: vec![
+            Node::Text(Text{value: "text1".to_string(), position: None}),
+            Node::Text(Text{value: "new2".to_string(), position: None})
+        ], position: None})
+    )]
+    #[case(
+        &mut Node::List(List{index: 0, level: 0, checked: None, values: vec![
+            Node::Text(Text{value: "text1".to_string(), position: None}),
+            Node::Text(Text{value: "text2".to_string(), position: None})
+        ], position: None}),
+        Node::Fragment(Fragment{values: vec![
+            Node::Text(Text{value: "new1".to_string(), position: None}),
+            Node::Fragment(Fragment{values: vec![]})
+        ]}),
+        Node::List(List{index: 0, level: 0, checked: None, values: vec![
+            Node::Text(Text{value: "new1".to_string(), position: None}),
+            Node::Text(Text{value: "text2".to_string(), position: None})
+        ], position: None})
+    )]
+    fn test_apply_fragment(
+        #[case] node: &mut Node,
+        #[case] fragment: Node,
+        #[case] expected: Node,
+    ) {
+        node.apply_fragment(fragment);
+        assert_eq!(*node, expected);
     }
 }
