@@ -38,7 +38,7 @@
     "@actions/tool-cache": "^2.0.2"
   },
   "devDependencies": {
-    "@eslint/compat": "^1.2.7",
+    "@eslint/compat": "^1.2.8",
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-typescript": "^12.1.1",
