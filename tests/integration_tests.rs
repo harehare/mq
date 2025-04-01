@@ -62,6 +62,11 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     "# `title`\n# `title`",
     "# `test`\n# `test`\n"
 )]
+#[case::nested_item(
+    vec!["--unbuffered", "--update" , "if (and(or(.link, .link_ref, .definition), matches_url(\"a/b/c.html\"))):\nupdate(\"x/y/z.html\")"],
+    "- item\n\n  [another link]: <a/b/c.html> \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
+    "- item\n\n  [another link]: x/y/z.html \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

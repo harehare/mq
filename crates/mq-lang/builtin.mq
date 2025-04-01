@@ -42,7 +42,7 @@ def is_empty(s):
 def test(s, pattern): match(s, pattern) | is_empty() | not();
 
 # Returns value if condition is true, None otherwise
-def select(v, f): if (f): v else: None;
+def select(v, f): if (f): v;
 # Returns array if input is array, None otherwise
 def arrays(a): select(a, is_array(a));
 # Returns markdown if input is markdown, None otherwise

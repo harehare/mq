@@ -1153,6 +1153,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     value: a.to_string(),
                     lang: Some(lang.to_string()),
                     position: None,
+                    meta: None,
+                    fence: true,
                 })
                 .into()),
                 [a, RuntimeValue::None] if !a.is_none() => {
@@ -1160,6 +1162,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         value: a.to_string(),
                         lang: None,
                         position: None,
+                        meta: None,
+                        fence: true,
                     })
                     .into())
                 }
@@ -2812,12 +2816,12 @@ mod tests {
     }
     #[rstest]
     #[case::code(
-        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), position: None }),
+        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), fence: true, meta: None, position: None }),
         ast::Selector::Code(Some("rust".into())),
         true
     )]
     #[case::code_wrong_lang(
-        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), position: None }),
+        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), fence: true, meta: None, position: None }),
         ast::Selector::Code(Some("python".into())),
         false
     )]

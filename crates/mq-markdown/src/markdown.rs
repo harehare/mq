@@ -86,52 +86,8 @@ impl Markdown {
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
-        let root = markdown::to_mdast(
-            content,
-            &markdown::ParseOptions {
-                gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
-                mdx_expression_parse: None,
-                mdx_esm_parse: None,
-                constructs: Constructs {
-                    attention: true,
-                    autolink: false,
-                    block_quote: true,
-                    character_escape: true,
-                    character_reference: true,
-                    code_indented: false,
-                    code_fenced: true,
-                    code_text: true,
-                    definition: true,
-                    frontmatter: true,
-                    gfm_autolink_literal: true,
-                    gfm_label_start_footnote: true,
-                    gfm_footnote_definition: true,
-                    gfm_strikethrough: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    hard_break_escape: true,
-                    hard_break_trailing: true,
-                    heading_atx: true,
-                    heading_setext: true,
-                    html_flow: false,
-                    html_text: false,
-                    label_start_image: true,
-                    label_start_link: true,
-                    label_end: true,
-                    list_item: true,
-                    math_flow: true,
-                    math_text: true,
-                    mdx_esm: true,
-                    mdx_expression_flow: true,
-                    mdx_expression_text: true,
-                    mdx_jsx_flow: true,
-                    mdx_jsx_text: true,
-                    thematic_break: true,
-                },
-            },
-        )
-        .map_err(|e| miette!(e.reason))?;
+        let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx())
+            .map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
         Ok(Self {
@@ -198,6 +154,7 @@ impl Markdown {
             },
         )
         .map_err(|e| miette!(e.reason))?;
+        dbg!(&root);
         let nodes = Node::from_mdast_node(root);
 
         Ok(Self {

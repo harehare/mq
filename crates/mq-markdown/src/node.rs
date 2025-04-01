@@ -106,6 +106,8 @@ pub struct Code {
     pub value: String,
     pub lang: Option<String>,
     pub position: Option<Position>,
+    pub meta: Option<String>,
+    pub fence: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -502,12 +504,37 @@ impl Node {
                 .split('\n')
                 .map(|line| format!("> {}", line))
                 .join("\n"),
-            Self::Code(Code { value, lang, .. }) => {
-                let lang_str = lang.as_deref().unwrap_or("");
-                format!("```{}\n{}\n```", lang_str, value)
+            Self::Code(Code {
+                value,
+                lang,
+                fence,
+                meta,
+                ..
+            }) => {
+                let meta = meta
+                    .as_deref()
+                    .map(|meta| format!(" {}", meta))
+                    .unwrap_or_default();
+
+                match lang {
+                    Some(lang) => format!("```{}{}\n{}\n```", lang, meta, value),
+                    None if fence => {
+                        format!("```{}\n{}\n```", lang.as_deref().unwrap_or(""), value)
+                    }
+                    None => value.lines().map(|line| format!("    {}", line)).join("\n"),
+                }
             }
-            Self::Definition(Definition { label, url, .. }) => {
-                format!("[{}]: {}", label.unwrap_or_default(), url)
+            Self::Definition(Definition {
+                label, url, title, ..
+            }) => {
+                format!(
+                    "[{}]: {}{}",
+                    label.unwrap_or_default(),
+                    url,
+                    title
+                        .map(|title| format!(" \"{}\"", title))
+                        .unwrap_or_default()
+                )
             }
             Self::Delete(Value { values, .. }) => {
                 format!("~~{}~~", Self::values_to_string(values, list_style))
@@ -1291,14 +1318,34 @@ impl Node {
                 value,
                 position,
                 lang,
+                meta,
                 ..
-            }) => {
-                vec![Self::Code(Code {
-                    value,
-                    lang,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
+            }) => match lang {
+                Some(lang) => {
+                    vec![Self::Code(Code {
+                        value,
+                        lang: Some(lang),
+                        position: position.map(|p| p.clone().into()),
+                        meta,
+                        fence: true,
+                    })]
+                }
+                None => {
+                    let line_count = position
+                        .as_ref()
+                        .map(|p| p.end.line - p.start.line + 1)
+                        .unwrap_or_default();
+                    let fence = value.lines().count() != line_count;
+
+                    vec![Self::Code(Code {
+                        value,
+                        lang,
+                        position: position.map(|p| p.clone().into()),
+                        meta,
+                        fence,
+                    })]
+                }
+            },
             mdast::Node::Blockquote(mdast::Blockquote { position, .. }) => {
                 vec![Self::Blockquote(Value {
                     values: Self::mdast_children_to_node(node),
@@ -1723,19 +1770,36 @@ impl Node {
                         .map(|p: &Position| pos.start.line - p.end.line)
                         .unwrap_or_default();
 
-                    let space = if new_line_count > 0 && pos.start.line == pos.end.line {
+                    let space = if new_line_count > 0
+                        && pre_position
+                            .as_ref()
+                            .map(|p| pos.start.line > p.end.line)
+                            .unwrap_or_default()
+                    {
                         " ".repeat(pos.start.column.saturating_sub(1))
                     } else {
                         "".to_string()
                     };
 
                     pre_position = Some(pos);
-                    format!(
-                        "{}{}{}",
-                        "\n".repeat(new_line_count),
-                        space,
-                        value.to_string_with(list_style)
-                    )
+
+                    if space.is_empty() {
+                        format!(
+                            "{}{}",
+                            "\n".repeat(new_line_count),
+                            value.to_string_with(list_style)
+                        )
+                    } else {
+                        format!(
+                            "{}{}",
+                            "\n".repeat(new_line_count),
+                            value
+                                .to_string_with(list_style)
+                                .lines()
+                                .map(|line| format!("{}{}", space, line))
+                                .join("\n")
+                        )
+                    }
                 } else {
                     pre_position = None;
                     value.to_string_with(list_style)
@@ -1780,9 +1844,9 @@ mod tests {
     #[case::image(Node::Image(Image {alt: "test".to_string(), url: "test".to_string(), title: None, position: None }),
            "test".to_string(),
            Node::Image(Image{alt: "test".to_string(), url: "test".to_string(), title: None, position: None }))]
-    #[case::code(Node::Code(Code {value: "test".to_string(), lang: None, position: None }),
+    #[case::code(Node::Code(Code {value: "test".to_string(), lang: None, fence: true, meta: None, position: None }),
            "test".to_string(),
-           Node::Code(Code{value: "test".to_string(), lang: None, position: None }))]
+           Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None }))]
     #[case::footnoteref(Node::FootnoteRef(FootnoteRef {ident: "test".to_string(), label: None, position: None }),
            "test".to_string(),
            Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None }))]
@@ -1969,10 +2033,10 @@ mod tests {
         "new",
         0,
         Node::Text(Text{value: "plain text".to_string(), position: None}))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}),
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}),
         "new",
         0,
-        Node::Code(Code{value: "code".to_string(), lang: None, position: None}))]
+        Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}))]
     #[case(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}),
@@ -2159,9 +2223,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), true, Some("rust".into()))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), false, Some("python".into()))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), true, None)]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), true, Some("rust".into()))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), false, Some("python".into()))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), true, None)]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: false, meta: None, position: None}), true, None)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false, None)]
     fn test_is_code(
         #[case] node: Node,
@@ -2331,9 +2396,12 @@ mod tests {
     #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), ListStyle::Dash, "|:---|---:|:---:|---|")]
     #[case::block_quote(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "> test")]
     #[case::block_quote(Node::Blockquote(Value{values: vec!["test\ntest2".to_string().into()], position: None}), ListStyle::Dash, "> test\n> test2")]
-    #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), position: None}), ListStyle::Dash, "```rust\ncode\n```")]
-    #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), ListStyle::Dash, "```\ncode\n```")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), ListStyle::Dash, "```rust\ncode\n```")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), ListStyle::Dash, "```\ncode\n```")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, fence: false, meta: None, position: None}), ListStyle::Dash, "    code")]
+    #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: Some("meta".to_string()), position: None}), ListStyle::Dash, "```rust meta\ncode\n```")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: None, label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url")]
+    #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: "url".to_string(), title: Some("title".to_string()), label: Some("label".to_string()), position: None}), ListStyle::Dash, "[label]: url \"title\"")]
     #[case::delete(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "~~test~~")]
     #[case::emphasis(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), ListStyle::Dash, "*test*")]
     #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), ListStyle::Dash, "[^id]: label")]
@@ -2482,6 +2550,8 @@ mod tests {
         let node6 = Node::Code(Code {
             value: "code".to_string(),
             lang: None,
+            fence: true,
+            meta: None,
             position: None,
         });
 
@@ -2517,7 +2587,7 @@ mod tests {
     #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "table_header")]
     #[case(Node::TableRow(TableRow{values: vec![], position: None}), "table_row")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}), "table_cell")]
-    #[case(Node::Code(Code{value: "".to_string(), lang: None, position: None}), "code")]
+    #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]
     #[case(Node::Strong(Value{values: vec![], position: None}), "strong")]
     #[case(Node::HorizontalRule{position: None}, "Horizontal_rule")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "".into(), position: None}), "mdx_flow_expression")]
@@ -2549,7 +2619,7 @@ mod tests {
     #[case(Node::Link(Link{url: "test".to_string(), title: None, values: vec![], position: None}), "test")]
     #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: vec![], label: None, position: None}), "test")]
     #[case(Node::Math(Math{value: "test".to_string(), position: None}), "test")]
-    #[case(Node::Code(Code{value: "test".to_string(), lang: None, position: None}), "test")]
+    #[case(Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None}), "test")]
     #[case(Node::Strong(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
@@ -2586,7 +2656,7 @@ mod tests {
     #[case(Node::Link(Link{url: "".to_string(), title: None, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Math(Math{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Code(Code{value: "".to_string(), lang: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Strong(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableRow(TableRow{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2660,7 +2730,7 @@ mod tests {
         Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})
     ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})))]
     #[case(Node::Text(Text{value: "plain text".to_string(), position: None}), 0, None)]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: None, position: None}), 0, None)]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), 0, None)]
     #[case(Node::Html(Html{value: "<div>".to_string(), position: None}), 0, None)]
     fn test_find_at_index(
         #[case] node: Node,
@@ -2697,7 +2767,7 @@ mod tests {
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}),
            Node::Empty)]
-    #[case(Node::Code(Code{value: "test".to_string(), lang: None, position: None}),
+    #[case(Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None}),
            Node::Empty)]
     #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}),
            Node::Empty)]
