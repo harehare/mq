@@ -502,7 +502,7 @@ export const Playground = () => {
       <div className="playground-content">
         <div className="left-panel">
           <div className="editor-container">
-            <div className="editor-header">
+            <div className="editor-header code">
               <h2>Code</h2>
               <div className="editor-actions">
                 <div>

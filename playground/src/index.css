@@ -224,6 +224,10 @@ body {
     flex-wrap: wrap;
   }
 
+  .editor-header.code {
+    height: 100%;
+  }
+
   .editor-header h2 {
     font-size: 0.75rem;
   }
