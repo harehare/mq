@@ -154,7 +154,6 @@ impl Markdown {
             },
         )
         .map_err(|e| miette!(e.reason))?;
-        dbg!(&root);
         let nodes = Node::from_mdast_node(root);
 
         Ok(Self {

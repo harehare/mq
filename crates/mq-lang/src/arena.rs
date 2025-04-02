@@ -89,7 +89,7 @@ mod tests {
     #[rstest]
     #[case(vec![1, 2, 3], 1, true)]
     #[case(vec![1, 2, 3], 4, false)]
-    #[case(vec![], 1, false)]
+    #[case(Vec::new(), 1, false)]
     fn test_contains(#[case] values: Vec<i32>, #[case] value: i32, #[case] expected: bool) {
         let mut arena = Arena::new(values.len());
         for v in values {
@@ -113,7 +113,7 @@ mod tests {
 
     #[rstest]
     #[case(vec![1, 2, 3], 3)]
-    #[case(vec![], 0)]
+    #[case(Vec::new(), 0)]
     fn test_len(#[case] values: Vec<i32>, #[case] expected: usize) {
         let mut arena = Arena::new(values.len());
         for v in values {
@@ -124,7 +124,7 @@ mod tests {
 
     #[rstest]
     #[case(vec![1, 2, 3], false)]
-    #[case(vec![], true)]
+    #[case(Vec::new(), true)]
     fn test_is_empty(#[case] values: Vec<i32>, #[case] expected: bool) {
         let mut arena = Arena::new(values.len());
         for v in values {

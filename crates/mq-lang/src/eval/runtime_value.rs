@@ -3,7 +3,6 @@ use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
     rc::Rc,
-    vec,
 };
 
 use crate::{AstIdent, AstParams, Program, Value, number::Number};
@@ -125,7 +124,7 @@ impl RuntimeValue {
     pub const NONE: RuntimeValue = Self::None;
     pub const TRUE: RuntimeValue = Self::Bool(true);
     pub const FALSE: RuntimeValue = Self::Bool(false);
-    pub const EMPTY_ARRAY: RuntimeValue = Self::Array(vec![]);
+    pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
 
     pub fn name(&self) -> &str {
         match self {
@@ -321,8 +320,11 @@ mod tests {
             "test markdown"
         );
 
-        let function =
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())));
+        let function = RuntimeValue::Function(
+            Vec::new(),
+            Vec::new(),
+            Rc::new(RefCell::new(Env::default())),
+        );
         assert_eq!(function.string(), "function");
 
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("print"));
@@ -336,7 +338,12 @@ mod tests {
         assert_eq!(RuntimeValue::String(String::from("test")).name(), "string");
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default()))).name(),
+            RuntimeValue::Function(
+                Vec::new(),
+                Vec::new(),
+                Rc::new(RefCell::new(Env::default()))
+            )
+            .name(),
             "function"
         );
         assert_eq!(
@@ -368,7 +375,12 @@ mod tests {
         );
         assert_eq!(RuntimeValue::None.text(), "None");
         assert_eq!(
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default()))).text(),
+            RuntimeValue::Function(
+                Vec::new(),
+                Vec::new(),
+                Rc::new(RefCell::new(Env::default()))
+            )
+            .text(),
             "function"
         );
         assert_eq!(
@@ -397,7 +409,7 @@ mod tests {
         assert!(RuntimeValue::String(String::from("test")).is_true());
         assert!(!RuntimeValue::String(String::from("")).is_true());
         assert!(RuntimeValue::Array(vec!["".to_string().into()]).is_true());
-        assert!(!RuntimeValue::Array(vec![]).is_true());
+        assert!(!RuntimeValue::Array(Vec::new()).is_true());
         assert!(
             RuntimeValue::Markdown(
                 mq_markdown::Node::Text(mq_markdown::Text {
@@ -418,11 +430,16 @@ mod tests {
             )
             .is_true()
         );
-        assert!(!RuntimeValue::Array(vec![]).is_true());
+        assert!(!RuntimeValue::Array(Vec::new()).is_true());
         assert!(!RuntimeValue::None.is_true());
         assert!(RuntimeValue::NativeFunction(AstIdent::new("name")).is_true());
         assert!(
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default()))).is_true()
+            RuntimeValue::Function(
+                Vec::new(),
+                Vec::new(),
+                Rc::new(RefCell::new(Env::default()))
+            )
+            .is_true()
         );
     }
 
@@ -430,7 +447,9 @@ mod tests {
     fn test_runtime_value_partial_ord() {
         assert!(RuntimeValue::Number(Number::from(1.0)) < RuntimeValue::Number(Number::from(2.0)));
         assert!(RuntimeValue::String(String::from("a")) < RuntimeValue::String(String::from("b")));
-        assert!(RuntimeValue::Array(vec![]) < RuntimeValue::Array(vec!["a".to_string().into()]));
+        assert!(
+            RuntimeValue::Array(Vec::new()) < RuntimeValue::Array(vec!["a".to_string().into()])
+        );
         assert!(
             RuntimeValue::Markdown(
                 mq_markdown::Node::Text(mq_markdown::Text {
@@ -448,15 +467,18 @@ mod tests {
         );
         assert!(RuntimeValue::Bool(false) < RuntimeValue::Bool(true));
         assert!(
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())))
-                < RuntimeValue::Function(
-                    vec![Rc::new(AstNode {
-                        expr: Rc::new(AstExpr::Ident(AstIdent::new("test"))),
-                        token_id: ArenaId::new(0),
-                    })],
-                    vec![],
-                    Rc::new(RefCell::new(Env::default()))
-                )
+            RuntimeValue::Function(
+                Vec::new(),
+                Vec::new(),
+                Rc::new(RefCell::new(Env::default()))
+            ) < RuntimeValue::Function(
+                vec![Rc::new(AstNode {
+                    expr: Rc::new(AstExpr::Ident(AstIdent::new("test"))),
+                    token_id: ArenaId::new(0),
+                })],
+                Vec::new(),
+                Rc::new(RefCell::new(Env::default()))
+            )
         );
     }
 
@@ -494,8 +516,11 @@ mod tests {
         let markdown = RuntimeValue::Markdown(node, None);
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
-        let function =
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())));
+        let function = RuntimeValue::Function(
+            Vec::new(),
+            Vec::new(),
+            Rc::new(RefCell::new(Env::default())),
+        );
         assert_eq!(format!("{:?}", function), "function0");
 
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("debug"));
@@ -529,10 +554,14 @@ mod tests {
         let none_value = Value::None;
         assert_eq!(RuntimeValue::from(none_value), RuntimeValue::None);
 
-        let fn_value = Value::Function(vec![], vec![]);
+        let fn_value = Value::Function(Vec::new(), Vec::new());
         assert_eq!(
             RuntimeValue::from(fn_value),
-            RuntimeValue::Function(vec![], vec![], Rc::new(RefCell::new(Env::default())))
+            RuntimeValue::Function(
+                Vec::new(),
+                Vec::new(),
+                Rc::new(RefCell::new(Env::default()))
+            )
         );
 
         let ident = AstIdent::new("test_fn");

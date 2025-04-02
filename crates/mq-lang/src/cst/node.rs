@@ -285,9 +285,9 @@ mod tests {
         let node = Node {
             kind,
             token: None,
-            leading_trivia: vec![],
-            trailing_trivia: vec![],
-            children: vec![],
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
+            children: Vec::new(),
         };
         assert_eq!(node.is_token(), expected);
     }
@@ -298,17 +298,17 @@ mod tests {
             kind: NodeKind::Call,
             token: None,
             leading_trivia: vec![Trivia::NewLine],
-            trailing_trivia: vec![],
-            children: vec![],
+            trailing_trivia: Vec::new(),
+            children: Vec::new(),
         };
         assert!(node.has_new_line());
 
         let node_without_newline = Node {
             kind: NodeKind::Call,
             token: None,
-            leading_trivia: vec![],
-            trailing_trivia: vec![],
-            children: vec![],
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
+            children: Vec::new(),
         };
         assert!(!node_without_newline.has_new_line());
     }
@@ -318,24 +318,24 @@ mod tests {
         let token_node = Arc::new(Node {
             kind: NodeKind::Token,
             token: None,
-            leading_trivia: vec![],
-            trailing_trivia: vec![],
-            children: vec![],
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
+            children: Vec::new(),
         });
 
         let call_node = Arc::new(Node {
             kind: NodeKind::Call,
             token: None,
-            leading_trivia: vec![],
-            trailing_trivia: vec![],
-            children: vec![],
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
+            children: Vec::new(),
         });
 
         let parent = Node {
             kind: NodeKind::Def,
             token: None,
-            leading_trivia: vec![],
-            trailing_trivia: vec![],
+            leading_trivia: Vec::new(),
+            trailing_trivia: Vec::new(),
             children: vec![token_node, call_node.clone()],
         };
 

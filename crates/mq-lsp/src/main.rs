@@ -657,7 +657,7 @@ mod tests {
         let show_input_result = backend
             .execute_command(tower_lsp::lsp_types::ExecuteCommandParams {
                 command: "mq/showInputText".to_string(),
-                arguments: vec![],
+                arguments: Vec::new(),
                 work_done_progress_params: Default::default(),
             })
             .await;

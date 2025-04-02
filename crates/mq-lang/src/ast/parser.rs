@@ -1404,7 +1404,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Rc::new(Expr::Def(
                         Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(CompactString::new("name")))))),
-                        vec![],
+                        Vec::new(),
                         vec![Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),

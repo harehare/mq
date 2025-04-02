@@ -207,7 +207,7 @@ mod tests {
     #[case::load1("test".to_string(), Err(ModuleError::InvalidModule))]
     #[case::load2("let test = \"value\"".to_string(), Ok(Some(Module{
         name: "test".to_string(),
-        modules: vec![],
+        modules: Vec::new(),
         vars: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Let(
                 ast::Ident::new_with_token("test", Some(Rc::new(Token{
@@ -227,12 +227,12 @@ mod tests {
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
             }))),
-            vec![],
+            Vec::new(),
             vec![
                 Rc::new(ast::Node{token_id: 2.into(), expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
             ]
             ))})],
-        vars: vec![]
+        vars: Vec::new()
     })))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Some(Module{
         name: "test".to_string(),
@@ -265,7 +265,7 @@ mod tests {
                     false
                 ))})]
             ))})],
-        vars: vec![]
+        vars: Vec::new()
     })))]
     fn test_load(
         token_arena: Rc<RefCell<crate::arena::Arena<Rc<Token>>>>,

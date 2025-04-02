@@ -2783,7 +2783,7 @@ mod tests {
     #[rstest]
     #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
     #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
-    #[case("add", vec![], Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+    #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
     #[case("add", vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(
@@ -2851,7 +2851,7 @@ mod tests {
         true
     )]
     #[case::link(
-        Node::Link(mq_markdown::Link { url: "https://example.com".into(), values: vec![], title: None, position: None }),
+        Node::Link(mq_markdown::Link { url: "https://example.com".into(), values: Vec::new(), title: None, position: None }),
         ast::Selector::Link,
         true
     )]
@@ -2964,7 +2964,7 @@ mod tests {
         true
     )]
     #[case::mdx_jsx_flow_element(
-        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: vec![], children: vec![], position: None }),
+        Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
         ast::Selector::MdxJsxFlowElement,
         true
     )]

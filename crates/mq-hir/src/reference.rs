@@ -28,7 +28,7 @@ mod tests {
 
         assert_eq!(
             hir.references(hir.symbols().collect::<Vec<_>>().first().unwrap().0),
-            vec![]
+            Vec::new()
         );
     }
 }

@@ -276,7 +276,7 @@ fn engine() -> Engine {
       vec![Value::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: "https://github.com".to_string(), title: None, ident: "ident".to_string(), label: None }))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
-      vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: "https://github.com".to_string(), title: None, values: vec![]}))],
+      vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: "https://github.com".to_string(), title: None, values: Vec::new()}))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://github.com\")",
       vec![Value::Markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
@@ -286,10 +286,10 @@ fn engine() -> Engine {
       Ok(vec![Value::FALSE].into()))]
 #[case::nest(".link | update(\"test\")",
       vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
-           mq_markdown::Node::Link(mq_markdown::Link { url: "url".to_string(), title: None, values: vec![], position: None }),
+           mq_markdown::Node::Link(mq_markdown::Link { url: "url".to_string(), title: None, values: Vec::new(), position: None }),
            mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
       ], position: None, depth: 1 }))],
-      Ok(vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: "test".to_string(), title: None, values: vec![], position: None }))].into()))]
+      Ok(vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: "test".to_string(), title: None, values: Vec::new(), position: None }))].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

@@ -257,7 +257,7 @@ mod tests {
             token_id: def_token_id,
             expr: Rc::new(Expr::Def(
                 Ident::new("test_func"),
-                vec![],
+                Vec::new(),
                 vec![stmt1, stmt2],
             )),
         };

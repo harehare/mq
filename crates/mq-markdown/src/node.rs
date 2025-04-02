@@ -1838,9 +1838,9 @@ mod tests {
     #[case::heading(Node::Heading(Heading {depth: 1, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
            Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None }))]
-    #[case::link(Node::Link(Link {url: "test".to_string(), values: vec![], title: None, position: None }),
+    #[case::link(Node::Link(Link {url: "test".to_string(), values: Vec::new(), title: None, position: None }),
            "test".to_string(),
-           Node::Link(Link{url: "test".to_string(), values: vec![], title: None, position: None }))]
+           Node::Link(Link{url: "test".to_string(), values: Vec::new(), title: None, position: None }))]
     #[case::image(Node::Image(Image {alt: "test".to_string(), url: "test".to_string(), title: None, position: None }),
            "test".to_string(),
            Node::Image(Image{alt: "test".to_string(), url: "test".to_string(), title: None, position: None }))]
@@ -1850,9 +1850,9 @@ mod tests {
     #[case::footnoteref(Node::FootnoteRef(FootnoteRef {ident: "test".to_string(), label: None, position: None }),
            "test".to_string(),
            Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None }))]
-    #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), values: vec![], position: None }),
+    #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), values: Vec::new(), position: None }),
            "test".to_string(),
-           Node::Footnote(Footnote{ident: "test".to_string(), values: vec![], position: None }))]
+           Node::Footnote(Footnote{ident: "test".to_string(), values: Vec::new(), position: None }))]
     #[case::list(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
            Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None }))]
@@ -1917,27 +1917,27 @@ mod tests {
            Node::MdxJsEsm(MdxJsEsm{value: "updated".into(), position: None}))]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec!["test".to_string().into()],
             position: None
         }),
         "updated".to_string(),
         Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec!["updated".to_string().into()],
             position: None
         }))]
     #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
             name: Some("span".into()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec!["test".to_string().into()],
             position: None
         }),
         "updated".to_string(),
         Node::MdxJsxTextElement(MdxJsxTextElement{
             name: Some("span".into()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec!["updated".to_string().into()],
             position: None
         }))]
@@ -2062,7 +2062,7 @@ mod tests {
         ], label: None, position: None}))]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "first".to_string(), position: None}),
                 Node::Text(Text{value: "second".to_string(), position: None})
@@ -2073,7 +2073,7 @@ mod tests {
         0,
         Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "new".to_string(), position: None}),
                 Node::Text(Text{value: "second".to_string(), position: None})
@@ -2082,7 +2082,7 @@ mod tests {
         }))]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "first".to_string(), position: None}),
                 Node::Text(Text{value: "second".to_string(), position: None})
@@ -2093,7 +2093,7 @@ mod tests {
         1,
         Node::MdxJsxFlowElement(MdxJsxFlowElement{
             name: Some("div".to_string()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "first".to_string(), position: None}),
                 Node::Text(Text{value: "new".to_string(), position: None})
@@ -2102,7 +2102,7 @@ mod tests {
         }))]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{
             name: Some("span".into()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "first".to_string(), position: None}),
                 Node::Text(Text{value: "second".to_string(), position: None})
@@ -2113,7 +2113,7 @@ mod tests {
         0,
         Node::MdxJsxTextElement(MdxJsxTextElement{
             name: Some("span".into()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "new".to_string(), position: None}),
                 Node::Text(Text{value: "second".to_string(), position: None})
@@ -2122,7 +2122,7 @@ mod tests {
         }))]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{
             name: Some("span".into()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "first".to_string(), position: None}),
                 Node::Text(Text{value: "second".to_string(), position: None})
@@ -2133,7 +2133,7 @@ mod tests {
         1,
         Node::MdxJsxTextElement(MdxJsxTextElement{
             name: Some("span".into()),
-            attributes: vec![],
+            attributes: Vec::new(),
             children: vec![
                 Node::Text(Text{value: "first".to_string(), position: None}),
                 Node::Text(Text{value: "new".to_string(), position: None})
@@ -2195,14 +2195,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Link(Link{url: "test".to_string(), values: vec![], title: None, position: None}), true)]
+    #[case(Node::Link(Link{url: "test".to_string(), values: Vec::new(), title: None, position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_link(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_link(), expected);
     }
 
     #[rstest]
-    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: vec![], label: None, position: None}), true)]
+    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: Vec::new(), label: None, position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_link_ref(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_link_ref(), expected);
@@ -2293,7 +2293,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![], position: None}), true)]
+    #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: Vec::new(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_footnote(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_footnote(), expected);
@@ -2363,14 +2363,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_jsx_flow_element(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_jsx_flow_element(), expected);
     }
 
     #[rstest]
-    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), true)]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_mdx_jsx_text_element(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_mdx_jsx_text_element(), expected);
@@ -2445,13 +2445,13 @@ mod tests {
                 value: Some(MdxAttributeValue::Literal("container".into()))
             })
         ],
-        children: vec![],
+        children: Vec::new(),
         position: None
     }), ListStyle::Dash, "<div className=\"container\" />")]
     #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
         name: Some("div".to_string()),
-        attributes: vec![],
-        children: vec![],
+        attributes: Vec::new(),
+        children: Vec::new(),
         position: None
     }), ListStyle::Dash, "<div />")]
     #[case::mdx_jsx_text_element(Node::MdxJsxTextElement(MdxJsxTextElement{
@@ -2560,18 +2560,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Blockquote(Value{values: vec![], position: None}), "blockquote")]
+    #[case(Node::Blockquote(Value{values: Vec::new(), position: None}), "blockquote")]
     #[case(Node::Break{position: None}, "break")]
     #[case(Node::Definition(Definition{ident: "".to_string(), url: "".to_string(), title: None, label: None, position: None}), "definition")]
-    #[case(Node::Delete(Value{values: vec![], position: None}), "delete")]
-    #[case(Node::Heading(Heading{depth: 1, values: vec![], position: None}), "h1")]
-    #[case(Node::Heading(Heading{depth: 2, values: vec![], position: None}), "h2")]
-    #[case(Node::Heading(Heading{depth: 3, values: vec![], position: None}), "h3")]
-    #[case(Node::Heading(Heading{depth: 4, values: vec![], position: None}), "h4")]
-    #[case(Node::Heading(Heading{depth: 5, values: vec![], position: None}), "h5")]
-    #[case(Node::Heading(Heading{depth: 6, values: vec![], position: None}), "h")]
-    #[case(Node::Emphasis(Value{values: vec![], position: None}), "emphasis")]
-    #[case(Node::Footnote(Footnote{ident: "".to_string(), values: vec![], position: None}), "footnote")]
+    #[case(Node::Delete(Value{values: Vec::new(), position: None}), "delete")]
+    #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: None}), "h1")]
+    #[case(Node::Heading(Heading{depth: 2, values: Vec::new(), position: None}), "h2")]
+    #[case(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "h3")]
+    #[case(Node::Heading(Heading{depth: 4, values: Vec::new(), position: None}), "h4")]
+    #[case(Node::Heading(Heading{depth: 5, values: Vec::new(), position: None}), "h5")]
+    #[case(Node::Heading(Heading{depth: 6, values: Vec::new(), position: None}), "h")]
+    #[case(Node::Emphasis(Value{values: Vec::new(), position: None}), "emphasis")]
+    #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: None}), "footnote")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: None}), "footnoteref")]
     #[case(Node::Html(Html{value: "".to_string(), position: None}), "html")]
     #[case(Node::Yaml(Yaml{value: "".to_string(), position: None}), "yaml")]
@@ -2580,19 +2580,19 @@ mod tests {
     #[case(Node::ImageRef(ImageRef{alt: "".to_string(), ident: "".to_string(), label: None, position: None}), "image_ref")]
     #[case(Node::CodeInline(CodeInline{value: "".into(), position: None}), "code_inline")]
     #[case(Node::MathInline(MathInline{value: "".into(), position: None}), "math_inline")]
-    #[case(Node::Link(Link{url: "".to_string(), title: None, values: vec![], position: None}), "link")]
-    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: None}), "link_ref")]
+    #[case(Node::Link(Link{url: "".to_string(), title: None, values: Vec::new(), position: None}), "link")]
+    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![], position: None}), "list")]
-    #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "table_header")]
-    #[case(Node::TableRow(TableRow{values: vec![], position: None}), "table_row")]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}), "table_cell")]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, values: Vec::new(), position: None}), "list")]
+    #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: None}), "table_header")]
+    #[case(Node::TableRow(TableRow{values: Vec::new(), position: None}), "table_row")]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]
-    #[case(Node::Strong(Value{values: vec![], position: None}), "strong")]
+    #[case(Node::Strong(Value{values: Vec::new(), position: None}), "strong")]
     #[case(Node::HorizontalRule{position: None}, "Horizontal_rule")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "".into(), position: None}), "mdx_flow_expression")]
-    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_flow_element")]
-    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: vec![], children: vec![], position: None}), "mdx_jsx_text_element")]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_flow_element")]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_text_element")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "".into(), position: None}), "mdx_text_expression")]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "".into(), position: None}), "mdx_js_esm")]
     #[case(Node::Text(Text{value: "".to_string(), position: None}), "text")]
@@ -2616,8 +2616,8 @@ mod tests {
     #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test".to_string(), label: None, position: None}), "test")]
     #[case(Node::CodeInline(CodeInline{value: "test".into(), position: None}), "test")]
     #[case(Node::MathInline(MathInline{value: "test".into(), position: None}), "test")]
-    #[case(Node::Link(Link{url: "test".to_string(), title: None, values: vec![], position: None}), "test")]
-    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: vec![], label: None, position: None}), "test")]
+    #[case(Node::Link(Link{url: "test".to_string(), title: None, values: Vec::new(), position: None}), "test")]
+    #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: Vec::new(), label: None, position: None}), "test")]
     #[case(Node::Math(Math{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None}), "test")]
     #[case(Node::Strong(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
@@ -2625,11 +2625,11 @@ mod tests {
     #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
     #[case(Node::Break{position: None}, "")]
     #[case(Node::HorizontalRule{position: None}, "")]
-    #[case(Node::TableHeader(TableHeader{align: vec![], position: None}), "")]
+    #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: None}), "")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), "test")]
-    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("name".to_string()), attributes: vec![], children: vec![Node::Text(Text{value: "test".to_string(), position: None})],  position: None}), "test")]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("name".to_string()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "test".to_string(), position: None})],  position: None}), "test")]
     #[case(Node::Definition(Definition{ident: "test".to_string(), url: "url".to_string(), title: None, label: None, position: None}), "url")]
     #[case(Node::Fragment(Fragment {values: vec![Node::Text(Text{value: "test".to_string(), position: None})]}), "test")]
     fn test_value(#[case] node: Node, #[case] expected: &str) {
@@ -2639,12 +2639,12 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), None)]
     #[case(Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Blockquote(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Delete(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Heading(Heading{depth: 1, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Emphasis(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Footnote(Footnote{ident: "".to_string(), values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Blockquote(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Delete(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Emphasis(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Html(Html{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Yaml(Yaml{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2653,23 +2653,23 @@ mod tests {
     #[case(Node::ImageRef(ImageRef{alt: "".to_string(), ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::CodeInline(CodeInline{value: "".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MathInline(MathInline{value: "".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Link(Link{url: "".to_string(), title: None, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: vec![], label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Link(Link{url: "".to_string(), title: None, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Math(Math{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Strong(Value{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::TableRow(TableRow{values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::TableHeader(TableHeader{align: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Strong(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::TableRow(TableRow{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: vec![], children: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Definition(Definition{ident: "".to_string(), url: "".to_string(), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Fragment(Fragment{values: vec![]}), None)]
+    #[case(Node::Fragment(Fragment{values: Vec::new()}), None)]
     #[case(Node::Fragment(Fragment{values: vec![
         Node::Text(Text{value: "test1".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}),
         Node::Text(Text{value: "test2".to_string(), position: Some(Position{start: Point{line: 1, column: 6}, end: Point{line: 1, column: 10}})})
@@ -2726,9 +2726,9 @@ mod tests {
         Node::Text(Text{value: "cell content".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "cell content".to_string(), position: None})))]
     #[case(Node::TableRow(TableRow{values: vec![
-        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
-        Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})
-    ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})))]
+        Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}),
+        Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None})
+    ], position: None}), 1, Some(Node::TableCell(TableCell{column: 1, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None})))]
     #[case(Node::Text(Text{value: "plain text".to_string(), position: None}), 0, None)]
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), 0, None)]
     #[case(Node::Html(Html{value: "<div>".to_string(), position: None}), 0, None)]
@@ -2946,7 +2946,7 @@ mod tests {
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new1".to_string(), position: None}),
-            Node::Fragment(Fragment{values: vec![]})
+            Node::Fragment(Fragment{values: Vec::new()})
         ]}),
         Node::List(List{index: 0, level: 0, checked: None, values: vec![
             Node::Text(Text{value: "new1".to_string(), position: None}),

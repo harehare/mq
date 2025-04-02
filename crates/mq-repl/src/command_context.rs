@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn test_completions() {
         let engine = mq_lang::Engine::default();
-        let ctx = CommandContext::new(engine, vec![]);
+        let ctx = CommandContext::new(engine, Vec::new());
 
         let completions = ctx.completions("", 0);
         assert!(!completions.is_empty(), "Completions should not be empty");
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_execute_env() {
         let engine = mq_lang::Engine::default();
-        let mut ctx = CommandContext::new(engine, vec![]);
+        let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute(":env TEST_VAR test_value");
         assert!(matches!(result, Ok(CommandOutput::None)));
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn test_execute_help() {
         let engine = mq_lang::Engine::default();
-        let mut ctx = CommandContext::new(engine, vec![]);
+        let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute(":help").unwrap();
         if let CommandOutput::String(help_strings) = result {
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_execute_vars() {
-        let mut ctx = CommandContext::new(mq_lang::Engine::default(), vec![]);
+        let mut ctx = CommandContext::new(mq_lang::Engine::default(), Vec::new());
 
         ctx.execute("let x = 42 | let x2 = def fun1(x): add(x, 2); | def fun(): 1;")
             .unwrap();
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_execute_version() {
         let engine = mq_lang::Engine::default();
-        let mut ctx = CommandContext::new(engine, vec![]);
+        let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute(":version").unwrap();
         if let CommandOutput::String(version) = result {

@@ -84,7 +84,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SymbolKind::Function(vec![]), true)]
+    #[case(SymbolKind::Function(Vec::new()), true)]
     #[case(SymbolKind::Function(vec![CompactString::from("param")]), true)]
     #[case(SymbolKind::Variable, false)]
     #[case(SymbolKind::Call, false)]
@@ -95,7 +95,7 @@ mod tests {
 
     #[rstest]
     #[case(SymbolKind::Variable, true)]
-    #[case(SymbolKind::Function(vec![]), false)]
+    #[case(SymbolKind::Function(Vec::new()), false)]
     #[case(SymbolKind::Parameter, false)]
     fn test_is_variable(#[case] kind: SymbolKind, #[case] expected: bool) {
         let symbol = create_test_symbol(kind, Some("test"));
@@ -105,7 +105,7 @@ mod tests {
     #[rstest]
     #[case(SymbolKind::Parameter, true)]
     #[case(SymbolKind::Variable, false)]
-    #[case(SymbolKind::Function(vec![]), false)]
+    #[case(SymbolKind::Function(Vec::new()), false)]
     fn test_is_parameter(#[case] kind: SymbolKind, #[case] expected: bool) {
         let symbol = create_test_symbol(kind, Some("test"));
         assert_eq!(symbol.is_parameter(), expected);

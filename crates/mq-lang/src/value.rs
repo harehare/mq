@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_values_len_and_empty() {
-        let empty_values = Values(vec![]);
+        let empty_values = Values(Vec::new());
         assert_eq!(empty_values.len(), 0);
         assert!(empty_values.is_empty());
 
@@ -428,7 +428,7 @@ mod tests {
     #[case(Value::Markdown(Node::Text(Text {
                value: "updated".to_string(),
                position: None,
-           })), Value::Function(vec![], vec![]),
+           })), Value::Function(Vec::new(), Vec::new()),
            Value::Markdown(Node::Text(Text {
                value: "updated".to_string(),
                position: None,

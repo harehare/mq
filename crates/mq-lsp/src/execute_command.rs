@@ -88,7 +88,7 @@ mod tests {
         let input = "# Test\nThis is a test".to_string();
         let params = ExecuteCommandParams {
             command: "mq/runSelectedText".to_string(),
-            arguments: vec![],
+            arguments: Vec::new(),
             work_done_progress_params: Default::default(),
         };
 
@@ -101,7 +101,7 @@ mod tests {
         let input = "# Test\nThis is a test".to_string();
         let params = ExecuteCommandParams {
             command: "unsupported/command".to_string(),
-            arguments: vec![],
+            arguments: Vec::new(),
             work_done_progress_params: Default::default(),
         };
 
