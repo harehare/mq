@@ -68,7 +68,7 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     "- item\n\n  [another link]: x/y/z.html \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update", "--link-title-style", "parentheses", "--link-url-style", "angle-brackets", "if (and(or(.link, .link_ref, .definition), matches_url(\"a/b/c.html\"))):\nupdate(\"x/y/z.html\")"],
+    vec!["--unbuffered", "--update", "--link-title-style", "paren", "--link-url-style", "angle", "if (and(or(.link, .link_ref, .definition), matches_url(\"a/b/c.html\"))):\nupdate(\"x/y/z.html\")"],
     "- item\n\n  [another link]: <a/b/c.html> (this  is a title)\n",
     "- item\n\n  [another link]: <x/y/z.html> (this  is a title)\n",
 )]
