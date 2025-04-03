@@ -24,8 +24,17 @@ export interface Diagnostic {
   message: string,
 }
 
+export interface RunOptions {
+    isMdx: boolean,
+    isUpdate: boolean,
+    listStyle: 'dash' | 'plus' | 'star' | null,
+    linkTitleStyle: 'double' | 'single' | 'paren' | null,
+    linkUrlStyle: 'angle' | 'none' | null,
+}
+
 export function definedValues(code: string): ReadonlyArray<DefinedValue>;
 export function diagnostics(code: string): ReadonlyArray<Diagnostic>;
+export function runScript(code: string, content: string, options: RunOptions): string;
 "#;
 
 #[derive(Serialize, Deserialize)]
@@ -54,54 +63,159 @@ pub struct Diagnostic {
     message: String,
 }
 
-#[wasm_bindgen(js_name=runScript)]
-pub fn run_script(
-    code: &str,
-    content: &str,
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[wasm_bindgen(js_name=RunOptions, skip_typescript)]
+struct RunOptions {
     is_mdx: bool,
     is_update: bool,
-) -> Result<String, JsValue> {
+    list_style: Option<ListStyle>,
+    link_title_style: Option<TitleSurroundStyle>,
+    link_url_style: Option<UrlSurroundStyle>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ListStyle {
+    #[serde(rename = "dash")]
+    Dash,
+    #[serde(rename = "plus")]
+    Plus,
+    #[serde(rename = "star")]
+    Star,
+}
+
+impl FromStr for ListStyle {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "dash" => Ok(Self::Dash),
+            "plus" => Ok(Self::Plus),
+            "star" => Ok(Self::Plus),
+            _ => Err(format!("Unknown list style: {}", s)),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitleSurroundStyle {
+    #[serde(rename = "double")]
+    Double,
+    #[serde(rename = "single")]
+    Single,
+    #[serde(rename = "paren")]
+    Paren,
+}
+
+impl FromStr for TitleSurroundStyle {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "double" => Ok(Self::Double),
+            "single" => Ok(Self::Single),
+            "paren" => Ok(Self::Paren),
+            _ => Err(format!("Unknown title surround style: {}", s)),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UrlSurroundStyle {
+    #[serde(rename = "angle")]
+    Angle,
+    #[serde(rename = "none")]
+    None,
+}
+
+impl FromStr for UrlSurroundStyle {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "angle" => Ok(Self::Angle),
+            "none" => Ok(Self::None),
+            _ => Err(format!("Unknown URL surround style: {}", s)),
+        }
+    }
+}
+
+#[wasm_bindgen(js_name=runScript, skip_typescript)]
+pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
+    let options: RunOptions = serde_wasm_bindgen::from_value(options)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
+
+    let is_mdx = options.is_mdx;
+    let is_update = options.is_update;
     let mut engine = mq_lang::Engine::default();
+
     engine.load_builtin_module().unwrap();
-    let markdown = if is_mdx {
+
+    let mut markdown = if is_mdx {
         mq_markdown::Markdown::from_mdx_str(content)
     } else {
         mq_markdown::Markdown::from_str(content)
-    };
+    }
+    .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    markdown
-        .map_err(|e| JsValue::from_str(&e.to_string()))
-        .and_then(move |markdown| {
-            engine
-                .eval(
-                    code,
-                    markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
-                )
-                .map_err(|e| JsValue::from_str(&format!("{}", &e.cause)))
-                .map(|result_values| {
-                    let values = if is_update {
-                        let values: mq_lang::Values = markdown
-                            .nodes
-                            .into_iter()
-                            .map(mq_lang::Value::from)
-                            .collect::<Vec<_>>()
-                            .into();
-                        values.update_with(result_values)
-                    } else {
-                        result_values
-                    };
+    markdown.set_options(mq_markdown::RenderOptions {
+        list_style: options
+            .list_style
+            .map(|style| match style {
+                ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                ListStyle::Star => mq_markdown::ListStyle::Star,
+            })
+            .unwrap_or_default(),
+        link_title_style: options
+            .link_title_style
+            .map(|style| match style {
+                TitleSurroundStyle::Double => mq_markdown::TitleSurroundStyle::Double,
+                TitleSurroundStyle::Single => mq_markdown::TitleSurroundStyle::Single,
+                TitleSurroundStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
+            })
+            .unwrap_or_default(),
+        link_url_style: options
+            .link_url_style
+            .map(|style| match style {
+                UrlSurroundStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
+                UrlSurroundStyle::None => mq_markdown::UrlSurroundStyle::None,
+            })
+            .unwrap_or_default(),
+    });
 
-                    let markdown = mq_markdown::Markdown::new(
-                        values
-                            .into_iter()
-                            .map(|runtime_value| match runtime_value {
-                                mq_lang::Value::Markdown(node) => node.clone(),
-                                _ => runtime_value.to_string().into(),
-                            })
-                            .collect(),
-                    );
-                    markdown.to_string()
-                })
+    engine
+        .eval(
+            code,
+            markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
+        )
+        .map_err(|e| JsValue::from_str(&format!("{}", &e.cause)))
+        .map(|result_values| {
+            let values = if is_update {
+                let values: mq_lang::Values = markdown
+                    .nodes
+                    .into_iter()
+                    .map(mq_lang::Value::from)
+                    .collect::<Vec<_>>()
+                    .into();
+                values.update_with(result_values)
+            } else {
+                result_values
+            };
+
+            let markdown = mq_markdown::Markdown::new(
+                values
+                    .into_iter()
+                    .map(|runtime_value| match runtime_value {
+                        mq_lang::Value::Markdown(node) => node.clone(),
+                        _ => runtime_value.to_string().into(),
+                    })
+                    .collect(),
+            );
+            markdown.to_string()
         })
 }
 
@@ -191,8 +305,14 @@ mod tests {
         let result = run_script(
             "downcase() | ltrimstr(\"hello\") | upcase() | trim()",
             "Hello world",
-            false,
-            true,
+            serde_wasm_bindgen::to_value(&RunOptions {
+                is_mdx: false,
+                is_update: true,
+                list_style: None,
+                link_title_style: None,
+                link_url_style: None,
+            })
+            .unwrap(),
         );
         assert_eq!(result.unwrap(), "WORLD\n");
     }
@@ -200,7 +320,21 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_run_invalid_syntax() {
-        assert!(run_script("invalid syntax", "test", false, true).is_err());
+        assert!(
+            run_script(
+                "invalid syntax",
+                "test",
+                serde_wasm_bindgen::to_value(&RunOptions {
+                    is_mdx: false,
+                    is_update: true,
+                    list_style: None,
+                    link_title_style: None,
+                    link_url_style: None,
+                })
+                .unwrap()
+            )
+            .is_err()
+        );
     }
 
     #[allow(unused)]

@@ -2203,8 +2203,8 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{
-            url: "https://example.com".to_string(),
-            title: Some("Link Title".to_string()),
+            url: mq_markdown::Url::new("https://example.com".to_string()),
+            title: Some(mq_markdown::Title::new("Link Title".to_string())),
             values: vec!["Link Value".to_string().into()],
             position: None
         }), None)]))]
@@ -2447,12 +2447,12 @@ mod tests {
             ],
             position: None
         }), None)]))]
-    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
+    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("https://example.com".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["Link".to_string().into()], position: None}), None)],
         vec![
              ast_call("get_title", Vec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "title".to_string(), position: None}), None)]))]
-    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: None, values: vec!["Link".to_string().into()], position: None}), None)],
+    #[case::get_title(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("https://example.com".to_string()), title: None, values: vec!["Link".to_string().into()], position: None}), None)],
         vec![
              ast_call("get_title", Vec::new())
         ],
@@ -2712,7 +2712,7 @@ mod tests {
              ast_call("to_html", Vec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<p><em>Italic</em></p>".to_string(), position: None}), None)]))]
-    #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("Link Title".to_string()), values: vec!["Link Title".to_string().into()], position: None}), None)],
+    #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("https://example.com".to_string()), title: Some(mq_markdown::Title::new("Link Title".to_string())), values: vec!["Link Title".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
@@ -2835,7 +2835,7 @@ mod tests {
               ast_call("to_md_name", Vec::new()),
         ],
         Ok(vec![RuntimeValue::NONE]))]
-    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{ident: "ident".into(), url: "url".to_string(), title: None, label: None, position: None}), None)],
+    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{ident: "ident".into(), url: mq_markdown::Url::new("url".to_string()), title: None, label: None, position: None}), None)],
             vec![
                  ast_call("set_ref", vec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("definition-ref".to_string())))
@@ -2844,7 +2844,7 @@ mod tests {
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{
                 ident: "definition-ref".to_string(),
                 label: None,
-                url: "url".to_string(),
+                url: mq_markdown::Url::new("url".to_string()),
                 title: None,
                 position: None
             }), None)]))]
@@ -2915,19 +2915,19 @@ mod tests {
                  ])
             ],
             Ok(vec![RuntimeValue::NONE]))]
-    #[case::set_ref_with_empty_id(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
+    #[case::set_ref_with_empty_id(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("https://example.com".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["Link".to_string().into()], position: None}), None)],
         vec![
              ast_call("set_ref", vec![
                  ast_node(ast::Expr::Literal(ast::Literal::String("".to_string())))
              ])
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)]))]
-    #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{url: "https://example.com".to_string(), ident: "ident".to_string(), label: None, title: Some("title".to_string()), position: None}), None)],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("https://example.com".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["Link".to_string().into()], position: None}), None)]))]
+    #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{url: mq_markdown::Url::new("https://example.com".to_string()), ident: "ident".to_string(), label: None, title: Some(mq_markdown::Title::new("title".to_string())), position: None}), None)],
         vec![
              ast_call("get_url", Vec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "https://example.com".to_string(), position: None}), None)]))]
-    #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: "https://example.com".to_string(), title: Some("title".to_string()), values: vec!["Link".to_string().into()], position: None}), None)],
+    #[case::get_url_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("https://example.com".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["Link".to_string().into()], position: None}), None)],
         vec![
              ast_call("get_url", Vec::new())
         ],

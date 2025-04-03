@@ -61,6 +61,21 @@ pub enum ListStyle {
     Star,
 }
 
+#[derive(Debug, Clone, PartialEq, Default, clap::ValueEnum)]
+pub enum LinkTitleStyle {
+    #[default]
+    Double,
+    Single,
+    Paren,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, clap::ValueEnum)]
+pub enum LinkUrlStyle {
+    #[default]
+    None,
+    Angle,
+}
+
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
     /// load filter from the file
@@ -113,6 +128,14 @@ struct OutputArgs {
     /// Set the list style for markdown output
     #[clap(long, value_enum, default_value_t = ListStyle::Dash)]
     list_style: ListStyle,
+
+    /// Set the link title surround style for markdown output
+    #[clap(long, value_enum, default_value_t = LinkTitleStyle::Double)]
+    link_title_style: LinkTitleStyle,
+
+    /// Set the link URL surround style for markdown links
+    #[clap(long, value_enum, default_value_t = LinkUrlStyle::None)]
+    link_url_style: LinkUrlStyle,
 
     /// Output to the specified file
     #[clap(short = 'o', long = "output", value_name = "FILE")]
@@ -392,6 +415,15 @@ impl Cli {
                 ListStyle::Dash => mq_markdown::ListStyle::Dash,
                 ListStyle::Plus => mq_markdown::ListStyle::Plus,
                 ListStyle::Star => mq_markdown::ListStyle::Star,
+            },
+            link_title_style: match self.output.link_title_style.clone() {
+                LinkTitleStyle::Double => mq_markdown::TitleSurroundStyle::Double,
+                LinkTitleStyle::Single => mq_markdown::TitleSurroundStyle::Single,
+                LinkTitleStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
+            },
+            link_url_style: match self.output.link_url_style.clone() {
+                LinkUrlStyle::None => mq_markdown::UrlSurroundStyle::None,
+                LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
             },
         });
 

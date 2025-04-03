@@ -13,12 +13,12 @@
 //!
 mod markdown;
 mod node;
-pub use markdown::{Markdown, RenderOptions, to_html};
+pub use markdown::{Markdown, to_html};
 pub use node::{
     Code, CodeInline, Definition, Footnote, FootnoteRef, Fragment, Heading, Html, Image, ImageRef,
     Link, LinkRef, List, ListStyle, Math, MathInline, MdxFlowExpression, MdxJsEsm,
-    MdxJsxFlowElement, MdxTextExpression, Node, Point, Position, TableCell, TableRow, Text, Toml,
-    Value, Yaml,
+    MdxJsxFlowElement, MdxTextExpression, Node, Point, Position, RenderOptions, TableCell,
+    TableRow, Text, Title, TitleSurroundStyle, Toml, Url, UrlSurroundStyle, Value, Yaml,
 };
 
 #[cfg(test)]

@@ -262,7 +262,15 @@ export const Playground = () => {
     }
 
     try {
-      setResult(await runScript(code, markdown, isMdx, isUpdate));
+      setResult(
+        await runScript(code, markdown, {
+          isMdx,
+          isUpdate,
+          listStyle: null,
+          linkTitleStyle: null,
+          linkUrlStyle: null,
+        })
+      );
     } catch (e) {
       setResult((e as Error).toString());
     }

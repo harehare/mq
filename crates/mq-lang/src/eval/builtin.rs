@@ -1217,12 +1217,12 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::String(value),
                     RuntimeValue::String(title),
                 ] => Ok(mq_markdown::Node::Link(mq_markdown::Link {
-                    url: url.to_string(),
+                    url: mq_markdown::Url::new(url.to_string()),
                     values: vec![value.to_string().into()],
                     title: if title.is_empty() {
                         None
                     } else {
-                        Some(title.into())
+                        Some(mq_markdown::Title::new(title.into()))
                     },
                     position: None,
                 })
@@ -1426,11 +1426,16 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         _,
                     )
                     | RuntimeValue::Markdown(
-                        mq_markdown::Node::Image(mq_markdown::Image { title, .. }),
-                        _,
-                    )
-                    | RuntimeValue::Markdown(
                         mq_markdown::Node::Link(mq_markdown::Link { title, .. }),
+                        _,
+                    ),
+                ] => title
+                    .as_ref()
+                    .map(|t| Ok(RuntimeValue::String(t.to_value())))
+                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                [
+                    RuntimeValue::Markdown(
+                        mq_markdown::Node::Image(mq_markdown::Image { title, .. }),
                         _,
                     ),
                 ] => title
@@ -1445,13 +1450,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("get_url"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _)] => {
-                    Ok(def.url.to_owned().into())
+                    Ok(def.url.to_value().into())
+                }
+                [RuntimeValue::Markdown(mq_markdown::Node::Link(link), _)] => {
+                    Ok(link.url.to_value().into())
                 }
                 [RuntimeValue::Markdown(mq_markdown::Node::Image(image), _)] => {
                     Ok(image.url.to_owned().into())
-                }
-                [RuntimeValue::Markdown(mq_markdown::Node::Link(link), _)] => {
-                    Ok(link.url.to_owned().into())
                 }
                 _ => Ok(RuntimeValue::None),
             }),
@@ -2851,7 +2856,7 @@ mod tests {
         true
     )]
     #[case::link(
-        Node::Link(mq_markdown::Link { url: "https://example.com".into(), values: Vec::new(), title: None, position: None }),
+        Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("https://example.com".into()), values: Vec::new(), title: None, position: None }),
         ast::Selector::Link,
         true
     )]
@@ -2959,7 +2964,7 @@ mod tests {
         true
     )]
     #[case::definition(
-        Node::Definition(mq_markdown::Definition { ident: "id".to_string(), url: "url".into(), label: None, title: None, position: None }),
+        Node::Definition(mq_markdown::Definition { ident: "id".to_string(), url: mq_markdown::Url::new("url".into()), label: None, title: None, position: None }),
         ast::Selector::Definition,
         true
     )]

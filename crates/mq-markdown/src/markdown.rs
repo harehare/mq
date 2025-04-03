@@ -4,7 +4,7 @@ use itertools::Itertools;
 use markdown::Constructs;
 use miette::miette;
 
-use crate::node::{ListStyle, Node, Position};
+use crate::node::{Node, Position, RenderOptions};
 
 #[derive(Debug, Clone)]
 pub struct Markdown {
@@ -28,7 +28,7 @@ impl fmt::Display for Markdown {
             .nodes
             .iter()
             .filter_map(|node| {
-                let value = node.to_string_with(&self.options.list_style);
+                let value = node.to_string_with(&self.options);
 
                 if value.is_empty() || value == "\n" {
                     pre_position = None;
@@ -66,11 +66,6 @@ impl fmt::Display for Markdown {
             }
         )
     }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct RenderOptions {
-    pub list_style: ListStyle,
 }
 
 impl Markdown {
@@ -171,6 +166,8 @@ pub fn to_html(s: &str) -> String {
 mod tests {
     use rstest::rstest;
 
+    use crate::{ListStyle, TitleSurroundStyle, UrlSurroundStyle};
+
     use super::*;
 
     #[rstest]
@@ -259,10 +256,11 @@ mod tests {
     #[test]
     fn test_render_options() {
         let mut md = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
-        assert_eq!(md.options.list_style, ListStyle::default());
+        assert_eq!(md.options, RenderOptions::default());
 
         md.set_options(RenderOptions {
             list_style: ListStyle::Plus,
+            ..RenderOptions::default()
         });
         assert_eq!(md.options.list_style, ListStyle::Plus);
 
@@ -302,6 +300,8 @@ mod tests {
 
         md.set_options(RenderOptions {
             list_style: ListStyle::Star,
+            link_title_style: TitleSurroundStyle::default(),
+            link_url_style: UrlSurroundStyle::default(),
         });
 
         let formatted = md.to_string();
