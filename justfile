@@ -9,6 +9,10 @@ run *args:
 start-lsp:
     cargo watch -x run
 
+[working-directory: 'playground']
+playground:
+    npm run dev
+
 [working-directory: 'crates/mq-lang']
 bench: build-bench
     cargo codspeed run

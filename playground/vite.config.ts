@@ -12,4 +12,7 @@ export default defineConfig({
       },
     },
   },
+  server: {
+    open: "/playground.html",
+  },
 });
