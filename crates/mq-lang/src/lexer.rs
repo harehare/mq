@@ -218,10 +218,10 @@ fn interpolation_ident(input: Span) -> IResult<Span, Span> {
     delimited(tag("${"), take_until("}"), char('}')).parse(input)
 }
 
-fn string_segment(input: Span) -> IResult<Span, StringSegment> {
+fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
     alt((
         map(
-            |input| {
+            |input: Span<'a>| {
                 let (span, start) = position(input)?;
                 let (span, ident) = interpolation_ident(span)?;
                 let (span, end) = position(span)?;
@@ -266,6 +266,24 @@ fn string_segment(input: Span) -> IResult<Span, StringSegment> {
                 ))
             },
             |(text, range)| StringSegment::Text(text.to_string(), range),
+        ),
+        map(
+            |input: Span<'a>| {
+                let (span, start) = position(input)?;
+                let (span, _) = tag("$$")(span)?;
+                let (span, end) = position(span)?;
+                Ok((
+                    span,
+                    (
+                        "$".to_string(),
+                        Range {
+                            start: start.into(),
+                            end: end.into(),
+                        },
+                    ),
+                ))
+            },
+            |(text, range)| StringSegment::Text(text, range),
         ),
     ))
     .parse(input)
@@ -602,6 +620,16 @@ mod tests {
     #[case::error("\"test",
             Options{include_spaces: false, ignore_errors: false},
             Err(LexerError::UnexpectedEOFDetected(1.into())))]
+    #[case::error("s\"$$${test}$$\"",
+            Options{include_spaces: false, ignore_errors: false},
+            Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 15} },
+                          kind: TokenKind::InterpolatedString(vec![
+                            StringSegment::Text("$".to_string(), Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 5} }),
+                            StringSegment::Ident("test".to_string().into(), Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 12} }),
+                            StringSegment::Text("$".to_string(), Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 14 }})
+                          ]), module_id: 1.into()},
+                   Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]
+                ))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
