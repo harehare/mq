@@ -1450,10 +1450,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("get_url"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _)] => {
-                    Ok(def.url.to_value().into())
+                    Ok(def.url.as_str().into())
                 }
                 [RuntimeValue::Markdown(mq_markdown::Node::Link(link), _)] => {
-                    Ok(link.url.to_value().into())
+                    Ok(link.url.as_str().into())
                 }
                 [RuntimeValue::Markdown(mq_markdown::Node::Image(image), _)] => {
                     Ok(image.url.to_owned().into())

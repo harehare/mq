@@ -224,12 +224,16 @@ body {
     flex-wrap: wrap;
   }
 
-  .editor-header.code {
-    height: 100%;
+  .editor-header.output {
+    height: auto;
   }
 
   .editor-header h2 {
     font-size: 0.75rem;
+  }
+
+  .editor-actions {
+    justify-content: flex-start;
   }
 
   .editor-actions {
@@ -242,4 +246,22 @@ body {
     padding: 3px 8px;
     font-size: 0.75rem;
   }
+}
+
+.dropdown {
+  appearance: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.label {
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
 }

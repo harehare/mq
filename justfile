@@ -46,7 +46,7 @@ test-fuzz:
 
 [working-directory: 'crates/mq-wasm']
 test-wasm:
-    wasm-pack test --chrome --headless
+    wasm-pack test --chrome
 
 deps:
     cargo +nightly udeps

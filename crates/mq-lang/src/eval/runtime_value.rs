@@ -46,6 +46,12 @@ impl From<String> for RuntimeValue {
     }
 }
 
+impl From<&str> for RuntimeValue {
+    fn from(s: &str) -> Self {
+        RuntimeValue::String(s.to_string())
+    }
+}
+
 impl From<Number> for RuntimeValue {
     fn from(n: Number) -> Self {
         RuntimeValue::Number(n)

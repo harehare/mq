@@ -154,38 +154,12 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
 
     engine.load_builtin_module().unwrap();
 
-    let mut markdown = if is_mdx {
+    let markdown = if is_mdx {
         mq_markdown::Markdown::from_mdx_str(content)
     } else {
         mq_markdown::Markdown::from_str(content)
     }
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-    markdown.set_options(mq_markdown::RenderOptions {
-        list_style: options
-            .list_style
-            .map(|style| match style {
-                ListStyle::Dash => mq_markdown::ListStyle::Dash,
-                ListStyle::Plus => mq_markdown::ListStyle::Plus,
-                ListStyle::Star => mq_markdown::ListStyle::Star,
-            })
-            .unwrap_or_default(),
-        link_title_style: options
-            .link_title_style
-            .map(|style| match style {
-                TitleSurroundStyle::Double => mq_markdown::TitleSurroundStyle::Double,
-                TitleSurroundStyle::Single => mq_markdown::TitleSurroundStyle::Single,
-                TitleSurroundStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
-            })
-            .unwrap_or_default(),
-        link_url_style: options
-            .link_url_style
-            .map(|style| match style {
-                UrlSurroundStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
-                UrlSurroundStyle::None => mq_markdown::UrlSurroundStyle::None,
-            })
-            .unwrap_or_default(),
-    });
 
     engine
         .eval(
@@ -206,7 +180,7 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
                 result_values
             };
 
-            let markdown = mq_markdown::Markdown::new(
+            let mut markdown = mq_markdown::Markdown::new(
                 values
                     .into_iter()
                     .map(|runtime_value| match runtime_value {
@@ -215,6 +189,31 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
                     })
                     .collect(),
             );
+            markdown.set_options(mq_markdown::RenderOptions {
+                list_style: options
+                    .list_style
+                    .map(|style| match style {
+                        ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                        ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                        ListStyle::Star => mq_markdown::ListStyle::Star,
+                    })
+                    .unwrap_or_default(),
+                link_title_style: options
+                    .link_title_style
+                    .map(|style| match style {
+                        TitleSurroundStyle::Double => mq_markdown::TitleSurroundStyle::Double,
+                        TitleSurroundStyle::Single => mq_markdown::TitleSurroundStyle::Single,
+                        TitleSurroundStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
+                    })
+                    .unwrap_or_default(),
+                link_url_style: options
+                    .link_url_style
+                    .map(|style| match style {
+                        UrlSurroundStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
+                        UrlSurroundStyle::None => mq_markdown::UrlSurroundStyle::None,
+                    })
+                    .unwrap_or_default(),
+            });
             markdown.to_string()
         })
 }
@@ -315,6 +314,42 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(result.unwrap(), "WORLD\n");
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    fn test_script_run_list() {
+        let result = run_script(
+            ".[]",
+            "- test",
+            serde_wasm_bindgen::to_value(&RunOptions {
+                is_mdx: false,
+                is_update: true,
+                list_style: Some(ListStyle::Star),
+                link_title_style: None,
+                link_url_style: None,
+            })
+            .unwrap(),
+        );
+        assert_eq!(result.unwrap(), "* test\n");
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    fn test_script_run_link() {
+        let result = run_script(
+            ".link",
+            "[test](https://example.com)",
+            serde_wasm_bindgen::to_value(&RunOptions {
+                is_mdx: false,
+                is_update: true,
+                list_style: None,
+                link_title_style: None,
+                link_url_style: Some(UrlSurroundStyle::Angle),
+            })
+            .unwrap(),
+        );
+        assert_eq!(result.unwrap(), "[test](<https://example.com>)\n");
     }
 
     #[allow(unused)]

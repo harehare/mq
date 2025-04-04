@@ -51,14 +51,14 @@ impl Url {
         Self(value)
     }
 
-    pub fn to_value(&self) -> String {
-        self.0.clone()
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 
     pub fn to_string_with(&self, options: &RenderOptions) -> String {
         match options.link_url_style {
             UrlSurroundStyle::None if self.0.is_empty() => "<>".to_string(),
-            UrlSurroundStyle::None => self.0.to_string(),
+            UrlSurroundStyle::None => self.0.clone(),
             UrlSurroundStyle::Angle => format!("<{}>", self.0),
         }
     }
@@ -781,7 +781,7 @@ impl Node {
     pub fn value(&self) -> String {
         match self.clone() {
             Self::Blockquote(v) => Self::values_to_value(v.values),
-            Self::Definition(d) => d.url.to_value(),
+            Self::Definition(d) => d.url.as_str().to_string(),
             Self::Delete(v) => Self::values_to_value(v.values),
             Self::Heading(h) => Self::values_to_value(h.values),
             Self::Emphasis(v) => Self::values_to_value(v.values),
@@ -794,7 +794,7 @@ impl Node {
             Self::ImageRef(i) => i.ident,
             Self::CodeInline(v) => v.value.to_string(),
             Self::MathInline(v) => v.value.to_string(),
-            Self::Link(l) => l.url.to_value(),
+            Self::Link(l) => l.url.as_str().to_string(),
             Self::LinkRef(l) => l.ident,
             Self::Math(v) => v.value,
             Self::List(l) => Self::values_to_value(l.values),

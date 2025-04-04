@@ -6,6 +6,7 @@ import init, {
   formatScript,
   definedValues,
   diagnostics,
+  RunOptions,
 } from "./mq-wasm/mq_wasm";
 import { FaGithub } from "react-icons/fa6";
 import { languages } from "monaco-editor";
@@ -14,8 +15,7 @@ import LZString from "lz-string";
 type SharedData = {
   code: string;
   markdown: string;
-  isMdx: boolean;
-  isUpdate: boolean;
+  options: RunOptions;
 };
 
 const CODE_KEY = "mq-playground.code";
@@ -223,6 +223,11 @@ export const Playground = () => {
   const [isUpdate, setIsUpdate] = useState(true);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
+  const [listStyle, setListStyle] = useState<RunOptions["listStyle"]>(null);
+  const [linkUrlStyle, setLinkUrlStyle] =
+    useState<RunOptions["linkUrlStyle"]>(null);
+  const [linkTitleStyle, setLinkTitleStyle] =
+    useState<RunOptions["linkTitleStyle"]>(null);
 
   useEffect(() => {
     init().then(() => {
@@ -236,19 +241,28 @@ export const Playground = () => {
           LZString.decompressFromEncodedURIComponent(compressed);
         if (decompressed) {
           const parsedData = JSON.parse(decompressed);
+          const options = parsedData.options || {};
           const data: SharedData = {
             code: typeof parsedData.code === "string" ? parsedData.code : "",
             markdown:
               typeof parsedData.markdown === "string"
                 ? parsedData.markdown
                 : "",
-            isMdx: !!parsedData.isMdx,
-            isUpdate: !!parsedData.isUpdate,
+            options: {
+              isMdx: !!options.isMdx,
+              isUpdate: !!options.isUpdate,
+              listStyle: options.listStyle,
+              linkUrlStyle: options.linkUrlStyle || null,
+              linkTitleStyle: options.linkTitleStyle || null,
+            },
           };
           setCode(data.code);
           setMarkdown(data.markdown);
-          setIsMdx(data.isMdx === true);
-          setIsUpdate(data.isUpdate === true);
+          setIsMdx(data.options.isMdx === true);
+          setIsUpdate(data.options.isUpdate === true);
+          setListStyle(data.options.listStyle);
+          setLinkUrlStyle(data.options.linkUrlStyle);
+          setLinkTitleStyle(data.options.linkTitleStyle);
         }
       } catch {
         alert("Failed to load shared playground");
@@ -266,15 +280,23 @@ export const Playground = () => {
         await runScript(code, markdown, {
           isMdx,
           isUpdate,
-          listStyle: null,
-          linkTitleStyle: null,
-          linkUrlStyle: null,
+          listStyle,
+          linkTitleStyle,
+          linkUrlStyle,
         })
       );
     } catch (e) {
       setResult((e as Error).toString());
     }
-  }, [code, markdown, isMdx, isUpdate]);
+  }, [
+    code,
+    markdown,
+    isMdx,
+    isUpdate,
+    listStyle,
+    linkUrlStyle,
+    linkTitleStyle,
+  ]);
 
   const handleFormat = useCallback(async () => {
     if (!code) {
@@ -295,8 +317,13 @@ export const Playground = () => {
     const shareData: SharedData = {
       code: code || "",
       markdown: markdown || "",
-      isMdx,
-      isUpdate,
+      options: {
+        isMdx: isMdx || false,
+        isUpdate: isUpdate || false,
+        listStyle: listStyle || null,
+        linkUrlStyle: linkUrlStyle || null,
+        linkTitleStyle: linkTitleStyle || null,
+      },
     };
     const compressed = LZString.compressToEncodedURIComponent(
       JSON.stringify(shareData)
@@ -312,7 +339,31 @@ export const Playground = () => {
       .catch(() => {
         prompt("Copy this URL to share your playground:", url);
       });
-  }, [code, markdown, isMdx, isUpdate]);
+  }, [
+    code,
+    markdown,
+    isMdx,
+    isUpdate,
+    listStyle,
+    linkUrlStyle,
+    linkTitleStyle,
+  ]);
+
+  const handleChangeListStyle = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      setListStyle(value as RunOptions["listStyle"]);
+    },
+    []
+  );
+
+  const handleChangeLinkUrlStyle = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      setLinkUrlStyle(value as RunOptions["linkUrlStyle"]);
+    },
+    []
+  );
 
   const beforeMount = (monaco: Monaco) => {
     monaco.editor.addEditorAction({
@@ -510,7 +561,7 @@ export const Playground = () => {
       <div className="playground-content">
         <div className="left-panel">
           <div className="editor-container">
-            <div className="editor-header code">
+            <div className="editor-header">
               <h2>Code</h2>
               <div className="editor-actions">
                 <div>
@@ -538,52 +589,6 @@ export const Playground = () => {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div>
-                  <label
-                    style={{
-                      marginLeft: "4px",
-                      display: "flex",
-                      alignItems: "center",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      userSelect: "none",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isMdx}
-                      onChange={(e) => setIsMdx(e.target.checked)}
-                      style={{
-                        marginRight: "5px",
-                        cursor: "pointer",
-                      }}
-                    />
-                    <div>Enable MDX</div>
-                  </label>
-                </div>
-                <div>
-                  <label
-                    style={{
-                      marginLeft: "4px",
-                      display: "flex",
-                      alignItems: "center",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      userSelect: "none",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isUpdate}
-                      onChange={(e) => setIsUpdate(e.target.checked)}
-                      style={{
-                        marginRight: "5px",
-                        cursor: "pointer",
-                      }}
-                    />
-                    <div>Update Markdown</div>
-                  </label>
                 </div>
                 <button className="share-button" onClick={handleShare}>
                   Share
@@ -650,8 +655,120 @@ export const Playground = () => {
           </div>
         </div>
         <div className="right-panel">
-          <div className="editor-header">
+          <div className="editor-header output">
             <h2>Output</h2>
+            <div className="editor-actions">
+              <label className="label">
+                <div
+                  style={{
+                    marginRight: "4px",
+                  }}
+                >
+                  List Style:
+                </div>
+                <select
+                  className="dropdown"
+                  style={{
+                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
+                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
+                    color: isDarkMode ? "#d4d4d4" : "#333",
+                  }}
+                  onChange={handleChangeListStyle}
+                >
+                  <option value="dash">-</option>
+                  <option value="star">*</option>
+                  <option value="plus">+</option>
+                </select>
+              </label>
+              <label className="label">
+                <div
+                  style={{
+                    marginRight: "4px",
+                  }}
+                >
+                  URL Style:
+                </div>
+                <select
+                  className="dropdown"
+                  style={{
+                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
+                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
+                    color: isDarkMode ? "#d4d4d4" : "#333",
+                  }}
+                  onChange={handleChangeLinkUrlStyle}
+                >
+                  <option value="none">None</option>
+                  <option value="angle">Angle</option>
+                </select>
+              </label>
+              <label className="label">
+                <div
+                  style={{
+                    marginRight: "4px",
+                  }}
+                >
+                  Title Style:
+                </div>
+                <select
+                  className="dropdown"
+                  style={{
+                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
+                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
+                    color: isDarkMode ? "#d4d4d4" : "#333",
+                  }}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const linkTitleStyle =
+                      value === "none"
+                        ? null
+                        : (value as RunOptions["linkTitleStyle"]);
+                    setLinkTitleStyle(linkTitleStyle);
+                  }}
+                >
+                  <option value="none">None</option>
+                  <option value="double">Double</option>
+                  <option value="single">Single</option>
+                  <option value="paren">Paren</option>
+                </select>
+              </label>
+              <div>
+                <label className="label">
+                  <input
+                    type="checkbox"
+                    checked={isMdx}
+                    onChange={(e) => setIsMdx(e.target.checked)}
+                    style={{
+                      marginRight: "5px",
+                      cursor: "pointer",
+                    }}
+                  />
+                  <div>Enable MDX</div>
+                </label>
+              </div>
+              <div>
+                <label
+                  style={{
+                    marginLeft: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isUpdate}
+                    onChange={(e) => setIsUpdate(e.target.checked)}
+                    style={{
+                      marginRight: "5px",
+                      cursor: "pointer",
+                    }}
+                  />
+                  <div>Update Markdown</div>
+                </label>
+              </div>
+            </div>
           </div>
           <div className="editor-content result-container">
             {!wasmLoaded ? (
