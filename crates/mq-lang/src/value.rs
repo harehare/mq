@@ -137,6 +137,19 @@ impl Value {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    pub fn position(&self) -> Option<mq_markdown::Position> {
+        match self {
+            Value::Markdown(node) => node.position(),
+            _ => None,
+        }
+    }
+
+    pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
+        if let Value::Markdown(node) = self {
+            node.set_position(position);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,7 +196,9 @@ impl Values {
             .clone()
             .into_iter()
             .zip(other)
-            .map(|(current_value, updated_value)| {
+            .map(|(current_value, mut updated_value)| {
+                updated_value.set_position(current_value.position());
+
                 if let Value::Markdown(node) = &current_value {
                     match &updated_value {
                         Value::None | Value::Function(_, _) | Value::NativeFunction(_) => {

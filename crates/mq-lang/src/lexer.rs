@@ -620,7 +620,7 @@ mod tests {
     #[case::error("\"test",
             Options{include_spaces: false, ignore_errors: false},
             Err(LexerError::UnexpectedEOFDetected(1.into())))]
-    #[case::error("s\"\\$${test}\\$\"",
+    #[case::error("s\"$$${test}$$\"",
             Options{include_spaces: false, ignore_errors: false},
             Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 15} },
                           kind: TokenKind::InterpolatedString(vec![

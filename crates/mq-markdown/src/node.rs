@@ -860,6 +860,42 @@ impl Node {
         }
     }
 
+    pub fn set_position(&mut self, pos: Option<Position>) {
+        match self {
+            Self::Blockquote(v) => v.position = pos,
+            Self::Definition(d) => d.position = pos,
+            Self::Delete(v) => v.position = pos,
+            Self::Heading(h) => h.position = pos,
+            Self::Emphasis(v) => v.position = pos,
+            Self::Footnote(f) => f.position = pos,
+            Self::FootnoteRef(f) => f.position = pos,
+            Self::Html(v) => v.position = pos,
+            Self::Yaml(v) => v.position = pos,
+            Self::Toml(v) => v.position = pos,
+            Self::Image(i) => i.position = pos,
+            Self::ImageRef(i) => i.position = pos,
+            Self::CodeInline(v) => v.position = pos,
+            Self::MathInline(v) => v.position = pos,
+            Self::Link(l) => l.position = pos,
+            Self::LinkRef(l) => l.position = pos,
+            Self::Math(v) => v.position = pos,
+            Self::Code(c) => c.position = pos,
+            Self::TableCell(c) => c.position = pos,
+            Self::TableRow(r) => r.position = pos,
+            Self::TableHeader(c) => c.position = pos,
+            Self::List(l) => l.position = pos,
+            Self::Strong(s) => s.position = pos,
+            Self::MdxFlowExpression(m) => m.position = pos,
+            Self::MdxTextExpression(m) => m.position = pos,
+            Self::MdxJsEsm(m) => m.position = pos,
+            Self::MdxJsxFlowElement(m) => m.position = pos,
+            Self::MdxJsxTextElement(m) => m.position = pos,
+            Self::Break { position } | Self::HorizontalRule { position } => *position = pos,
+            Self::Text(t) => t.position = pos,
+            Self::Fragment(_) | Self::Empty => {}
+        }
+    }
+
     pub fn position(&self) -> Option<Position> {
         match self {
             Self::Blockquote(v) => v.position.clone(),
