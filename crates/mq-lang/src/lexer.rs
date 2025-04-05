@@ -270,7 +270,7 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
         map(
             |input: Span<'a>| {
                 let (span, start) = position(input)?;
-                let (span, _) = tag("$$")(span)?;
+                let (span, _) = tag("\\$")(span)?;
                 let (span, end) = position(span)?;
                 Ok((
                     span,
@@ -620,7 +620,7 @@ mod tests {
     #[case::error("\"test",
             Options{include_spaces: false, ignore_errors: false},
             Err(LexerError::UnexpectedEOFDetected(1.into())))]
-    #[case::error("s\"$$${test}$$\"",
+    #[case::error("s\"\\$${test}\\$\"",
             Options{include_spaces: false, ignore_errors: false},
             Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 15} },
                           kind: TokenKind::InterpolatedString(vec![
