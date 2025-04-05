@@ -8,6 +8,17 @@ String Interpolation allow embedding expressions directly inside string literals
 s"text ${ident} more text"
 ```
 
+## Escaping
+
+You can escape the `$` character in a string interpolation by using `$$`.
+This allows you to include literal `$` symbols in your interpolated strings.
+
+```python
+let price = 25
+| s"The price is $$${price}"
+# => Output: "The price is $25"
+```
+
 ## Examples
 
 ```python

@@ -419,7 +419,7 @@
   <span style="color: #000000">|</span> <span style="color: #0000ff">foreach</span> (<span style="color: #001080">word</span>, <span style="color: #001080">words</span>):
       <span style="color: #0000ff">let</span> <span style="color: #001080">first_char</span> = <span style="color: #a31515">upcase</span>(<span style="color: #a31515">first</span>(<span style="color: #001080">word</span>))
       <span style="color: #000000">|</span> <span style="color: #0000ff">let</span> <span style="color: #001080">rest_str</span> = <span style="color: #a31515">downcase</span>(<span style="color: #a31515">slice</span>(<span style="color: #001080">word</span>, <span style="color: #098658">1</span>, <span style="color: #a31515">len</span>(<span style="color: #001080">word</span>)))
-      <span style="color: #000000">|</span> <span style="color: #a31515">add</span>(<span style="color: #001080">first_char</span>, <span style="color: #001080">rest_str</span>);
+      <span style="color: #000000">|</span> <span style="color: #d14;">"</span><span style="color: #0086b3;">${first_char}</span><span style="color: #0086b3;">${rest_str}</span><span style="color: #d14;">"</span>;
   <span style="color: #000000">|</span> <span style="color: #a31515">join</span>(<span style="color: #a31515">""</span>);
 <span style="color: #000000">|</span> <span style="color: #795e26">snake_to_camel</span>()
 
