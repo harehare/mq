@@ -3230,4 +3230,32 @@ mod tests {
     fn test_is_table_row(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_table_row(), expected);
     }
+
+    #[rstest]
+    #[case(Url::new("https://example.com".to_string()), RenderOptions{link_url_style: UrlSurroundStyle::None, ..Default::default()}, "https://example.com")]
+    #[case(Url::new("https://example.com".to_string()), RenderOptions{link_url_style: UrlSurroundStyle::Angle, ..Default::default()}, "<https://example.com>")]
+    #[case(Url::new("".to_string()), RenderOptions::default(), "<>")]
+    fn test_url_to_string_with(
+        #[case] url: Url,
+        #[case] options: RenderOptions,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(url.to_string_with(&options), expected);
+    }
+
+    #[rstest]
+    #[case(Title::new("title".to_string()), RenderOptions::default(), "\"title\"")]
+    #[case(Title::new("title with \"quotes\"".to_string()), RenderOptions::default(), "\"title with \"quotes\"\"")]
+    #[case(Title::new("title with spaces".to_string()), RenderOptions::default(), "\"title with spaces\"")]
+    #[case(Title::new("".to_string()), RenderOptions::default(), "\"\"")]
+    #[case(Title::new("title".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Single, ..Default::default()}, "'title'")]
+    #[case(Title::new("title with 'quotes'".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Double, ..Default::default()}, "\"title with 'quotes'\"")]
+    #[case(Title::new("title".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Paren, ..Default::default()}, "(title)")]
+    fn test_title_to_string_with(
+        #[case] title: Title,
+        #[case] options: RenderOptions,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(title.to_string_with(&options), expected);
+    }
 }

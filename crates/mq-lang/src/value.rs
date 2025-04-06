@@ -34,6 +34,12 @@ impl From<String> for Value {
     }
 }
 
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Value::String(s.to_string())
+    }
+}
+
 impl From<Number> for Value {
     fn from(n: Number) -> Self {
         Value::Number(n)

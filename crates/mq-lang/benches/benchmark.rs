@@ -44,6 +44,17 @@ fn eval_select_h() -> mq_lang::Values {
     engine.eval(".h1", input.into_iter()).unwrap()
 }
 
+#[divan::bench(name = "eval_string_interpolation")]
+fn eval_string_interpolation() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine
+        .eval(
+            r#"let world = "world" | s"$$Hello, ${world}$$""#,
+            vec!["".into()].into_iter(),
+        )
+        .unwrap()
+}
+
 #[divan::bench]
 fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));

@@ -670,4 +670,232 @@ mod tests {
             );
         }
     }
+    #[tokio::test]
+    async fn test_did_change() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "def main(): 1;".to_string(),
+                },
+            })
+            .await;
+
+        backend
+            .did_change(DidChangeTextDocumentParams {
+                text_document: tower_lsp::lsp_types::VersionedTextDocumentIdentifier {
+                    uri: uri.clone(),
+                    version: 2,
+                },
+                content_changes: vec![tower_lsp::lsp_types::TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: "def main(): 2;".to_string(),
+                }],
+            })
+            .await;
+
+        // Check if content was updated
+        let nodes = backend.cst_nodes_map.get(&uri.to_string()).unwrap();
+        assert!(!nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_did_save() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Setup some content with errors
+        let text = "def main(): invalid_syntax";
+        let (nodes, errors) = mq_lang::parse_recovery(text);
+        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend
+            .error_map
+            .insert(uri.to_string(), errors.error_ranges(text));
+
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri.to_string(), mq_hir::SourceId::default());
+
+        // Trigger save
+        backend
+            .did_save(DidSaveTextDocumentParams {
+                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                text: None,
+            })
+            .await;
+
+        // There's no direct way to verify diagnostics were published
+        // since that involves the client, but we can verify no errors occurred
+    }
+
+    #[tokio::test]
+    async fn test_initialize_shutdown() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+
+        // Test initialize
+        let init_result = backend.initialize(InitializeParams::default()).await;
+
+        assert!(init_result.is_ok());
+        let capabilities = init_result.unwrap().capabilities;
+        assert!(capabilities.text_document_sync.is_some());
+        assert!(capabilities.hover_provider.is_some());
+        assert!(capabilities.completion_provider.is_some());
+
+        // Test shutdown
+        let shutdown_result = backend.shutdown().await;
+        assert!(shutdown_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_semantic_tokens_range() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        backend
+            .hir
+            .write()
+            .unwrap()
+            .add_code(uri.clone(), "def main(): 1;");
+
+        let result = backend
+            .semantic_tokens_range(SemanticTokensRangeParams {
+                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+                range: Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 12,
+                    },
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await;
+
+        assert!(result.is_ok());
+        // Same expectations as full tokens since our implementation doesn't filter by range
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_with_errors() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Add content with parsing errors
+        let text = "def main() 1;"; // Missing colon
+        let (nodes, errors) = mq_lang::parse_recovery(text);
+        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend
+            .error_map
+            .insert(uri.to_string(), errors.error_ranges(text));
+
+        // We can't directly test client.publish_diagnostics was called with correct diagnostics,
+        // but we can verify the code doesn't panic
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_formatting_with_errors() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+            input: RwLock::new(String::new()),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        let text = "def main() 1;";
+        let (nodes, _) = mq_lang::parse_recovery(text);
+        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend.error_map.insert(
+            uri.to_string(),
+            vec![(
+                "Syntax error".to_string(),
+                mq_lang::Range {
+                    start: mq_lang::Position {
+                        line: 1,
+                        column: 10,
+                    },
+                    end: mq_lang::Position {
+                        line: 1,
+                        column: 11,
+                    },
+                },
+            )],
+        );
+
+        let result = backend
+            .formatting(DocumentFormattingParams {
+                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri: uri.clone() },
+                options: tower_lsp::lsp_types::FormattingOptions {
+                    tab_size: 2,
+                    insert_spaces: true,
+                    ..Default::default()
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await;
+
+        assert_eq!(result.unwrap(), None);
+    }
 }
