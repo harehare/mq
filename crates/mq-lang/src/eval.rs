@@ -2177,22 +2177,22 @@ mod tests {
         vec![
               ast_call("to_strong", Vec::new()),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold text".to_string().into()], position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["Bold text".to_string().into()], position: None}), None)]))]
     #[case::to_strong(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Bold text".to_string(), position: None}), None)],
         vec![
               ast_call("to_strong", Vec::new()),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Bold text".to_string(), position: None})], position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Bold text".to_string(), position: None})], position: None}), None)]))]
     #[case::to_em(vec![RuntimeValue::String("Italic text".to_string())],
         vec![
               ast_call("to_em", Vec::new()),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic text".to_string().into()], position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["Italic text".to_string().into()], position: None}), None)]))]
     #[case::to_em(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None}), None)],
         vec![
               ast_call("to_em", Vec::new()),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None})], position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None})], position: None}), None)]))]
     #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
         vec![
               ast_call("to_image", vec![
@@ -2619,7 +2619,7 @@ mod tests {
                 ])
              ])
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
     #[case::update(vec!["".to_string().into()],
         vec![
              ast_call("update", vec![
@@ -2629,7 +2629,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("text2".to_string()))),
              ])
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
     #[case::sort_string_array(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("c".to_string()),
             RuntimeValue::String("a".to_string()),
@@ -2715,12 +2715,12 @@ mod tests {
              ast_call("to_html", Vec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<h1>Heading 1</h1>".to_string(), position: None}), None)]))]
-    #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Value{values: vec!["Bold".to_string().into()], position: None}), None)],
+    #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["Bold".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<p><strong>Bold</strong></p>".to_string(), position: None}), None)]))]
-    #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Value{values: vec!["Italic".to_string().into()], position: None}), None)],
+    #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["Italic".to_string().into()], position: None}), None)],
         vec![
              ast_call("to_html", Vec::new())
         ],

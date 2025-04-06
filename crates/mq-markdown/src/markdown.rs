@@ -102,6 +102,12 @@ impl Markdown {
             .join("")
     }
 
+    #[cfg(feature = "json")]
+    pub fn to_json(&self) -> miette::Result<String> {
+        serde_json::to_string_pretty(&self.nodes)
+            .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
+    }
+
     fn from_str(content: &str) -> miette::Result<Self> {
         let root = markdown::to_mdast(
             content,
@@ -307,5 +313,56 @@ mod tests {
         let formatted = md.to_string();
         assert!(formatted.contains("* Item 1"));
         assert!(formatted.contains("* Item 2"));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "json")]
+mod json_tests {
+    use super::*;
+
+    #[test]
+    fn test_to_json_simple() {
+        let md = "# Hello".parse::<Markdown>().unwrap();
+        let json = md.to_json().unwrap();
+        assert!(json.contains("\"type\": \"Heading\""));
+        assert!(json.contains("\"depth\": 1"));
+        assert!(json.contains("\"values\":"));
+    }
+
+    #[test]
+    fn test_to_json_complex() {
+        let md = "# Header\n\n- Item 1\n- Item 2\n\n*Emphasis* and **Strong**"
+            .parse::<Markdown>()
+            .unwrap();
+        let json = md.to_json().unwrap();
+
+        assert!(json.contains("\"type\": \"Heading\""));
+        assert!(json.contains("\"type\": \"List\""));
+        assert!(json.contains("\"type\": \"Strong\""));
+        assert!(json.contains("\"type\": \"Emphasis\""));
+    }
+
+    #[test]
+    fn test_to_json_code_blocks() {
+        let md = "```rust\nfn main() {\n    println!(\"Hello\");\n}\n```"
+            .parse::<Markdown>()
+            .unwrap();
+        let json = md.to_json().unwrap();
+        dbg!(&json);
+
+        assert!(json.contains("\"type\": \"Code\""));
+        assert!(json.contains("\"lang\": \"rust\""));
+        assert!(json.contains("\"value\": \"fn main() {\\n    println!(\\\"Hello\\\");\\n}\""));
+    }
+
+    #[test]
+    fn test_to_json_table() {
+        let md = "| A | B |\n|---|---|\n| 1 | 2 |"
+            .parse::<Markdown>()
+            .unwrap();
+        let json = md.to_json().unwrap();
+
+        assert!(json.contains("\"type\": \"TableCell\""));
     }
 }

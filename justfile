@@ -36,7 +36,7 @@ test:
     cargo fmt --all -- --check
     cargo clippy  --all-targets --all-features --workspace -- -D clippy::all
     cargo test --examples
-    cargo test --workspace
+    cargo test --workspace --all-features
 
 test-cov:
     cargo llvm-cov --open --html --workspace

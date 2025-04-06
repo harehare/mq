@@ -37,6 +37,11 @@ impl Display for ListStyle {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct Url(String);
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -73,6 +78,11 @@ pub enum TitleSurroundStyle {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct Title(String);
 
 impl Display for Title {
@@ -100,6 +110,11 @@ impl Title {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum TableAlignKind {
     Left,
     Right,
@@ -130,6 +145,11 @@ impl Display for TableAlignKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct List {
     pub values: Vec<Node>,
     pub index: usize,
@@ -139,6 +159,12 @@ pub struct List {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+
 pub struct TableCell {
     pub values: Vec<Node>,
     pub column: usize,
@@ -149,29 +175,43 @@ pub struct TableCell {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct TableRow {
     pub values: Vec<Node>,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct TableHeader {
     pub align: Vec<TableAlignKind>,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Value {
-    pub values: Vec<Node>,
-    pub position: Option<Position>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Fragment {
     pub values: Vec<Node>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Code {
     pub value: String,
     pub lang: Option<String>,
@@ -181,6 +221,11 @@ pub struct Code {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Image {
     pub alt: String,
     pub url: String,
@@ -189,6 +234,11 @@ pub struct Image {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct ImageRef {
     pub alt: String,
     pub ident: String,
@@ -196,6 +246,11 @@ pub struct ImageRef {
     pub position: Option<Position>,
 }
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Link {
     pub url: Url,
     pub title: Option<Title>,
@@ -204,6 +259,11 @@ pub struct Link {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct FootnoteRef {
     pub ident: String,
     pub label: Option<String>,
@@ -211,6 +271,11 @@ pub struct FootnoteRef {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Footnote {
     pub ident: String,
     pub values: Vec<Node>,
@@ -218,6 +283,11 @@ pub struct Footnote {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct LinkRef {
     pub ident: String,
     pub label: Option<String>,
@@ -226,6 +296,11 @@ pub struct LinkRef {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Heading {
     pub depth: u8,
     pub values: Vec<Node>,
@@ -233,6 +308,12 @@ pub struct Heading {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+
 pub struct Definition {
     pub position: Option<Position>,
     pub url: Url,
@@ -242,54 +323,100 @@ pub struct Definition {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Text {
     pub value: String,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+
 pub struct Html {
     pub value: String,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Toml {
     pub value: String,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Yaml {
     pub value: String,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct CodeInline {
     pub value: CompactString,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MathInline {
     pub value: CompactString,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct Math {
     pub value: String,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MdxFlowExpression {
     pub value: CompactString,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MdxJsxFlowElement {
     pub children: Vec<Node>,
     pub position: Option<Position>,
@@ -298,24 +425,44 @@ pub struct MdxJsxFlowElement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub enum MdxAttributeContent {
     Expression(CompactString),
     Property(MdxJsxAttribute),
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MdxJsxAttribute {
     pub name: CompactString,
     pub value: Option<MdxAttributeValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub enum MdxAttributeValue {
     Expression(CompactString),
     Literal(CompactString),
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MdxJsxTextElement {
     pub children: Vec<Node>,
     pub position: Option<Position>,
@@ -324,25 +471,84 @@ pub struct MdxJsxTextElement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MdxTextExpression {
     pub value: CompactString,
     pub position: Option<Position>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
 pub struct MdxJsEsm {
     pub value: CompactString,
     pub position: Option<Position>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Blockquote {
+    pub values: Vec<Node>,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Delete {
+    pub values: Vec<Node>,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Emphasis {
+    pub values: Vec<Node>,
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Strong {
+    pub values: Vec<Node>,
+    pub position: Option<Position>,
+}
+
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", untagged)
+)]
 pub enum Node {
-    Blockquote(Value),
+    Blockquote(Blockquote),
     Break { position: Option<Position> },
     Definition(Definition),
-    Delete(Value),
+    Delete(Delete),
     Heading(Heading),
-    Emphasis(Value),
+    Emphasis(Emphasis),
     Footnote(Footnote),
     FootnoteRef(FootnoteRef),
     Html(Html),
@@ -360,7 +566,7 @@ pub enum Node {
     TableRow(TableRow),
     TableCell(TableCell),
     Code(Code),
-    Strong(Value),
+    Strong(Strong),
     HorizontalRule { position: Option<Position> },
     MdxFlowExpression(MdxFlowExpression),
     MdxJsxFlowElement(MdxJsxFlowElement),
@@ -401,12 +607,22 @@ impl PartialOrd for Node {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct Position {
     pub start: Point,
     pub end: Point,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct Point {
     pub line: usize,
     pub column: usize,
@@ -484,10 +700,10 @@ impl Node {
             | Node::Footnote(Footnote { values, .. })
             | Node::LinkRef(LinkRef { values, .. })
             | Node::Heading(Heading { values, .. })
-            | Node::Blockquote(Value { values, .. })
-            | Node::Delete(Value { values, .. })
-            | Node::Emphasis(Value { values, .. })
-            | Node::Strong(Value { values, .. }) => Node::Fragment(Fragment { values }),
+            | Node::Blockquote(Blockquote { values, .. })
+            | Node::Delete(Delete { values, .. })
+            | Node::Emphasis(Emphasis { values, .. })
+            | Node::Strong(Strong { values, .. }) => Node::Fragment(Fragment { values }),
             node @ Node::Fragment(_) => node,
             _ => Self::Empty,
         }
@@ -506,10 +722,10 @@ impl Node {
             | Node::Footnote(Footnote { values, .. })
             | Node::LinkRef(LinkRef { values, .. })
             | Node::Heading(Heading { values, .. })
-            | Node::Blockquote(Value { values, .. })
-            | Node::Delete(Value { values, .. })
-            | Node::Emphasis(Value { values, .. })
-            | Node::Strong(Value { values, .. }) => {
+            | Node::Blockquote(Blockquote { values, .. })
+            | Node::Delete(Delete { values, .. })
+            | Node::Emphasis(Emphasis { values, .. })
+            | Node::Strong(Strong { values, .. }) => {
                 if let Node::Fragment(Fragment { values: new_values }) = fragment {
                     let new_values = values
                         .iter()
@@ -570,7 +786,7 @@ impl Node {
             Self::TableHeader(TableHeader { align, .. }) => {
                 format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
-            Self::Blockquote(Value { values, .. }) => Self::values_to_string(values, options)
+            Self::Blockquote(Blockquote { values, .. }) => Self::values_to_string(values, options)
                 .split('\n')
                 .map(|line| format!("> {}", line))
                 .join("\n"),
@@ -606,10 +822,10 @@ impl Node {
                         .unwrap_or_default()
                 )
             }
-            Self::Delete(Value { values, .. }) => {
+            Self::Delete(Delete { values, .. }) => {
                 format!("~~{}~~", Self::values_to_string(values, options))
             }
-            Self::Emphasis(Value { values, .. }) => {
+            Self::Emphasis(Emphasis { values, .. }) => {
                 format!("*{}*", Self::values_to_string(values, options))
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
@@ -732,7 +948,7 @@ impl Node {
                 format!("{{{}}}", mdx_text_expression.value)
             }
             Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
-            Self::Strong(Value { values, .. }) => {
+            Self::Strong(Strong { values, .. }) => {
                 format!(
                     "**{}**",
                     values
@@ -767,9 +983,10 @@ impl Node {
 
     pub fn find_at_index(&self, index: usize) -> Option<Node> {
         match self {
-            Self::Blockquote(v) | Self::Delete(v) | Self::Emphasis(v) | Self::Strong(v) => {
-                v.values.get(index).cloned()
-            }
+            Self::Blockquote(v) => v.values.get(index).cloned(),
+            Self::Delete(v) => v.values.get(index).cloned(),
+            Self::Emphasis(v) => v.values.get(index).cloned(),
+            Self::Strong(v) => v.values.get(index).cloned(),
             Self::Heading(v) => v.values.get(index).cloned(),
             Self::List(v) => v.values.get(index).cloned(),
             Self::TableCell(v) => v.values.get(index).cloned(),
@@ -1447,7 +1664,7 @@ impl Node {
                 }
             },
             mdast::Node::Blockquote(mdast::Blockquote { position, .. }) => {
-                vec![Self::Blockquote(Value {
+                vec![Self::Blockquote(Blockquote {
                     values: Self::mdast_children_to_node(node),
                     position: position.map(|p| p.clone().into()),
                 })]
@@ -1483,19 +1700,19 @@ impl Node {
                 }]
             }
             mdast::Node::Delete(mdast::Delete { position, .. }) => {
-                vec![Self::Delete(Value {
+                vec![Self::Delete(Delete {
                     values: Self::mdast_children_to_node(node),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
             mdast::Node::Emphasis(mdast::Emphasis { position, .. }) => {
-                vec![Self::Emphasis(Value {
+                vec![Self::Emphasis(Emphasis {
                     values: Self::mdast_children_to_node(node),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
             mdast::Node::Strong(mdast::Strong { position, .. }) => {
-                vec![Self::Strong(Value {
+                vec![Self::Strong(Strong {
                     values: Self::mdast_children_to_node(node),
                     position: position.map(|p| p.clone().into()),
                 })]
@@ -1923,18 +2140,18 @@ mod tests {
     #[case::text(Node::Text(Text{value: "".to_string(), position: None}),
            "test".to_string(),
            Node::Text(Text{value: "test".to_string(), position: None }))]
-    #[case::blockquote(Node::Blockquote(Value {values: vec!["test".to_string().into()], position: None }),
+    #[case::blockquote(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None }))]
-    #[case::delete(Node::Delete(Value {values: vec!["test".to_string().into()], position: None }),
+           Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None }))]
+    #[case::delete(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::Delete(Value{values: vec!["test".to_string().into()], position: None }))]
-    #[case::emphasis(Node::Emphasis(Value {values: vec!["test".to_string().into()], position: None }),
+           Node::Delete(Delete{values: vec!["test".to_string().into()], position: None }))]
+    #[case::emphasis(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None }))]
-    #[case::strong(Node::Strong(Value {values: vec!["test".to_string().into()], position: None }),
+           Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None }))]
+    #[case::strong(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::Strong(Value{values: vec!["test".to_string().into()], position: None }))]
+           Node::Strong(Strong{values: vec!["test".to_string().into()], position: None }))]
     #[case::heading(Node::Heading(Heading {depth: 1, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
            Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None }))]
@@ -2049,53 +2266,53 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Blockquote(Value{values: vec![
+    #[case(Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::Blockquote(Value{values: vec![
+        Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None}),
             Node::Text(Text{value: "second".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::Blockquote(Value{values: vec![
+    #[case(Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         1,
-        Node::Blockquote(Value{values: vec![
+        Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "first".to_string(), position: None}),
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::Delete(Value{values: vec![
+    #[case(Node::Delete(Delete{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::Delete(Value{values: vec![
+        Node::Delete(Delete{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None}),
             Node::Text(Text{value: "second".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::Emphasis(Value{values: vec![
+    #[case(Node::Emphasis(Emphasis{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         1,
-        Node::Emphasis(Value{values: vec![
+        Node::Emphasis(Emphasis{values: vec![
             Node::Text(Text{value: "first".to_string(), position: None}),
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::Strong(Value{values: vec![
+    #[case(Node::Strong(Strong{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::Strong(Value{values: vec![
+        Node::Strong(Strong{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None}),
             Node::Text(Text{value: "second".to_string(), position: None})
         ], position: None}))]
@@ -2281,14 +2498,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_strong(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_strong(), expected);
     }
 
     #[rstest]
-    #[case(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_delete(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_delete(), expected);
@@ -2353,7 +2570,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_blockquote(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_blockquote(), expected);
@@ -2368,19 +2585,19 @@ mod tests {
 
     #[rstest]
     #[case(Node::node_values(
-           &Node::Strong(Value{values: vec!["test".to_string().into()], position: None})),
+           &Node::Strong(Strong{values: vec!["test".to_string().into()], position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
            &Node::Text(Text{value: "test".to_string(), position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
-           &Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None})),
+           &Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
-           &Node::Delete(Value{values: vec!["test".to_string().into()], position: None})),
+           &Node::Delete(Delete{values: vec!["test".to_string().into()], position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
-           &Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None})),
+           &Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
            &Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None})),
@@ -2442,7 +2659,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_emphasis(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_emphasis(), expected);
@@ -2494,8 +2711,8 @@ mod tests {
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test|")]
     #[case::table_header(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), RenderOptions::default(), "|:---|---:|:---:|---|")]
-    #[case::block_quote(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "> test")]
-    #[case::block_quote(Node::Blockquote(Value{values: vec!["test\ntest2".to_string().into()], position: None}), RenderOptions::default(), "> test\n> test2")]
+    #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "> test")]
+    #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test\ntest2".to_string().into()], position: None}), RenderOptions::default(), "> test\n> test2")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), RenderOptions::default(), "```rust\ncode\n```")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), RenderOptions::default(), "```\ncode\n```")]
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: None, fence: false, meta: None, position: None}), RenderOptions::default(), "    code")]
@@ -2503,8 +2720,8 @@ mod tests {
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: url")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: url \"title\"")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("".to_string()), title: None, label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: <>")]
-    #[case::delete(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "~~test~~")]
-    #[case::emphasis(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "*test*")]
+    #[case::delete(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "~~test~~")]
+    #[case::emphasis(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "*test*")]
     #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), RenderOptions::default(), "[^id]: label")]
     #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), RenderOptions::default(), "[^label]")]
     #[case::heading(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "# test")]
@@ -2521,7 +2738,7 @@ mod tests {
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["Open".to_string().into()], label: Some("open".to_string()), position: None}), RenderOptions::default(), "[Open][open]")]
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["open".to_string().into()], label: Some("open".to_string()), position: None}), RenderOptions::default(), "[open]")]
     #[case::math(Node::Math(Math{value: "x^2".to_string(), position: None}), RenderOptions::default(), "$$\nx^2\n$$")]
-    #[case::strong(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "**test**")]
+    #[case::strong(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "**test**")]
     #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), RenderOptions::default(), "---\nkey: value\n---")]
     #[case::toml(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), RenderOptions::default(), "+++\nkey = \"value\"\n+++")]
     #[case::break_(Node::Break{position: None}, RenderOptions::default(), "\\")]
@@ -2662,17 +2879,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Blockquote(Value{values: Vec::new(), position: None}), "blockquote")]
+    #[case(Node::Blockquote(Blockquote{values: Vec::new(), position: None}), "blockquote")]
     #[case(Node::Break{position: None}, "break")]
     #[case(Node::Definition(Definition{ident: "".to_string(), url: Url::new("".to_string()), title: None, label: None, position: None}), "definition")]
-    #[case(Node::Delete(Value{values: Vec::new(), position: None}), "delete")]
+    #[case(Node::Delete(Delete{values: Vec::new(), position: None}), "delete")]
     #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: None}), "h1")]
     #[case(Node::Heading(Heading{depth: 2, values: Vec::new(), position: None}), "h2")]
     #[case(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "h3")]
     #[case(Node::Heading(Heading{depth: 4, values: Vec::new(), position: None}), "h4")]
     #[case(Node::Heading(Heading{depth: 5, values: Vec::new(), position: None}), "h5")]
     #[case(Node::Heading(Heading{depth: 6, values: Vec::new(), position: None}), "h")]
-    #[case(Node::Emphasis(Value{values: Vec::new(), position: None}), "emphasis")]
+    #[case(Node::Emphasis(Emphasis{values: Vec::new(), position: None}), "emphasis")]
     #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: None}), "footnote")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: None}), "footnoteref")]
     #[case(Node::Html(Html{value: "".to_string(), position: None}), "html")]
@@ -2690,7 +2907,7 @@ mod tests {
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: None}), "table_row")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]
-    #[case(Node::Strong(Value{values: Vec::new(), position: None}), "strong")]
+    #[case(Node::Strong(Strong{values: Vec::new(), position: None}), "strong")]
     #[case(Node::HorizontalRule{position: None}, "Horizontal_rule")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "".into(), position: None}), "mdx_flow_expression")]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_flow_element")]
@@ -2705,10 +2922,10 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), "test")]
     #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::Blockquote(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::Delete(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::Blockquote(Blockquote{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::Delete(Delete{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-    #[case(Node::Emphasis(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::Emphasis(Emphasis{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None}), "test")]
     #[case(Node::Html(Html{value: "test".to_string(), position: None}), "test")]
@@ -2722,7 +2939,7 @@ mod tests {
     #[case(Node::LinkRef(LinkRef{ident: "test".to_string(), values: Vec::new(), label: None, position: None}), "test")]
     #[case(Node::Math(Math{value: "test".to_string(), position: None}), "test")]
     #[case(Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None}), "test")]
-    #[case(Node::Strong(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::Strong(Strong{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
     #[case(Node::Break{position: None}, "")]
@@ -2742,10 +2959,10 @@ mod tests {
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), None)]
     #[case(Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::List(List{index: 0, level: 0, checked: None, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Blockquote(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Delete(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Blockquote(Blockquote{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Delete(Delete{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Emphasis(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Emphasis(Emphasis{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Html(Html{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2759,7 +2976,7 @@ mod tests {
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Math(Math{value: "".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Strong(Value{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Strong(Strong{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -2798,26 +3015,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Blockquote(Value{values: vec![
+    #[case(Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
-    #[case(Node::Blockquote(Value{values: vec![
+    #[case(Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
-    #[case(Node::Blockquote(Value{values: vec![
+    #[case(Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}), 1, None)]
-    #[case(Node::Delete(Value{values: vec![
+    #[case(Node::Delete(Delete{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
-    #[case(Node::Emphasis(Value{values: vec![
+    #[case(Node::Emphasis(Emphasis{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
-    #[case(Node::Strong(Value{values: vec![
+    #[case(Node::Strong(Strong{values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
     #[case(Node::Heading(Heading{depth: 1, values: vec![
@@ -2847,17 +3064,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Blockquote(Value{values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-    #[case(Node::Delete(Value{values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-    #[case(Node::Emphasis(Value{values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-    #[case(Node::Strong(Value{values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Link(Link{url: Url("url".to_string()), title: None, values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
@@ -2884,46 +3101,46 @@ mod tests {
 
     #[rstest]
     #[case(
-        &mut Node::Blockquote(Value{values: vec![
+        &mut Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::Blockquote(Value{values: vec![
+        Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
     #[case(
-        &mut Node::Delete(Value{values: vec![
+        &mut Node::Delete(Delete{values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::Delete(Value{values: vec![
+        Node::Delete(Delete{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
     #[case(
-        &mut Node::Emphasis(Value{values: vec![
+        &mut Node::Emphasis(Emphasis{values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::Emphasis(Value{values: vec![
+        Node::Emphasis(Emphasis{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
     #[case(
-        &mut Node::Strong(Value{values: vec![
+        &mut Node::Strong(Strong{values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::Strong(Value{values: vec![
+        Node::Strong(Strong{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
@@ -3018,7 +3235,7 @@ mod tests {
         Node::Text(Text{value: "old".to_string(), position: None})
     )]
     #[case(
-        &mut Node::Blockquote(Value{values: vec![
+        &mut Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "text1".to_string(), position: None}),
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None}),
@@ -3026,13 +3243,13 @@ mod tests {
             Node::Text(Text{value: "new1".to_string(), position: None}),
             Node::Text(Text{value: "new2".to_string(), position: None})
         ]}),
-        Node::Blockquote(Value{values: vec![
+        Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "new1".to_string(), position: None}),
             Node::Text(Text{value: "new2".to_string(), position: None})
         ], position: None})
     )]
     #[case(
-        &mut Node::Strong(Value{values: vec![
+        &mut Node::Strong(Strong{values: vec![
             Node::Text(Text{value: "text1".to_string(), position: None}),
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None}),
@@ -3040,7 +3257,7 @@ mod tests {
             Node::Empty,
             Node::Text(Text{value: "new2".to_string(), position: None})
         ]}),
-        Node::Strong(Value{values: vec![
+        Node::Strong(Strong{values: vec![
             Node::Text(Text{value: "text1".to_string(), position: None}),
             Node::Text(Text{value: "new2".to_string(), position: None})
         ], position: None})
@@ -3081,12 +3298,12 @@ mod tests {
     #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}},
        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})}))]
-    #[case(Node::Delete(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
+    #[case(Node::Delete(Delete{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-        Node::Delete(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
-    #[case(Node::Emphasis(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
+        Node::Delete(Delete{values: vec![Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
+    #[case(Node::Emphasis(Emphasis{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-        Node::Emphasis(Value{values: vec![Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
+        Node::Emphasis(Emphasis{values: vec![Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
     #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
         Node::Footnote(Footnote{ident: "id".to_string(), values: vec![Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
@@ -3156,10 +3373,10 @@ mod tests {
            Node::Text(Text{value: "test1".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})}),
            Node::Text(Text{value: "test2".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})})
        ]}))]
-    #[case(Node::Blockquote(Value{values: vec![
+    #[case(Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-        Node::Blockquote(Value{values: vec![
+        Node::Blockquote(Blockquote{values: vec![
             Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})
         ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
     #[case(Node::Heading(Heading{depth: 1, values: vec![
@@ -3168,10 +3385,10 @@ mod tests {
             Node::Heading(Heading{depth: 1, values: vec![
                 Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})
             ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
-    #[case(Node::Strong(Value{values: vec![
+    #[case(Node::Strong(Strong{values: vec![
             Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
             Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-            Node::Strong(Value{values: vec![
+            Node::Strong(Strong{values: vec![
                 Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})
             ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
     #[case(Node::TableRow(TableRow{values: vec![

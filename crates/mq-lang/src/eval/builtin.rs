@@ -1285,13 +1285,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_strong"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
-                    Ok(mq_markdown::Node::Strong(mq_markdown::Value {
+                    Ok(mq_markdown::Node::Strong(mq_markdown::Strong {
                         values: node.node_values(),
                         position: None,
                     })
                     .into())
                 }
-                [a] if !a.is_none() => Ok(mq_markdown::Node::Strong(mq_markdown::Value {
+                [a] if !a.is_none() => Ok(mq_markdown::Node::Strong(mq_markdown::Strong {
                     values: vec![a.to_string().into()],
                     position: None,
                 })
@@ -1303,13 +1303,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_em"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
-                    Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
+                    Ok(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
                         values: node.node_values(),
                         position: None,
                     })
                     .into())
                 }
-                [a] if !a.is_none() => Ok(mq_markdown::Node::Emphasis(mq_markdown::Value {
+                [a] if !a.is_none() => Ok(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
                     values: vec![a.to_string().into()],
                     position: None,
                 })
@@ -2849,17 +2849,17 @@ mod tests {
         true
     )]
     #[case::strong(
-        Node::Strong(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        Node::Strong(mq_markdown::Strong { values: vec!["test".to_string().into()], position: None }),
         ast::Selector::Strong,
         true
     )]
     #[case::emphasis(
-        Node::Emphasis(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        Node::Emphasis(mq_markdown::Emphasis{ values: vec!["test".to_string().into()], position: None }),
         ast::Selector::Emphasis,
         true
     )]
     #[case::delete(
-        Node::Delete(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        Node::Delete(mq_markdown::Delete{ values: vec!["test".to_string().into()], position: None }),
         ast::Selector::Delete,
         true
     )]
@@ -2967,7 +2967,7 @@ mod tests {
         true
     )]
     #[case::blockquote(
-        Node::Blockquote(mq_markdown::Value { values: vec!["test".to_string().into()], position: None }),
+        Node::Blockquote(mq_markdown::Blockquote{ values: vec!["test".to_string().into()], position: None }),
         ast::Selector::Blockquote,
         true
     )]

@@ -456,6 +456,7 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "serde",
  "static_assertions",
 ]
 
@@ -1336,6 +1337,8 @@ dependencies = [
  "markdown",
  "miette",
  "rstest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

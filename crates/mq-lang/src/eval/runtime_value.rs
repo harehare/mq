@@ -604,7 +604,7 @@ mod tests {
             position: None,
         });
 
-        let parent = mq_markdown::Node::Strong(mq_markdown::Value {
+        let parent = mq_markdown::Node::Strong(mq_markdown::Strong {
             values: vec![child1, child2],
             position: None,
         });
