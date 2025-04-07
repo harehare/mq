@@ -104,7 +104,12 @@ impl Markdown {
 
     #[cfg(feature = "json")]
     pub fn to_json(&self) -> miette::Result<String> {
-        serde_json::to_string_pretty(&self.nodes)
+        let nodes = self
+            .nodes
+            .iter()
+            .filter(|node| !node.is_empty() && !node.is_empty_fragment())
+            .collect::<Vec<_>>();
+        serde_json::to_string_pretty(&nodes)
             .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
@@ -349,7 +354,6 @@ mod json_tests {
             .parse::<Markdown>()
             .unwrap();
         let json = md.to_json().unwrap();
-        dbg!(&json);
 
         assert!(json.contains("\"type\": \"Code\""));
         assert!(json.contains("\"lang\": \"rust\""));

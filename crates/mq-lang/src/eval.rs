@@ -2235,7 +2235,7 @@ mod tests {
         vec![
               ast_call("to_hr", Vec::new()),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule{position: None}, None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule{position: None}), None)]))]
     #[case::to_md_list(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "list".to_string(), position: None}), None)],
         vec![
               ast_call("to_md_list",

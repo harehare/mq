@@ -51,6 +51,7 @@ enum Format {
     Markdown,
     Html,
     Text,
+    Json,
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
@@ -445,6 +446,11 @@ impl Cli {
             Format::Markdown => {
                 handle
                     .write_all(markdown.to_string().as_bytes())
+                    .map_err(|e| miette!(e))?;
+            }
+            Format::Json => {
+                handle
+                    .write_all(markdown.to_json()?.as_bytes())
                     .map_err(|e| miette!(e))?;
             }
         }

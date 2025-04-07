@@ -171,6 +171,7 @@ pub struct TableCell {
     pub row: usize,
     pub last_cell_in_row: bool,
     pub last_cell_of_in_table: bool,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -182,6 +183,7 @@ pub struct TableCell {
 )]
 pub struct TableRow {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -193,6 +195,7 @@ pub struct TableRow {
 )]
 pub struct TableHeader {
     pub align: Vec<TableAlignKind>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -215,6 +218,7 @@ pub struct Fragment {
 pub struct Code {
     pub value: String,
     pub lang: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub meta: Option<String>,
     pub fence: bool,
@@ -230,6 +234,7 @@ pub struct Image {
     pub alt: String,
     pub url: String,
     pub title: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -243,6 +248,7 @@ pub struct ImageRef {
     pub alt: String,
     pub ident: String,
     pub label: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -255,6 +261,7 @@ pub struct Link {
     pub url: Url,
     pub title: Option<Title>,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -267,6 +274,7 @@ pub struct Link {
 pub struct FootnoteRef {
     pub ident: String,
     pub label: Option<String>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -279,6 +287,7 @@ pub struct FootnoteRef {
 pub struct Footnote {
     pub ident: String,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -292,6 +301,7 @@ pub struct LinkRef {
     pub ident: String,
     pub label: Option<String>,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -304,6 +314,7 @@ pub struct LinkRef {
 pub struct Heading {
     pub depth: u8,
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -315,6 +326,7 @@ pub struct Heading {
 )]
 
 pub struct Definition {
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub url: Url,
     pub title: Option<Title>,
@@ -330,6 +342,7 @@ pub struct Definition {
 )]
 pub struct Text {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -342,6 +355,7 @@ pub struct Text {
 
 pub struct Html {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -353,6 +367,7 @@ pub struct Html {
 )]
 pub struct Toml {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -364,6 +379,7 @@ pub struct Toml {
 )]
 pub struct Yaml {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -375,6 +391,7 @@ pub struct Yaml {
 )]
 pub struct CodeInline {
     pub value: CompactString,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -386,6 +403,7 @@ pub struct CodeInline {
 )]
 pub struct MathInline {
     pub value: CompactString,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -397,6 +415,7 @@ pub struct MathInline {
 )]
 pub struct Math {
     pub value: String,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -408,6 +427,7 @@ pub struct Math {
 )]
 pub struct MdxFlowExpression {
     pub value: CompactString,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -419,6 +439,7 @@ pub struct MdxFlowExpression {
 )]
 pub struct MdxJsxFlowElement {
     pub children: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub name: Option<String>,
     pub attributes: Vec<MdxAttributeContent>,
@@ -465,6 +486,7 @@ pub enum MdxAttributeValue {
 )]
 pub struct MdxJsxTextElement {
     pub children: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
     pub name: Option<CompactString>,
     pub attributes: Vec<MdxAttributeContent>,
@@ -478,6 +500,7 @@ pub struct MdxJsxTextElement {
 )]
 pub struct MdxTextExpression {
     pub value: CompactString,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -489,6 +512,7 @@ pub struct MdxTextExpression {
 )]
 pub struct MdxJsEsm {
     pub value: CompactString,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -500,6 +524,7 @@ pub struct MdxJsEsm {
 )]
 pub struct Blockquote {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -511,6 +536,7 @@ pub struct Blockquote {
 )]
 pub struct Delete {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -522,6 +548,7 @@ pub struct Delete {
 )]
 pub struct Emphasis {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -533,6 +560,29 @@ pub struct Emphasis {
 )]
 pub struct Strong {
     pub values: Vec<Node>,
+    #[cfg_attr(feature = "json", serde(skip))]
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct Break {
+    #[cfg_attr(feature = "json", serde(skip))]
+    pub position: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase", tag = "type")
+)]
+pub struct HorizontalRule {
+    #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
 
@@ -544,7 +594,7 @@ pub struct Strong {
 )]
 pub enum Node {
     Blockquote(Blockquote),
-    Break { position: Option<Position> },
+    Break(Break),
     Definition(Definition),
     Delete(Delete),
     Heading(Heading),
@@ -567,7 +617,7 @@ pub enum Node {
     TableCell(TableCell),
     Code(Code),
     Strong(Strong),
-    HorizontalRule { position: Option<Position> },
+    HorizontalRule(HorizontalRule),
     MdxFlowExpression(MdxFlowExpression),
     MdxJsxFlowElement(MdxJsxFlowElement),
     MdxJsxTextElement(MdxJsxTextElement),
@@ -703,7 +753,7 @@ impl Node {
             | Node::Blockquote(Blockquote { values, .. })
             | Node::Delete(Delete { values, .. })
             | Node::Emphasis(Emphasis { values, .. })
-            | Node::Strong(Strong { values, .. }) => Node::Fragment(Fragment { values }),
+            | Node::Strong(Strong { values, .. }) => Self::Fragment(Fragment { values }),
             node @ Node::Fragment(_) => node,
             _ => Self::Empty,
         }
@@ -959,8 +1009,8 @@ impl Node {
             }
             Self::Yaml(Yaml { value, .. }) => format!("---\n{}\n---", value),
             Self::Toml(Toml { value, .. }) => format!("+++\n{}\n+++", value),
-            Self::Break { .. } => "\\".to_string(),
-            Self::HorizontalRule { .. } => "---".to_string(),
+            Self::Break(_) => "\\".to_string(),
+            Self::HorizontalRule(_) => "---".to_string(),
             Self::Fragment(Fragment { values }) => values
                 .iter()
                 .map(|value| value.to_string_with(options))
@@ -1107,7 +1157,8 @@ impl Node {
             Self::MdxJsEsm(m) => m.position = pos,
             Self::MdxJsxFlowElement(m) => m.position = pos,
             Self::MdxJsxTextElement(m) => m.position = pos,
-            Self::Break { position } | Self::HorizontalRule { position } => *position = pos,
+            Self::Break(b) => b.position = pos,
+            Self::HorizontalRule(h) => h.position = pos,
             Self::Text(t) => t.position = pos,
             Self::Fragment(_) | Self::Empty => {}
         }
@@ -1143,9 +1194,9 @@ impl Node {
             Self::MdxJsEsm(m) => m.position.clone(),
             Self::MdxJsxFlowElement(m) => m.position.clone(),
             Self::MdxJsxTextElement(m) => m.position.clone(),
-            Self::Break { position } => position.clone(),
+            Self::Break(b) => b.position.clone(),
             Self::Text(t) => t.position.clone(),
-            Self::HorizontalRule { position } => position.clone(),
+            Self::HorizontalRule(h) => h.position.clone(),
             Self::Fragment(v) => {
                 let positions: Vec<Position> =
                     v.values.iter().filter_map(|node| node.position()).collect();
@@ -1168,6 +1219,22 @@ impl Node {
 
     pub fn is_fragment(&self) -> bool {
         matches!(self, Self::Fragment(_))
+    }
+
+    pub fn is_empty_fragment(&self) -> bool {
+        if let Self::Fragment(_) = self {
+            Self::fragments(self).is_empty()
+        } else {
+            false
+        }
+    }
+
+    fn fragments(node: &Node) -> Vec<Node> {
+        if let Self::Fragment(fragment) = node {
+            fragment.values.iter().flat_map(Self::fragments).collect()
+        } else {
+            vec![]
+        }
     }
 
     pub fn is_inline_code(&self) -> bool {
@@ -1695,9 +1762,9 @@ impl Node {
                 })]
             }
             mdast::Node::Break(mdast::Break { position }) => {
-                vec![Self::Break {
+                vec![Self::Break(Break {
                     position: position.map(|p| p.clone().into()),
-                }]
+                })]
             }
             mdast::Node::Delete(mdast::Delete { position, .. }) => {
                 vec![Self::Delete(Delete {
@@ -1718,9 +1785,9 @@ impl Node {
                 })]
             }
             mdast::Node::ThematicBreak(mdast::ThematicBreak { position, .. }) => {
-                vec![Self::HorizontalRule {
+                vec![Self::HorizontalRule(HorizontalRule {
                     position: position.map(|p| p.clone().into()),
-                }]
+                })]
             }
             mdast::Node::Html(mdast::Html { value, position }) => {
                 vec![Self::Html(Html {
@@ -2217,12 +2284,12 @@ mod tests {
     #[case::definition(Node::Definition(Definition{ url: Url::new("url".to_string()), title: None, ident: "test1".to_string(), label: None, position: None}),
             "test2".to_string(),
             Node::Definition(Definition{url: Url::new("test2".to_string()), title: None, ident: "test1".to_string(), label: None, position: None}),)]
-    #[case::break_(Node::Break{ position: None},
+    #[case::break_(Node::Break(Break{ position: None}),
             "test".to_string(),
-            Node::Break{position: None})]
-    #[case::horizontal_rule(Node::HorizontalRule { position: None},
+            Node::Break(Break{position: None}))]
+    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{ position: None}),
             "test".to_string(),
-            Node::HorizontalRule{position: None})]
+            Node::HorizontalRule(HorizontalRule{position: None}))]
     #[case::mdx_flow_expression(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}),
            "updated".to_string(),
            Node::MdxFlowExpression(MdxFlowExpression{value: "updated".into(), position: None}))]
@@ -2563,7 +2630,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::HorizontalRule{position: None}, true)]
+    #[case(Node::HorizontalRule(HorizontalRule{position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_horizontal_rule(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_horizontal_rule(), expected);
@@ -2631,7 +2698,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Break{position: None}, true)]
+    #[case(Node::Break(Break{position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_break(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_break(), expected);
@@ -2741,8 +2808,8 @@ mod tests {
     #[case::strong(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "**test**")]
     #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), RenderOptions::default(), "---\nkey: value\n---")]
     #[case::toml(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), RenderOptions::default(), "+++\nkey = \"value\"\n+++")]
-    #[case::break_(Node::Break{position: None}, RenderOptions::default(), "\\")]
-    #[case::horizontal_rule(Node::HorizontalRule{position: None}, RenderOptions::default(), "---")]
+    #[case::break_(Node::Break(Break{position: None}), RenderOptions::default(), "\\")]
+    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{position: None}), RenderOptions::default(), "---")]
     #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
         name: Some("div".to_string()),
         attributes: vec![
@@ -2880,7 +2947,7 @@ mod tests {
 
     #[rstest]
     #[case(Node::Blockquote(Blockquote{values: Vec::new(), position: None}), "blockquote")]
-    #[case(Node::Break{position: None}, "break")]
+    #[case(Node::Break(Break{position: None}), "break")]
     #[case(Node::Definition(Definition{ident: "".to_string(), url: Url::new("".to_string()), title: None, label: None, position: None}), "definition")]
     #[case(Node::Delete(Delete{values: Vec::new(), position: None}), "delete")]
     #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: None}), "h1")]
@@ -2908,7 +2975,7 @@ mod tests {
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]
     #[case(Node::Strong(Strong{values: Vec::new(), position: None}), "strong")]
-    #[case(Node::HorizontalRule{position: None}, "Horizontal_rule")]
+    #[case(Node::HorizontalRule(HorizontalRule{position: None}), "Horizontal_rule")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "".into(), position: None}), "mdx_flow_expression")]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_flow_element")]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_text_element")]
@@ -2942,8 +3009,8 @@ mod tests {
     #[case(Node::Strong(Strong{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
-    #[case(Node::Break{position: None}, "")]
-    #[case(Node::HorizontalRule{position: None}, "")]
+    #[case(Node::Break(Break{position: None}), "")]
+    #[case(Node::HorizontalRule(HorizontalRule{position: None}), "")]
     #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: None}), "")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
@@ -2980,8 +3047,8 @@ mod tests {
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}, Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::Break(Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::HorizontalRule(HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -3358,9 +3425,9 @@ mod tests {
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "text".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 20}},
         Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: vec![Node::Text(Text{value: "text".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 20}})})], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 20}})}))]
-    #[case(Node::Break{position: None},
+    #[case(Node::Break(Break{position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 2}},
-        Node::Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 2}})})]
+        Node::Break(Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 2}})}))]
     #[case(Node::Empty,
        Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
        Node::Empty)]

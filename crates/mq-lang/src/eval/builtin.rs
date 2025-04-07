@@ -1206,7 +1206,12 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_hr"),
             BuiltinFunction::new(ParamNum::Fixed(0), |_, _, _| {
-                Ok(mq_markdown::Node::HorizontalRule { position: None }.into())
+                Ok(
+                    mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+                        position: None,
+                    })
+                    .into(),
+                )
             }),
         );
         map.insert(
@@ -2932,7 +2937,7 @@ mod tests {
         true
     )]
     #[case::break_(
-        Node::Break{position: None},
+        Node::Break(mq_markdown::Break{position: None}),
         ast::Selector::Break,
         true
     )]
@@ -2962,7 +2967,7 @@ mod tests {
         true
     )]
     #[case::horizontal_rule(
-        Node::HorizontalRule { position: None },
+        Node::HorizontalRule(mq_markdown::HorizontalRule{ position: None }),
         ast::Selector::HorizontalRule,
         true
     )]

@@ -47,7 +47,7 @@ miette = {version = "7.5.0", features = ["fancy"]}
 mq-formatter = {path = "./crates/mq-formatter", version = "0.1.0"}
 mq-hir = {path = "./crates/mq-hir", version = "0.1.0"}
 mq-lang = {path = "./crates/mq-lang", version = "0.1.0"}
-mq-markdown = {path = "./crates/mq-markdown", version = "0.1.0"}
+mq-markdown = {path = "./crates/mq-markdown", version = "0.1.0", features = ["json"]}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.0"}
 url = "2.5.4"
 
