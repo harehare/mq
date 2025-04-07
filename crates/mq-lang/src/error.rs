@@ -154,10 +154,13 @@ impl Error {
 }
 #[cfg(test)]
 mod test {
+    use std::{cell::RefCell, rc::Rc};
+
+    use mq_test::defer;
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::{Token, TokenKind, arena::ArenaId};
+    use crate::{Arena, Token, TokenKind, arena::ArenaId};
 
     #[fixture]
     fn module_loader() -> ModuleLoader {
@@ -347,5 +350,57 @@ mod test {
     ) {
         let error = Error::from_error(source_code, cause, module_loader);
         assert_eq!(error.source_code, source_code);
+    }
+
+    #[test]
+    fn test_from_error_with_module_source() {
+        let (temp_dir, temp_file_path) = mq_test::create_file(
+            "test_from_error_with_module_source.mq",
+            "def func1(): 42; | let val1 = 1",
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let mut loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        loader
+            .load_from_file("test_from_error_with_module_source", token_arena)
+            .unwrap();
+
+        let token = Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(1),
+        };
+
+        let cause = InnerError::Eval(EvalError::ZeroDivision(token));
+        let error = Error::from_error("top level source", cause, loader);
+
+        assert_eq!(error.source_code, "def func1(): 42; | let val1 = 1");
+        assert_eq!(error.span.start.line, 1);
+        assert_eq!(error.span.start.column, 1);
+    }
+
+    #[test]
+    fn test_from_error_with_builtin_module() {
+        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let mut loader = ModuleLoader::new(None);
+        loader.load_builtin(token_arena).unwrap();
+        let token = Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(1),
+        };
+
+        let cause = InnerError::Eval(EvalError::ZeroDivision(token));
+        let error = Error::from_error("top level source", cause, loader);
+
+        assert_eq!(error.source_code, ModuleLoader::BUILTIN_FILE);
+        assert_eq!(error.span.start.line, 1);
+        assert_eq!(error.span.start.column, 1);
     }
 }

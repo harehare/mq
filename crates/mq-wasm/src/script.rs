@@ -152,7 +152,7 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
     let is_update = options.is_update;
     let mut engine = mq_lang::Engine::default();
 
-    engine.load_builtin_module().unwrap();
+    engine.load_builtin_module();
 
     let markdown = if is_mdx {
         mq_markdown::Markdown::from_mdx_str(content)

@@ -1,6 +1,5 @@
 use std::{fmt, str::FromStr};
 
-use itertools::Itertools;
 use markdown::Constructs;
 use miette::miette;
 
@@ -54,7 +53,7 @@ impl fmt::Display for Markdown {
 
                 Some(value)
             })
-            .join("");
+            .collect::<String>();
 
         write!(
             f,
@@ -99,7 +98,7 @@ impl Markdown {
         self.nodes
             .iter()
             .map(|node| format!("{}\n", node.value()))
-            .join("")
+            .collect::<String>()
     }
 
     #[cfg(feature = "json")]

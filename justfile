@@ -39,7 +39,7 @@ test:
     cargo test --workspace --all-features
 
 test-cov:
-    cargo llvm-cov --open --html --workspace
+    cargo llvm-cov --open --html --workspace --all-features
 
 test-fuzz:
     cargo +nightly fuzz run interpreter

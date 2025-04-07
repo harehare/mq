@@ -25,7 +25,7 @@ fn main() {
     let markdown = mq_markdown::Markdown::from_str(markdown_content).unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
     let mut engine = mq_lang::Engine::default();
-    engine.load_builtin_module().unwrap();
+    engine.load_builtin_module();
 
     let code = ".h
 | let link = to_link(add(\"#\", to_text(self)), to_text(self), \"\")

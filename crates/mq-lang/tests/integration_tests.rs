@@ -4,7 +4,7 @@ use rstest::{fixture, rstest};
 #[fixture]
 fn engine() -> Engine {
     let mut engine = mq_lang::Engine::default();
-    engine.load_builtin_module().unwrap();
+    engine.load_builtin_module();
     engine
 }
 

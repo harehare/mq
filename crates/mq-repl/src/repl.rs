@@ -107,9 +107,7 @@ impl Repl {
     pub fn new(input: Vec<mq_lang::Value>) -> Self {
         let mut engine = mq_lang::Engine::default();
 
-        engine
-            .load_builtin_module()
-            .expect("Error loading builtin module");
+        engine.load_builtin_module();
 
         Self {
             command_context: Rc::new(RefCell::new(CommandContext::new(engine, input))),

@@ -62,14 +62,10 @@ impl Engine {
         self.evaluator.define_string_value(name, value);
     }
 
-    pub fn load_builtin_module(&mut self) -> Result<(), Box<error::Error>> {
-        self.evaluator.load_builtin_module().map_err(|e| {
-            Box::new(error::Error::from_error(
-                "",
-                InnerError::Eval(e),
-                self.evaluator.module_loader.clone(),
-            ))
-        })
+    pub fn load_builtin_module(&mut self) {
+        self.evaluator
+            .load_builtin_module()
+            .expect("Failed to load builtin module");
     }
 
     pub fn load_module(&mut self, module_name: &str) -> Result<(), Box<error::Error>> {
@@ -105,7 +101,7 @@ impl Engine {
     /// use mq_lang::Engine;
     ///
     /// let mut engine = Engine::default();
-    /// engine.load_builtin_module().expect("Failed to load builtin module");
+    /// engine.load_builtin_module();
     ///
     /// let input = vec!["hello".to_string().into()];
     /// let result = engine.eval("add(\" world\")", input.into_iter());
@@ -169,16 +165,27 @@ mod tests {
     }
 
     #[test]
-    fn test_version() {
-        let version = Engine::version();
-        assert!(!version.is_empty());
+    fn test_set_max_call_stack_depth() {
+        let mut engine = Engine::default();
+        let default_depth = engine.evaluator.options.max_call_stack_depth;
+        let new_depth = default_depth + 10;
+
+        engine.set_max_call_stack_depth(new_depth);
+        assert_eq!(engine.evaluator.options.max_call_stack_depth, new_depth);
     }
 
     #[test]
-    fn test_load_builtin_module() {
+    fn test_set_filter_none() {
         let mut engine = Engine::default();
-        let result = engine.load_builtin_module();
-        assert!(result.is_ok());
+        let initial_value = engine.evaluator.options.filter_none;
+
+        engine.set_filter_none(!initial_value);
+        assert_eq!(engine.evaluator.options.filter_none, !initial_value);
+    }
+    #[test]
+    fn test_version() {
+        let version = Engine::version();
+        assert!(!version.is_empty());
     }
 
     #[test]

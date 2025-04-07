@@ -1,6 +1,6 @@
 fn main() {
     let mut engine = mq_lang::Engine::default();
-    engine.load_builtin_module().unwrap();
+    engine.load_builtin_module();
 
     let code = "
      def snake_to_camel(x):

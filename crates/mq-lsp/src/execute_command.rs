@@ -23,7 +23,7 @@ pub fn response(
                     })
                     .unwrap_or_else(|_| vec![mq_lang::Value::String(input)]);
 
-                engine.load_builtin_module().unwrap();
+                engine.load_builtin_module();
                 let result = engine.eval(text, input.into_iter());
 
                 match result {

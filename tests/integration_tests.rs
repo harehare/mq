@@ -17,6 +17,16 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[rstest]
+#[case::json(
+    vec!["--unbuffered", "-F", "json", ".code_inline"],
+    "`inline code`",
+    r#"[
+  {
+    "type": "CodeInline",
+    "value": "inline code"
+  }
+]"#
+)]
 #[case::args(
     vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],
     "# **title**\n\n- test1\n- test2",

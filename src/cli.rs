@@ -271,7 +271,7 @@ impl Cli {
 
     fn create_engine(&self) -> miette::Result<Engine> {
         let mut engine = mq_lang::Engine::default();
-        engine.load_builtin_module().map_err(|e| *e)?;
+        engine.load_builtin_module();
         engine.set_filter_none(!self.output.update);
 
         if let Some(dirs) = &self.input.module_directories {

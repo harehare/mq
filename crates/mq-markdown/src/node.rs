@@ -820,7 +820,7 @@ impl Node {
             Self::TableRow(TableRow { values, .. }) => values
                 .iter()
                 .map(|cell| cell.to_string_with(options))
-                .join(""),
+                .collect::<String>(),
             Self::TableCell(TableCell {
                 last_cell_in_row,
                 last_cell_of_in_table,
@@ -1004,7 +1004,7 @@ impl Node {
                     values
                         .iter()
                         .map(|value| value.to_string_with(options))
-                        .join("")
+                        .collect::<String>()
                 )
             }
             Self::Yaml(Yaml { value, .. }) => format!("---\n{}\n---", value),
@@ -1014,7 +1014,7 @@ impl Node {
             Self::Fragment(Fragment { values }) => values
                 .iter()
                 .map(|value| value.to_string_with(options))
-                .join(""),
+                .collect::<String>(),
             Self::Empty => String::new(),
         }
     }
@@ -2189,12 +2189,12 @@ impl Node {
                     value.to_string_with(options)
                 }
             })
-            .join("")
+            .collect::<String>()
     }
 
     #[inline(always)]
     fn values_to_value(values: Vec<Node>) -> String {
-        values.iter().map(|value| value.value()).join("")
+        values.iter().map(|value| value.value()).collect::<String>()
     }
 }
 
