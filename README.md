@@ -33,6 +33,7 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 - **Built-in support**: Filter and transform content with many built-in functions and selectors.
 - **REPL Support**: Interactive command-line REPL for testing and experimenting.
 - **IDE Support**: VSCode Extension and Language Server Protocol (LSP) support for custom function development.
+- **HTML to Markdown**: Easily convert HTML content to Markdown format using [html2md-rs](https://github.com/izyuumi/html2md-rs), making it simple to integrate HTML content into your Markdown workflows.
 
 ## Installation
 
@@ -72,8 +73,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file

@@ -41,6 +41,7 @@ clap = {version = "4.5.35", features = ["derive"]}
 clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.47"
 env_logger = "0.11.6"
+html2md-rs = "0.10.2"
 itertools = "0.14.0"
 log = "0.4.27"
 miette = {version = "7.5.0", features = ["fancy"]}

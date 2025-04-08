@@ -832,6 +832,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "html2md-rs"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "153717a95db950deae78899e9b3ba69702ead5b50c98f83f0f8d366c17605819"
+dependencies = [
+ "percent-encoding",
+]
+
+[[package]]
 name = "httparse"
 version = "1.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1239,6 +1248,7 @@ dependencies = [
  "clap-verbosity-flag",
  "clap_complete",
  "env_logger",
+ "html2md-rs",
  "itertools",
  "log",
  "miette",

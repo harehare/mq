@@ -36,6 +36,7 @@ code
 \`\`\`
 `,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Update child node",
@@ -46,6 +47,7 @@ code
 - item2
 `,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Markdown Toc",
@@ -83,6 +85,7 @@ else:
 - item 1
 - item 2`,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Extract js code",
@@ -101,6 +104,7 @@ console.log("Hello, World!");
 \`\`\`
 `,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Exclude js code",
@@ -119,6 +123,7 @@ console.log("Hello, World!");
 \`\`\`
 `,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Extract mdx",
@@ -133,6 +138,7 @@ In {year}, the snowfall was above average.
 <Chart color="#fcb32c" year={year} />
 `,
     isMdx: true,
+    isUpdate: false,
   },
   {
     name: "Custom function",
@@ -146,6 +152,7 @@ In {year}, the snowfall was above average.
 | snake_to_camel()`,
     markdown: `# sample_codes`,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Generate sitemap",
@@ -166,6 +173,7 @@ In {year}, the snowfall was above average.
 - [Chapter4](Chapter4.md)
 `,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Extract table",
@@ -189,6 +197,7 @@ In {year}, the snowfall was above average.
 | Coffee Maker | Appliances | $85 | 24 |
 `,
     isMdx: false,
+    isUpdate: false,
   },
   {
     name: "Extract list",
@@ -209,6 +218,7 @@ In {year}, the snowfall was above average.
   - USB Cable: $12
 `,
     isMdx: false,
+    isUpdate: false,
   },
 ];
 
@@ -311,6 +321,7 @@ export const Playground = () => {
     setCode(selected.code);
     setMarkdown(selected.markdown);
     setIsMdx(selected.isMdx);
+    setIsUpdate(selected.isUpdate);
   }, []);
 
   const handleShare = useCallback(() => {

@@ -58,9 +58,29 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     "# [**e**](url)\n\n- test1\n- test2\n"
 )]
 #[case::null_input(
-    vec!["--unbuffered", "--null-input", "1 | add(2)"],
+    vec!["--unbuffered", "-I", "null", "1 | add(2)"],
     "",
     "3\n"
+)]
+#[case::html_input(
+    vec!["--unbuffered", "-I", "html", ".h"],
+    "<html><body><h1>test</h1></body></html>",
+    "# test\n"
+)]
+#[case::mdx_input(
+    vec!["--unbuffered", "--mdx", "select(is_mdx())"],
+    "import {Chart} from './snowfall.js'
+export const year = 2023
+
+# Last year’s snowfall
+
+In {year}, the snowfall was above average.
+
+<Chart color=\"#fcb32c\" year={year} />",
+    "{Chart}
+{year}
+<Chart color=\"#fcb32c\" year={year} />
+"
 )]
 #[case::nested_item(
     vec!["--unbuffered", "--update" , "if (and(or(.link, .definition), matches_url(\"a/b/c.html\"))): update(\"x/y/z.html\")"],

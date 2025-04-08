@@ -46,7 +46,16 @@ pub struct Cli {
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
-enum Format {
+enum InputFormat {
+    #[default]
+    Markdown,
+    Html,
+    Text,
+    Null,
+}
+
+#[derive(Clone, Debug, Default, clap::ValueEnum)]
+enum OutputFormat {
     #[default]
     Markdown,
     Html,
@@ -83,13 +92,9 @@ struct InputArgs {
     #[arg(short, long, default_value_t = false)]
     from_file: bool,
 
-    /// Reads each line as a string
-    #[arg(short = 'R', long, group = "input")]
-    raw_input: bool,
-
-    /// Use empty string as the single input value
-    #[arg(short, long, group = "input")]
-    null_input: bool,
+    /// Set input format
+    #[arg(short = 'I', long, value_enum, default_value_t)]
+    input_format: InputFormat,
 
     /// Search modules from the directory
     #[arg(short = 'L', long = "directory")]
@@ -114,9 +119,9 @@ struct InputArgs {
 
 #[derive(Clone, Debug, clap::Args, Default)]
 struct OutputArgs {
-    /// Compact instead of pretty-printed output
+    /// Set output format
     #[arg(short = 'F', long, value_enum, default_value_t)]
-    output_format: Format,
+    output_format: OutputFormat,
 
     /// Update the input markdown
     #[clap(short = 'U', long, default_value = "false")]
@@ -330,42 +335,52 @@ impl Cli {
             unsafe { env::set_var("__FILE__", file.to_string_lossy().to_string()) };
         }
 
-        let runtime_values = if self.input.null_input {
-            engine.eval(
-                query,
-                vec![mq_lang::Value::String("".to_string())].into_iter(),
-            )
-        } else if self.input.raw_input {
-            let runtime_values = content
+        let input = match self.input.input_format {
+            InputFormat::Markdown => {
+                let markdown: mq_markdown::Markdown = if self.input.mdx {
+                    mq_markdown::Markdown::from_mdx_str(content)?
+                } else {
+                    mq_markdown::Markdown::from_str(content)?
+                };
+
+                markdown
+                    .nodes
+                    .into_iter()
+                    .map(mq_lang::Value::from)
+                    .collect::<Vec<_>>()
+            }
+            InputFormat::Html => {
+                let md = html2md_rs::to_md::safe_from_html_to_md(content.to_string())
+                    .map_err(|e| miette!(e))?;
+                mq_markdown::Markdown::from_str(&md)?
+                    .nodes
+                    .into_iter()
+                    .map(mq_lang::Value::from)
+                    .collect::<Vec<_>>()
+            }
+            InputFormat::Text => content
                 .lines()
                 .map(|line| mq_lang::Value::String(line.to_string()))
-                .collect::<Vec<_>>();
-            engine.eval(query, runtime_values.into_iter())
+                .collect::<Vec<_>>(),
+            InputFormat::Null => vec![mq_lang::Value::String("".to_string())],
+        };
+
+        let runtime_values = if self.output.update {
+            let results = engine
+                .eval(query, input.clone().into_iter())
+                .map_err(|e| *e)?;
+            let current_values: mq_lang::Values = input.clone().into();
+
+            current_values.update_with(results)
         } else {
-            let markdown: mq_markdown::Markdown = if self.input.mdx {
-                mq_markdown::Markdown::from_mdx_str(content)?
-            } else {
-                mq_markdown::Markdown::from_str(content)?
-            };
-
-            let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
-
-            if self.output.update {
-                let results = engine.eval(query, input.clone()).map_err(|e| *e)?;
-                let current_values: mq_lang::Values = input.clone().collect::<Vec<_>>().into();
-
-                Ok(current_values.update_with(results))
-            } else {
-                engine.eval(query, input)
-            }
-        }
-        .map_err(|e| *e)?;
+            engine.eval(query, input.into_iter()).map_err(|e| *e)?
+        };
 
         self.print(None, runtime_values)
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
-        if self.input.null_input {
+        if matches!(self.input.input_format, InputFormat::Null) {
             return Ok(vec![(None, "".to_string())]);
         }
 
@@ -435,20 +450,20 @@ impl Cli {
         }
 
         match self.output.output_format {
-            Format::Html => handle
+            OutputFormat::Html => handle
                 .write_all(markdown.to_html().as_bytes())
                 .map_err(|e| miette!(e))?,
-            Format::Text => {
+            OutputFormat::Text => {
                 handle
                     .write_all(markdown.to_text().as_bytes())
                     .map_err(|e| miette!(e))?;
             }
-            Format::Markdown => {
+            OutputFormat::Markdown => {
                 handle
                     .write_all(markdown.to_string().as_bytes())
                     .map_err(|e| miette!(e))?;
             }
-            Format::Json => {
+            OutputFormat::Json => {
                 handle
                     .write_all(markdown.to_json()?.as_bytes())
                     .map_err(|e| miette!(e))?;
@@ -472,7 +487,7 @@ mod tests {
     fn test_cli_null_input() {
         let cli = Cli {
             input: InputArgs {
-                null_input: true,
+                input_format: InputFormat::Null,
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -498,7 +513,7 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                raw_input: true,
+                input_format: InputFormat::Text,
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -522,7 +537,11 @@ mod tests {
             }
         }
 
-        for format in [Format::Markdown, Format::Html, Format::Text] {
+        for format in [
+            OutputFormat::Markdown,
+            OutputFormat::Html,
+            OutputFormat::Text,
+        ] {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {
