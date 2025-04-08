@@ -73,16 +73,14 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -f, --from-file
           load filter from the file
-  -R, --raw-input
-          Reads each line as a string
-  -n, --null-input
-          Use empty string as the single input value
+  -I, --input-format <INPUT_FORMAT>
+          Set input format [default: markdown] [possible values: markdown, html, text, null]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -94,7 +92,7 @@ Options:
       --mdx
           Enable MDX parsing
   -F, --output-format <OUTPUT_FORMAT>
-          Compact instead of pretty-printed output [default: markdown] [possible values: markdown, html, text, json]
+          Set output format [default: markdown] [possible values: markdown, html, text, json]
   -U, --update
           Update the input markdown
       --unbuffered
