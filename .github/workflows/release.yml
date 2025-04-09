@@ -88,12 +88,17 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: target
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*/*
+          files: |
+            target/x86_64-unknown-linux-gnu/release/mq-x86_64-unknown-linux-gnu
+            target/aarch64-unknown-linux-gnu/release/mq-aarch64-unknown-linux-gnu
+            target/x86_64-pc-windows-msvc/release/mq-x86_64-pc-windows-msvc.exe
+            target/x86_64-apple-darwin/release/mq-x86_64-apple-darwin
+            target/aarch64-apple-darwin/release/mq-aarch64-apple-darwin
           draft: true
           prerelease: false
           generate_release_notes: true
