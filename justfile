@@ -24,6 +24,9 @@ bench-local:
 build:
     cargo build --release --workspace
 
+build-target target:
+    cargo build --release --target {{target}}
+
 [working-directory: 'crates/mq-lang']
 build-bench:
     cargo codspeed build
