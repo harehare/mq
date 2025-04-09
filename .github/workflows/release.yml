@@ -81,6 +81,9 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
