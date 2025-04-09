@@ -2,6 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashSet;
 
+#[allow(dead_code)]
 #[cfg(target_os = "windows")]
 const NEW_LINE: &str = "\r\n";
 #[allow(dead_code)]
