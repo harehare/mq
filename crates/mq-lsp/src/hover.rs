@@ -85,6 +85,26 @@ mod tests {
     }
 
     #[test]
+    fn test_val_hover() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let position = Position::new(0, 5);
+        hir.add_code(url.clone(), "let val = 1 | val");
+
+        let hover = response(Arc::new(RwLock::new(hir)), url, position);
+
+        assert!(hover.is_some());
+        let hover = hover.unwrap();
+
+        if let HoverContents::Markup(content) = hover.contents {
+            assert_eq!(content.kind, MarkupKind::Markdown);
+            assert!(content.value.contains("val"));
+        } else {
+            panic!("Expected markup content");
+        }
+    }
+
+    #[test]
     fn test_no_symbol_at_position() {
         let hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();

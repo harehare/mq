@@ -27,6 +27,7 @@ export interface Diagnostic {
 export interface RunOptions {
     isMdx: boolean,
     isUpdate: boolean,
+    inputFormat: 'html' | 'markdown' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -69,9 +70,31 @@ pub struct Diagnostic {
 struct RunOptions {
     is_mdx: bool,
     is_update: bool,
+    input_format: Option<InputFormat>,
     list_style: Option<ListStyle>,
     link_title_style: Option<TitleSurroundStyle>,
     link_url_style: Option<UrlSurroundStyle>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InputFormat {
+    #[serde(rename = "html")]
+    Html,
+    #[serde(rename = "markdown")]
+    Markdown,
+}
+
+impl FromStr for InputFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "html" => Ok(Self::Html),
+            "markdown" => Ok(Self::Markdown),
+            _ => Err(format!("Unknown input format: {}", s)),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -154,10 +177,10 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
 
     engine.load_builtin_module();
 
-    let markdown = if is_mdx {
-        mq_markdown::Markdown::from_mdx_str(content)
-    } else {
-        mq_markdown::Markdown::from_str(content)
+    let markdown = match options.input_format {
+        Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
+        Some(InputFormat::Markdown) if is_mdx => mq_markdown::Markdown::from_mdx_str(content),
+        _ => mq_markdown::Markdown::from_str(content),
     }
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
@@ -307,6 +330,7 @@ mod tests {
             serde_wasm_bindgen::to_value(&RunOptions {
                 is_mdx: false,
                 is_update: true,
+                input_format: None,
                 list_style: None,
                 link_title_style: None,
                 link_url_style: None,
@@ -325,6 +349,7 @@ mod tests {
             serde_wasm_bindgen::to_value(&RunOptions {
                 is_mdx: false,
                 is_update: true,
+                input_format: None,
                 list_style: Some(ListStyle::Star),
                 link_title_style: None,
                 link_url_style: None,
@@ -343,6 +368,7 @@ mod tests {
             serde_wasm_bindgen::to_value(&RunOptions {
                 is_mdx: false,
                 is_update: true,
+                input_format: None,
                 list_style: None,
                 link_title_style: None,
                 link_url_style: Some(UrlSurroundStyle::Angle),
@@ -362,6 +388,7 @@ mod tests {
                 serde_wasm_bindgen::to_value(&RunOptions {
                     is_mdx: false,
                     is_update: true,
+                    input_format: None,
                     list_style: None,
                     link_title_style: None,
                     link_url_style: None,

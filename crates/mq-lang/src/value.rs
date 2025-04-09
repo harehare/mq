@@ -280,6 +280,21 @@ mod tests {
     }
 
     #[test]
+    fn test_value_from_string() {
+        let value = Value::from("hello".to_string());
+        assert_eq!(value, Value::String("hello".to_string()));
+
+        let value = Value::from("world");
+        assert_eq!(value, Value::String("world".to_string()));
+
+        let value = Value::from("");
+        assert_eq!(value, Value::String("".to_string()));
+
+        let value = Value::from("!@#$%^&*()");
+        assert_eq!(value, Value::String("!@#$%^&*()".to_string()));
+    }
+
+    #[test]
     fn test_value_from_number() {
         let value = Value::from(Number::new(42.0));
         assert_eq!(value, Value::Number(Number::new(42.0)));

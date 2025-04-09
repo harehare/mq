@@ -236,6 +236,8 @@ impl CommandContext {
 }
 #[cfg(test)]
 mod tests {
+    use mq_test::defer;
+
     use super::*;
 
     #[test]
@@ -372,6 +374,33 @@ mod tests {
         } else {
             panic!("Expected String output");
         }
+    }
+
+    #[test]
+    fn test_execute_load_file() {
+        let engine = mq_lang::Engine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+        let (_, temp_file_path) = mq_test::create_file(
+            "test_execute_load_file.md",
+            "# Header\n\nParagraph text.\n\n- List item 1\n- List item 2",
+        );
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let result = ctx.execute(&format!(":load_file {}", temp_file_path.to_str().unwrap()));
+        assert!(matches!(result, Ok(CommandOutput::None)));
+
+        let list_items = ctx
+            .input
+            .iter()
+            .filter(|v| v.to_string().contains("List item"))
+            .count();
+        assert_eq!(list_items, 2);
     }
 
     #[test]

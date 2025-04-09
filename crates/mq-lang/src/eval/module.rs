@@ -9,7 +9,12 @@ use log::debug;
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 use thiserror::Error;
 
-const DEFAULT_PATHS: [&str; 3] = ["$HOME/.mq", "$ORIGIN/../lib/mq", "$ORIGIN/../lib"];
+const DEFAULT_PATHS: [&str; 4] = [
+    "$HOME/.mq",
+    "$ORIGIN/../lib/mq",
+    "$ORIGIN/../lib",
+    "$ORIGIN",
+];
 
 #[derive(Debug, PartialEq, Error)]
 pub enum ModuleError {

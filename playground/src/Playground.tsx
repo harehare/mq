@@ -238,6 +238,8 @@ export const Playground = () => {
     useState<RunOptions["linkUrlStyle"]>(null);
   const [linkTitleStyle, setLinkTitleStyle] =
     useState<RunOptions["linkTitleStyle"]>(null);
+  const [inputFormat, setInputFormat] =
+    useState<RunOptions["inputFormat"]>(null);
 
   useEffect(() => {
     init().then(() => {
@@ -261,6 +263,7 @@ export const Playground = () => {
             options: {
               isMdx: !!options.isMdx,
               isUpdate: !!options.isUpdate,
+              inputFormat: options.inputFormat || null,
               listStyle: options.listStyle,
               linkUrlStyle: options.linkUrlStyle || null,
               linkTitleStyle: options.linkTitleStyle || null,
@@ -270,6 +273,7 @@ export const Playground = () => {
           setMarkdown(data.markdown);
           setIsMdx(data.options.isMdx === true);
           setIsUpdate(data.options.isUpdate === true);
+          setInputFormat(data.options.inputFormat);
           setListStyle(data.options.listStyle);
           setLinkUrlStyle(data.options.linkUrlStyle);
           setLinkTitleStyle(data.options.linkTitleStyle);
@@ -287,9 +291,10 @@ export const Playground = () => {
 
     try {
       setResult(
-        await runScript(code, markdown, {
+        runScript(code, markdown, {
           isMdx,
           isUpdate,
+          inputFormat,
           listStyle,
           linkTitleStyle,
           linkUrlStyle,
@@ -301,6 +306,7 @@ export const Playground = () => {
   }, [
     code,
     markdown,
+    inputFormat,
     isMdx,
     isUpdate,
     listStyle,
@@ -322,6 +328,7 @@ export const Playground = () => {
     setMarkdown(selected.markdown);
     setIsMdx(selected.isMdx);
     setIsUpdate(selected.isUpdate);
+    setInputFormat("markdown");
   }, []);
 
   const handleShare = useCallback(() => {
@@ -331,6 +338,7 @@ export const Playground = () => {
       options: {
         isMdx: isMdx || false,
         isUpdate: isUpdate || false,
+        inputFormat: inputFormat || null,
         listStyle: listStyle || null,
         linkUrlStyle: linkUrlStyle || null,
         linkTitleStyle: linkTitleStyle || null,
@@ -353,6 +361,7 @@ export const Playground = () => {
   }, [
     code,
     markdown,
+    inputFormat,
     isMdx,
     isUpdate,
     listStyle,
@@ -643,7 +652,23 @@ export const Playground = () => {
 
           <div className="editor-container">
             <div className="editor-header">
-              <h2>Markdown</h2>
+              <label className="label">
+                <select
+                  className="dropdown"
+                  style={{
+                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
+                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
+                    color: isDarkMode ? "#d4d4d4" : "#333",
+                  }}
+                  value={inputFormat || "markdown"}
+                  onChange={(e) =>
+                    setInputFormat(e.target.value as RunOptions["inputFormat"])
+                  }
+                >
+                  <option value="markdown">Markdown</option>
+                  <option value="html">HTML</option>
+                </select>
+              </label>
             </div>
             <div className="editor-content">
               <Editor

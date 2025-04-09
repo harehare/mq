@@ -1248,7 +1248,6 @@ dependencies = [
  "clap-verbosity-flag",
  "clap_complete",
  "env_logger",
- "html2md-rs",
  "itertools",
  "log",
  "miette",
@@ -1343,6 +1342,7 @@ name = "mq-markdown"
 version = "0.1.0"
 dependencies = [
  "compact_str",
+ "html2md-rs",
  "itertools",
  "markdown",
  "miette",
@@ -1363,6 +1363,8 @@ dependencies = [
  "mq-hir",
  "mq-lang",
  "mq-markdown",
+ "mq-test",
+ "rstest",
  "rustyline",
  "strum",
 ]

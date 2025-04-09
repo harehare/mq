@@ -90,6 +90,12 @@ impl Markdown {
         })
     }
 
+    pub fn from_html(content: &str) -> miette::Result<Self> {
+        let md =
+            html2md_rs::to_md::safe_from_html_to_md(content.to_string()).map_err(|e| miette!(e))?;
+        Self::from_str(&md)
+    }
+
     pub fn to_html(&self) -> String {
         markdown::to_html(self.to_string().as_str())
     }
@@ -324,6 +330,13 @@ mod tests {
 #[cfg(feature = "json")]
 mod json_tests {
     use super::*;
+
+    #[test]
+    fn test_from_html() {
+        let html = "<h1>Hello</h1>";
+        let md = Markdown::from_html(html).unwrap();
+        assert_eq!(md.to_string().trim(), "# Hello");
+    }
 
     #[test]
     fn test_to_json_simple() {

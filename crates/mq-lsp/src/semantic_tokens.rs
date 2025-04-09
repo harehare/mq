@@ -199,12 +199,15 @@ mod tests {
         let mut hir = mq_hir::Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
 
-        hir.add_code(url.clone(), "def func1(): 1;");
+        hir.add_code(
+            url.clone(),
+            "let val1 = 1 | def func1(): 1; def func2(): \"2\"; def func3(x): x; def func4(): false; | .h | func1() | func2() | func3(1) | func4()",
+        );
 
         let hir = Arc::new(RwLock::new(hir));
         let tokens = response(hir, url);
 
-        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens.len(), 22);
     }
 
     #[test]

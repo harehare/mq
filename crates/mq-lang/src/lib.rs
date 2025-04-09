@@ -81,14 +81,20 @@ pub use value::{Value, Values};
 pub type MqResult = Result<Values, Box<Error>>;
 
 pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
-    let tokens = tokenize(
-        code,
-        lexer::Options {
-            ignore_errors: true,
-            include_spaces: true,
-        },
-    )
+    let tokens = Lexer::new(lexer::Options {
+        ignore_errors: true,
+        include_spaces: true,
+    })
+    .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+    .map_err(|e| {
+        Box::new(error::Error::from_error(
+            code,
+            InnerError::Lexer(e),
+            ModuleLoader::new(None),
+        ))
+    })
     .unwrap();
+
     let (cst_nodes, errors) =
         CstParser::new(tokens.into_iter().map(Arc::new).collect::<Vec<_>>().iter()).parse();
 
@@ -99,12 +105,18 @@ pub fn parse(
     code: &str,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
 ) -> Result<Program, Box<error::Error>> {
+    let tokens = Lexer::new(lexer::Options::default())
+        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+        .map_err(|e| {
+            Box::new(error::Error::from_error(
+                code,
+                InnerError::Lexer(e),
+                ModuleLoader::new(None),
+            ))
+        })?;
+
     AstParser::new(
-        tokenize(code, lexer::Options::default())?
-            .into_iter()
-            .map(Rc::new)
-            .collect::<Vec<_>>()
-            .iter(),
+        tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
         token_arena,
         Module::TOP_LEVEL_MODULE_ID,
     )
@@ -117,18 +129,82 @@ pub fn parse(
         ))
     })
 }
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
 
-fn tokenize(
-    code: &str,
-    options: lexer::Options,
-) -> Result<Vec<lexer::token::Token>, Box<error::Error>> {
-    Lexer::new(options)
-        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-        .map_err(|e| {
-            Box::new(error::Error::from_error(
-                code,
-                InnerError::Lexer(e),
-                ModuleLoader::new(None),
-            ))
-        })
+    use super::*;
+
+    #[test]
+    fn test_eval_basic() {
+        let code = "add(\"world!\")";
+        let input = mq_markdown::Markdown::from_str("Hello,").unwrap();
+        let mut engine = Engine::default();
+
+        assert_eq!(
+            engine
+                .eval(
+                    code,
+                    input
+                        .nodes
+                        .into_iter()
+                        .map(Value::from)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                )
+                .unwrap(),
+            vec![Value::Markdown(mq_markdown::Node::Text(
+                mq_markdown::Text {
+                    value: "Hello,world!".to_string(),
+                    position: None
+                }
+            ))]
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_parse_error_syntax() {
+        let code = "add(1,";
+        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let result = parse(code, token_arena);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_error_lexer() {
+        let code = "add(1, `unclosed string)";
+        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let result = parse(code, token_arena);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_recovery_success() {
+        let code = "add(1, 2)";
+        let (cst_nodes, errors) = parse_recovery(code);
+
+        assert!(!errors.has_errors());
+        assert!(!cst_nodes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_recovery_with_errors() {
+        let code = "add(1,";
+        let (cst_nodes, errors) = parse_recovery(code);
+
+        assert!(errors.has_errors());
+        assert!(cst_nodes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_recovery_with_error_lexer() {
+        let code = "add(1, \"";
+        let (cst_nodes, errors) = parse_recovery(code);
+
+        assert!(errors.has_errors());
+        assert!(cst_nodes.is_empty());
+    }
 }

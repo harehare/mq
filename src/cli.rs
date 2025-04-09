@@ -349,15 +349,11 @@ impl Cli {
                     .map(mq_lang::Value::from)
                     .collect::<Vec<_>>()
             }
-            InputFormat::Html => {
-                let md = html2md_rs::to_md::safe_from_html_to_md(content.to_string())
-                    .map_err(|e| miette!(e))?;
-                mq_markdown::Markdown::from_str(&md)?
-                    .nodes
-                    .into_iter()
-                    .map(mq_lang::Value::from)
-                    .collect::<Vec<_>>()
-            }
+            InputFormat::Html => mq_markdown::Markdown::from_html(content)?
+                .nodes
+                .into_iter()
+                .map(mq_lang::Value::from)
+                .collect::<Vec<_>>(),
             InputFormat::Text => content
                 .lines()
                 .map(|line| mq_lang::Value::String(line.to_string()))

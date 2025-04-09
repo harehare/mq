@@ -21,3 +21,7 @@ mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
 mq-markdown = {path = "../../crates/mq-markdown", version = "0.1.0"}
 rustyline = "15.0.0"
 strum = {version = "0.27.1", features = ["derive"]}
+
+[dev-dependencies]
+mq-test = {path = "../../crates/mq-test", version = "0.1.0"}
+rstest = "0.25.0"
