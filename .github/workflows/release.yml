@@ -44,6 +44,7 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
           if-no-files-found: error
+          retention-days: 1
 
   docker:
     name: Build and Push Docker image
@@ -83,22 +84,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
-      contents: read
+      contents: write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: target
+          pattern: mq-*
+          path: ../target
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            target/x86_64-unknown-linux-gnu/release/mq-x86_64-unknown-linux-gnu
-            target/aarch64-unknown-linux-gnu/release/mq-aarch64-unknown-linux-gnu
-            target/x86_64-pc-windows-msvc/release/mq-x86_64-pc-windows-msvc.exe
-            target/x86_64-apple-darwin/release/mq-x86_64-apple-darwin
-            target/aarch64-apple-darwin/release/mq-aarch64-apple-darwin
+          files: target/*
           draft: true
           prerelease: false
           generate_release_notes: true
