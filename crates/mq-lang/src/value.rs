@@ -258,6 +258,7 @@ impl Values {
 mod tests {
     use mq_markdown::Text;
     use rstest::rstest;
+    use smallvec::SmallVec;
 
     use super::*;
 
@@ -464,7 +465,7 @@ mod tests {
     #[case(Value::Markdown(Node::Text(Text {
                value: "updated".to_string(),
                position: None,
-           })), Value::Function(Vec::new(), Vec::new()),
+           })), Value::Function(SmallVec::new(), Vec::new()),
            Value::Markdown(Node::Text(Text {
                value: "updated".to_string(),
                position: None,

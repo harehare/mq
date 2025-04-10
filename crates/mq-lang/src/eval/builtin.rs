@@ -8,6 +8,7 @@ use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::{Regex, RegexBuilder};
 use rustc_hash::FxHashMap;
+use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::process::exit;
 use std::rc::Rc;
@@ -25,12 +26,13 @@ static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
 
 type FunctionName = String;
-type ArgType = Vec<RuntimeValue>;
+type ErrorArgs = Vec<RuntimeValue>;
+pub type Args = SmallVec<[RuntimeValue; 8]>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
     pub num_params: ParamNum,
-    pub func: fn(&ast::Ident, &RuntimeValue, &Vec<RuntimeValue>) -> Result<RuntimeValue, Error>,
+    pub func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +74,7 @@ impl ParamNum {
 impl BuiltinFunction {
     pub fn new(
         num_params: ParamNum,
-        func: fn(&ast::Ident, &RuntimeValue, &Vec<RuntimeValue>) -> Result<RuntimeValue, Error>,
+        func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
     ) -> Self {
         BuiltinFunction { num_params, func }
     }
@@ -367,7 +369,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
                     .last()
                     .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, &vec![RuntimeValue::String(s.clone())])
+                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
                     })
                     .unwrap_or(RuntimeValue::FALSE)),
                 [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -391,7 +393,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
                     .first()
                     .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, &vec![RuntimeValue::String(s.clone())])
+                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
                     })
                     .unwrap_or(RuntimeValue::FALSE)),
                 [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -2496,7 +2498,7 @@ pub enum Error {
     #[error("Unable to format date time, {0}")]
     InvalidDateTimeFormat(String),
     #[error("Invalid types for \"{0}\", got {1:?}")]
-    InvalidTypes(FunctionName, ArgType),
+    InvalidTypes(FunctionName, ErrorArgs),
     #[error("Invalid number of arguments in \"{0}\", expected {1}, got {2}")]
     InvalidNumberOfArguments(FunctionName, u8, u8),
     #[error("Invalid regular expression \"{0}\"")]
@@ -2565,7 +2567,7 @@ impl Error {
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
     ident: &ast::Ident,
-    args: &Vec<RuntimeValue>,
+    args: &SmallVec<[RuntimeValue; 8]>,
 ) -> Result<RuntimeValue, Error> {
     BUILTIN_FUNCTIONS.get(&ident.name).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
@@ -2773,21 +2775,21 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("type", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::String("string".into())))]
-    #[case("len", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
-    #[case("abs", vec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
-    #[case("ceil", vec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("floor", vec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
-    #[case("round", vec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
-    #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
-    #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
-    #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
-    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
+    #[case("type", smallvec![RuntimeValue::String("test".into())], Ok(RuntimeValue::String("string".into())))]
+    #[case("len", smallvec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
+    #[case("abs", smallvec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
+    #[case("ceil", smallvec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("floor", smallvec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
+    #[case("round", smallvec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("add", smallvec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
+    #[case("sub", smallvec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
+    #[case("mul", smallvec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
+    #[case("div", smallvec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("eq", smallvec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
+    #[case("ne", smallvec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
     fn test_eval_builtin(
         #[case] func_name: &str,
-        #[case] args: Vec<RuntimeValue>,
+        #[case] args: Args,
         #[case] expected: Result<RuntimeValue, Error>,
     ) {
         let ident = ast::Ident {
@@ -2799,14 +2801,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
-    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
-    #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
-    #[case("add", vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
+    #[case("div", smallvec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
+    #[case("unknown_func", smallvec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
+    #[case("add", SmallVec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+    #[case("add", smallvec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(
         #[case] func_name: &str,
-        #[case] args: Vec<RuntimeValue>,
+        #[case] args: Args,
         #[case] expected_error: Error,
     ) {
         let ident = ast::Ident {
@@ -2827,7 +2829,7 @@ mod tests {
         };
 
         let first_arg = RuntimeValue::String("hello world".into());
-        let args = vec![RuntimeValue::String("hello".into())];
+        let args = smallvec![RuntimeValue::String("hello".into())];
 
         let result = eval_builtin(&first_arg, &ident, &args);
         assert_eq!(result, Ok(RuntimeValue::Bool(true)));

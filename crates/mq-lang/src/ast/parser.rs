@@ -6,10 +6,11 @@ use crate::arena::Arena;
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
 use compact_str::CompactString;
+use smallvec::SmallVec;
 
-use super::Program;
 use super::error::ParseError;
-use super::node::{Expr, Ident, Literal, Node, Selector, TokenId};
+use super::node::{Args, Branches, Expr, Ident, Literal, Node, Selector};
+use super::{Program, TokenId};
 
 type IfExpr = (Option<Rc<Node>>, Rc<Node>);
 
@@ -288,7 +289,7 @@ impl<'a> Parser<'a> {
                 let body_program = self.parse_program(false)?;
 
                 Ok(Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&while_token)),
+                    token_id,
                     expr: Rc::new(Expr::While(
                         Rc::clone(cond),
                         body_program.iter().map(Rc::clone).collect(),
@@ -317,7 +318,7 @@ impl<'a> Parser<'a> {
                 let body_program = self.parse_program(false)?;
 
                 Ok(Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&until_token)),
+                    token_id,
                     expr: Rc::new(Expr::Until(
                         Rc::clone(cond),
                         body_program.iter().map(Rc::clone).collect(),
@@ -384,7 +385,7 @@ impl<'a> Parser<'a> {
         })?;
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let mut branches = Vec::with_capacity(8);
+        let mut branches: Branches = SmallVec::new();
         branches.push((Some(Rc::clone(cond)), then_expr));
 
         let elif_branches = self.parse_elif(token_id)?;
@@ -531,7 +532,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_args(&mut self) -> Result<Vec<Rc<Node>>, ParseError> {
+    fn parse_args(&mut self) -> Result<Args, ParseError> {
         match self.tokens.peek() {
             Some(token) => match &***token {
                 Token {
@@ -546,7 +547,7 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        let mut args: Vec<Rc<Node>> = Vec::with_capacity(8);
+        let mut args: Args = SmallVec::new();
         let mut prev_token: Option<&Token> = None;
 
         while let Some(token) = self.tokens.next() {
@@ -1179,6 +1180,7 @@ mod tests {
     use super::*;
     use compact_str::CompactString;
     use rstest::rstest;
+    use smallvec::smallvec;
 
     fn token(token_kind: TokenKind) -> Token {
         Token {
@@ -1210,12 +1212,12 @@ mod tests {
                 token_id: 4.into(),
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
-                    vec![
+                    smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
                                 Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
-                                vec![Rc::new(Node {
+                                smallvec![Rc::new(Node {
                                     token_id: 0.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("test".to_owned())))
                                 })],
@@ -1226,7 +1228,7 @@ mod tests {
                             token_id: 3.into(),
                             expr: Rc::new(Expr::Call(
                                 Ident::new_with_token("startswith", Some(Rc::new(token(TokenKind::Ident(CompactString::new("startswith")))))),
-                                vec![Rc::new(Node {
+                                smallvec![Rc::new(Node {
                                     token_id: 2.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("test2".to_owned())))
                                 })],
@@ -1258,7 +1260,7 @@ mod tests {
                 token_id: 8.into(),
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
-                    vec![
+                    smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
@@ -1294,7 +1296,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Rc::new(Expr::Def(
                     Ident::new_with_token("filter", Some(Rc::new(token(TokenKind::Ident(CompactString::new("filter")))))),
-                    vec![
+                    smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Ident(Ident::new_with_token("arg1", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arg1")))))))),
@@ -1308,7 +1310,7 @@ mod tests {
                         token_id: 6.into(),
                         expr: Rc::new(Expr::Call(
                             Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
-                            vec![
+                            smallvec![
                                 Rc::new(Node {
                                     token_id: 4.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("arg1".to_owned()))),
@@ -1339,7 +1341,7 @@ mod tests {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
-                    vec![
+                    smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(Expr::Literal(Literal::None)),
@@ -1404,7 +1406,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Rc::new(Expr::Def(
                         Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(CompactString::new("name")))))),
-                        Vec::new(),
+                        SmallVec::new(),
                         vec![Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
@@ -1629,7 +1631,7 @@ mod tests {
             Ok(vec![
                 Rc::new(Node {
                     token_id: 7.into(),
-                    expr: Rc::new(Expr::If(vec![
+                    expr: Rc::new(Expr::If(smallvec![
                         (
                             Some(Rc::new(Node {
                                 token_id: 1.into(),
@@ -1672,7 +1674,7 @@ mod tests {
             Ok(vec![
                 Rc::new(Node {
                     token_id: 11.into(),
-                    expr: Rc::new(Expr::If(vec![
+                    expr: Rc::new(Expr::If(smallvec![
                         (
                             Some(Rc::new(Node {
                                 token_id: 1.into(),
@@ -1716,7 +1718,7 @@ mod tests {
             Ok(vec![
                 Rc::new(Node {
                     token_id: 4.into(),
-                    expr: Rc::new(Expr::If(vec![
+                    expr: Rc::new(Expr::If(smallvec![
                         (
                             Some(Rc::new(Node {
                                 token_id: 1.into(),
@@ -1749,7 +1751,7 @@ mod tests {
             Ok(vec![
                 Rc::new(Node {
                     token_id: 8.into(),
-                    expr: Rc::new(Expr::If(vec![
+                    expr: Rc::new(Expr::If(smallvec![
                         (
                             Some(Rc::new(Node {
                                 token_id: 1.into(),
@@ -1875,7 +1877,7 @@ mod tests {
             token(TokenKind::SemiColon),
         ],
         Ok(vec![Rc::new(Node {
-            token_id: 4.into(),
+            token_id: 0.into(),
             expr: Rc::new(Expr::While(
                 Rc::new(Node {
                     token_id: 1.into(),
@@ -1917,7 +1919,7 @@ mod tests {
             token(TokenKind::SemiColon),
         ],
         Ok(vec![Rc::new(Node {
-            token_id: 4.into(),
+            token_id: 0.into(),
             expr: Rc::new(Expr::Until(
                 Rc::new(Node {
                     token_id: 1.into(),
@@ -1983,7 +1985,7 @@ mod tests {
                                 "print",
                             ))))),
                         ),
-                        vec![Rc::new(Node {
+                        smallvec![Rc::new(Node {
                             token_id: 4.into(),
                             expr: Rc::new(Expr::Ident(Ident::new_with_token(
                                 "item",

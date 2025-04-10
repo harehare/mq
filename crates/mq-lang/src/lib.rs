@@ -54,12 +54,12 @@ use std::sync::Arc;
 
 pub use arena::Arena;
 pub use ast::IdentName as AstIdentName;
-pub use ast::Params as AstParams;
 pub use ast::Program;
 pub use ast::node::Expr as AstExpr;
 pub use ast::node::Ident as AstIdent;
 pub use ast::node::Literal as AstLiteral;
 pub use ast::node::Node as AstNode;
+pub use ast::node::Params as AstParams;
 pub use ast::parser::Parser as AstParser;
 pub use cst::node::Node as CstNode;
 pub use cst::node::NodeKind as CstNodeKind;

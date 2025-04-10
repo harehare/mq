@@ -2,8 +2,9 @@ use std::rc::Rc;
 
 use compact_str::CompactString;
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 
-use crate::Program;
+use crate::{Program, ast::node::Args};
 
 use super::ast::node as ast;
 
@@ -29,10 +30,10 @@ impl Optimizer {
     fn optimize_node(&mut self, node: Rc<ast::Node>) -> Rc<ast::Node> {
         match &*node.expr {
             ast::Expr::Call(ident, args, optional) => {
-                let args = args
+                let args: Args = args
                     .iter()
                     .map(|arg| self.optimize_node(Rc::clone(arg)))
-                    .collect::<Vec<_>>();
+                    .collect::<SmallVec<_>>();
 
                 if ident.name == CompactString::new("add") {
                     match args.as_slice() {
@@ -188,7 +189,7 @@ impl Optimizer {
                         let expr = self.optimize_node(Rc::clone(expr));
                         (cond, expr)
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<SmallVec<_>>();
 
                 Rc::new(ast::Node {
                     token_id: node.token_id,
@@ -251,6 +252,7 @@ impl Optimizer {
 mod tests {
     use super::*;
     use rstest::rstest;
+    use smallvec::smallvec;
 
     #[rstest]
     #[case::constant_folding_add(
@@ -259,7 +261,7 @@ mod tests {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
                         ast::Ident::new("add"),
-                        vec![
+                        smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
@@ -285,7 +287,7 @@ mod tests {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
                         ast::Ident::new("add"),
-                        vec![
+                        smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::String("hello".to_string()))),
@@ -311,7 +313,7 @@ mod tests {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
                         ast::Ident::new("sub"),
-                        vec![
+                        smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
@@ -337,7 +339,7 @@ mod tests {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
                         ast::Ident::new("mul"),
-                        vec![
+                        smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
@@ -363,7 +365,7 @@ mod tests {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
                         ast::Ident::new("div"),
-                        vec![
+                        smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(6.0.into()))),
@@ -389,7 +391,7 @@ mod tests {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
                         ast::Ident::new("mod"),
-                        vec![
+                        smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),

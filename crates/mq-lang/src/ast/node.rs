@@ -5,24 +5,20 @@ use std::{
 };
 
 use compact_str::CompactString;
+use smallvec::SmallVec;
 
-use crate::{
-    Token,
-    arena::{Arena, ArenaId},
-    lexer,
-    number::Number,
-    range::Range,
-};
+use crate::{Token, arena::Arena, lexer, number::Number, range::Range};
 
-use super::{IdentName, Params, Program};
+use super::{IdentName, Program, TokenId};
 
 type Depth = u8;
 type Index = usize;
 type Optional = bool;
 type Lang = CompactString;
-pub type Args = Vec<Rc<Node>>;
+pub type Params = SmallVec<[Rc<Node>; 8]>;
+pub type Args = SmallVec<[Rc<Node>; 8]>;
 pub type Cond = (Option<Rc<Node>>, Rc<Node>);
-pub type TokenId = ArenaId<Rc<Token>>;
+pub type Branches = SmallVec<[Cond; 8]>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub struct Node {
@@ -188,15 +184,16 @@ pub enum Expr {
     While(Rc<Node>, Program),
     Until(Rc<Node>, Program),
     Foreach(Ident, Rc<Node>, Program),
-    If(Vec<Cond>),
+    If(Branches),
     Include(Literal),
     Self_,
 }
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use smallvec::{SmallVec, smallvec};
 
-    use crate::{Position, TokenKind};
+    use crate::{Position, TokenKind, arena::ArenaId};
 
     use super::*;
 
@@ -257,7 +254,7 @@ mod tests {
             token_id: def_token_id,
             expr: Rc::new(Expr::Def(
                 Ident::new("test_func"),
-                Vec::new(),
+                SmallVec::new(),
                 vec![stmt1, stmt2],
             )),
         };
@@ -450,7 +447,11 @@ mod tests {
         }));
         let call_node = Node {
             token_id: call_token_id,
-            expr: Rc::new(Expr::Call(Ident::new("test_func"), vec![arg1, arg2], false)),
+            expr: Rc::new(Expr::Call(
+                Ident::new("test_func"),
+                smallvec![arg1, arg2],
+                false,
+            )),
         };
 
         assert_eq!(
@@ -504,7 +505,7 @@ mod tests {
                 start: Position::new(0, 0),
                 end: Position::new(0, 0),
             })),
-            expr: Rc::new(Expr::If(vec![
+            expr: Rc::new(Expr::If(smallvec![
                 (Some(cond_node), then_node),
                 (None, else_node),
             ])),

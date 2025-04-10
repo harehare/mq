@@ -242,6 +242,7 @@ impl RuntimeValue {
 mod tests {
     use crate::{AstExpr, AstNode, arena::ArenaId};
     use rstest::rstest;
+    use smallvec::{SmallVec, smallvec};
 
     use super::*;
 
@@ -327,7 +328,7 @@ mod tests {
         );
 
         let function = RuntimeValue::Function(
-            Vec::new(),
+            SmallVec::new(),
             Vec::new(),
             Rc::new(RefCell::new(Env::default())),
         );
@@ -345,7 +346,7 @@ mod tests {
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
             RuntimeValue::Function(
-                Vec::new(),
+                SmallVec::new(),
                 Vec::new(),
                 Rc::new(RefCell::new(Env::default()))
             )
@@ -382,7 +383,7 @@ mod tests {
         assert_eq!(RuntimeValue::None.text(), "None");
         assert_eq!(
             RuntimeValue::Function(
-                Vec::new(),
+                SmallVec::new(),
                 Vec::new(),
                 Rc::new(RefCell::new(Env::default()))
             )
@@ -441,7 +442,7 @@ mod tests {
         assert!(RuntimeValue::NativeFunction(AstIdent::new("name")).is_true());
         assert!(
             RuntimeValue::Function(
-                Vec::new(),
+                SmallVec::new(),
                 Vec::new(),
                 Rc::new(RefCell::new(Env::default()))
             )
@@ -474,11 +475,11 @@ mod tests {
         assert!(RuntimeValue::Bool(false) < RuntimeValue::Bool(true));
         assert!(
             RuntimeValue::Function(
-                Vec::new(),
+                SmallVec::new(),
                 Vec::new(),
                 Rc::new(RefCell::new(Env::default()))
             ) < RuntimeValue::Function(
-                vec![Rc::new(AstNode {
+                smallvec![Rc::new(AstNode {
                     expr: Rc::new(AstExpr::Ident(AstIdent::new("test"))),
                     token_id: ArenaId::new(0),
                 })],
@@ -523,7 +524,7 @@ mod tests {
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
         let function = RuntimeValue::Function(
-            Vec::new(),
+            SmallVec::new(),
             Vec::new(),
             Rc::new(RefCell::new(Env::default())),
         );
@@ -560,11 +561,11 @@ mod tests {
         let none_value = Value::None;
         assert_eq!(RuntimeValue::from(none_value), RuntimeValue::None);
 
-        let fn_value = Value::Function(Vec::new(), Vec::new());
+        let fn_value = Value::Function(SmallVec::new(), Vec::new());
         assert_eq!(
             RuntimeValue::from(fn_value),
             RuntimeValue::Function(
-                Vec::new(),
+                SmallVec::new(),
                 Vec::new(),
                 Rc::new(RefCell::new(Env::default()))
             )

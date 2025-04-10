@@ -194,6 +194,7 @@ mod tests {
 
     use compact_str::CompactString;
     use rstest::{fixture, rstest};
+    use smallvec::{SmallVec, smallvec};
 
     use crate::{
         Token, TokenKind,
@@ -232,7 +233,7 @@ mod tests {
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
             }))),
-            Vec::new(),
+            SmallVec::new(),
             vec![
                 Rc::new(ast::Node{token_id: 2.into(), expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
             ]
@@ -244,7 +245,7 @@ mod tests {
         modules: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
                 ast::Ident::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
-                vec![
+                smallvec![
                     Rc::new(ast::Node{token_id: 1.into(), expr:
                         Rc::new(
                             ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
@@ -257,7 +258,7 @@ mod tests {
                 vec![
                     Rc::new(ast::Node{token_id: 6.into(), expr: Rc::new(ast::Expr::Call(
                     ast::Ident::new_with_token("add", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
-                    vec![
+                    smallvec![
                         Rc::new(ast::Node{token_id: 4.into(),
                             expr: Rc::new(
                                 ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
