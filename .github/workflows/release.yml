@@ -38,11 +38,13 @@ jobs:
       - uses: extractions/setup-just@v2
       - name: Build
         run: just build-target ${{ matrix.target }}
+      - name: Rename artifact
+        run: mv target/${{ matrix.target }}/release/${{ matrix.artifact_name }} target/${{ matrix.target }}/release/${{ matrix.asset_name}}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.asset_name }}
           if-no-files-found: error
           retention-days: 1
 
@@ -90,7 +92,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: mq-*
-          path: ../target
+          path: target
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
