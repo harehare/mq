@@ -11,14 +11,14 @@ repository = "https://github.com/harehare/mq"
 version = "0.1.0"
 
 [dependencies]
-compact_str = "0.9.0"
-itertools = "0.14.0"
+compact_str = {workspace = true}
+itertools = {workspace = true}
 mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
-rustc-hash = "2.1.1"
+rustc-hash = {workspace = true}
 slotmap = "1.0.7"
 strsim = "0.11.1"
-thiserror = "2.0.12"
-url = "2.5.4"
+thiserror = {workspace = true}
+url = {workspace = true}
 
 [dev-dependencies]
 rstest = "0.25.0"
