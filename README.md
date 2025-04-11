@@ -65,11 +65,8 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.1.0/m
 
 ### Homebrew
 
-We're working on making `mq` installable via Homebrew. This feature is coming soon!
-
 ```sh
-# Coming soon
-# brew install harehare/tap/mq
+$ brew install harehare/tap/mq
 ```
 
 ### Docker
