@@ -7,7 +7,7 @@
   "homepage": "https://harehare.github.io/mq/",
   "icon": "assets/logo.png",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.97.0"
   },
