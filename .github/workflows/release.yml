@@ -93,6 +93,14 @@ jobs:
         with:
           pattern: mq-*
           path: target
+      - name: Generate checksums
+        run: |
+          cd target
+          for file in mq-*/*; do
+            sha256sum "$file" >> checksums.txt
+          done
+          mkdir checksums
+          mv checksums.txt ./checksums/checksums.txt
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
