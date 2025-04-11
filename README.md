@@ -12,8 +12,8 @@
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
 
-> [!WARNING]
-> This project is under active development and is not yet production-ready.
+> [!IMPORTANT]
+> This project is under active development.
 
 ## Why mq?
 
@@ -39,15 +39,13 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 To install `mq`, you can use `cargo`:
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mq-cli
-# Installing from cargo is under preparation.
-cargo install mq-cli
+cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.1.0
 ```
 
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.1.0-preview
+$ docker run --rm ghcr.io/harehare/mq:0.1.0
 ```
 
 ### Visual Studio Code Extension
@@ -72,8 +70,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
