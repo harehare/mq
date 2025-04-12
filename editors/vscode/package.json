@@ -9,7 +9,7 @@
   "private": true,
   "version": "0.1.1",
   "engines": {
-    "vscode": "^1.97.0"
+    "vscode": "^1.99.1"
   },
   "repository": {
     "type": "git",
@@ -81,6 +81,10 @@
       {
         "command": "mq-lsp.showInput",
         "title": "mq: Show input text"
+      },
+      {
+        "command": "mq-lsp.executeMqFile",
+        "title": "mq: Execute mq file"
       }
     ],
     "configuration": {

@@ -21,7 +21,7 @@ This extension provides essential coding assistance for `.mq` files, helping you
 - `mq: Start LSP Server`: Starts the mq Language Server Protocol server
 - `mq: Set selected text as input`: Sets the currently selected text as input for mq queries
 - `mq: Show input text`: Show the currently input for mq queries
-- `mq: Run selected text`: Executes the selected mq query against the current input data
+- `mq: Execute mq file`: Executes the selected mq file to the text in active editor
 
 ## Configuration
 

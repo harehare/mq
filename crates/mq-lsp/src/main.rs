@@ -47,7 +47,6 @@ struct Backend {
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
     error_map: DashMap<String, Vec<(std::string::String, mq_lang::Range)>>,
     cst_nodes_map: DashMap<String, Vec<Arc<mq_lang::CstNode>>>,
-    input: RwLock<String>,
 }
 
 #[tower_lsp::async_trait]
@@ -170,19 +169,7 @@ impl LanguageServer for Backend {
         &self,
         params: tower_lsp::lsp_types::ExecuteCommandParams,
     ) -> Result<Option<serde_json::Value>> {
-        match params.command.as_str() {
-            "mq/setSelectedTextAsInput" => Ok(params.arguments[0].as_str().map(|text| {
-                self.input.write().unwrap().push_str(text);
-                format!("Set mq input:\n{}", text).into()
-            })),
-            "mq/showInputText" => Ok(Some(
-                format!("mq input:\n{}", self.input.read().unwrap()).into(),
-            )),
-            _ => Ok(
-                execute_command::response(self.input.read().unwrap().clone(), params)
-                    .map(serde_json::Value::String),
-            ),
-        }
+        execute_command::response(params)
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
@@ -295,7 +282,6 @@ async fn main() {
         source_map: RwLock::new(BiMap::new()),
         error_map: DashMap::new(),
         cst_nodes_map: DashMap::new(),
-        input: RwLock::new(String::new()),
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
@@ -315,7 +301,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -360,7 +345,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -399,7 +383,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -428,7 +411,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -456,7 +438,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -483,7 +464,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -542,7 +522,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -585,7 +564,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -625,52 +603,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_command() {
-        let (service, _) = LspService::new(|client| Backend {
-            client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
-            source_map: RwLock::new(BiMap::new()),
-            error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
-        });
-
-        let backend = service.inner();
-
-        let set_input_result = backend
-            .execute_command(tower_lsp::lsp_types::ExecuteCommandParams {
-                command: "mq/setSelectedTextAsInput".to_string(),
-                arguments: vec![serde_json::Value::String("test input".to_string())],
-                work_done_progress_params: Default::default(),
-            })
-            .await;
-
-        assert!(set_input_result.is_ok());
-        if let Ok(Some(result)) = set_input_result {
-            assert_eq!(
-                result,
-                serde_json::Value::String("Set mq input:\ntest input".to_string())
-            );
-        }
-        assert_eq!(*backend.input.read().unwrap(), "test input");
-
-        let show_input_result = backend
-            .execute_command(tower_lsp::lsp_types::ExecuteCommandParams {
-                command: "mq/showInputText".to_string(),
-                arguments: Vec::new(),
-                work_done_progress_params: Default::default(),
-            })
-            .await;
-
-        assert!(show_input_result.is_ok());
-        if let Ok(Some(result)) = show_input_result {
-            assert_eq!(
-                result,
-                serde_json::Value::String("mq input:\ntest input".to_string())
-            );
-        }
-    }
-    #[tokio::test]
     async fn test_did_change() {
         let (service, _) = LspService::new(|client| Backend {
             client,
@@ -678,7 +610,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -722,7 +653,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -762,7 +692,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -789,7 +718,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -831,7 +759,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();
@@ -858,7 +785,6 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
-            input: RwLock::new(String::new()),
         });
 
         let backend = service.inner();

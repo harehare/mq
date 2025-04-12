@@ -1,19 +1,29 @@
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
+
+use tower_lsp::jsonrpc::Result;
 
 pub fn response(
-    input: String,
     params: tower_lsp::lsp_types::ExecuteCommandParams,
-) -> Option<String> {
+) -> Result<Option<serde_json::Value>> {
     if params.arguments.is_empty() {
-        return None;
+        return Err(tower_lsp::jsonrpc::Error {
+            code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+            message: Cow::Owned("No arguments provided".to_string()),
+            data: None,
+        });
     }
 
     match params.command.as_str() {
-        "mq/runSelectedText" => {
-            if let Some(text) = params.arguments[0].as_str() {
+        "mq/run" => match params
+            .arguments
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            [Some(command), Some(input)] => {
                 let mut engine = mq_lang::Engine::default();
-
-                let input = mq_markdown::Markdown::from_str(&input)
+                let input = mq_markdown::Markdown::from_str(input)
                     .map(|markdown| {
                         markdown
                             .nodes
@@ -21,10 +31,10 @@ pub fn response(
                             .map(mq_lang::Value::from)
                             .collect::<Vec<_>>()
                     })
-                    .unwrap_or_else(|_| vec![mq_lang::Value::String(input)]);
+                    .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]);
 
                 engine.load_builtin_module();
-                let result = engine.eval(text, input.into_iter());
+                let result = engine.eval(command, input.into_iter());
 
                 match result {
                     Ok(values) => {
@@ -38,15 +48,26 @@ pub fn response(
                                 .collect(),
                         );
 
-                        Some(markdown.to_string())
+                        Ok(Some(markdown.to_string().into()))
                     }
-                    Err(e) => Some(e.cause.to_string()),
+                    Err(e) => Err(tower_lsp::jsonrpc::Error {
+                        code: tower_lsp::jsonrpc::ErrorCode::InternalError,
+                        message: Cow::Owned(format!("Error: {}", e)),
+                        data: None,
+                    }),
                 }
-            } else {
-                None
             }
-        }
-        _ => None,
+            _ => Err(tower_lsp::jsonrpc::Error {
+                code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+                message: Cow::Owned("Invalid arguments".to_string()),
+                data: None,
+            }),
+        },
+        _ => Err(tower_lsp::jsonrpc::Error {
+            code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+            message: Cow::Owned("Invalid arguments".to_string()),
+            data: None,
+        }),
     }
 }
 #[cfg(test)]
@@ -57,68 +78,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_run_selected_text_with_valid_text() {
+    fn test_run_with_valid_text() {
         let input = "# Test\nThis is a test".to_string();
         let params = ExecuteCommandParams {
-            command: "mq/runSelectedText".to_string(),
-            arguments: vec![Value::String("add(1, 2)".to_string())],
+            command: "mq/run".to_string(),
+            arguments: vec![Value::String("add(1, 2)".to_string()), input.into()],
             work_done_progress_params: Default::default(),
         };
 
-        let response = response(input.clone(), params);
-        assert!(response.is_some());
-    }
-
-    #[test]
-    fn test_run_selected_text_with_invalid_code() {
-        let input = "# Test\nThis is a test".to_string();
-        let params = ExecuteCommandParams {
-            command: "mq/runSelectedText".to_string(),
-            arguments: vec![Value::String("add1, 2)".to_string())],
-            work_done_progress_params: Default::default(),
-        };
-
-        let response = response(input, params);
-        assert!(response.is_some());
-        assert!(response.unwrap().contains("Unexpected token"));
-    }
-
-    #[test]
-    fn test_run_selected_text_with_empty_arguments() {
-        let input = "# Test\nThis is a test".to_string();
-        let params = ExecuteCommandParams {
-            command: "mq/runSelectedText".to_string(),
-            arguments: Vec::new(),
-            work_done_progress_params: Default::default(),
-        };
-
-        let response = response(input, params);
-        assert!(response.is_none());
-    }
-
-    #[test]
-    fn test_unsupported_command() {
-        let input = "# Test\nThis is a test".to_string();
-        let params = ExecuteCommandParams {
-            command: "unsupported/command".to_string(),
-            arguments: Vec::new(),
-            work_done_progress_params: Default::default(),
-        };
-
-        let response = response(input, params);
-        assert!(response.is_none());
-    }
-
-    #[test]
-    fn test_run_selected_text_with_non_string_argument() {
-        let input = "# Test\nThis is a test".to_string();
-        let params = ExecuteCommandParams {
-            command: "mq/runSelectedText".to_string(),
-            arguments: vec![Value::Number(42.into())],
-            work_done_progress_params: Default::default(),
-        };
-
-        let response = response(input, params);
-        assert!(response.is_none());
+        let response = response(params);
+        assert!(response.is_ok());
     }
 }

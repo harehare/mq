@@ -2,11 +2,7 @@ import * as lc from "vscode-languageclient/node";
 import * as vscode from "vscode";
 import which from "which";
 
-const COMMANDS = [
-  "mq/setSelectedTextAsInput",
-  "mq/runSelectedText",
-  "mq/showInputText",
-] as const;
+const COMMANDS = ["mq/run"] as const;
 
 const EXAMPLES = `# To hide these examples, set mq-lsp.showExamplesInNewFile to false in settings
 # Hello world
@@ -45,6 +41,7 @@ else:
 `;
 
 let client: lc.LanguageClient | null = null;
+let input = "";
 
 export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
@@ -64,7 +61,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("mq-lsp.installLSPServer", async () => {
       await stopLspServer();
-      await installLspServer(true);
+      await installLspServer(context, true);
       await startLspServer();
     })
   );
@@ -82,13 +79,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq-lsp.runSelectedText", async () => {
-      const text = selectedText();
+      const command = selectedText();
 
-      if (!text) {
+      if (!command) {
         return;
       }
 
-      await executeCommand("mq/runSelectedText", text);
+      await executeCommand("mq/run", command, input);
     })
   );
 
@@ -96,20 +93,62 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "mq-lsp.setSelectedTextAsInput",
       async () => {
-        const text = selectedText();
-
-        if (!text) {
-          return;
-        }
-
-        await executeCommand("mq/setSelectedTextAsInput", text);
+        input = selectedText() ?? "";
       }
     )
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq-lsp.showInput", async () => {
-      await executeCommand("mq/showInputText");
+      const outputChannel = vscode.window.createOutputChannel(
+        "mq LSP Output",
+        "markdown"
+      );
+      outputChannel.clear();
+      outputChannel.appendLine(input);
+      outputChannel.show();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq-lsp.executeMqFile", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage("No active editor");
+        return;
+      }
+
+      const mqFiles = await vscode.workspace.findFiles("**/*.mq");
+
+      if (mqFiles.length === 0) {
+        vscode.window.showInformationMessage("No .mq files found in workspace");
+        return;
+      }
+
+      const currentFileText = editor.document.getText();
+
+      const items = mqFiles.map((uri) => {
+        const relativePath = vscode.workspace.asRelativePath(uri);
+        const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
+        return {
+          label: fileName,
+          description: relativePath,
+          uri,
+        };
+      });
+
+      const selectedItem = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select a .mq file to execute",
+      });
+
+      if (selectedItem) {
+        const document = await vscode.workspace.openTextDocument(
+          selectedItem.uri
+        );
+        await executeCommand("mq/run", document.getText(), currentFileText);
+      } else {
+        await vscode.window.showInformationMessage("No file selected");
+      }
     })
   );
 
@@ -121,23 +160,38 @@ export async function activate(context: vscode.ExtensionContext) {
 
     if (configLspPath) {
       await startLspServer();
+    } else if ((await which("mq-lsp", { nothrow: true })) === null) {
+      const selected = await vscode.window.showInformationMessage(
+        "Install mq-lsp-server?",
+        "Yes",
+        "No"
+      );
+
+      if (selected === "Yes") {
+        await installLspServer(context, false);
+        await startLspServer();
+      } else {
+        vscode.window.showErrorMessage("mq-lsp not found in PATH");
+      }
     } else {
-      if ((await which("mq-lsp", { nothrow: true })) === null) {
+      const prevVersion = context.globalState.get<string>("mq-lsp.version");
+      const currentVersion = context.extension.packageJSON.version;
+
+      if (!prevVersion || currentVersion !== prevVersion) {
         const selected = await vscode.window.showInformationMessage(
-          "Install mq-lsp-server?",
+          `mq-lsp has been updated. Would you like to install the latest version?`,
           "Yes",
           "No"
         );
 
         if (selected === "Yes") {
-          await installLspServer(false);
-          await startLspServer();
+          await installLspServer(context, false);
         } else {
-          vscode.window.showErrorMessage("mq-lsp not found in PATH");
+          await context.globalState.update("mq-lsp.version", currentVersion);
         }
-      } else {
-        await startLspServer();
       }
+
+      await startLspServer();
     }
   }
 }
@@ -169,7 +223,8 @@ const selectedText = () => {
 
 const executeCommand = async (
   command: (typeof COMMANDS)[number],
-  text?: string
+  script: string,
+  input: string
 ) => {
   if (!client) {
     vscode.window.showErrorMessage("LSP server is not running");
@@ -179,7 +234,7 @@ const executeCommand = async (
   try {
     const result = await client.sendRequest(lc.ExecuteCommandRequest.type, {
       command,
-      arguments: [text],
+      arguments: [script, input],
     });
 
     if (result) {
@@ -190,9 +245,11 @@ const executeCommand = async (
       outputChannel.clear();
       outputChannel.appendLine(result);
       outputChannel.show();
+    } else {
+      await vscode.window.showErrorMessage("No result from LSP server");
     }
   } catch (error) {
-    vscode.window.showErrorMessage(
+    await vscode.window.showErrorMessage(
       `Failed to run text: ${
         error instanceof Error ? error.message : "Unknown error"
       }`
@@ -265,7 +322,10 @@ const stopLspServer = async () => {
   client = null;
 };
 
-const installLspServer = async (force: boolean) => {
+const installLspServer = async (
+  context: vscode.ExtensionContext,
+  force: boolean
+) => {
   const cargoPath = await which("cargo", { nothrow: true });
 
   if (cargoPath === null) {
@@ -278,7 +338,6 @@ const installLspServer = async (force: boolean) => {
     vscode.TaskScope.Workspace,
     "Install LSP Server",
     "mq-lsp",
-    // new vscode.ShellExecution("cargo install mq-lsp")
     new vscode.ShellExecution(
       `cargo install --git https://github.com/harehare/mq.git mq-lsp${
         force ? " --force" : ""
@@ -288,6 +347,10 @@ const installLspServer = async (force: boolean) => {
 
   try {
     const execution = await vscode.tasks.executeTask(task);
+    await context.globalState.update(
+      "mq-lsp.version",
+      context.extension.packageJSON.version
+    );
 
     return new Promise<boolean>((resolve) => {
       const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
