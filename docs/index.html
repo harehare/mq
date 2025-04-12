@@ -52,17 +52,45 @@
         background: linear-gradient(
           135deg,
           var(--secondary-color) 0%,
-          var(--dark-color) 100%
+          var(--dark-color) 80%,
+          #0a1a2a 100%
         );
-        padding: 2rem 0;
+        padding: 3rem 0;
         text-align: center;
         color: white;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      }
+
+      header::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(
+          circle at 30% 30%,
+          rgba(93, 173, 226, 0.1),
+          transparent 70%
+        );
+        pointer-events: none;
+      }
+
+      .logo-title-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
       }
 
       .logo {
         display: flex;
         justify-content: center;
         align-items: center;
+        margin-bottom: 1.2rem;
+        gap: 0.5rem;
       }
 
       .logo-icon {
@@ -74,21 +102,79 @@
         align-items: center;
         font-weight: 600;
         font-size: 28px;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+        transition: transform 0.3s ease;
+        margin-top: 10px;
+      }
+
+      .logo-icon:hover {
+        transform: scale(1.05) rotate(2deg);
       }
 
       .title {
-        font-size: 2.8rem;
-        margin-bottom: 0.5rem;
-        color: white;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        font-weight: 700;
-        letter-spacing: -0.5px;
+        font-size: 3.8rem;
+        margin: 0;
+        padding: 0;
+        color: var(--light-color);
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2),
+          0 4px 20px rgba(0, 0, 0, 0.15);
+        font-weight: 800;
+        letter-spacing: -1px;
+        background: linear-gradient(
+          135deg,
+          #ffffff 0%,
+          var(--light-color) 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        display: inline-block;
+        animation: fadeIn 0.8s ease-out;
+        line-height: 1;
       }
 
       .subtitle {
-        font-size: 1.2rem;
+        font-size: 1.3rem;
         color: var(--light-color);
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+        opacity: 0;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2),
+          0 4px 20px rgba(0, 0, 0, 0.15);
+        animation: slideUp 0.8s ease-out forwards 0.4s;
+      }
+
+      .cta-container {
+        margin-top: 1.5rem;
+        opacity: 0;
+        animation: fadeIn 0.8s ease-out forwards 0.6s;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
       .cta {
@@ -222,7 +308,21 @@
 
       @media (max-width: 768px) {
         .title {
-          font-size: 2.2rem;
+          font-size: 2.8rem;
+        }
+
+        .logo {
+          gap: 0.3rem;
+        }
+
+        .logo-icon {
+          width: 60px;
+          height: 60px;
+        }
+
+        .subtitle {
+          font-size: 1.1rem;
+          padding: 0 15px;
         }
 
         .about-content {
@@ -245,18 +345,20 @@
   <body>
     <header>
       <div class="container">
-        <div class="logo">
-          <div class="logo-icon"><img src="./assets/logo.svg" /></div>
-          <h1 class="title">mq</h1>
-        </div>
-        <p class="subtitle">jq like tool for markdown processing</p>
-        <div>
-          <a
-            href="https://github.com/harehare/mq"
-            class="cta secondary-cta"
-            target="_blank"
-            >View on GitHub</a
-          >
+        <div class="logo-title-wrapper">
+          <div class="logo">
+            <div class="logo-icon"><img src="./assets/logo.svg" /></div>
+            <h1 class="title">mq</h1>
+          </div>
+          <p class="subtitle">jq like tool for markdown processing</p>
+          <div class="cta-container">
+            <a
+              href="https://github.com/harehare/mq"
+              class="cta secondary-cta"
+              target="_blank"
+              >View on GitHub</a
+            >
+          </div>
         </div>
       </div>
     </header>

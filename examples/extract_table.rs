@@ -25,6 +25,6 @@ fn main() {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
 
-    let code = ".[] []";
+    let code = ".[][]";
     println!("{:?}", engine.eval(code, input).unwrap());
 }

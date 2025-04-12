@@ -8,7 +8,7 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 
     let assert = cmd
         .arg("--unbuffered")
-        .arg(".h | select(contains(\"title\")?)")
+        .arg(r#".h | select(contains("title")?)"#)
         .write_stdin("# **title**\n\n- test1\n- test2")
         .assert();
     assert.success().code(0).stdout("# **title**\n");
@@ -48,12 +48,12 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     ""
 )]
 #[case::update_file(
-    vec!["--unbuffered", "--update", ".h | select(contains(\"title\")?) | ltrimstr(\"titl\")"],
+    vec!["--unbuffered", "--update", r#".h | select(contains("title")?) | ltrimstr("titl")"#],
     "# **title**\n\n- test1\n- test2",
     "# **e**\n\n- test1\n- test2\n"
 )]
 #[case::update_nested(
-    vec!["--unbuffered", "--update", ".strong | select(contains(\"title\")?) | ltrimstr(\"titl\")"],
+    vec!["--unbuffered", "--update", r#".strong | select(contains("title")?) | ltrimstr("titl")"#],
     "# [**title**](url)\n\n- test1\n- test2",
     "# [**e**](url)\n\n- test1\n- test2\n"
 )]
@@ -69,36 +69,36 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 )]
 #[case::mdx_input(
     vec!["--unbuffered", "--mdx", "select(is_mdx())"],
-    "import {Chart} from './snowfall.js'
+    r##"import {Chart} from './snowfall.js'
 export const year = 2023
 
 # Last year’s snowfall
 
 In {year}, the snowfall was above average.
 
-<Chart color=\"#fcb32c\" year={year} />",
-    "{Chart}
+<Chart color="#fcb32c" year={year} />"##,
+    r##"{Chart}
 {year}
-<Chart color=\"#fcb32c\" year={year} />
-"
+<Chart color="#fcb32c" year={year} />
+"##
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update" , "if (and(or(.link, .definition), matches_url(\"a/b/c.html\"))): update(\"x/y/z.html\")"],
+    vec!["--unbuffered", "--update" , r#"if (and(or(.link, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
     "- another item\n\n  [another link]: a/b/c.html",
     "- another item\n\n  [another link]: x/y/z.html\n"
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update" , ".code_inline | update(\"test\")"],
+    vec!["--unbuffered", "--update" , r#".code_inline | update("test")"#],
     "# `title`\n# `title`",
     "# `test`\n# `test`\n"
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update" , "if (and(or(.link, .link_ref, .definition), matches_url(\"a/b/c.html\"))):\nupdate(\"x/y/z.html\")"],
+    vec!["--unbuffered", "--update" , r#"if (and(or(.link, .link_ref, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
     "- item\n\n  [another link]: <a/b/c.html> \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
     "- item\n\n  [another link]: x/y/z.html \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update", "--link-title-style", "paren", "--link-url-style", "angle", "if (and(or(.link, .link_ref, .definition), matches_url(\"a/b/c.html\"))):\nupdate(\"x/y/z.html\")"],
+    vec!["--unbuffered", "--update", "--link-title-style", "paren", "--link-url-style", "angle", r#"if (and(or(.link, .link_ref, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
     "- item\n\n  [another link]: <a/b/c.html> (this  is a title)\n",
     "- item\n\n  [another link]: <x/y/z.html> (this  is a title)\n",
 )]
@@ -168,7 +168,7 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
     let assert = cmd
         .arg("--unbuffered")
-        .arg(".h | select(contains(\"title\")?)")
+        .arg(r#".h | select(contains("title")?)"#)
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -180,7 +180,7 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
 fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>> {
     let (_, temp_file_path) = mq_test::create_file(
         "test_cli_run_with_query_from_file.mq",
-        ".h | select(contains(\"title\")?)",
+        r#".h | select(contains("title")?)"#,
     );
     let temp_file_path_clone = temp_file_path.clone();
 

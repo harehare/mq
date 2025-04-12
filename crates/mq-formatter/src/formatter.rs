@@ -545,101 +545,101 @@ else:
         "until (finished()): continue_process();"
     )]
     #[case::test(
-        "# Sample
+        r#"# Sample
 def hello_world():
-  add(\" Hello World\")?;
-|select(or(.[],.code,.h))|upcase()|hello_world()",
-        "# Sample
+  add(" Hello World")?;
+|select(or(.[],.code,.h))|upcase()|hello_world()"#,
+        r#"# Sample
 def hello_world():
-  add(\" Hello World\")?;
-| select(or(.[], .code, .h)) | upcase() | hello_world()"
+  add(" Hello World")?;
+| select(or(.[], .code, .h)) | upcase() | hello_world()"#
     )]
     #[case::def(
-        ".h
-| let link = to_link(add(\"#\", to_text(self)), to_text(self), \"\");
-| if (eq(to_md_name(), \"h1\")):
+        r##".h
+| let link = to_link(add("#", to_text(self)), to_text(self), "");
+| if (eq(to_md_name(), "h1")):
     to_md_list(link, 1)
-  elif (eq(to_md_name(),\"h2\")):
+  elif (eq(to_md_name(),"h2")):
     to_md_list(link, 2)
-  elif (eq(to_md_name(), \"h3\")):
+  elif (eq(to_md_name(), "h3")):
     to_md_list(link, 3)
-  elif (eq(to_md_name(), \"h4\")):
+  elif (eq(to_md_name(), "h4")):
     to_md_list(link, 4)
-  elif (eq(to_md_name(), \"h5\")):
+  elif (eq(to_md_name(), "h5")):
     to_md_list(link, 5)
   else:
-    None",
-        ".h
-| let link = to_link(add(\"#\", to_text(self)), to_text(self), \"\");
-| if (eq(to_md_name(), \"h1\")):
+    None"##,
+        r##".h
+| let link = to_link(add("#", to_text(self)), to_text(self), "");
+| if (eq(to_md_name(), "h1")):
   to_md_list(link, 1)
-elif (eq(to_md_name(), \"h2\")):
+elif (eq(to_md_name(), "h2")):
   to_md_list(link, 2)
-elif (eq(to_md_name(), \"h3\")):
+elif (eq(to_md_name(), "h3")):
   to_md_list(link, 3)
-elif (eq(to_md_name(), \"h4\")):
+elif (eq(to_md_name(), "h4")):
   to_md_list(link, 4)
-elif (eq(to_md_name(), \"h5\")):
+elif (eq(to_md_name(), "h5")):
   to_md_list(link, 5)
 else:
-  None"
+  None"##
     )]
     #[case::def(
-        "def snake_to_camel(x):
-  let words = split(x, \"_\")
+        r#"def snake_to_camel(x):
+  let words = split(x, "_")
   | foreach (word, words):
   let first_char = upcase(first(word))
   | let rest_str = downcase(slice(word, 1, len(word)))
-  | add(first_char, rest_str);
-  | join(\"\");
-| snake_to_camel()",
-        "def snake_to_camel(x):
-  let words = split(x, \"_\")
+  | s"${first_char}${rest_str}";
+  | join("");
+| snake_to_camel()"#,
+        r#"def snake_to_camel(x):
+  let words = split(x, "_")
   | foreach (word, words):
       let first_char = upcase(first(word))
       | let rest_str = downcase(slice(word, 1, len(word)))
-      | add(first_char, rest_str);
-  | join(\"\");
-| snake_to_camel()"
+      | s"${first_char}${rest_str}";
+  | join("");
+| snake_to_camel()"#
     )]
     #[case::def(
-        "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\");| snake_to_camel()",
-        "def snake_to_camel(x): let words = split(x, \"_\") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(\"\"); | snake_to_camel()"
+        r#"def snake_to_camel(x): let words = split(x, "_") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join("");| snake_to_camel()"#,
+        r#"def snake_to_camel(x): let words = split(x, "_") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join(""); | snake_to_camel()"#
     )]
-    #[case::let_("let test = \"test\"", "let test = \"test\"")]
+    #[case::let_(r#"let test = "test""#, r#"let test = "test""#)]
     #[case::call(
-        "test(
-\"test\")",
-        "test(
-  \"test\")"
-    )]
-    #[case::call(
-        "test(
-\"test\"
-  )",
-        "test(
-  \"test\"
-)"
+        r#"test(
+"test")"#,
+        r#"test(
+  "test")"#
     )]
     #[case::call(
-        "test(
-\"test\"
-,\"test\"
+        r#"test(
+"test"
+  )"#,
+        r#"test(
+  "test"
+)"#
+    )]
+    #[case::call(
+        r#"test(
+"test"
+,"test"
 ,true
-  )",
-        "test(
-  \"test\"
-  ,\"test\"
+  )"#,
+        r#"test(
+  "test"
+  ,"test"
   ,true
-)"
+)"#
     )]
     #[case::interpolated_string(
-        "test(
-s\"test${val1}\"
-  )",
-        "test(
-  s\"test${val1}\"
-)"
+        r#"test(
+s"test${val1}"
+  )"#,
+        r#"test(
+  s"test${val1}"
+)"#
     )]
     #[case::include("include  \"test.mq\"", "include \"test.mq\"")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {

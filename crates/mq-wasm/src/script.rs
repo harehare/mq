@@ -402,10 +402,10 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_format() {
-        let result = format_script("downcase()|ltrimstr(\"hello\")|upcase()|trim()").unwrap();
+        let result = format_script(r#"downcase()|ltrimstr("hello")|upcase()|trim()"#).unwrap();
         assert_eq!(
             result,
-            "downcase() | ltrimstr(\"hello\") | upcase() | trim()"
+            r#"downcase() | ltrimstr("hello") | upcase() | trim()"#
         );
     }
 

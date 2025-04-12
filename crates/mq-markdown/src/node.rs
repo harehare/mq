@@ -3529,7 +3529,7 @@ mod tests {
 
     #[rstest]
     #[case(Title::new("title".to_string()), RenderOptions::default(), "\"title\"")]
-    #[case(Title::new("title with \"quotes\"".to_string()), RenderOptions::default(), "\"title with \"quotes\"\"")]
+    #[case(Title::new(r#"title with "quotes""#.to_string()), RenderOptions::default(), r#""title with "quotes"""#)]
     #[case(Title::new("title with spaces".to_string()), RenderOptions::default(), "\"title with spaces\"")]
     #[case(Title::new("".to_string()), RenderOptions::default(), "\"\"")]
     #[case(Title::new("title".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Single, ..Default::default()}, "'title'")]

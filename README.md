@@ -36,13 +36,13 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 
 ## Installation
 
-To install `mq`, you can use `cargo`:
+### Cargo
 
 ```sh
 cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.1.0
 ```
 
-### Binary Installation
+### Binaries
 
 You can download pre-built binaries from the [GitHub releases page](https://github.com/harehare/mq/releases):
 
@@ -66,6 +66,7 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.1.0/m
 ### Homebrew
 
 ```sh
+# Using Homebrew (macOS and Linux)
 $ brew install harehare/tap/mq
 ```
 

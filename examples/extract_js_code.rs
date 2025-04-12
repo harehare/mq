@@ -21,6 +21,6 @@ console.log('Hello, World!')
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
 
-    let code = ".code(\"js\") | to_text()?";
+    let code = r#".code("js") | to_text()?"#;
     println!("{:?}", engine.eval(code, input).unwrap());
 }

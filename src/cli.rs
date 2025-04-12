@@ -152,7 +152,7 @@ struct OutputArgs {
 enum Commands {
     /// Start a REPL session for interactive query execution
     Repl,
-    /// Format mq or markdown files based on specified formatting options.
+    /// Format mq files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
         #[arg(short, long, default_value_t = 2)]
