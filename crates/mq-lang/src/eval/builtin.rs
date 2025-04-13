@@ -27,7 +27,7 @@ static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> =
 
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
-pub type Args = SmallVec<[RuntimeValue; 8]>;
+pub type Args = SmallVec<[RuntimeValue; 4]>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
@@ -2567,7 +2567,7 @@ impl Error {
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
     ident: &ast::Ident,
-    args: &SmallVec<[RuntimeValue; 8]>,
+    args: &Args,
 ) -> Result<RuntimeValue, Error> {
     BUILTIN_FUNCTIONS.get(&ident.name).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),

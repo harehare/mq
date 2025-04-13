@@ -276,10 +276,10 @@ impl Evaluator {
             ast::Expr::Selector(ident) => {
                 Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
             }
-            ast::Expr::Self_ => Ok(runtime_value.clone()),
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
+            ast::Expr::Self_ => Ok(runtime_value.clone()),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),

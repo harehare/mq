@@ -13,7 +13,7 @@ This extension provides essential coding assistance for `.mq` files, helping you
 - Document symbol navigation
 - Code formatting
 - Syntax highlighting
-- Run selected code (execute mq queries directly from the editor)
+- Execute mq script directly from the editor
 
 ## Available Commands
 
@@ -41,29 +41,29 @@ An [Online Playground](https://harehare.github.io/mq/playground) is available, p
 
 ### Basic Example
 
-```jq
+```python
 # Extract all headings
 .h
 ```
 
 ### Advanced Examples
 
-```jq
+```python
 # Extract code blocks with their language
 .code("js")
 ```
 
-```jq
+```python
 # Find paragraphs containing specific text
 select(contains("important"))
 ```
 
-```jq
+```python
 # List all links with their text
 .links[] | {text, url}
 ```
 
-```jq
+```python
 # Define and use a custom function
 def important_headings():
     .h | select(contains("Important"));

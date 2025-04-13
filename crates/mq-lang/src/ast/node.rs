@@ -15,10 +15,10 @@ type Depth = u8;
 type Index = usize;
 type Optional = bool;
 type Lang = CompactString;
-pub type Params = SmallVec<[Rc<Node>; 8]>;
-pub type Args = SmallVec<[Rc<Node>; 8]>;
+pub type Params = SmallVec<[Rc<Node>; 4]>;
+pub type Args = SmallVec<[Rc<Node>; 4]>;
 pub type Cond = (Option<Rc<Node>>, Rc<Node>);
-pub type Branches = SmallVec<[Cond; 8]>;
+pub type Branches = SmallVec<[Cond; 4]>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub struct Node {
