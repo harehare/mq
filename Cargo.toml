@@ -44,10 +44,10 @@ env_logger = "0.11.6"
 itertools = {workspace = true}
 log = "0.4.27"
 miette = {workspace = true, features = ["fancy"]}
-mq-formatter = {path = "./crates/mq-formatter", version = "0.1.0"}
-mq-hir = {path = "./crates/mq-hir", version = "0.1.0"}
-mq-lang = {path = "./crates/mq-lang", version = "0.1.0"}
-mq-markdown = {path = "./crates/mq-markdown", version = "0.1.0", features = ["json"]}
+mq-formatter = {workspace = true}
+mq-hir = {workspace = true}
+mq-lang = {workspace = true}
+mq-markdown = {workspace = true, features = ["json"]}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.0"}
 url = {workspace = true}
 
@@ -61,6 +61,11 @@ compact_str = "0.9.0"
 dirs = "6.0.0"
 itertools = "0.14.0"
 miette = {version = "7.5.0"}
+mq-formatter = {path = "./crates/mq-formatter", version = "0.1.0"}
+mq-hir = {path = "./crates/mq-hir", version = "0.1.0"}
+mq-lang = {path = "./crates/mq-lang", version = "0.1.0"}
+mq-markdown = {path = "./crates/mq-markdown", version = "0.1.0"}
+mq-test = {path = "./crates/mq-test", version = "0.1.0"}
 rustc-hash = "2.1.1"
 thiserror = "2.0.12"
 url = "2.5.4"

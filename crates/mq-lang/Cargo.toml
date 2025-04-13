@@ -21,7 +21,7 @@ env_logger = "0.11.6"
 itertools = {workspace = true}
 log = "0.4.27"
 miette = {workspace = true, features = ["fancy"]}
-mq-markdown = {path = "../../crates/mq-markdown", version = "0.1.0"}
+mq-markdown = {workspace = true}
 nom = {version = "8.0.0"}
 nom_locate = "5.0.0"
 percent-encoding = "2.3.1"

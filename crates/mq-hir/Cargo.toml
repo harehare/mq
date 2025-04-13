@@ -13,7 +13,7 @@ version = "0.1.0"
 [dependencies]
 compact_str = {workspace = true}
 itertools = {workspace = true}
-mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
+mq-lang = {workspace = true}
 rustc-hash = {workspace = true}
 slotmap = "1.0.7"
 strsim = "0.11.1"

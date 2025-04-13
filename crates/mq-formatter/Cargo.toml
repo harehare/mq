@@ -11,7 +11,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.1.0"
 
 [dependencies]
-mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
+mq-lang = {workspace = true}
 rustc-hash = {workspace = true}
 
 [dev-dependencies]

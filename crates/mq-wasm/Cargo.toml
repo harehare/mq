@@ -11,10 +11,10 @@ path = "src/lib.rs"
 [dependencies]
 itertools = {workspace = true}
 js-sys = "0.3.77"
-mq-formatter = {path = "../../crates/mq-formatter", version = "0.1.0"}
-mq-hir = {path = "../../crates/mq-hir", version = "0.1.0"}
-mq-lang = {path = "../../crates/mq-lang", version = "0.1.0"}
-mq-markdown = {path = "../../crates/mq-markdown", version = "0.1.0"}
+mq-formatter = {workspace = true}
+mq-hir = {workspace = true}
+mq-lang = {workspace = true}
+mq-markdown = {workspace = true}
 serde = {version = "1.0.219", features = ["derive"]}
 serde-wasm-bindgen = "0.6.5"
 url = {workspace = true}
