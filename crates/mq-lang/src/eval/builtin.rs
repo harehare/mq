@@ -2572,22 +2572,19 @@ pub fn eval_builtin(
     BUILTIN_FUNCTIONS.get(&ident.name).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
         |f| {
-            let args = if f.num_params.is_valid(args.len() as u8) {
-                args
+            if f.num_params.is_valid(args.len() as u8) {
+                (f.func)(ident, runtime_value, args)
             } else if f.num_params.is_missing_one_params(args.len() as u8) {
-                &vec![runtime_value.clone()]
-                    .into_iter()
-                    .chain(args.clone())
-                    .collect()
+                let mut new_args = smallvec![runtime_value.clone()];
+                new_args.extend(args.clone());
+                (f.func)(ident, runtime_value, &new_args)
             } else {
-                return Err(Error::InvalidNumberOfArguments(
+                Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
                     f.num_params.to_num(),
                     args.len() as u8,
-                ));
-            };
-
-            (f.func)(ident, runtime_value, args)
+                ))
+            }
         },
     )
 }

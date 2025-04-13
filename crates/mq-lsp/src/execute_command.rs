@@ -89,4 +89,74 @@ mod tests {
         let response = response(params);
         assert!(response.is_ok());
     }
+    #[test]
+    fn test_no_arguments() {
+        let params = ExecuteCommandParams {
+            command: "mq/run".to_string(),
+            arguments: vec![],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InvalidParams);
+            assert_eq!(e.message, "No arguments provided");
+        }
+    }
+
+    #[test]
+    fn test_invalid_command() {
+        let params = ExecuteCommandParams {
+            command: "mq/invalid".to_string(),
+            arguments: vec![
+                Value::String("query".to_string()),
+                Value::String("input".to_string()),
+            ],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InvalidParams);
+            assert_eq!(e.message, "Invalid arguments");
+        }
+    }
+
+    #[test]
+    fn test_run_with_insufficient_arguments() {
+        let params = ExecuteCommandParams {
+            command: "mq/run".to_string(),
+            arguments: vec![Value::String("query".to_string())],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InvalidParams);
+            assert_eq!(e.message, "Invalid arguments");
+        }
+    }
+
+    #[test]
+    fn test_run_with_invalid_query() {
+        let input = "# Test\nThis is a test".to_string();
+        let params = ExecuteCommandParams {
+            command: "mq/run".to_string(),
+            arguments: vec![
+                Value::String("invalid_function()".to_string()),
+                input.into(),
+            ],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InternalError);
+            assert!(e.message.contains("Error:"));
+        }
+    }
 }
