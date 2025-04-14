@@ -20,7 +20,7 @@
         --primary-color: #20638f;
         --secondary-color: #1e1e1e;
         --dark-color: #123850;
-        --light-color: #e8f4fc;
+        --light-color: #b9c5de;
         --lighter-blue: #f0f8ff;
         --accent-blue: #5dade2;
         --text-color: #2c3e50;
@@ -138,8 +138,9 @@
         font-size: 1.3rem;
         color: var(--light-color);
         margin-bottom: 1rem;
-        font-weight: 500;
+        font-weight: 300;
         letter-spacing: 0.5px;
+        line-height: 1.7;
         max-width: 600px;
         margin-left: auto;
         margin-right: auto;
@@ -198,8 +199,8 @@
 
       .secondary-cta {
         background-color: transparent;
-        color: white;
-        border: 2px solid white;
+        color: var(--light-color);
+        border: 2px solid var(--light-color);
       }
 
       .secondary-cta:hover {
@@ -321,8 +322,10 @@
         }
 
         .subtitle {
-          font-size: 1.1rem;
+          font-size: 1rem;
           padding: 0 15px;
+          line-height: 1.7;
+          font-weight: 200;
         }
 
         .about-content {
