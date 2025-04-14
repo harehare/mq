@@ -16,6 +16,7 @@ pub mod runtime_value;
 use env::Env;
 use error::EvalError;
 use runtime_value::RuntimeValue;
+use smallvec::SmallVec;
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -441,16 +442,17 @@ impl Evaluator {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let mut args = args.to_owned();
-
-                if params.len() == args.len() + 1 {
-                    args.insert(
+                let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
+                let new_args = if params.len() == args.len() + 1 {
+                    new_args.insert(
                         0,
                         Rc::new(ast::Node {
                             token_id: node.token_id,
                             expr: Rc::new(ast::Expr::Self_),
                         }),
                     );
+                    new_args.extend(args.clone());
+                    new_args
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -458,11 +460,14 @@ impl Evaluator {
                         params.len() as u8,
                         args.len() as u8,
                     ));
-                }
+                } else {
+                    args.clone()
+                };
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
-                args.iter()
+                new_args
+                    .iter()
                     .zip(params.iter())
                     .try_for_each(|(arg, param)| {
                         if let ast::Expr::Ident(name) = &*param.expr {
