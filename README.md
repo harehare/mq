@@ -82,6 +82,8 @@ You can install the VSCode extension from the [Visual Studio Marketplace](https:
 
 ## Usage
 
+For more detailed usage and examples, refer to the [documentation](https://harehare.github.io/mq/book/).
+
 ### Basic usage
 
 <details>
@@ -180,7 +182,18 @@ $ mq 'select(or(.h1, .h2, .h3)) | let link = to_link(add($__FILE__, add("#", to_
 $ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
 ```
 
-For more detailed usage and examples, refer to the [documentation](https://harehare.github.io/mq/book/).
+### Using with markitdown
+
+You can combine `mq` with [markitdown](https://github.com/microsoft/markitdown) for even more powerful Markdown processing workflows:
+
+```sh
+# Extract code blocks from markdown
+$ markitdown https://github.com/harehare/mq | mq '.code'
+
+# Extract table from markdown
+$ markitdown test.xlsx | mq '.[][]'
+
+```
 
 ## Playground
 
