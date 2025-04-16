@@ -34,6 +34,7 @@ members = [
   "fuzz",
   "crates/mq-wasm",
   "crates/mq-test",
+  "crates/mq-mcp",
 ]
 
 [dependencies]
