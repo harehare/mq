@@ -52,7 +52,7 @@ mq-repl = {path = "./crates/mq-repl", version = "0.1.0"}
 url = {workspace = true}
 
 [dev-dependencies]
-assert_cmd = "2.0.16"
+assert_cmd = "2.0.17"
 mq-test = {path = "./crates/mq-test", version = "0.1.0"}
 rstest = "0.25.0"
 
