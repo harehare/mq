@@ -12,11 +12,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             artifact_name: mq
             asset_name: mq-x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: mq
             asset_name: mq-aarch64-unknown-linux-gnu
