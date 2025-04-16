@@ -638,6 +638,22 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(sub.into())
                 }
                 [
+                    RuntimeValue::Array(arrays),
+                    RuntimeValue::Number(start),
+                    RuntimeValue::Number(end),
+                ] => {
+                    let start = start.value() as usize;
+                    let end = end.value() as usize;
+
+                    if start >= arrays.len() {
+                        return Ok(RuntimeValue::EMPTY_ARRAY);
+                    }
+
+                    let actual_end = std::cmp::min(end, arrays.len());
+
+                    Ok(RuntimeValue::Array(arrays[start..actual_end].to_vec()))
+                }
+                [
                     node @ RuntimeValue::Markdown(_, _),
                     RuntimeValue::Number(start),
                     RuntimeValue::Number(end),

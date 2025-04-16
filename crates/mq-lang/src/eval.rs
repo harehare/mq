@@ -1852,6 +1852,92 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::NONE]))]
+    #[case::slice_array(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item5".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item4".to_string()),
+        ])]))]
+    #[case::slice_array_from_start(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+        ])]))]
+    #[case::slice_array_to_end(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+       ])]))]
+    #[case::slice_array_out_of_bounds(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::slice_array_empty(vec![RuntimeValue::Array(Vec::new())],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(Vec::new())]))]
+    #[case::slice_array_mixed_types(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::Number(42.into()),
+            RuntimeValue::Bool(true),
+            RuntimeValue::String("item4".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(42.into()),
+            RuntimeValue::Bool(true),
+        ])]))]
     #[case::slice(vec![RuntimeValue::Number(123.into())],
        vec![
             ast_call("slice", smallvec![
