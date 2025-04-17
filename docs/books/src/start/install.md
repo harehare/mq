@@ -37,7 +37,7 @@ $ brew install harehare/tap/mq
 ## Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.1.0
+$ docker run --rm ghcr.io/harehare/mq:0.1.1
 ```
 
 ## Visual Studio Code Extension

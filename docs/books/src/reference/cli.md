@@ -8,7 +8,7 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
   repl        Start a REPL session for interactive query execution
-  fmt         Format mq or markdown files based on specified formatting options
+  fmt         Format mq files based on specified formatting options
   completion  Generate shell completion scripts for supported shells
   docs        Show functions documentation for the query
   help        Print this message or the help of the given subcommand(s)
