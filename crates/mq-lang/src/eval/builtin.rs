@@ -1086,6 +1086,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     let a2: Vec<RuntimeValue> = a2.to_vec();
                     Ok(RuntimeValue::Array(itertools::concat(vec![a1, a2])))
                 }
+                [RuntimeValue::Array(a1), a2] => {
+                    let mut a1: Vec<RuntimeValue> = a1.to_vec();
+                    a1.push(a2.clone());
+                    Ok(RuntimeValue::Array(a1))
+                }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],

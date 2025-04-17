@@ -1288,6 +1288,14 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(2.6.into())]))]
+    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+       vec![
+            ast_call("add", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
+                ]),
+       ],
+       Ok(vec![RuntimeValue::Number(2.6.into())]))]
     #[case::add(vec![RuntimeValue::TRUE],
        vec![
             ast_call("add", smallvec![
