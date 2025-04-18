@@ -243,6 +243,7 @@ impl Evaluator {
 
     fn eval_interpolated_string(
         &self,
+        runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
@@ -256,6 +257,9 @@ impl Evaluator {
                             let value =
                                 self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
                             acc.push_str(&value.to_string());
+                        }
+                        ast::StringSegment::Self_ => {
+                            acc.push_str(&runtime_value.to_string());
                         }
                     }
 
@@ -298,7 +302,9 @@ impl Evaluator {
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
             ast::Expr::Foreach(_, _, _) => self.eval_foreach(runtime_value, node, env),
-            ast::Expr::InterpolatedString(_) => self.eval_interpolated_string(node, env),
+            ast::Expr::InterpolatedString(_) => {
+                self.eval_interpolated_string(runtime_value, node, env)
+            }
             ast::Expr::Include(module_id) => {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
