@@ -153,12 +153,14 @@ pub enum Selector {
 pub enum StringSegment {
     Text(String),
     Ident(Ident),
+    Self_,
 }
 
 impl From<&lexer::token::StringSegment> for StringSegment {
     fn from(segment: &lexer::token::StringSegment) -> Self {
         match segment {
             lexer::token::StringSegment::Text(text, _) => StringSegment::Text(text.to_owned()),
+            lexer::token::StringSegment::Ident(ident, _) if ident == "self" => StringSegment::Self_,
             lexer::token::StringSegment::Ident(ident, _) => StringSegment::Ident(Ident::new(ident)),
         }
     }
