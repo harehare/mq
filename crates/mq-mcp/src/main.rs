@@ -1,8 +1,8 @@
 use miette::miette;
 use rmcp::{
-    Error as McpError, ServerHandler,
+    Error as McpError, ServerHandler, ServiceExt,
     model::{CallToolResult, Content, ProtocolVersion, ServerCapabilities, ServerInfo},
-    serve_server, tool,
+    tool,
 };
 use tokio::io::{stdin, stdout};
 
@@ -147,9 +147,9 @@ async fn main() -> miette::Result<()> {
     unsafe { std::env::set_var("NO_COLOR", "1") };
     let transport = (stdin(), stdout());
     let server = Server;
-    serve_server(server, transport)
-        .await
-        .map_err(|e| miette!(e))?;
+
+    let service = server.serve(transport).await.map_err(|e| miette!(e))?;
+    service.waiting().await.map_err(|e| miette!(e))?;
 
     Ok(())
 }
