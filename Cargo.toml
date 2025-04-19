@@ -15,7 +15,7 @@ exclude = [
   "docs",
   "Dockerfile",
 ]
-homepage = "https://harehare.github.io/mq/"
+homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
 license-file = "LICENSE"
 name = "mq-cli"

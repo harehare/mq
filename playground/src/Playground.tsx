@@ -557,7 +557,7 @@ export const Playground = () => {
       <header className="playground-header">
         <div style={{ display: "flex", alignItems: "center" }}>
           <a
-            href="https://harehare.github.io/mq/"
+            href="https://mqlang.org/"
             style={{ textDecoration: "none", paddingTop: "4px" }}
             target="_blank"
           >

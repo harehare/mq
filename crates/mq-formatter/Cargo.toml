@@ -2,7 +2,7 @@
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
 edition = "2024"
-homepage = "https://harehare.github.io/mq/"
+homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
 license-file = "LICENSE"
 name = "mq-formatter"

@@ -35,7 +35,7 @@ You can customize these settings in your VS Code settings.json file or through t
 
 ## Playground
 
-An [Online Playground](https://harehare.github.io/mq/playground) is available, powered by WebAssembly.
+An [Online Playground](https://mqlang.org/playground) is available, powered by WebAssembly.
 
 ## Example
 
@@ -70,7 +70,7 @@ def important_headings():
 | important_headings()
 ```
 
-For more detailed usage and examples, refer to the [documentation](https://harehare.github.io/mq/book/).
+For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
 
 ## License
 

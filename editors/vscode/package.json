@@ -4,7 +4,7 @@
   "description": "mq is a jq like tool for markdown processing. This extension adds support for the mq to Visual Studio Code.",
   "author": "harehare",
   "publisher": "harehare",
-  "homepage": "https://harehare.github.io/mq/",
+  "homepage": "https://mqlang.org/",
   "icon": "assets/logo.png",
   "private": true,
   "version": "0.1.1",

@@ -71,3 +71,8 @@ Thumbs.db
 
 # vscode
 *.vsix
+
+# docs
+docs/assets
+docs/playground.html
+docs/logo.svg

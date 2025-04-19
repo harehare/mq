@@ -1,115 +1,115 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
-  <loc>https://harehare.github.io/mq/book/index.html</loc>
+  <loc>https://mqlang.org/book/</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/start/index.html</loc>
+  <loc>https://mqlang.org/book/start/</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/start/install.html</loc>
+  <loc>https://mqlang.org/book/start/install</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/start/playground.html</loc>
+  <loc>https://mqlang.org/book/start/playground</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/start/example.html</loc>
+  <loc>https://mqlang.org/book/start/example</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/index.html</loc>
+  <loc>https://mqlang.org/book/reference/</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/cli.html</loc>
+  <loc>https://mqlang.org/book/reference/cli</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/types_and_values.html</loc>
+  <loc>https://mqlang.org/book/reference/types_and_values</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/conditionals_and_comparisons.html</loc>
+  <loc>https://mqlang.org/book/reference/conditionals_and_comparisons</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/conditionals.html</loc>
+  <loc>https://mqlang.org/book/reference/conditionals</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/comparisons.html</loc>
+  <loc>https://mqlang.org/book/reference/comparisons</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/syntax.html</loc>
+  <loc>https://mqlang.org/book/reference/syntax</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/pipe_operator.html</loc>
+  <loc>https://mqlang.org/book/reference/pipe_operator</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/q_operator.html</loc>
+  <loc>https://mqlang.org/book/reference/q_operator</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/env.html</loc>
+  <loc>https://mqlang.org/book/reference/env</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/def.html</loc>
+  <loc>https://mqlang.org/book/reference/def</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/let.html</loc>
+  <loc>https://mqlang.org/book/reference/let</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/if.html</loc>
+  <loc>https://mqlang.org/book/reference/if</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/while.html</loc>
+  <loc>https://mqlang.org/book/reference/while</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/until.html</loc>
+  <loc>https://mqlang.org/book/reference/until</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/foreach.html</loc>
+  <loc>https://mqlang.org/book/reference/foreach</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/comments.html</loc>
+  <loc>https://mqlang.org/book/reference/comments</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/include.html</loc>
+  <loc>https://mqlang.org/book/reference/include</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/self.html</loc>
+  <loc>https://mqlang.org/book/reference/self</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/string_interpolation.html</loc>
+  <loc>https://mqlang.org/book/reference/string_interpolation</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/builtins.html</loc>
+  <loc>https://mqlang.org/book/reference/builtins</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/builtin_functions.html</loc>
+  <loc>https://mqlang.org/book/reference/builtin_functions</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://harehare.github.io/mq/book/reference/builtin_selectors.html</loc>
+  <loc>https://mqlang.org/book/reference/builtin_selectors</loc>
   <priority>1.0</priority>
 </url>
 </urlset>

@@ -9,5 +9,5 @@ title = "mq - jq like tool for markdown processing"
 [output.html]
 git-repository-url = "https://github.com/harehare/mq"
 no-section-label = true
-site-url = "/mq/book"
+site-url = "/book"
 smart-punctuation = true
