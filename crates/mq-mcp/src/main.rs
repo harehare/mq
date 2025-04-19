@@ -127,7 +127,11 @@ impl ServerHandler for Server {
             instructions: Some(
                 "mq is a tool for processing markdown content with a jq-like syntax.".into(),
             ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            capabilities: ServerCapabilities::builder()
+                .enable_logging()
+                .enable_tools()
+                .enable_tool_list_changed()
+                .build(),
             ..Default::default()
         }
     }
@@ -135,7 +139,10 @@ impl ServerHandler for Server {
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
 
     unsafe { std::env::set_var("NO_COLOR", "1") };
     let transport = (stdin(), stdout());
