@@ -212,6 +212,7 @@ body {
     flex-wrap: wrap;
   }
 
+  .editor-header.code,
   .editor-header.output {
     height: auto;
   }
@@ -255,4 +256,5 @@ body {
   font-size: 13px;
   cursor: pointer;
   user-select: none;
+  color: var(--text-color);
 }

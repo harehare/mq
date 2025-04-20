@@ -600,7 +600,7 @@ export const Playground = () => {
       <div className="playground-content">
         <div className="left-panel">
           <div className="editor-container">
-            <div className="editor-header">
+            <div className="editor-header code">
               <h2>Code</h2>
               <div className="editor-actions">
                 <div>
@@ -766,16 +766,7 @@ export const Playground = () => {
                 </label>
               </div>
               <div>
-                <label
-                  style={{
-                    marginLeft: "4px",
-                    display: "flex",
-                    alignItems: "center",
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    userSelect: "none",
-                  }}
-                >
+                <label className="label">
                   <input
                     type="checkbox"
                     checked={isUpdate}
