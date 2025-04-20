@@ -20,7 +20,6 @@ type SharedData = {
 
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
-const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
 const EXAMPLES = [
   {
     name: "Hello World",
@@ -129,6 +128,7 @@ console.log("Hello, World!");
     name: "Extract mdx",
     code: `select(is_mdx())`,
     markdown: `import {Chart} from './snowfall.js'
+import { isDarkMode } from '../../../textusm/frontend/src/ts/utils';
 export const year = 2023
 
 # Last year’s snowfall
@@ -231,6 +231,7 @@ export const Playground = () => {
   );
   const [isMdx, setIsMdx] = useState(false);
   const [isUpdate, setIsUpdate] = useState(true);
+  const [isEmbed, setIsEmbed] = useState(false);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
   const [listStyle, setListStyle] = useState<RunOptions["listStyle"]>(null);
@@ -281,6 +282,16 @@ export const Playground = () => {
       } catch {
         alert("Failed to load shared playground");
       }
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const embedParam = urlParams.get("embed");
+    setIsEmbed(embedParam === "true");
+
+    const themeParam = urlParams.get("theme");
+    if (themeParam) {
+      document.documentElement.style.colorScheme =
+        themeParam === "dark" ? "dark" : "light";
     }
   }, []);
 
@@ -386,6 +397,12 @@ export const Playground = () => {
   );
 
   const beforeMount = (monaco: Monaco) => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const themeParam = urlParams.get("theme");
+    const isDarkMode = !themeParam
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : themeParam === "dark";
+
     monaco.editor.addEditorAction({
       id: "run-script",
       label: "Run Script",
@@ -554,29 +571,31 @@ export const Playground = () => {
 
   return (
     <div className="playground-container">
-      <header className="playground-header">
-        <div style={{ display: "flex", alignItems: "center" }}>
+      {!isEmbed && (
+        <header className="playground-header">
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <a
+              href="https://mqlang.org/"
+              style={{ textDecoration: "none", paddingTop: "4px" }}
+              target="_blank"
+            >
+              <img src="./logo.svg" className="logo-icon" />
+            </a>
+            <h1>Playground</h1>
+          </div>
           <a
-            href="https://mqlang.org/"
-            style={{ textDecoration: "none", paddingTop: "4px" }}
+            href="https://github.com/harehare/mq"
+            style={{
+              marginRight: "8px",
+              textDecoration: "none",
+              color: "inherit",
+            }}
             target="_blank"
           >
-            <img src="./logo.svg" className="logo-icon" />
+            <FaGithub />
           </a>
-          <h1>Playground</h1>
-        </div>
-        <a
-          href="https://github.com/harehare/mq"
-          style={{
-            marginRight: "8px",
-            textDecoration: "none",
-            color: "inherit",
-          }}
-          target="_blank"
-        >
-          <FaGithub />
-        </a>
-      </header>
+        </header>
+      )}
 
       <div className="playground-content">
         <div className="left-panel">
@@ -587,18 +606,6 @@ export const Playground = () => {
                 <div>
                   <select
                     className="dropdown"
-                    style={{
-                      appearance: "none",
-                      backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
-                      border: isDarkMode
-                        ? "1px solid #3e3e42"
-                        : "1px solid #ccc",
-                      borderRadius: "4px",
-                      padding: "6px 24px 6px 12px",
-                      fontSize: "13px",
-                      color: isDarkMode ? "#d4d4d4" : "#333",
-                      cursor: "pointer",
-                    }}
                     onChange={(e) => {
                       handleChangeExample(parseInt(e.target.value));
                     }}
@@ -655,11 +662,6 @@ export const Playground = () => {
               <label className="label">
                 <select
                   className="dropdown"
-                  style={{
-                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
-                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
-                    color: isDarkMode ? "#d4d4d4" : "#333",
-                  }}
                   value={inputFormat || "markdown"}
                   onChange={(e) =>
                     setInputFormat(e.target.value as RunOptions["inputFormat"])
@@ -702,15 +704,7 @@ export const Playground = () => {
                 >
                   List Style:
                 </div>
-                <select
-                  className="dropdown"
-                  style={{
-                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
-                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
-                    color: isDarkMode ? "#d4d4d4" : "#333",
-                  }}
-                  onChange={handleChangeListStyle}
-                >
+                <select className="dropdown" onChange={handleChangeListStyle}>
                   <option value="dash">-</option>
                   <option value="star">*</option>
                   <option value="plus">+</option>
@@ -726,11 +720,6 @@ export const Playground = () => {
                 </div>
                 <select
                   className="dropdown"
-                  style={{
-                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
-                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
-                    color: isDarkMode ? "#d4d4d4" : "#333",
-                  }}
                   onChange={handleChangeLinkUrlStyle}
                 >
                   <option value="none">None</option>
@@ -747,11 +736,6 @@ export const Playground = () => {
                 </div>
                 <select
                   className="dropdown"
-                  style={{
-                    backgroundColor: isDarkMode ? "#2d2d30" : "#f5f5f5",
-                    border: isDarkMode ? "1px solid #3e3e42" : "1px solid #ccc",
-                    color: isDarkMode ? "#d4d4d4" : "#333",
-                  }}
                   onChange={(e) => {
                     const value = e.target.value;
                     const linkTitleStyle =
