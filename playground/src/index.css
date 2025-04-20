@@ -147,51 +147,39 @@ body {
   height: 100%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --primary-color: #3a8ec5;
-    --secondary-color: #2a2a2a;
-    --dark-color: #1a4c6b;
-    --light-color: #e8f4fc;
-    --lighter-blue: #1e2a38;
-    --accent-blue: #5dade2;
-    --text-color: #e2e8f0;
-    --code-bg: #2d3748;
-  }
+:root {
+  color-scheme: light dark;
 
-  .loading-message,
-  .empty-message {
-    color: #a0aec0;
-    background-color: var(--secondary-color);
-  }
+  /* Common values that don't change between modes */
+  --accent-blue: light-dark(#4299e1, #5dade2);
+
+  /* Light/dark mode values */
+  --primary-color: light-dark(#3182ce, #3a8ec5);
+  --secondary-color: light-dark(#f7fafc, #2a2a2a);
+  --dark-color: light-dark(#2c5282, #1a4c6b);
+  --light-color: light-dark(#ffffff, #e8f4fc);
+  --lighter-blue: light-dark(#ebf8ff, #1e2a38);
+  --text-color: light-dark(#2d3748, #e2e8f0);
+  --code-bg: light-dark(#f7fafc, #2d3748);
+  --select-fg: light-dark(#333, #d4d4d4);
+  --select-bg: light-dark(#f5f5f5, #2d2d30);
+  --border: light-dark(#ccc, #3e3e42);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --primary-color: #3182ce;
-    --secondary-color: #f7fafc;
-    --dark-color: #2c5282;
-    --light-color: #ffffff;
-    --lighter-blue: #ebf8ff;
-    --accent-blue: #4299e1;
-    --text-color: #2d3748;
-    --code-bg: #f7fafc;
-  }
+.playground-header {
+  background-color: light-dark(var(--dark-color), var(--secondary-color));
+  color: white;
+}
 
-  .editor-header {
-    background-color: #edf2f7;
-    color: var(--text-color);
-  }
+.editor-header {
+  background-color: light-dark(#edf2f7, var(--secondary-color));
+  color: light-dark(var(--text-color), var(--light-color));
+}
 
-  .playground-header {
-    background-color: var(--dark-color);
-  }
-
-  .loading-message,
-  .empty-message {
-    color: #718096;
-    background-color: #f7fafc;
-  }
+.loading-message,
+.empty-message {
+  color: light-dark(#718096, #a0aec0);
+  background-color: light-dark(#f7fafc, var(--secondary-color));
 }
 
 .logo-icon {
@@ -255,6 +243,9 @@ body {
   font-size: 13px;
   cursor: pointer;
   margin-right: 8px;
+  background-color: var(-select-bg);
+  border: 1px solid var(--border);
+  color: var(--select-fg);
 }
 
 .label {
