@@ -139,8 +139,8 @@ impl Server {
     fn extract_from_markdown(
         &self,
         #[tool(param)]
-        #[schemars(description = "The markdown content")]
-        markdown: String,
+        #[schemars(description = "The markdown contents")]
+        markdown_contents: Vec<String>,
         #[tool(param)]
         #[schemars(description = "Query to extract specific elements from markdown content")]
         query: Query,
@@ -154,7 +154,7 @@ impl Server {
             ));
         }
 
-        self.execute_query(&markdown, query.to_string().as_str())
+        self.execute_query(&markdown_contents.join("\n"), query.to_string().as_str())
             .map_err(|e| {
                 McpError::invalid_request(
                     "Failed to execute query",
