@@ -12,9 +12,17 @@ use tokio::io::{stdin, stdout};
 pub struct Server;
 
 #[derive(Debug, rmcp::serde::Deserialize, rmcp::serde::Serialize, schemars::JsonSchema)]
-pub enum Query {
-    #[schemars(description = "Extract headings from markdown content.")]
-    Heading(Option<u8>),
+pub enum Selector {
+    #[schemars(description = "Extract level 1 headings (h1) from markdown content.")]
+    Heading1,
+    #[schemars(description = "Extract level 2 headings (h2) from markdown content.")]
+    Heading2,
+    #[schemars(description = "Extract level 3 headings (h3) from markdown content.")]
+    Heading3,
+    #[schemars(description = "Extract level 4 headings (h4) from markdown content.")]
+    Heading4,
+    #[schemars(description = "Extract level 5 headings (h5) from markdown content.")]
+    Heading5,
     #[schemars(description = "Extract list items from markdown content.")]
     List,
     #[schemars(description = "Extract checked list items from markdown content.")]
@@ -37,44 +45,91 @@ pub enum Query {
     Toml,
 }
 
-#[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
-pub struct Queries {
-    queries: Vec<Query>,
-}
-
-impl Display for Query {
+impl Display for Selector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Query::Heading(level) => {
-                if let Some(level) = level {
-                    write!(f, ".h({})", level)
-                } else {
-                    write!(f, ".h")
-                }
-            }
-            Query::List => write!(f, ".[]"),
-            Query::CheckedList => write!(f, ".list.checked"),
-            Query::Table => write!(f, ".[][]"),
-            Query::Code => write!(f, ".code"),
-            Query::InlineCode => write!(f, ".code_inline"),
-            Query::Math => write!(f, ".math"),
-            Query::InlineMath => write!(f, ".math_inline"),
-            Query::Html => write!(f, ".html"),
-            Query::Yaml => write!(f, ".yaml"),
-            Query::Toml => write!(f, ".toml"),
+            Selector::Heading1 => write!(f, ".h1"),
+            Selector::Heading2 => write!(f, ".h2"),
+            Selector::Heading3 => write!(f, ".h3"),
+            Selector::Heading4 => write!(f, ".h4"),
+            Selector::Heading5 => write!(f, ".h5"),
+            Selector::List => write!(f, ".[]"),
+            Selector::CheckedList => write!(f, ".list.checked"),
+            Selector::Table => write!(f, ".[][]"),
+            Selector::Code => write!(f, ".code"),
+            Selector::InlineCode => write!(f, ".code_inline"),
+            Selector::Math => write!(f, ".math"),
+            Selector::InlineMath => write!(f, ".math_inline"),
+            Selector::Html => write!(f, ".html"),
+            Selector::Yaml => write!(f, ".yaml"),
+            Selector::Toml => write!(f, ".toml"),
         }
     }
 }
 
-impl Display for Queries {
+#[derive(Debug, rmcp::serde::Deserialize, rmcp::serde::Serialize, schemars::JsonSchema)]
+pub enum Function {
+    #[schemars(description = "Checks if string contains a substring.")]
+    Contains(String),
+    #[schemars(description = "Checks if the given string starts with the specified substring.")]
+    StartsWith(String),
+    #[schemars(description = "Checks if the given string ends with the specified substring.")]
+    EndsWith(String),
+    #[schemars(description = "Tests if string matches a pattern.")]
+    Test(String),
+    #[schemars(description = "Converts the given markdown string to HTML.")]
+    ToHtml(String),
+}
+
+impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let queries = self
-            .queries
+        match self {
+            Function::Contains(s) => write!(f, r#"select(contains("{}"))"#, s),
+            Function::StartsWith(s) => write!(f, r#"select(starts_with("{}"))"#, s),
+            Function::EndsWith(s) => write!(f, r#"select(ends_with("{}"))"#, s),
+            Function::Test(s) => write!(f, r#"select(test("{}"))"#, s),
+            Function::ToHtml(s) => write!(f, r#"to_html("{}")"#, s),
+        }
+    }
+}
+
+#[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
+pub struct Query {
+    #[schemars(
+        description = "List of selectors to extract specific elements from markdown content"
+    )]
+    selectors: Vec<Selector>,
+    #[schemars(
+        description = "List of functions to filter or transform the extracted markdown elements"
+    )]
+    functions: Vec<Function>,
+}
+
+impl Display for Query {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let selectors = self
+            .selectors
             .iter()
             .map(|query| query.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "or({})", queries)
+        write!(
+            f,
+            "select(or({})){}",
+            selectors,
+            if self.functions.is_empty() {
+                "".to_string()
+            } else {
+                format!(
+                    " | {}",
+                    self.functions
+                        .iter()
+                        .map(|func| func.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                )
+            }
+        )
     }
 }
 
@@ -84,22 +139,22 @@ impl Server {
     fn extract_from_markdown(
         &self,
         #[tool(param)]
-        #[schemars(description = "The markdown content to extract headings from")]
+        #[schemars(description = "The markdown content")]
         markdown: String,
         #[tool(param)]
-        #[schemars(description = "Queries to extract specific elements from markdown content")]
-        queries: Queries,
+        #[schemars(description = "Query to extract specific elements from markdown content")]
+        query: Query,
     ) -> Result<CallToolResult, McpError> {
-        if queries.queries.is_empty() {
+        if query.selectors.is_empty() {
             return Err(McpError::invalid_request(
-                "No queries provided",
+                "No selector provided",
                 Some(serde_json::Value::String(
                     "Queries cannot be empty".to_string(),
                 )),
             ));
         }
 
-        self.execute_query(&markdown, queries.to_string().as_str())
+        self.execute_query(&markdown, query.to_string().as_str())
             .map_err(|e| {
                 McpError::invalid_request(
                     "Failed to execute query",
@@ -133,7 +188,13 @@ impl Server {
         Ok(CallToolResult::success(
             values
                 .into_iter()
-                .map(|value| Content::text(value.to_string()))
+                .filter_map(|value| {
+                    if value.is_none() || value.is_empty() {
+                        None
+                    } else {
+                        Some(Content::text(value.to_string()))
+                    }
+                })
                 .collect::<Vec<_>>(),
         ))
     }
