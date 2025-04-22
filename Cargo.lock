@@ -1384,6 +1384,7 @@ dependencies = [
  "miette",
  "mq-lang",
  "mq-markdown",
+ "mq-test",
  "rmcp",
  "serde",
  "serde_json",

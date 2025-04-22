@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use miette::miette;
 use rmcp::{
@@ -43,6 +43,24 @@ pub enum Selector {
     Yaml,
     #[schemars(description = "Extract TOML frontmatter from markdown content.")]
     Toml,
+    #[schemars(description = "Extract blockquotes from markdown content.")]
+    Blockquote,
+    #[schemars(description = "Extract image references from markdown content.")]
+    Image,
+    #[schemars(description = "Extract link references from markdown content.")]
+    Link,
+    #[schemars(description = "Extract emphasis (italic) text from markdown content.")]
+    Emphasis,
+    #[schemars(description = "Extract strong emphasis (bold) text from markdown content.")]
+    Strong,
+    #[schemars(description = "Extract delete (strikethrough) from markdown content.")]
+    Delete,
+    #[schemars(description = "Extract horizontal rules from markdown content.")]
+    HorizontalRule,
+    #[schemars(description = "Extract footnote references from markdown content.")]
+    FootnoteReference,
+    #[schemars(description = "Extract all text content from markdown, ignoring formatting.")]
+    Text,
 }
 
 impl Display for Selector {
@@ -63,6 +81,15 @@ impl Display for Selector {
             Selector::Html => write!(f, ".html"),
             Selector::Yaml => write!(f, ".yaml"),
             Selector::Toml => write!(f, ".toml"),
+            Selector::Blockquote => write!(f, ".blockquote"),
+            Selector::Image => write!(f, ".image"),
+            Selector::Link => write!(f, ".link"),
+            Selector::Emphasis => write!(f, ".emphasis"),
+            Selector::Strong => write!(f, ".strong"),
+            Selector::Delete => write!(f, ".delete"),
+            Selector::HorizontalRule => write!(f, ".horizontal_rule"),
+            Selector::FootnoteReference => write!(f, ".footnote_ref"),
+            Selector::Text => write!(f, ".text"),
         }
     }
 }
@@ -79,6 +106,8 @@ pub enum Function {
     Test(String),
     #[schemars(description = "Converts the given markdown string to HTML.")]
     ToHtml(String),
+    #[schemars(description = "Replaces all occurrences of a substring with another string.")]
+    Replace(String, String),
 }
 
 impl Display for Function {
@@ -89,6 +118,9 @@ impl Display for Function {
             Function::EndsWith(s) => write!(f, r#"select(ends_with("{}"))"#, s),
             Function::Test(s) => write!(f, r#"select(test("{}"))"#, s),
             Function::ToHtml(s) => write!(f, r#"to_html("{}")"#, s),
+            Function::Replace(pattern, replacement) => {
+                write!(f, r#"replace("{}", "{}")"#, pattern, replacement)
+            }
         }
     }
 }
@@ -113,23 +145,25 @@ impl Display for Query {
             .map(|query| query.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        write!(
-            f,
-            "select(or({})){}",
-            selectors,
-            if self.functions.is_empty() {
-                "".to_string()
-            } else {
-                format!(
-                    " | {}",
-                    self.functions
-                        .iter()
-                        .map(|func| func.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                )
-            }
-        )
+
+        let functions = if self.functions.is_empty() {
+            "".to_string()
+        } else {
+            format!(
+                " | {}",
+                self.functions
+                    .iter()
+                    .map(|func| func.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            )
+        };
+
+        if self.selectors.len() > 1 {
+            write!(f, "select(or({})){}", selectors, functions)
+        } else {
+            write!(f, "select({}){}", selectors, functions)
+        }
     }
 }
 
@@ -139,8 +173,8 @@ impl Server {
     fn extract_from_markdown(
         &self,
         #[tool(param)]
-        #[schemars(description = "The markdown contents")]
-        markdown_contents: Vec<String>,
+        #[schemars(description = "The markdown file to extract from")]
+        file_path: PathBuf,
         #[tool(param)]
         #[schemars(description = "Query to extract specific elements from markdown content")]
         query: Query,
@@ -154,7 +188,10 @@ impl Server {
             ));
         }
 
-        self.execute_query(&markdown_contents.join("\n"), query.to_string().as_str())
+        let read_file: String = fs::read_to_string(file_path)
+            .map_err(|e| McpError::resource_not_found(e.to_string(), None))?;
+
+        self.execute_query(&read_file, query.to_string().as_str())
             .map_err(|e| {
                 McpError::invalid_request(
                     "Failed to execute query",
@@ -167,12 +204,13 @@ impl Server {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
-        let markdown = mq_markdown::Markdown::from_mdx_str(&markdown).map_err(|e| {
+        let markdown = mq_markdown::Markdown::from_str(markdown).map_err(|e| {
             McpError::parse_error(
                 "Failed to parse markdown",
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
+        dbg!(&query);
         let values = engine
             .eval(
                 query,
@@ -233,4 +271,217 @@ async fn main() -> miette::Result<()> {
     service.waiting().await.map_err(|e| miette!(e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_query_display() {
+        let query = Query {
+            selectors: vec![],
+            functions: vec![],
+        };
+        assert_eq!(query.to_string(), "select()");
+
+        let query = Query {
+            selectors: vec![Selector::Heading1],
+            functions: vec![],
+        };
+        assert_eq!(query.to_string(), "select(or(.h1))");
+
+        let query = Query {
+            selectors: vec![Selector::Heading1, Selector::Heading2],
+            functions: vec![],
+        };
+        assert_eq!(query.to_string(), "select(or(.h1, .h2))");
+
+        let query = Query {
+            selectors: vec![
+                Selector::Heading1,
+                Selector::Heading2,
+                Selector::Heading3,
+                Selector::Heading4,
+                Selector::Heading5,
+                Selector::List,
+                Selector::CheckedList,
+                Selector::Table,
+                Selector::Code,
+                Selector::InlineCode,
+                Selector::Math,
+                Selector::InlineMath,
+                Selector::Html,
+                Selector::Yaml,
+                Selector::Toml,
+                Selector::Blockquote,
+                Selector::Image,
+                Selector::Link,
+                Selector::Emphasis,
+                Selector::Strong,
+                Selector::Delete,
+                Selector::HorizontalRule,
+                Selector::FootnoteReference,
+                Selector::Text,
+            ],
+            functions: vec![],
+        };
+        assert_eq!(
+            query.to_string(),
+            "select(or(.h1, .h2, .h3, .h4, .h5, .[], .list.checked, .[][], .code, .code_inline, .math, .math_inline, .html, .yaml, .toml, .blockquote, .image, .link, .emphasis, .strong, .delete, .horizontal_rule, .footnote_ref, .text))"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::Heading1],
+            functions: vec![Function::Contains("test".to_string())],
+        };
+        assert_eq!(
+            query.to_string(),
+            "select(.h1) | select(contains(\"test\"))"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::Heading1],
+            functions: vec![
+                Function::Contains("test".to_string()),
+                Function::StartsWith("start".to_string()),
+            ],
+        };
+        assert_eq!(
+            query.to_string(),
+            "select(.h1) | select(contains(\"test\")) | select(starts_with(\"start\"))"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::Heading1],
+            functions: vec![
+                Function::Contains("contains".to_string()),
+                Function::StartsWith("starts".to_string()),
+                Function::EndsWith("ends".to_string()),
+                Function::Test("test.*".to_string()),
+                Function::ToHtml("<b>html</b>".to_string()),
+            ],
+        };
+        assert_eq!(
+            query.to_string(),
+            "select(.h1) | select(contains(\"contains\")) | select(starts_with(\"starts\")) | select(ends_with(\"ends\")) | select(test(\"test.*\")) | to_html(\"<b>html</b>\")"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::Heading1, Selector::Code, Selector::List],
+            functions: vec![
+                Function::Contains("code".to_string()),
+                Function::EndsWith("end".to_string()),
+            ],
+        };
+        assert_eq!(
+            query.to_string(),
+            "select(or(.h1, .code, .[])) | select(contains(\"code\")) | select(ends_with(\"end\"))"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_extract_from_markdown() {
+        let (_, temp_file_path) = mq_test::create_file(
+            "test1.md",
+            "# Heading 1\n\n## Heading 2\n\n- List item 1\n- List item 2\n\n```rust\nfn main() {{}}\n```\n",
+        );
+
+        let server = Server;
+
+        let query = Query {
+            selectors: vec![Selector::Heading1],
+            functions: vec![],
+        };
+        let result = server
+            .extract_from_markdown(temp_file_path.to_path_buf(), query)
+            .unwrap();
+        assert!(!result.is_error.unwrap_or_default());
+        dbg!(&result);
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(
+            result.content[0]
+                .raw
+                .as_text()
+                .map(|t| t.text.clone())
+                .unwrap_or_default(),
+            "# Heading 1"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::Heading1, Selector::Heading2],
+            functions: vec![],
+        };
+        let result = server
+            .extract_from_markdown(temp_file_path.to_path_buf(), query)
+            .unwrap();
+        assert!(!result.is_error.unwrap_or_default());
+        assert_eq!(result.content.len(), 2);
+        assert_eq!(
+            result.content[0]
+                .raw
+                .as_text()
+                .map(|t| t.text.clone())
+                .unwrap_or_default(),
+            "# Heading 1"
+        );
+        assert_eq!(
+            result.content[1]
+                .raw
+                .as_text()
+                .map(|t| t.text.clone())
+                .unwrap_or_default(),
+            "## Heading 2"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::List],
+            functions: vec![Function::Contains("item 2".to_string())],
+        };
+        let result = server
+            .extract_from_markdown(temp_file_path.to_path_buf(), query)
+            .unwrap();
+        assert!(!result.is_error.unwrap_or_default());
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(
+            result.content[0]
+                .raw
+                .as_text()
+                .map(|t| t.text.clone())
+                .unwrap_or_default(),
+            "- List item 2"
+        );
+
+        let query = Query {
+            selectors: vec![Selector::Code],
+            functions: vec![],
+        };
+        let result = server
+            .extract_from_markdown(temp_file_path.to_path_buf(), query)
+            .unwrap();
+        assert!(!result.is_error.unwrap_or_default());
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(
+            result.content[0]
+                .raw
+                .as_text()
+                .map(|t| t.text.clone())
+                .unwrap_or_default(),
+            "fn main() {}"
+        );
+
+        let query = Query {
+            selectors: vec![],
+            functions: vec![],
+        };
+        let result = server.extract_from_markdown(temp_file_path.to_path_buf(), query);
+        assert!(result.is_err());
+
+        let query = Query {
+            selectors: vec![Selector::Heading1],
+            functions: vec![],
+        };
+        let result = server.extract_from_markdown(PathBuf::from("/non/existent/path"), query);
+        assert!(result.is_err());
+    }
 }
