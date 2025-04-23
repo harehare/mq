@@ -102,6 +102,11 @@ In {year}, the snowfall was above average.
     "- item\n\n  [another link]: <a/b/c.html> (this  is a title)\n",
     "- item\n\n  [another link]: <x/y/z.html> (this  is a title)\n",
 )]
+#[case::empty_results(
+    vec!["--unbuffered", "--link-title-style", "paren", "--link-url-style", "angle", r#"select(or(.link, .definition)) | if (eq(get_url(), "a/b/c.html1")): "1234""#],
+    "[link](a/b/c.html)",
+    "",
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

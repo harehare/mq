@@ -232,6 +232,7 @@ export const Playground = () => {
   const [isMdx, setIsMdx] = useState(false);
   const [isUpdate, setIsUpdate] = useState(true);
   const [isEmbed, setIsEmbed] = useState(false);
+  const [hasExecuted, setHasExecuted] = useState(false);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
   const [listStyle, setListStyle] = useState<RunOptions["listStyle"]>(null);
@@ -301,6 +302,7 @@ export const Playground = () => {
     }
 
     try {
+      setHasExecuted(true);
       setResult(
         runScript(code, markdown, {
           isMdx,
@@ -784,7 +786,7 @@ export const Playground = () => {
           <div className="editor-content result-container">
             {!wasmLoaded ? (
               <div className="loading-message">Loading WASM module...</div>
-            ) : result ? (
+            ) : hasExecuted || result ? (
               <Editor
                 height="100%"
                 defaultLanguage="markdown"

@@ -58,7 +58,7 @@ impl fmt::Display for Markdown {
         write!(
             f,
             "{}",
-            if text.ends_with('\n') {
+            if text.is_empty() || text.ends_with('\n') {
                 text
             } else {
                 format!("{}\n", &text)
