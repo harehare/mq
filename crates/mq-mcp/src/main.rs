@@ -210,7 +210,6 @@ impl Server {
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
-        dbg!(&query);
         let values = engine
             .eval(
                 query,
@@ -397,7 +396,6 @@ mod tests {
             .extract_from_markdown(temp_file_path.to_path_buf(), query)
             .unwrap();
         assert!(!result.is_error.unwrap_or_default());
-        dbg!(&result);
         assert_eq!(result.content.len(), 1);
         assert_eq!(
             result.content[0]
