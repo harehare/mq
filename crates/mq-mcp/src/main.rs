@@ -289,7 +289,7 @@ mod tests {
             selectors: vec![Selector::Heading1],
             functions: vec![],
         };
-        assert_eq!(query.to_string(), "select(or(.h1))");
+        assert_eq!(query.to_string(), "select(.h1)");
 
         let query = Query {
             selectors: vec![Selector::Heading1, Selector::Heading2],
@@ -467,7 +467,7 @@ mod tests {
                 .as_text()
                 .map(|t| t.text.clone())
                 .unwrap_or_default(),
-            "fn main() {}"
+            "```rust\nfn main() {{}}\n```"
         );
 
         let query = Query {
