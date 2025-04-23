@@ -14,7 +14,7 @@ version = "0.1.1"
 compact_str = {workspace = true}
 html2md-rs = "0.10.2"
 itertools = {workspace = true}
-markdown = "1.0.0-alpha.23"
+markdown = "1.0.0"
 miette = {version = "7.5.0", features = ["fancy"]}
 serde = {version = "1.0.219", features = ["derive"], optional = true}
 serde_json = {version = "1.0.140", optional = true}
