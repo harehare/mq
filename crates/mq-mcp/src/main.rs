@@ -125,8 +125,10 @@ impl Display for Function {
     }
 }
 
-#[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
-pub struct Query {
+#[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
+struct Query {
+    #[schemars(description = "The markdown file to extract from")]
+    file_path: PathBuf,
     #[schemars(
         description = "List of selectors to extract specific elements from markdown content"
     )]
@@ -172,10 +174,7 @@ impl Server {
     #[tool(description = "Extract from markdown content.")]
     fn extract_from_markdown(
         &self,
-        #[tool(param)]
-        #[schemars(description = "The markdown file to extract from")]
-        file_path: PathBuf,
-        #[tool(param)]
+        #[tool(aggr)]
         #[schemars(description = "Query to extract specific elements from markdown content")]
         query: Query,
     ) -> Result<CallToolResult, McpError> {
@@ -188,7 +187,7 @@ impl Server {
             ));
         }
 
-        let read_file: String = fs::read_to_string(file_path)
+        let read_file: String = fs::read_to_string(&query.file_path)
             .map_err(|e| McpError::resource_not_found(e.to_string(), None))?;
 
         self.execute_query(&read_file, query.to_string().as_str())
@@ -279,24 +278,28 @@ mod tests {
     #[test]
     fn test_query_display() {
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![],
             functions: vec![],
         };
         assert_eq!(query.to_string(), "select()");
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![Selector::Heading1],
             functions: vec![],
         };
         assert_eq!(query.to_string(), "select(.h1)");
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![Selector::Heading1, Selector::Heading2],
             functions: vec![],
         };
         assert_eq!(query.to_string(), "select(or(.h1, .h2))");
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![
                 Selector::Heading1,
                 Selector::Heading2,
@@ -331,6 +334,7 @@ mod tests {
         );
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![Selector::Heading1],
             functions: vec![Function::Contains("test".to_string())],
         };
@@ -340,6 +344,7 @@ mod tests {
         );
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![Selector::Heading1],
             functions: vec![
                 Function::Contains("test".to_string()),
@@ -352,6 +357,7 @@ mod tests {
         );
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![Selector::Heading1],
             functions: vec![
                 Function::Contains("contains".to_string()),
@@ -367,6 +373,7 @@ mod tests {
         );
 
         let query = Query {
+            file_path: PathBuf::from("test.md"),
             selectors: vec![Selector::Heading1, Selector::Code, Selector::List],
             functions: vec![
                 Function::Contains("code".to_string()),
@@ -389,12 +396,11 @@ mod tests {
         let server = Server;
 
         let query = Query {
+            file_path: temp_file_path.to_path_buf(),
             selectors: vec![Selector::Heading1],
             functions: vec![],
         };
-        let result = server
-            .extract_from_markdown(temp_file_path.to_path_buf(), query)
-            .unwrap();
+        let result = server.extract_from_markdown(query).unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
         assert_eq!(
@@ -407,12 +413,11 @@ mod tests {
         );
 
         let query = Query {
+            file_path: temp_file_path.to_path_buf(),
             selectors: vec![Selector::Heading1, Selector::Heading2],
             functions: vec![],
         };
-        let result = server
-            .extract_from_markdown(temp_file_path.to_path_buf(), query)
-            .unwrap();
+        let result = server.extract_from_markdown(query).unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 2);
         assert_eq!(
@@ -433,12 +438,11 @@ mod tests {
         );
 
         let query = Query {
+            file_path: temp_file_path.to_path_buf(),
             selectors: vec![Selector::List],
             functions: vec![Function::Contains("item 2".to_string())],
         };
-        let result = server
-            .extract_from_markdown(temp_file_path.to_path_buf(), query)
-            .unwrap();
+        let result = server.extract_from_markdown(query).unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
         assert_eq!(
@@ -451,12 +455,11 @@ mod tests {
         );
 
         let query = Query {
+            file_path: temp_file_path.to_path_buf(),
             selectors: vec![Selector::Code],
             functions: vec![],
         };
-        let result = server
-            .extract_from_markdown(temp_file_path.to_path_buf(), query)
-            .unwrap();
+        let result = server.extract_from_markdown(query).unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
         assert_eq!(
@@ -469,17 +472,19 @@ mod tests {
         );
 
         let query = Query {
+            file_path: temp_file_path.to_path_buf(),
             selectors: vec![],
             functions: vec![],
         };
-        let result = server.extract_from_markdown(temp_file_path.to_path_buf(), query);
+        let result = server.extract_from_markdown(query);
         assert!(result.is_err());
 
         let query = Query {
+            file_path: PathBuf::from("/non/existent/path"),
             selectors: vec![Selector::Heading1],
             functions: vec![],
         };
-        let result = server.extract_from_markdown(PathBuf::from("/non/existent/path"), query);
+        let result = server.extract_from_markdown(query);
         assert!(result.is_err());
     }
 }
