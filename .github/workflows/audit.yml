@@ -6,6 +6,12 @@ on:
       - "**/Cargo.toml"
       - "**/Cargo.lock"
 
+permissions:
+  issues: write
+  issues-reason: to create issues
+  checks: write
+  checks-reason: to create check
+
 jobs:
   security_audit:
     runs-on: ubuntu-latest

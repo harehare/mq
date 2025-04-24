@@ -9,6 +9,10 @@ run *args:
 start-lsp:
     cargo watch -x run
 
+[working-directory: 'crates/mq-mcp']
+start-mcp:
+    cargo watch -x run
+
 [working-directory: 'playground']
 playground:
     npm run dev
