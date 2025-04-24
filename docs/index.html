@@ -13,19 +13,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter|JetBrains+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --primary-color: #20638f;
+        --primary-color: #1a6fb0;
         --secondary-color: #1e1e1e;
-        --dark-color: #123850;
+        --dark-color: #0d2538;
         --light-color: #b9c5de;
-        --lighter-blue: #f0f8ff;
-        --accent-blue: #5dade2;
+        --lighter-blue: #f5f9ff;
+        --accent-blue: #3b9cff;
         --text-color: #2c3e50;
-        --code-bg: #eef7fd;
+        --code-bg: #1e1e1e;
+        --code-color: #d4d4d4;
+        --comment-color: #6a9955;
+        --keyword-color: #569cd6;
+        --string-color: #ce9178;
+        --function-color: #dcdcaa;
+        --operator-color: #d4d4d4;
+        --variable-color: #9cdcfe;
+        --number-color: #b5cea8;
+        --selection-bg: #264f78;
       }
 
       * {
@@ -48,6 +57,7 @@
 
       html {
         height: 100%;
+        scroll-behavior: smooth;
       }
 
       footer {
@@ -55,19 +65,75 @@
       }
 
       .container {
-        max-width: 1100px;
+        max-width: 1200px;
         margin: 0 auto;
         padding: 0 20px;
       }
 
+      .nav {
+        background-color: var(--dark-color);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+      }
+
+      .nav-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0rem 20px;
+      }
+
+      .nav-logo {
+        display: flex;
+        align-items: center;
+        text-decoration: none;
+      }
+
+      .nav-logo img {
+        height: 48px;
+        margin-right: 8px;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 2.5rem;
+        list-style: none;
+      }
+
+      .nav-links a {
+        color: var(--light-color);
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.2s;
+        position: relative;
+        font-size: 0.95rem;
+      }
+
+      .nav-links a:hover {
+        color: #ffffff;
+      }
+
+      .nav-links a::after {
+        content: "";
+        position: absolute;
+        width: 0;
+        height: 2px;
+        bottom: -4px;
+        left: 0;
+        background-color: var(--accent-blue);
+        transition: width 0.3s;
+      }
+
+      .nav-links a:hover::after {
+        width: 100%;
+      }
+
       header {
-        background: linear-gradient(
-          135deg,
-          var(--secondary-color) 0%,
-          var(--dark-color) 80%,
-          #0a1a2a 100%
-        );
-        padding: 3rem 0;
+        background-color: var(--dark-color);
+        padding: 7.5rem 0 5rem;
         text-align: center;
         color: white;
         position: relative;
@@ -75,26 +141,13 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
       }
 
-      header::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: radial-gradient(
-          circle at 30% 30%,
-          rgba(93, 173, 226, 0.1),
-          transparent 70%
-        );
-        pointer-events: none;
-      }
-
       .logo-title-wrapper {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
+        position: relative;
+        z-index: 2;
       }
 
       .logo {
@@ -123,8 +176,13 @@
         transform: scale(1.05) rotate(2deg);
       }
 
+      .logo-icon img {
+        width: 100%;
+        height: 100%;
+      }
+
       .title {
-        font-size: 3.8rem;
+        font-size: 4.5rem;
         margin: 0;
         padding: 0;
         color: var(--light-color);
@@ -147,9 +205,9 @@
       }
 
       .subtitle {
-        font-size: 1.3rem;
+        font-size: 1.4rem;
         color: var(--light-color);
-        margin-bottom: 1rem;
+        margin: 1.5rem 0;
         font-weight: 300;
         letter-spacing: 0.5px;
         line-height: 1.7;
@@ -163,7 +221,7 @@
       }
 
       .cta-container {
-        margin-top: 1.5rem;
+        margin-top: 2rem;
         opacity: 0;
         animation: fadeIn 0.8s ease-out forwards 0.6s;
       }
@@ -196,7 +254,7 @@
         color: var(--primary-color);
         padding: 14px 28px;
         text-decoration: none;
-        border-radius: 12px;
+        border-radius: 8px;
         font-weight: 600;
         transition: all 0.3s;
         margin: 10px;
@@ -204,9 +262,9 @@
       }
 
       .cta:hover {
-        background-color: var(--light-color);
         transform: translateY(-2px);
         box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        background-color: rgba(255, 255, 255, 0.95);
       }
 
       .secondary-cta {
@@ -220,7 +278,7 @@
       }
 
       section {
-        padding: 2rem 0;
+        padding: 5rem 0;
       }
 
       section:nth-child(odd) {
@@ -233,21 +291,37 @@
 
       section h2 {
         text-align: center;
-        margin-bottom: 1.5rem;
+        margin-bottom: 2rem;
         color: var(--dark-color);
-        font-size: 2.2rem;
+        font-size: 2.4rem;
         font-weight: 700;
         letter-spacing: -0.5px;
       }
 
       .code-example {
         background-color: var(--code-bg);
-        border-radius: 16px;
-        padding: 1rem;
+        border-radius: 12px;
+        padding: 1.5rem;
         margin: 2.5rem 0;
         overflow-x: auto;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-        align-self: start;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+        position: relative;
+        line-height: 1.5;
+      }
+
+      .code-example::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          45deg,
+          rgba(255, 255, 255, 0.03),
+          transparent
+        );
+        pointer-events: none;
       }
 
       code {
@@ -256,14 +330,55 @@
         font-size: 0.95rem;
         display: block;
         line-height: 1.7;
-        color: #283747;
+        color: var(--code-color);
+      }
+
+      pre {
+        background-color: transparent !important;
+        margin: 0;
+      }
+
+      .hljs-comment,
+      [style*="color: #2e8b57"] {
+        color: var(--comment-color) !important;
+      }
+
+      .hljs-keyword,
+      [style*="color: #0000ff"],
+      [style*="color: #a31515"] {
+        color: var(--keyword-color) !important;
+      }
+
+      .hljs-string,
+      [style*="color: #a31515"] {
+        color: var(--string-color) !important;
+      }
+
+      .hljs-function,
+      [style*="color: #795e26"] {
+        color: var(--function-color) !important;
+      }
+
+      .hljs-variable,
+      [style*="color: #001080"] {
+        color: var(--variable-color) !important;
+      }
+
+      .hljs-number,
+      [style*="color: #098658"] {
+        color: var(--number-color) !important;
+      }
+
+      .hljs-operator,
+      [style*="color: #000000"] {
+        color: var(--operator-color) !important;
       }
 
       footer {
         background-color: var(--dark-color);
         color: white;
         text-align: center;
-        padding: 1rem 0;
+        padding: 1.5rem 0;
         font-weight: 400;
       }
 
@@ -274,18 +389,22 @@
 
       .about-content {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
         gap: 3rem;
         align-items: center;
+        text-align: center;
       }
 
       .about-text {
         line-height: 1.8;
+        margin: 0 auto;
+        max-width: 800px;
       }
 
       .about-text p {
-        margin-bottom: 1.2rem;
+        margin-bottom: 1.5rem;
         color: #4a5568;
+        font-size: 1.15rem;
       }
 
       .links {
@@ -303,15 +422,17 @@
         text-decoration: none;
         font-weight: 500;
         padding: 0.75rem 1.5rem;
-        border-radius: 10px;
+        border-radius: 8px;
         background-color: white;
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
         transition: all 0.3s;
+        border: 1px solid rgba(0, 0, 0, 0.05);
       }
 
       .link-item:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        background-color: #f8faff;
       }
 
       .link-icon {
@@ -319,9 +440,141 @@
         font-size: 1.2rem;
       }
 
+      /* New styles for improved layout */
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 2rem;
+        margin: 3rem 0;
+      }
+
+      .feature-item {
+        background: white;
+        border-radius: 10px;
+        padding: 1.8rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        transition: all 0.3s ease;
+        border: 1px solid rgba(0, 0, 0, 0.03);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .feature-item:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
+        border-color: rgba(59, 156, 255, 0.2);
+      }
+
+      .feature-icon {
+        font-size: 2rem;
+        margin-bottom: 1.2rem;
+        display: block;
+      }
+
+      .feature-item h3 {
+        margin-bottom: 0.75rem;
+        color: var(--dark-color);
+        font-size: 1.3rem;
+        font-weight: 600;
+      }
+
+      .feature-item p {
+        color: #4a5568;
+        font-size: 0.95rem;
+        flex-grow: 1;
+      }
+
+      .section-intro {
+        max-width: 800px;
+        margin: 0 auto 3rem;
+        text-align: center;
+        font-size: 1.15rem;
+        color: #4a5568;
+        line-height: 1.7;
+      }
+
+      .full-width {
+        width: 100%;
+      }
+
+      #why-mq .features-grid,
+      #features .features-grid {
+        margin-bottom: 3rem;
+      }
+
+      #features {
+        padding-top: 5rem;
+        padding-bottom: 5rem;
+      }
+
+      #examples {
+        padding-top: 5rem;
+        padding-bottom: 6rem;
+        background-color: var(--dark-color);
+      }
+
+      #examples h2 {
+        color: white;
+      }
+
+      .highlight-line {
+        background-color: var(--selection-bg);
+        display: block;
+        border-radius: 3px;
+      }
+
+      .code-header {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background-color: #252526;
+        border-bottom: 1px solid #333;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+        font-family: "Inter", sans-serif;
+        font-size: 0.85rem;
+        color: #ccc;
+      }
+
+      .code-example {
+        border-radius: 0 0 10px 10px;
+        margin-top: 0;
+      }
+
+      .code-dots {
+        display: flex;
+        gap: 6px;
+        margin-right: auto;
+      }
+
+      .code-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+
+      .code-dot-red {
+        background-color: #ff5f57;
+      }
+      .code-dot-yellow {
+        background-color: #febc2e;
+      }
+      .code-dot-green {
+        background-color: #28c840;
+      }
+
+      .code-title {
+        margin-right: auto;
+        font-weight: 500;
+      }
+
       @media (max-width: 768px) {
+        header {
+          padding: 6rem 0 3.5rem;
+        }
+
         .title {
-          font-size: 2.8rem;
+          font-size: 3rem;
         }
 
         .logo {
@@ -354,10 +607,54 @@
           max-width: 300px;
           justify-content: center;
         }
+
+        .section-intro,
+        .about-text p {
+          font-size: 1rem;
+        }
+
+        section h2 {
+          font-size: 2rem;
+        }
+
+        .nav-links {
+          gap: 1rem;
+        }
+
+        .nav-container {
+          flex-direction: column;
+          padding: 0.75rem 20px;
+        }
+
+        .nav-logo {
+          margin-bottom: 0.5rem;
+        }
+
+        .nav-links {
+          font-size: 0.9rem;
+        }
+
+        section {
+          padding: 3.5rem 0;
+        }
       }
     </style>
   </head>
   <body>
+    <nav class="nav">
+      <div class="nav-container">
+        <a href="#" class="nav-logo">
+          <img src="./assets/logo.svg" alt="mq logo" />
+        </a>
+        <ul class="nav-links">
+          <li><a href="#about">Overview</a></li>
+          <li><a href="#why-mq">Why mq?</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#examples">Examples</a></li>
+        </ul>
+      </div>
+    </nav>
+
     <header>
       <div class="container">
         <div class="logo-title-wrapper">
@@ -396,118 +693,129 @@
               >
                 <span class="link-icon">📚</span> Documentation
               </a>
-              <a href="https://mqlang.org/playground" class="link-item">
+              <a
+                href="https://mqlang.org/playground"
+                class="link-item"
+                target="_blank"
+              >
                 <span class="link-icon">🎮</span> Playground
               </a>
             </div>
-            <div style="margin-top: 2rem">
-              <h3 style="text-align: left; margin-bottom: 1.5rem">
-                ✨ Features
-              </h3>
-              <ul style="list-style: none; padding-left: 0">
-                <li
-                  style="
-                    margin-bottom: 1rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">🔍</span>
-                  <div>
-                    <strong>Slice and Filter</strong>: Extract specific parts of
-                    your Markdown documents with ease.
-                  </div>
-                </li>
-                <li
-                  style="
-                    margin-bottom: 0.5rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">🔄</span>
-                  <div>
-                    <strong>Map and Transform</strong>: Apply transformations to
-                    your Markdown content.
-                  </div>
-                </li>
-                <li
-                  style="
-                    margin-bottom: 0.5rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">💻</span>
-                  <div>
-                    <strong>Command-line Interface</strong>: Simple and
-                    intuitive CLI for quick operations.
-                  </div>
-                </li>
-                <li
-                  style="
-                    margin-bottom: 0.5rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">🔌</span>
-                  <div>
-                    <strong>Extensibility</strong>: Easily extendable with
-                    custom functions.
-                  </div>
-                </li>
-                <li
-                  style="
-                    margin-bottom: 0.5rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">🛠️</span>
-                  <div>
-                    <strong>Built-in support</strong>: Filter and transform
-                    content with many built-in functions and selectors.
-                  </div>
-                </li>
-                <li
-                  style="
-                    margin-bottom: 0.5rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">🎯</span>
-                  <div>
-                    <strong>REPL Support</strong>: Interactive command-line REPL
-                    for testing and experimenting.
-                  </div>
-                </li>
-                <li
-                  style="
-                    margin-bottom: 1rem;
-                    display: flex;
-                    align-items: flex-start;
-                  "
-                >
-                  <span style="margin-right: 0.5rem">🎨</span>
-                  <div>
-                    <strong>IDE Support</strong>:
-                    <a
-                      href="https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq"
-                      target="_blank"
-                      >VSCode Extension</a
-                    >
-                    and Language Server Protocol (LSP) support for custom
-                    function development.
-                  </div>
-                </li>
-              </ul>
-            </div>
           </div>
-          <div class="code-example">
-            <code>
-              <pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="why-mq">
+      <div class="container">
+        <h2>🤔 Why mq?</h2>
+        <p class="section-intro">
+          mq makes working with Markdown files as easy as jq makes working with
+          JSON. It's especially useful for:
+        </p>
+        <div class="features-grid">
+          <div class="feature-item">
+            <span class="feature-icon">🤖</span>
+            <h3>LLM Workflows</h3>
+            <p>
+              Efficiently manipulate and process Markdown used in LLM prompts
+              and outputs
+            </p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">📚</span>
+            <h3>Documentation Management</h3>
+            <p>
+              Extract, transform, and organize content across multiple
+              documentation files
+            </p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🔍</span>
+            <h3>Content Analysis</h3>
+            <p>
+              Quickly extract specific sections or patterns from Markdown
+              documents
+            </p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">⚙️</span>
+            <h3>Batch Processing</h3>
+            <p>
+              Apply consistent transformations across multiple Markdown files
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="container">
+        <h2>✨ Features</h2>
+        <div class="features-grid">
+          <div class="feature-item">
+            <span class="feature-icon">🔍</span>
+            <h3>Slice and Filter</h3>
+            <p>Extract specific parts of your Markdown documents with ease</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🔄</span>
+            <h3>Map and Transform</h3>
+            <p>Apply transformations to your Markdown content</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">💻</span>
+            <h3>Command-line Interface</h3>
+            <p>Simple and intuitive CLI for quick operations</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🔌</span>
+            <h3>Extensibility</h3>
+            <p>Easily extendable with custom functions</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🛠️</span>
+            <h3>Built-in Support</h3>
+            <p>
+              Filter and transform content with many built-in functions and
+              selectors
+            </p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🎯</span>
+            <h3>REPL Support</h3>
+            <p>Interactive command-line REPL for testing and experimenting</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🎨</span>
+            <h3>IDE Support</h3>
+            <p>
+              <a
+                href="https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq"
+                target="_blank"
+                >VSCode Extension</a
+              >
+              and Language Server Protocol (LSP) support
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="examples">
+      <div class="container">
+        <h2>📝 Examples</h2>
+        <div class="code-header">
+          <div class="code-dots">
+            <div class="code-dot code-dot-red"></div>
+            <div class="code-dot code-dot-yellow"></div>
+            <div class="code-dot code-dot-green"></div>
+          </div>
+          <span class="code-title">mq-examples.md</span>
+        </div>
+        <div class="code-example full-width">
+          <code>
+            <pre>
 <span style="color: #2e8b57"># Hello world</span>
 <span style="color: #a31515">select</span>(<span style="color: #0000ff">or</span>(<span style="color: #001080">.</span>[], <span style="color: #001080">.</span>code, <span style="color: #001080">.</span>h)) <span style="color: #000000">|</span> <span style="color: #a31515">upcase</span>() <span style="color: #000000">|</span> <span style="color: #a31515">add</span>(<span style="color: #a31515">" Hello World"</span>)
 
@@ -535,10 +843,8 @@
       <span style="color: #000000">|</span> <span style="color: #d14;">"</span><span style="color: #0086b3;">${first_char}</span><span style="color: #0086b3;">${rest_str}</span><span style="color: #d14;">"</span>;
   <span style="color: #000000">|</span> <span style="color: #a31515">join</span>(<span style="color: #a31515">""</span>);
 <span style="color: #000000">|</span> <span style="color: #795e26">snake_to_camel</span>()
-
 </pre>
-            </code>
-          </div>
+          </code>
         </div>
       </div>
     </section>
