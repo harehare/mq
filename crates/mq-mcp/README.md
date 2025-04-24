@@ -1,20 +1,40 @@
-# mq-mcp (Markdown Command Processor)
-
-[![crates.io](https://img.shields.io/crates/v/mq-mcp.svg)](https://crates.io/crates/mq-mcp)
-[![docs.rs](https://docs.rs/mq-mcp/badge.svg)](https://docs.rs/mq-mcp)
-
-## Overview
+# mq-mcp
 
 The `mq-mcp` crate provides the MCP functionality for the `mq`, a jq-like processor for Markdown files. It handles the evaluation and execution of commands against Markdown documents.
 
 ## Features
 
-- Command parsing and execution
-- Integration with the `mq-markdown` parser
-- Command pipeline processing
-- Transformation of Markdown content
+- **Markdown Extraction**: Extract specific elements from markdown files using various selectors
+- **Element Selectors**: Support for various markdown elements like headings, lists, code blocks, etc.
+- **Query Functions**: Filter and transform extracted content with functions like contains, startsWith, etc.
 
-## Using with code editors
+### Supported Selectors
+
+The server supports extracting various markdown elements including:
+
+- Headings (h1-h5)
+- Lists (regular and checked)
+- Code blocks (regular and inline)
+- Tables
+- Math expressions
+- HTML blocks
+- Frontmatter (YAML/TOML)
+- Blockquotes
+- Links and images
+- Formatting (emphasis, strong, strikethrough)
+- And more
+
+### Query Functions
+
+Extracted content can be further processed with functions:
+
+- `contains`: Check if content contains a substring
+- `startsWith`/`endsWith`: Test if content starts or ends with specific text
+- `test`: Use pattern matching against content
+- `toHtml`: Convert markdown to HTML
+- `replace`: Replace substrings within content
+
+## Usage
 
 ### VS Code
 
