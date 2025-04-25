@@ -91,6 +91,12 @@ steps:
   - run: mq '.code' README.md
 ```
 
+## MCP (Model Context Protocol) server
+
+mq supports an MCP server for integration with LLM applications.
+
+See the [MCP documentation](https://github.com/harehare/mq/crates/mq-mcp/README.md) for more information.
+
 ## Usage
 
 For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
@@ -111,8 +117,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file

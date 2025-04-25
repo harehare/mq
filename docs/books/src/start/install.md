@@ -43,3 +43,20 @@ $ docker run --rm ghcr.io/harehare/mq:0.1.1
 ## Visual Studio Code Extension
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
+
+### GitHub Actions
+
+You can use mq in your GitHub Actions workflows with the [Setup mq](https://github.com/marketplace/actions/setup-mq) action:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: harehare/setup-mq@v1
+  - run: mq '.code' README.md
+```
+
+## MCP (Model Context Protocol) server
+
+mq supports an MCP server for integration with LLM applications.
+
+See the [MCP documentation](https://github.com/harehare/mq/crates/mq-mcp/README.md) for more information.
