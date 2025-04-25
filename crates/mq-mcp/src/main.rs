@@ -365,11 +365,12 @@ mod tests {
                 Function::EndsWith("ends".to_string()),
                 Function::Test("test.*".to_string()),
                 Function::ToHtml("<b>html</b>".to_string()),
+                Function::Replace("pattern".to_string(), "replacement".to_string()),
             ],
         };
         assert_eq!(
             query.to_string(),
-            "select(.h1) | select(contains(\"contains\")) | select(starts_with(\"starts\")) | select(ends_with(\"ends\")) | select(test(\"test.*\")) | to_html(\"<b>html</b>\")"
+            r#"select(.h1) | select(contains("contains")) | select(starts_with("starts")) | select(ends_with("ends")) | select(test("test.*")) | to_html("<b>html</b>") | replace("pattern", "replacement")"#
         );
 
         let query = Query {

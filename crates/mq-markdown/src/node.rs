@@ -1223,17 +1223,21 @@ impl Node {
 
     pub fn is_empty_fragment(&self) -> bool {
         if let Self::Fragment(_) = self {
-            Self::fragments(self).is_empty()
+            Self::_fragment_inner_nodes(self).is_empty()
         } else {
             false
         }
     }
 
-    fn fragments(node: &Node) -> Vec<Node> {
+    fn _fragment_inner_nodes(node: &Node) -> Vec<Node> {
         if let Self::Fragment(fragment) = node {
-            fragment.values.iter().flat_map(Self::fragments).collect()
+            fragment
+                .values
+                .iter()
+                .flat_map(Self::_fragment_inner_nodes)
+                .collect()
         } else {
-            vec![]
+            vec![node.clone()]
         }
     }
 
@@ -3541,5 +3545,23 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(title.to_string_with(&options), expected);
+    }
+
+    #[rstest]
+    #[case(Node::Fragment(Fragment{values: vec![]}), true)]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Text(Text{value: "not_empty".to_string(), position: None})
+    ]}), false)]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Fragment(Fragment{values: vec![]}),
+        Node::Fragment(Fragment{values: vec![]})
+    ]}), true)]
+    #[case(Node::Fragment(Fragment{values: vec![
+        Node::Fragment(Fragment{values: vec![]}),
+        Node::Text(Text{value: "not_empty".to_string(), position: None})
+    ]}), false)]
+    #[case(Node::Text(Text{value: "not_fragment".to_string(), position: None}), false)]
+    fn test_is_empty_fragment(#[case] node: Node, #[case] expected: bool) {
+        assert_eq!(node.is_empty_fragment(), expected);
     }
 }
