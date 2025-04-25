@@ -2089,6 +2089,42 @@ mod tests {
             token(TokenKind::Eof),
         ],
         Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::using_reserved_keyword_let(
+            vec![
+                token(TokenKind::Let),
+                token(TokenKind::If),  // Using "if" as a variable name (should error)
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(42.into())),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::If, module_id: 1.into()})))]
+    #[case::using_reserved_keyword_while(
+            vec![
+                token(TokenKind::Let),
+                token(TokenKind::While),  // Using "while" as a variable name (should error)
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(42.into())),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::While, module_id: 1.into()})))]
+    #[case::using_reserved_keyword_def(
+            vec![
+                token(TokenKind::Let),
+                token(TokenKind::Def),  // Using "def" as a variable name (should error)
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(42.into())),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Def, module_id: 1.into()})))]
+    #[case::using_reserved_keyword_include(
+            vec![
+                token(TokenKind::Let),
+                token(TokenKind::Include),  // Using "include" as a variable name (should error)
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(42.into())),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Include, module_id: 1.into()})))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
