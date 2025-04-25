@@ -106,6 +106,8 @@ pub enum Function {
     Test(String),
     #[schemars(description = "Converts the given markdown string to HTML.")]
     ToHtml(String),
+    #[schemars(description = "Converts the given markdown string to plain text.")]
+    ToText(String),
     #[schemars(description = "Replaces all occurrences of a substring with another string.")]
     Replace(String, String),
 }
@@ -118,6 +120,7 @@ impl Display for Function {
             Function::EndsWith(s) => write!(f, r#"select(ends_with("{}"))"#, s),
             Function::Test(s) => write!(f, r#"select(test("{}"))"#, s),
             Function::ToHtml(s) => write!(f, r#"to_html("{}")"#, s),
+            Function::ToText(s) => write!(f, r#"to_text("{}")"#, s),
             Function::Replace(pattern, replacement) => {
                 write!(f, r#"replace("{}", "{}")"#, pattern, replacement)
             }
@@ -365,12 +368,13 @@ mod tests {
                 Function::EndsWith("ends".to_string()),
                 Function::Test("test.*".to_string()),
                 Function::ToHtml("<b>html</b>".to_string()),
+                Function::ToText("text".to_string()),
                 Function::Replace("pattern".to_string(), "replacement".to_string()),
             ],
         };
         assert_eq!(
             query.to_string(),
-            r#"select(.h1) | select(contains("contains")) | select(starts_with("starts")) | select(ends_with("ends")) | select(test("test.*")) | to_html("<b>html</b>") | replace("pattern", "replacement")"#
+            r#"select(.h1) | select(contains("contains")) | select(starts_with("starts")) | select(ends_with("ends")) | select(test("test.*")) | to_html("<b>html</b>") | to_text("text") | replace("pattern", "replacement")"#
         );
 
         let query = Query {
