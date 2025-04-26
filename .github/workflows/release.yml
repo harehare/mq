@@ -15,7 +15,7 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             artifact_name: mq
-            asset_name: x86_64-unknown-linux-gnu
+            asset_name: x86_64-unknown-linuxu
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: mq
