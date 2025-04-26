@@ -1511,7 +1511,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
                     RuntimeValue::String(s),
                 ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
-                    ident: s.to_owned(),
+                    label: Some(s.to_owned()),
                     ..def.clone()
                 })
                 .into()),
@@ -1519,7 +1519,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Markdown(mq_markdown::Node::ImageRef(image_ref), _),
                     RuntimeValue::String(s),
                 ] => Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
-                    ident: s.to_owned(),
+                    label: if s == &image_ref.ident {
+                        None
+                    } else {
+                        Some(s.to_owned())
+                    },
                     ..image_ref.clone()
                 })
                 .into()),
@@ -1527,7 +1531,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Markdown(mq_markdown::Node::LinkRef(link_ref), _),
                     RuntimeValue::String(s),
                 ] => Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
-                    ident: s.to_owned(),
+                    label: if s == &link_ref.ident {
+                        None
+                    } else {
+                        Some(s.to_owned())
+                    },
                     ..link_ref.clone()
                 })
                 .into()),
@@ -1543,7 +1551,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
                     RuntimeValue::String(s),
                 ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
-                    ident: s.to_owned(),
+                    label: Some(s.to_owned()),
                     ..footnote_ref.clone()
                 })
                 .into()),

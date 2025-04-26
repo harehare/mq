@@ -861,11 +861,15 @@ impl Node {
                 }
             }
             Self::Definition(Definition {
-                label, url, title, ..
+                ident,
+                label,
+                url,
+                title,
+                ..
             }) => {
                 format!(
                     "[{}]: {}{}",
-                    label.unwrap_or_default(),
+                    label.unwrap_or(ident),
                     url.to_string_with(options),
                     title
                         .map(|title| format!(" {}", title.to_string_with(options)))
@@ -900,11 +904,13 @@ impl Node {
                 url.replace(' ', "%20"),
                 title.map(|it| format!(" \"{}\"", it)).unwrap_or_default()
             ),
-            Self::ImageRef(ImageRef { alt, ident, .. }) => {
+            Self::ImageRef(ImageRef {
+                alt, ident, label, ..
+            }) => {
                 if alt == ident {
                     format!("![{}]", ident)
                 } else {
-                    format!("![{}][{}]", alt, ident)
+                    format!("![{}][{}]", alt, label.unwrap_or(ident))
                 }
             }
             Self::CodeInline(CodeInline { value, .. }) => {
@@ -927,13 +933,16 @@ impl Node {
             }
             Self::LinkRef(LinkRef { values, label, .. }) => {
                 let ident = Self::values_to_string(values, options);
-                let label = label.unwrap_or_default();
 
-                if ident == label {
-                    format!("[{}]", ident,)
-                } else {
-                    format!("[{}][{}]", ident, label)
-                }
+                label
+                    .map(|label| {
+                        if label == ident {
+                            format!("[{}]", ident)
+                        } else {
+                            format!("[{}][{}]", ident, label)
+                        }
+                    })
+                    .unwrap_or(format!("[{}]", ident))
             }
             Self::Math(Math { value, .. }) => format!("$$\n{}\n$$", value),
             Self::Text(Text { value, .. }) => value,
@@ -1468,6 +1477,7 @@ impl Node {
             }
             Self::ImageRef(mut image) => {
                 image.ident = value.to_string();
+                image.label = Some(value.to_string());
                 Self::ImageRef(image)
             }
             Self::Link(mut link) => {
@@ -1475,10 +1485,8 @@ impl Node {
                 Self::Link(link)
             }
             Self::LinkRef(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
-
+                v.label = Some(value.to_string());
+                v.ident = value.to_string();
                 Self::LinkRef(v)
             }
             Self::Footnote(mut footnote) => {
@@ -1487,6 +1495,7 @@ impl Node {
             }
             Self::FootnoteRef(mut footnote) => {
                 footnote.ident = value.to_string();
+                footnote.label = Some(value.to_string());
                 Self::FootnoteRef(footnote)
             }
             Self::Heading(mut v) => {
@@ -2235,9 +2244,9 @@ mod tests {
     #[case::code(Node::Code(Code {value: "test".to_string(), lang: None, fence: true, meta: None, position: None }),
            "test".to_string(),
            Node::Code(Code{value: "test".to_string(), lang: None, fence: true, meta: None, position: None }))]
-    #[case::footnoteref(Node::FootnoteRef(FootnoteRef {ident: "test".to_string(), label: None, position: None }),
+    #[case::footnote_ref(Node::FootnoteRef(FootnoteRef {ident: "test".to_string(), label: None, position: None }),
            "test".to_string(),
-           Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None }))]
+           Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: Some("test".to_string()), position: None }))]
     #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), values: Vec::new(), position: None }),
            "test".to_string(),
            Node::Footnote(Footnote{ident: "test".to_string(), values: Vec::new(), position: None }))]
@@ -2279,12 +2288,12 @@ mod tests {
     #[case::table_cell(Node::TableCell(TableCell{values: vec!["test1".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),
             "test2".to_string(),
             Node::TableCell(TableCell{values: vec!["test2".to_string().into()], row:0, column:1, last_cell_in_row: false, last_cell_of_in_table: false, position: None}),)]
-    #[case::link_ref(Node::LinkRef(LinkRef{ident: "test1".to_string(), values: vec!["value".to_string().into()], label: None, position: None}),
+    #[case::link_ref(Node::LinkRef(LinkRef{ident: "test2".to_string(), values: vec!["value".to_string().into()], label: Some("test2".to_string()), position: None}),
             "test2".to_string(),
-            Node::LinkRef(LinkRef{ident: "test1".to_string(), values: vec!["test2".to_string().into()], label: None, position: None}),)]
+            Node::LinkRef(LinkRef{ident: "test2".to_string(), values: vec!["value".to_string().into()], label: Some("test2".to_string()), position: None}),)]
     #[case::image_ref(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test1".to_string(), label: None, position: None}),
             "test2".to_string(),
-            Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test2".to_string(), label: None, position: None}),)]
+            Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "test2".to_string(), label: Some("test2".to_string()), position: None}),)]
     #[case::definition(Node::Definition(Definition{ url: Url::new("url".to_string()), title: None, ident: "test1".to_string(), label: None, position: None}),
             "test2".to_string(),
             Node::Definition(Definition{url: Url::new("test2".to_string()), title: None, ident: "test1".to_string(), label: None, position: None}),)]
@@ -2794,20 +2803,21 @@ mod tests {
     #[case::delete(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "~~test~~")]
     #[case::emphasis(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "*test*")]
     #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), RenderOptions::default(), "[^id]: label")]
-    #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), RenderOptions::default(), "[^label]")]
+    #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: "label".to_string(), label: Some("label".to_string()), position: None}), RenderOptions::default(), "[^label]")]
     #[case::heading(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "# test")]
     #[case::heading(Node::Heading(Heading{depth: 3, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "### test")]
     #[case::html(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), RenderOptions::default(), "<div>test</div>")]
     #[case::image(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}), RenderOptions::default(), "![alt](url)")]
     #[case::image(Node::Image(Image{alt: "alt".to_string(), url: "url with space".to_string(), title: Some("title".to_string()), position: None}), RenderOptions::default(), "![alt](url%20with%20space \"title\")")]
-    #[case::image_ref(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: None, position: None}), RenderOptions::default(), "![alt][id]")]
+    #[case::image_ref(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("id".to_string()), position: None}), RenderOptions::default(), "![alt][id]")]
+    #[case::image_ref(Node::ImageRef(ImageRef{alt: "id".to_string(), ident: "id".to_string(), label: Some("id".to_string()), position: None}), RenderOptions::default(), "![id]")]
     #[case::code_inline(Node::CodeInline(CodeInline{value: "code".into(), position: None}), RenderOptions::default(), "`code`")]
     #[case::math_inline(Node::MathInline(MathInline{value: "x^2".into(), position: None}), RenderOptions::default(), "$x^2$")]
     #[case::link(Node::Link(Link{url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value](url \"title\")")]
     #[case::link(Node::Link(Link{url: Url::new("".to_string()), title: None, values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value](<>)")]
     #[case::link(Node::Link(Link{url: Url::new("url".to_string()), title: None, values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value](url)")]
-    #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["Open".to_string().into()], label: Some("open".to_string()), position: None}), RenderOptions::default(), "[Open][open]")]
-    #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["open".to_string().into()], label: Some("open".to_string()), position: None}), RenderOptions::default(), "[open]")]
+    #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["id".to_string().into()], label: Some("id".to_string()), position: None}), RenderOptions::default(), "[id]")]
+    #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["open".to_string().into()], label: Some("id".to_string()), position: None}), RenderOptions::default(), "[open][id]")]
     #[case::math(Node::Math(Math{value: "x^2".to_string(), position: None}), RenderOptions::default(), "$$\nx^2\n$$")]
     #[case::strong(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "**test**")]
     #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), RenderOptions::default(), "---\nkey: value\n---")]

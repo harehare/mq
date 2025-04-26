@@ -2955,55 +2955,79 @@ mod tests {
               ast_call("to_md_name", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::NONE]))]
-    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{ident: "ident".into(), url: mq_markdown::Url::new("url".to_string()), title: None, label: None, position: None}), None)],
+    #[case::set_ref_markdown_definition(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{ident: "ident".into(), url: mq_markdown::Url::new("url".to_string()), title: None, label: None, position: None}), None)],
             vec![
                  ast_call("set_ref", smallvec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("definition-ref".to_string())))
                  ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition{
-                ident: "definition-ref".to_string(),
-                label: None,
+                ident: "ident".to_string(),
+                label: Some("definition-ref".to_string()),
                 url: mq_markdown::Url::new("url".to_string()),
                 title: None,
                 position: None
             }), None)]))]
-    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{ident: "ident".into(), label: None, values: Vec::new(), position: None}), None)],
+    #[case::set_ref_markdown_link_ref(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{ident: "ident".into(), label: None, values: Vec::new(), position: None}), None)],
             vec![
                  ast_call("set_ref", smallvec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("link-ref".to_string())))
                  ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{
-                ident: "link-ref".to_string(),
+                ident: "ident".to_string(),
+                label: Some("link-ref".to_string()),
+                values: Vec::new(),
+                position: None
+            }), None)]))]
+    #[case::set_ref_markdown_link_ref(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{ident: "ident".into(), label: None, values: Vec::new(), position: None}), None)],
+            vec![
+                 ast_call("set_ref", smallvec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("ident".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::LinkRef(mq_markdown::LinkRef{
+                ident: "ident".to_string(),
                 label: None,
                 values: Vec::new(),
                 position: None
             }), None)]))]
-    #[case::set_ref_markdown_image(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{alt: "Image Alt".to_string(), ident: "ident".into(), label: None, position: None}), None)],
+    #[case::set_ref_markdown_image_ref(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{alt: "Image Alt".to_string(), ident: "ident".into(), label: None, position: None}), None)],
             vec![
                  ast_call("set_ref", smallvec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("image-ref".to_string())))
                  ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{
-                ident: "image-ref".to_string(),
+                ident: "ident".to_string(),
+                alt: "Image Alt".to_string(),
+                label: Some("image-ref".to_string()),
+                position: None
+            }), None)]))]
+    #[case::set_ref_markdown_image_ref(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{alt: "Image Alt".to_string(), ident: "ident".into(), label: None, position: None}), None)],
+            vec![
+                 ast_call("set_ref", smallvec![
+                     ast_node(ast::Expr::Literal(ast::Literal::String("ident".to_string())))
+                 ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::ImageRef(mq_markdown::ImageRef{
+                ident: "ident".to_string(),
                 alt: "Image Alt".to_string(),
                 label: None,
                 position: None
             }), None)]))]
-    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "ident".into(), label: None, position: None}), None)],
+    #[case::set_ref_markdown_footnote_ref(vec![RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "ident".into(), label: None, position: None}), None)],
             vec![
                  ast_call("set_ref", smallvec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("footnote-ref".to_string())))
                  ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{
-                ident: "footnote-ref".to_string(),
-                label: None,
+                ident: "ident".to_string(),
+                label: Some("footnote-ref".to_string()),
                 position: None
             }), None)]))]
-    #[case::set_ref_markdown_link(vec![RuntimeValue::Markdown(mq_markdown::Node::Footnote(mq_markdown::Footnote{ident: "ident".into(), values: Vec::new(), position: None}), None)],
+    #[case::set_ref_markdown_footnote(vec![RuntimeValue::Markdown(mq_markdown::Node::Footnote(mq_markdown::Footnote{ident: "ident".into(), values: Vec::new(), position: None}), None)],
             vec![
                  ast_call("set_ref", smallvec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("footnote".to_string())))
