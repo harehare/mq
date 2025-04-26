@@ -15,6 +15,10 @@
   <priority>1.0</priority>
 </url>
 <url>
+  <loc>https://mqlang.org/book/start/development</loc>
+  <priority>1.0</priority>
+</url>
+<url>
   <loc>https://mqlang.org/book/start/playground</loc>
   <priority>1.0</priority>
 </url>
