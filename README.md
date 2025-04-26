@@ -39,7 +39,9 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 ### Cargo
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.1.1
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.1.1
+# Latest Development Version
+$ cargo install --git https://github.com/harehare/mq.git mq-cli
 ```
 
 ### Binaries
@@ -48,19 +50,19 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Intel)
-curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.1.1/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.1.1/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+$ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.1.1/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
@@ -211,6 +213,60 @@ $ markitdown https://github.com/harehare/mq | mq '.code'
 $ markitdown test.xlsx | mq '.[][]'
 
 ```
+
+## Development
+
+### Prerequisites
+
+- [Rust](https://www.rust-lang.org/tools/install)
+- [just](https://github.com/casey/just) - a command runner
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) (optional, for WebAssembly support)
+
+### Setting up the development environment
+
+Clone the repository:
+
+```sh
+git clone https://github.com/harehare/mq.git
+cd mq
+```
+
+Install development dependencies:
+
+```sh
+# Using cargo
+cargo install just wasm-pack
+```
+
+Or if you prefer using asdf:
+
+```sh
+# Using asdf
+asdf install
+```
+
+### Common development tasks
+
+Here are some useful commands to help you during development:
+
+```sh
+# Run the CLI with the provided arguments
+just run '.code'
+
+# Run formatting, linting and all tests
+just test
+
+# Run formatter and linter
+just lint
+
+# Build the project in release mode
+just build
+
+# Update documentation
+just docs
+```
+
+Check the `just --list` for more available commands and build options.
 
 ## Playground
 

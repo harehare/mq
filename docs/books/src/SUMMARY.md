@@ -3,6 +3,7 @@
 - [Introduction](index.md)
 - [Getting Started](start/index.md)
   - [Install](start/install.md)
+  - [Development](start/development.md)
   - [Playground](start/playground.md)
   - [Example](start/example.md)
 - [Reference](reference/index.md)
