@@ -70,6 +70,13 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
+                TokenKind::AllNodes if root => {
+                    let ast = self.parse_all_nodes(Rc::clone(token))?;
+                    asts.push(ast);
+                }
+                TokenKind::AllNodes => {
+                    return Err(ParseError::UnexpectedToken((**token).clone()));
+                }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
                 _ => {
                     let ast = self.parse_expr(Rc::clone(token))?;
@@ -124,6 +131,13 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Self_),
+        }))
+    }
+
+    fn parse_all_nodes(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        Ok(Rc::new(Node {
+            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+            expr: Rc::new(Expr::AllNodes),
         }))
     }
 
@@ -763,6 +777,11 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Tab(_),
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::AllNodes,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));

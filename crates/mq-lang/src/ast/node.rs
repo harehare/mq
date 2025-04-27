@@ -68,8 +68,13 @@ impl Node {
             | Expr::Selector(_)
             | Expr::Include(_)
             | Expr::InterpolatedString(_)
+            | Expr::AllNodes
             | Expr::Self_ => arena[self.token_id].range.clone(),
         }
+    }
+
+    pub fn is_all_nodes(&self) -> bool {
+        matches!(*self.expr, Expr::AllNodes)
     }
 }
 
@@ -189,6 +194,7 @@ pub enum Expr {
     If(Branches),
     Include(Literal),
     Self_,
+    AllNodes,
 }
 #[cfg(test)]
 mod tests {
