@@ -36,6 +36,15 @@ Extracted content can be further processed with functions:
 
 ## Usage
 
+## Installation
+
+### Homebrew
+
+```bash
+# Using Homebrew (macOS and Linux)
+$ brew install harehare/tap/mq-mcp
+```
+
 ### VS Code
 
 To use `mq-mcp` with Visual Studio Code, add the following configuration to your `.vscode/settings.json`:
