@@ -2094,14 +2094,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             CompactString::new("gsub"),
             BuiltinFunctionDoc {
                 description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
-                params: &["pattern", "from", "to"],
+                params: &["from","pattern",  "to"],
             },
         );
         map.insert(
             CompactString::new("replace"),
             BuiltinFunctionDoc {
                 description: "Replaces all occurrences of a substring with another substring.",
-                params: &["string", "from", "to"],
+                params: &["from", "pattern", "to"],
             },
         );
         map.insert(
