@@ -75,7 +75,7 @@ $ brew install harehare/tap/mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.1.1
+$ docker run --rm ghcr.io/harehare/mq:0.1.2
 ```
 
 ### Visual Studio Code Extension
@@ -119,8 +119,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
