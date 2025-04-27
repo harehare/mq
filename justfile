@@ -37,7 +37,7 @@ build:
 
 # Build for a specific target architecture
 build-target target:
-    cargo build --release --target {{target}}
+    cargo build --release --target {{target}} --workspace
 
 # Build benchmarks with codspeed
 [working-directory: 'crates/mq-lang']
