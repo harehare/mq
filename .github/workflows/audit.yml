@@ -8,9 +8,7 @@ on:
 
 permissions:
   issues: write
-  issues-reason: to create issues
   checks: write
-  checks-reason: to create check
 
 jobs:
   security_audit:

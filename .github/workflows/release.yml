@@ -14,23 +14,23 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact_name: mq
+            ext: ""
             asset_name: x86_64-unknown-linuxu
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact_name: mq
+            ext: ""
             asset_name: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: mq.exe
-            asset_name: x86_64-pc-windows-msvc.exe
+            ext: ".exe"
+            asset_name: x86_64-pc-windows-msvc
           - os: macos-13
             target: x86_64-apple-darwin
-            artifact_name: mq
+            ext: ""
             asset_name: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: mq
+            ext: ""
             asset_name: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +40,17 @@ jobs:
         run: just build-target ${{ matrix.target }}
       - name: Rename artifact
         run: |
-          mv target/${{ matrix.target }}/release/mq target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}
-          mv target/${{ matrix.target }}/release/mq-lsp target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name}}
-          mv target/${{ matrix.target }}/release/mq-mcp target/${{ matrix.target }}/release/mq-mcp-${{ matrix.asset_name}}
+          mv target/${{ matrix.target }}/release/mq${{ matrix.ext }} target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}${{ matrix.ext }}
+          mv target/${{ matrix.target }}/release/mq-lsp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name}}${{ matrix.ext }}
+          mv target/${{ matrix.target }}/release/mq-mcp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-mcp-${{ matrix.asset_name}}${{ matrix.ext }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
+          name: mq-${{ matrix.asset_name }}
           path: |
-            target/${{ matrix.target }}/release/mq-${{ matrix.asset_name }}
-            target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name }}
-            target/${{ matrix.target }}/release/mq-mcp-${{ matrix.asset_name }}
+            target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}${{ matrix.ext }}
+            target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name }}${{ matrix.ext }}
+            target/${{ matrix.target }}/release/mq-mcp-${{ matrix.asset_name }}${{ matrix.ext }}
           if-no-files-found: error
           retention-days: 1
 
