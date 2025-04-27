@@ -748,9 +748,7 @@ mod tests {
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "10".to_string(), position: None}), None)]))]
     #[case::len(vec![RuntimeValue::TRUE],
        vec![ast_call("len", SmallVec::new())],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                    name: "len".to_string(),
-                                                    args: vec![true.to_string().into()]})))]
+       Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::len(vec![RuntimeValue::String("テスト".to_string())],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Number(3.into())]))]
@@ -796,9 +794,7 @@ mod tests {
        vec![
             ast_call("utf8bytelen", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                    name: "utf8bytelen".to_string(),
-                                                    args: vec![true.to_string().into()]})))]
+       Ok(vec![RuntimeValue::Number(1.into())]))]
     #[case::index(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("index", smallvec![

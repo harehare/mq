@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(Value::String("hello".to_string()).to_string(), "hello");
         assert_eq!(
             Value::Array(vec!["a".to_string().into(), "b".to_string().into()]).to_string(),
-            "[a, b]"
+            "a\nb"
         );
         assert_eq!(Value::None.to_string(), "");
     }
