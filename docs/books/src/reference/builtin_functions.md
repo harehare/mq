@@ -30,7 +30,7 @@
 |`get_md_list_level`|Returns the indent level of a markdown list node.|`list`|get_md_list_level(list)|
 |`get_title`|Returns the title of a markdown node.|`node`|get_title(node)|
 |`get_url`|Returns the url of a markdown node.|`node`|get_url(node)|
-|`gsub`|Replaces all occurrences matching a regular expression pattern with the replacement string.|`pattern`, `from`, `to`|gsub(pattern, from, to)|
+|`gsub`|Replaces all occurrences matching a regular expression pattern with the replacement string.|`from`, `pattern`, `to`|gsub(from, pattern, to)|
 |`gt`|Checks if the first value is greater than the second value.|`value1`, `value2`|gt(value1, value2)|
 |`gte`|Checks if the first value is greater than or equal to the second value.|`value1`, `value2`|gte(value1, value2)|
 |`halt`|Terminates the program with the given exit code.|`exit_code`|halt(exit_code)|
@@ -89,7 +89,7 @@
 |`pow`|Raises the base to the power of the exponent.|`base`, `exponent`|pow(base, exponent)|
 |`range`|Creates an array of numbers within the specified range.|`start`, `end`|range(start, end)|
 |`repeat`|Repeats the given string a specified number of times.|`string`, `count`|repeat(string, count)|
-|`replace`|Replaces all occurrences of a substring with another substring.|`string`, `from`, `to`|replace(string, from, to)|
+|`replace`|Replaces all occurrences of a substring with another substring.|`from`, `pattern`, `to`|replace(from, pattern, to)|
 |`reverse`|Reverses the given string or array.|`value`|reverse(value)|
 |`rindex`|Finds the last occurrence of a substring in the given string.|`string`, `substring`|rindex(string, substring)|
 |`round`|Rounds the given number to the nearest integer.|`number`|round(number)|
