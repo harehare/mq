@@ -98,15 +98,48 @@ impl Evaluator {
                 Ok(nodes)
             },
         )?;
+        let all_nodes_index = &program.iter().position(|node| node.is_all_nodes());
 
-        input
-            .map(|runtime_value| match &runtime_value {
-                RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
-                _ => self
-                    .eval_program(&program, runtime_value, Rc::clone(&self.env))
-                    .map_err(InnerError::Eval),
-            })
-            .collect()
+        if let Some(index) = all_nodes_index {
+            let (all_nodes_program, program) = (
+                program
+                    .iter()
+                    .skip(*index)
+                    .filter(|p| !p.is_all_nodes())
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                program.into_iter().take(*index).collect::<Vec<_>>(),
+            );
+            let values: Result<Vec<RuntimeValue>, InnerError> = input
+                .filter_map(|runtime_value| {
+                    let v = match &runtime_value {
+                        RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
+                        _ => self
+                            .eval_program(&program, runtime_value, Rc::clone(&self.env))
+                            .map_err(InnerError::Eval),
+                    };
+
+                    match v {
+                        Ok(v) if v.is_empty() => None,
+                        Ok(v) => Some(Ok(v)),
+                        Err(e) => Some(Err(e)),
+                    }
+                })
+                .collect();
+
+            self.eval_program(&all_nodes_program, values?.into(), Rc::clone(&self.env))
+                .map(|value| vec![value])
+                .map_err(InnerError::Eval)
+        } else {
+            input
+                .map(|runtime_value| match &runtime_value {
+                    RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
+                    _ => self
+                        .eval_program(&program, runtime_value, Rc::clone(&self.env))
+                        .map_err(InnerError::Eval),
+                })
+                .collect()
+        }
     }
 
     fn eval_markdown_node(
@@ -309,6 +342,7 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
+            ast::Expr::AllNodes => unreachable!(),
         }
     }
 

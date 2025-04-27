@@ -58,6 +58,12 @@ impl From<Number> for RuntimeValue {
     }
 }
 
+impl From<Vec<RuntimeValue>> for RuntimeValue {
+    fn from(arr: Vec<RuntimeValue>) -> Self {
+        RuntimeValue::Array(arr)
+    }
+}
+
 impl From<Value> for RuntimeValue {
     fn from(value: Value) -> Self {
         match value {
@@ -172,6 +178,16 @@ impl RuntimeValue {
 
     pub fn is_array(&self) -> bool {
         matches!(self, RuntimeValue::Array(_))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            RuntimeValue::Array(a) => a.is_empty(),
+            RuntimeValue::String(s) => s.is_empty(),
+            RuntimeValue::Markdown(m, _) => m.value().is_empty(),
+            RuntimeValue::None => true,
+            _ => false,
+        }
     }
 
     pub fn is_true(&self) -> bool {
