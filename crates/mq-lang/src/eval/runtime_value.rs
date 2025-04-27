@@ -197,7 +197,9 @@ impl RuntimeValue {
             RuntimeValue::String(s) => s.len(),
             RuntimeValue::Array(a) => a.len(),
             RuntimeValue::Markdown(m, _) => m.value().len(),
-            _ => panic!("not supported"),
+            RuntimeValue::None => 0,
+            RuntimeValue::Function(..) => 0,
+            RuntimeValue::NativeFunction(..) => 0,
         }
     }
 

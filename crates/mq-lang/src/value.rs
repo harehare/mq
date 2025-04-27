@@ -75,13 +75,11 @@ impl Display for Value {
             Value::Number(n) => n.to_string(),
             Value::Bool(b) => b.to_string(),
             Value::String(s) => s.to_string(),
-            Value::Array(a) => format!(
-                "[{}]",
-                a.iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
+            Value::Array(a) => a
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<String>>()
+                .join("\n"),
             Value::Markdown(m) => m.to_string(),
             Value::None => "".to_string(),
             Value::Function(_, _) => "function".to_string(),

@@ -730,29 +730,20 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("len"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.chars().count().into())),
                 [node @ RuntimeValue::Markdown(_, _)] => node
                     .markdown_node()
                     .map(|md| Ok(RuntimeValue::Number(md.value().chars().count().into())))
                     .unwrap_or_else(|| Ok(RuntimeValue::Number(0.into()))),
-                [RuntimeValue::Array(array)] => Ok(RuntimeValue::Number(array.len().into())),
-                [RuntimeValue::None] => Ok(RuntimeValue::Number(0.into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                [a] => Ok(RuntimeValue::Number(a.len().into())),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("utf8bytelen"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.len().into())),
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(RuntimeValue::Number(md.value().len().into())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::Number(0.into()))),
-                [RuntimeValue::Array(array)] => Ok(RuntimeValue::Number(array.len().into())),
-                [RuntimeValue::None] => Ok(RuntimeValue::Number(0.into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [a] => Ok(RuntimeValue::Number(a.len().into())),
                 _ => unreachable!(),
             }),
         );
