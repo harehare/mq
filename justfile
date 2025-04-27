@@ -33,11 +33,11 @@ bench-local:
 
 # Build the project in release mode
 build:
-    cargo build --release --workspace
+    cargo build --release -p mq-cli -p mq-mcp -p mq-lsp
 
 # Build for a specific target architecture
 build-target target:
-    cargo build --release --target {{target}} --workspace
+    cargo build --release --target {{target}} -p mq-cli -p mq-mcp -p mq-lsp
 
 # Build benchmarks with codspeed
 [working-directory: 'crates/mq-lang']
