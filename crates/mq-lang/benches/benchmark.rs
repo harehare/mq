@@ -55,6 +55,20 @@ fn eval_string_interpolation() -> mq_lang::Values {
         .unwrap()
 }
 
+#[divan::bench(name = "eval_nodes")]
+fn eval_nodes() -> mq_lang::Values {
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(
+        "# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n",
+    )
+    .unwrap();
+    let input = markdown.nodes.into_iter().map(mq_lang::Value::from);
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(".h | nodes | map(upcase)", input.into_iter())
+        .unwrap()
+}
+
 #[divan::bench]
 fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
