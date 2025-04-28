@@ -126,10 +126,10 @@ def matches_url(node, url): eq(get_url(node), url);
 
 # Checks if markdown is MDX
 def is_mdx(mdx): or(
-  eq(to_md_name(mdx), "mdx_flow_expression"), 
-  eq(to_md_name(mdx), "mdx_jsx_flow_element"), 
-  eq(to_md_name(mdx), "mdx_jsx_text_element"), 
-  eq(to_md_name(mdx), "mdx_text_expression"), 
+  eq(to_md_name(mdx), "mdx_flow_expression"),
+  eq(to_md_name(mdx), "mdx_jsx_flow_element"),
+  eq(to_md_name(mdx), "mdx_jsx_text_element"),
+  eq(to_md_name(mdx), "mdx_text_expression"),
   eq(to_md_name(mdx), "mdx_js_esm"));
 
 # Checks if markdown is MDX Flow Expression
@@ -167,4 +167,8 @@ def assert(cond):
   if (cond):
     self
   else:
-    error("Assertion failed: It is not true.")
+    error("Assertion failed: It is not true.");
+
+# Prints the debug information of the given value.
+def debug(msg):
+  let s = to_string(msg) |  stderr(s"DEBUG: ${s}");

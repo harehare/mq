@@ -101,11 +101,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("debug"),
+            CompactString::new("stderr"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, current_value, args| {
                 match args.as_slice() {
                     [a] => {
-                        eprintln!("DEBUG: {}", a);
+                        eprintln!("{}", a);
                         Ok(current_value.clone())
                     }
                     _ => unreachable!(),
@@ -1935,10 +1935,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("debug"),
+            CompactString::new("stderr"),
             BuiltinFunctionDoc {
-                description: "Prints the debug information of the given value.",
-                params: &["value"],
+                description: "Prints a message to standard error and returns the current value.",
+                params: &["message"],
             },
         );
         map.insert(
