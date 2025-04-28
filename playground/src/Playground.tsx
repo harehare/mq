@@ -20,6 +20,7 @@ type SharedData = {
 
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
+const IS_UPDATE_KEY = "mq-playground.is_update";
 const EXAMPLES = [
   {
     name: "Hello World",
@@ -224,13 +225,15 @@ In {year}, the snowfall was above average.
 
 export const Playground = () => {
   const [code, setCode] = useState<string | undefined>(
-    localStorage.getItem(CODE_KEY) || EXAMPLES[0].code
+    localStorage.getItem(CODE_KEY) ?? EXAMPLES[0].code
   );
   const [markdown, setMarkdown] = useState<string | undefined>(
-    localStorage.getItem(MARKDOWN_KEY) || EXAMPLES[0].markdown
+    localStorage.getItem(MARKDOWN_KEY) ?? EXAMPLES[0].markdown
   );
   const [isMdx, setIsMdx] = useState(false);
-  const [isUpdate, setIsUpdate] = useState(true);
+  const [isUpdate, setIsUpdate] = useState(
+    localStorage.getItem(IS_UPDATE_KEY) === "true"
+  );
   const [isEmbed, setIsEmbed] = useState(false);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
@@ -560,6 +563,7 @@ export const Playground = () => {
       if (document.hidden) {
         localStorage.setItem(CODE_KEY, code || "");
         localStorage.setItem(MARKDOWN_KEY, markdown || "");
+        localStorage.setItem(IS_UPDATE_KEY, String(isUpdate));
       }
     };
 
@@ -567,7 +571,7 @@ export const Playground = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [code, markdown]);
+  }, [code, markdown, isUpdate]);
 
   return (
     <div className="playground-container">
