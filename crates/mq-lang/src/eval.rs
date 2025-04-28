@@ -2914,7 +2914,7 @@ mod tests {
                                                      args: vec![42.to_string().into(), 3.to_string().into()]})))]
     #[case::debug(vec![RuntimeValue::String("test".to_string())],
         vec![
-            ast_call("debug", SmallVec::new())
+            ast_call("stderr", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::String("test".to_string())]))]
     #[case::from_date(vec![RuntimeValue::String("2025-03-15T20:00:00+09:00".to_string())],
