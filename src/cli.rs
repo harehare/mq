@@ -367,6 +367,12 @@ impl Cli {
                 .map_err(|e| *e)?;
             let current_values: mq_lang::Values = input.clone().into();
 
+            if current_values.len() != results.len() {
+                return Err(miette!(
+                    "The number of input and output values do not match"
+                ));
+            }
+
             current_values.update_with(results)
         } else {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?

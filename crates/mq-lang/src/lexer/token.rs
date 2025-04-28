@@ -29,7 +29,7 @@ pub struct Token {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum TokenKind {
-    AllNodes,
+    Nodes,
     Def,
     Colon,
     Equal,
@@ -74,7 +74,7 @@ impl Display for Token {
 impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
-            TokenKind::AllNodes => write!(f, "all_nodes"),
+            TokenKind::Nodes => write!(f, "nodes"),
             TokenKind::Def => write!(f, "def"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Eof => write!(f, ""),

@@ -20,52 +20,52 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 #[case::json(
     vec!["--unbuffered", "-F", "json", ".code_inline"],
     "`inline code`",
-    r#"[
+    Some(r#"[
   {
     "type": "CodeInline",
     "value": "inline code"
   }
-]"#
+]"#)
 )]
 #[case::args(
     vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],
     "# **title**\n\n- test1\n- test2",
-    "- test1\n- test2\n"
+    Some("- test1\n- test2\n")
 )]
 #[case::completion(
     vec!["completion", "--shell", "zsh"],
     "",
-    ""
+    None
 )]
 #[case::format(
     vec!["fmt"],
     "def test(x):\nadd(x,1);\n| map(array(1,2,3),test)",
-    "def test(x):\n  add(x, 1);\n| map(array(1, 2, 3), test)\n"
+    Some("def test(x):\n  add(x, 1);\n| map(array(1, 2, 3), test)\n")
 )]
 #[case::docs(
     vec!["docs"],
     "",
-    ""
+    None
 )]
 #[case::update_file(
     vec!["--unbuffered", "--update", r#".h | select(contains("title")?) | ltrimstr("titl")"#],
     "# **title**\n\n- test1\n- test2",
-    "# **e**\n\n- test1\n- test2\n"
+    Some("# **e**\n\n- test1\n- test2\n")
 )]
 #[case::update_nested(
     vec!["--unbuffered", "--update", r#".strong | select(contains("title")?) | ltrimstr("titl")"#],
     "# [**title**](url)\n\n- test1\n- test2",
-    "# [**e**](url)\n\n- test1\n- test2\n"
+    Some("# [**e**](url)\n\n- test1\n- test2\n")
 )]
 #[case::null_input(
     vec!["--unbuffered", "-I", "null", "1 | add(2)"],
     "",
-    "3\n"
+    Some("3\n")
 )]
 #[case::html_input(
     vec!["--unbuffered", "-I", "html", ".h"],
     "<html><body><h1>test</h1></body></html>",
-    "# test\n"
+    Some("# test\n")
 )]
 #[case::mdx_input(
     vec!["--unbuffered", "--mdx", "select(is_mdx())"],
@@ -77,40 +77,45 @@ export const year = 2023
 In {year}, the snowfall was above average.
 
 <Chart color="#fcb32c" year={year} />"##,
-    r##"{Chart}
+    Some(r##"{Chart}
 {year}
 <Chart color="#fcb32c" year={year} />
-"##
+"##)
 )]
 #[case::nested_item(
     vec!["--unbuffered", "--update" , r#"if (and(or(.link, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
     "- another item\n\n  [another link]: a/b/c.html",
-    "- another item\n\n  [another link]: x/y/z.html\n"
+    Some("- another item\n\n  [another link]: x/y/z.html\n")
 )]
 #[case::nested_item(
     vec!["--unbuffered", "--update" , r#".code_inline | update("test")"#],
     "# `title`\n# `title`",
-    "# `test`\n# `test`\n"
+    Some("# `test`\n# `test`\n")
 )]
 #[case::nested_item(
     vec!["--unbuffered", "--update" , r#"if (and(or(.link, .link_ref, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
     "- item\n\n  [another link]: <a/b/c.html> \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
-    "- item\n\n  [another link]: x/y/z.html \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
+    Some("- item\n\n  [another link]: x/y/z.html \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n"),
 )]
 #[case::nested_item(
     vec!["--unbuffered", "--update", "--link-title-style", "paren", "--link-url-style", "angle", r#"if (and(or(.link, .link_ref, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
     "- item\n\n  [another link]: <a/b/c.html> (this  is a title)\n",
-    "- item\n\n  [another link]: <x/y/z.html> (this  is a title)\n",
+    Some("- item\n\n  [another link]: <x/y/z.html> (this  is a title)\n"),
 )]
 #[case::empty_results(
     vec!["--unbuffered", "--link-title-style", "paren", "--link-url-style", "angle", r#"select(or(.link, .definition)) | if (eq(get_url(), "a/b/c.html1")): "1234""#],
     "[link](a/b/c.html)\n[link](a/b/c.html)",
-    "",
+    Some(""),
+)]
+#[case::nodes(
+    vec!["--unbuffered", r#".h | nodes"#],
+    "# h1\n\nheader\n\n## h2\n\nheader\n\n# h3\n\nheader\n",
+    Some("# h1\n## h2\n# h3\n"),
 )]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
-    #[case] expected_output: &str,
+    #[case] expected_output: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
     let mut assert = cmd.args(args);
@@ -121,8 +126,8 @@ fn test_cli_commands(
 
     let assert = assert.assert();
 
-    if !expected_output.is_empty() {
-        assert.success().code(0).stdout(expected_output.to_owned());
+    if let Some(output) = expected_output {
+        assert.success().code(0).stdout(output.to_owned());
     } else {
         assert.success().code(0);
     }

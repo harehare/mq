@@ -243,7 +243,7 @@ impl Optimizer {
             | ast::Expr::Selector(_)
             | ast::Expr::Include(_)
             | ast::Expr::Literal(_)
-            | ast::Expr::AllNodes
+            | ast::Expr::Nodes
             | ast::Expr::Self_ => Rc::clone(&node),
         }
     }

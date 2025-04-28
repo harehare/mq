@@ -21,6 +21,7 @@ pub struct Parser<'a> {
     tokens: Peekable<core::slice::Iter<'a, Rc<Token>>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     module_id: ModuleId,
+    has_used_nodes: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -33,6 +34,7 @@ impl<'a> Parser<'a> {
             tokens: tokens.peekable(),
             token_arena,
             module_id,
+            has_used_nodes: false,
         }
     }
 
@@ -70,11 +72,15 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                TokenKind::AllNodes if root => {
+                TokenKind::Nodes if root && self.has_used_nodes => {
+                    return Err(ParseError::UnexpectedToken((**token).clone()));
+                }
+                TokenKind::Nodes if root => {
+                    self.has_used_nodes = true;
                     let ast = self.parse_all_nodes(Rc::clone(token))?;
                     asts.push(ast);
                 }
-                TokenKind::AllNodes => {
+                TokenKind::Nodes => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
                 }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
@@ -137,7 +143,7 @@ impl<'a> Parser<'a> {
     fn parse_all_nodes(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-            expr: Rc::new(Expr::AllNodes),
+            expr: Rc::new(Expr::Nodes),
         }))
     }
 
@@ -781,7 +787,7 @@ impl<'a> Parser<'a> {
                 }
                 | Token {
                     range: _,
-                    kind: TokenKind::AllNodes,
+                    kind: TokenKind::Nodes,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
@@ -2144,6 +2150,57 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Include, module_id: 1.into()})))]
+    #[case::nodes(
+        vec![
+            token(TokenKind::Nodes),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Nodes),
+            })
+        ]))]
+    #[case::nodes_error_in_subprogram(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("test"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Nodes),
+            token(TokenKind::SemiColon)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Nodes))))]
+    #[case::nodes_then_selector(
+        vec![
+            token(TokenKind::Nodes),
+            token(TokenKind::Pipe),
+            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Nodes),
+            }),
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+            })
+        ]))]
+    #[case::root_level_with_multiple_pipes(
+        vec![
+            token(TokenKind::Nodes),
+            token(TokenKind::Pipe),
+            token(TokenKind::Nodes),
+            token(TokenKind::Pipe),
+            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Pipe),
+            token(TokenKind::Selector(CompactString::new(".text"))),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Nodes, module_id: 1.into()})))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
