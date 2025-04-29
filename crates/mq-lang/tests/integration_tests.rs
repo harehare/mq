@@ -207,7 +207,7 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())])].into()))]
-#[case::csv2table("csv2table()",
+#[case::csv2table_row("csv2table_row()",
             vec![Value::String("a,b,c".to_string()), Value::String("1,2,3".to_string())],
             Ok(vec![
               Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![

@@ -89,6 +89,7 @@ pub enum NodeKind {
     Else,
     Selector,
     Self_,
+    Nodes,
     While,
     Until,
     Foreach,

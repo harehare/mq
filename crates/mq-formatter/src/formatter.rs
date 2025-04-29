@@ -101,6 +101,7 @@ impl Formatter {
                 self.format_selector(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::Self_ => self.format_self(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Nodes => self.format_nodes(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
@@ -365,6 +366,18 @@ impl Formatter {
     fn format_self(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Self_,
+            token: Some(token),
+            ..
+        } = &**node
+        {
+            self.append_indent(indent_level);
+            self.output.push_str(&token.to_string());
+        }
+    }
+
+    fn format_nodes(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Nodes,
             token: Some(token),
             ..
         } = &**node
@@ -642,6 +655,7 @@ s"test${val1}"
 )"#
     )]
     #[case::include("include  \"test.mq\"", "include \"test.mq\"")]
+    #[case::nodes("nodes|nodes", "nodes | nodes")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
