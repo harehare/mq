@@ -82,3 +82,9 @@ def sitemap(item, base_url):
   <priority>1.0</priority>
 </url>";
 ```
+
+# CSV to markdown table
+
+```python
+$ mq 'nodes | csv2table()'
+```
