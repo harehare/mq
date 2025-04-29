@@ -5,6 +5,7 @@ use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::Engine;
+use std::collections::VecDeque;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
@@ -210,7 +211,7 @@ impl Cli {
                 let file = Url::parse("file:///").into_diagnostic()?;
                 hir.add_code(file, &query);
 
-                let doc_csv = hir
+                let mut doc_csv = hir
                     .symbols()
                     .sorted_by_key(|(_, symbol)| symbol.value.clone())
                     .filter_map(|(_, symbol)| match symbol {
@@ -230,20 +231,20 @@ impl Cli {
                         )),
                         _ => None,
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<VecDeque<_>>();
+
+                doc_csv.push_front(mq_lang::Value::String("---\t---\t---\t---".to_string()));
+                doc_csv.push_front(mq_lang::Value::String(
+                    vec!["Function Name", "Description", "Parameters", "Example"]
+                        .iter()
+                        .join("\t"),
+                ));
 
                 let mut engine = self.create_engine()?;
                 let doc_values = engine
-                    .eval("tsv2table()", doc_csv.into_iter())
+                    .eval("nodes | tsv2table()", doc_csv.into_iter())
                     .map_err(|e| *e)?;
-                self.print(
-                    Some(
-                        "| Function Name | Description | Parameters | Example |
-| --- | --- | --- | --- |
-",
-                    ),
-                    doc_values,
-                )?;
+                self.print(doc_values)?;
 
                 Ok(())
             }
@@ -378,7 +379,7 @@ impl Cli {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?
         };
 
-        self.print(None, runtime_values)
+        self.print(runtime_values)
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
@@ -408,7 +409,7 @@ impl Cli {
             })
     }
 
-    fn print(&self, header: Option<&str>, runtime_values: mq_lang::Values) -> miette::Result<()> {
+    fn print(&self, runtime_values: mq_lang::Values) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
             let file = fs::File::create(output_file).into_diagnostic()?;
@@ -444,12 +445,6 @@ impl Cli {
                 LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
             },
         });
-
-        if let Some(header) = header {
-            handle
-                .write_all(header.as_bytes())
-                .map_err(|e| miette!(e))?;
-        }
 
         match self.output.output_format {
             OutputFormat::Html => handle
