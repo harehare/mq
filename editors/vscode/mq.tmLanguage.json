@@ -43,7 +43,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.mq",
-                    "match": "\\b(def|let|if|elif|else|while|foreach|until)\\b"
+                    "match": "\\b(def|let|if|elif|else|while|foreach|until|self|nodes)\\b"
                 },
                 {
                     "name": "keyword.operator.mq",
