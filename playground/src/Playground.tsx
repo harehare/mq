@@ -21,7 +21,14 @@ type SharedData = {
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const IS_UPDATE_KEY = "mq-playground.is_update";
-const EXAMPLES = [
+const EXAMPLES: {
+  name: string;
+  code: string;
+  markdown: string;
+  isMdx: boolean;
+  isUpdate: boolean;
+  format: RunOptions["inputFormat"];
+}[] = [
   {
     name: "Hello World",
     code: `# Hello world
@@ -37,6 +44,7 @@ code
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Update child node",
@@ -48,6 +56,7 @@ code
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Markdown Toc",
@@ -86,6 +95,7 @@ else:
 - item 2`,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract js code",
@@ -105,6 +115,7 @@ console.log("Hello, World!");
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Exclude js code",
@@ -124,6 +135,7 @@ console.log("Hello, World!");
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract mdx",
@@ -140,6 +152,7 @@ In {year}, the snowfall was above average.
 `,
     isMdx: true,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Custom function",
@@ -154,6 +167,7 @@ In {year}, the snowfall was above average.
     markdown: `# sample_codes`,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Generate sitemap",
@@ -175,6 +189,7 @@ In {year}, the snowfall was above average.
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract table",
@@ -199,6 +214,7 @@ In {year}, the snowfall was above average.
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract list",
@@ -220,6 +236,22 @@ In {year}, the snowfall was above average.
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
+  },
+  {
+    name: "CSV to markdown table",
+    code: `nodes | csv2table()`,
+    markdown: `Product, Category, Price, Stock
+---,---,---,---
+Laptop, Electronics, $1200, 45
+Monitor, Electronics, $350, 28
+Chair, Furniture, $150, 73
+Desk,  Furniture, $200, 14
+Keyboard, Accessories, $80, 35
+`,
+    isMdx: false,
+    isUpdate: false,
+    format: "text",
   },
 ];
 
@@ -342,7 +374,7 @@ export const Playground = () => {
     setMarkdown(selected.markdown);
     setIsMdx(selected.isMdx);
     setIsUpdate(selected.isUpdate);
-    setInputFormat("markdown");
+    setInputFormat(selected.format);
   }, []);
 
   const handleShare = useCallback(() => {
@@ -488,7 +520,7 @@ export const Playground = () => {
         root: [
           [/^#.*$/, "comment"],
           [
-            /\b(let|def|while|foreach|until|if|elif|else|self|None)\b/,
+            /\b(let|def|while|foreach|until|if|elif|else|self|None|nodes)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
@@ -673,6 +705,7 @@ export const Playground = () => {
                 >
                   <option value="markdown">Markdown</option>
                   <option value="html">HTML</option>
+                  <option value="text">Text</option>
                 </select>
               </label>
             </div>
