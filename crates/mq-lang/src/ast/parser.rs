@@ -21,7 +21,6 @@ pub struct Parser<'a> {
     tokens: Peekable<core::slice::Iter<'a, Rc<Token>>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     module_id: ModuleId,
-    has_used_nodes: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -34,7 +33,6 @@ impl<'a> Parser<'a> {
             tokens: tokens.peekable(),
             token_arena,
             module_id,
-            has_used_nodes: false,
         }
     }
 
@@ -72,11 +70,7 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                TokenKind::Nodes if root && self.has_used_nodes => {
-                    return Err(ParseError::UnexpectedToken((**token).clone()));
-                }
                 TokenKind::Nodes if root => {
-                    self.has_used_nodes = true;
                     let ast = self.parse_all_nodes(Rc::clone(token))?;
                     asts.push(ast);
                 }
@@ -2200,7 +2194,24 @@ mod tests {
             token(TokenKind::Selector(CompactString::new(".text"))),
             token(TokenKind::Eof)
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Nodes, module_id: 1.into()})))]
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Nodes),
+            }),
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Nodes),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+            }),
+            Rc::new(Node {
+                token_id: 3.into(),
+                expr: Rc::new(Expr::Selector(Selector::Text)),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
