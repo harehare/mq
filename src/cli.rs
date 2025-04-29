@@ -125,7 +125,7 @@ struct OutputArgs {
     output_format: OutputFormat,
 
     /// Update the input markdown
-    #[clap(short = 'U', long, default_value = "false")]
+    #[arg(short = 'U', long, default_value_t = false)]
     update: bool,
 
     /// Unbuffered output
@@ -175,6 +175,12 @@ impl Cli {
     pub fn run(&self) -> miette::Result<()> {
         if self.commands.is_none() && self.query.is_none() {
             return Cli::command().print_help().into_diagnostic();
+        }
+
+        if !matches!(self.input.input_format, InputFormat::Markdown) && self.output.update {
+            return Err(miette!(
+                "The output format is not supported for the update option"
+            ));
         }
 
         match &self.commands {
@@ -235,7 +241,7 @@ impl Cli {
 
                 doc_csv.push_front(mq_lang::Value::String("---\t---\t---\t---".to_string()));
                 doc_csv.push_front(mq_lang::Value::String(
-                    vec!["Function Name", "Description", "Parameters", "Example"]
+                    ["Function Name", "Description", "Parameters", "Example"]
                         .iter()
                         .join("\t"),
                 ));
