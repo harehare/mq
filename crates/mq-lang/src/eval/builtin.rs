@@ -125,6 +125,29 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("flatten"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [RuntimeValue::Array(arrays)] => {
+                    fn _flatten(arrays: &Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+                        let mut flattened = Vec::new();
+                        for inner_array in arrays {
+                            match inner_array {
+                                RuntimeValue::Array(inner) => {
+                                    flattened.extend(_flatten(inner));
+                                }
+                                other => flattened.push(other.clone()),
+                            }
+                        }
+                        flattened
+                    }
+
+                    Ok(_flatten(arrays).into())
+                }
+                [a] => Ok(a.clone()),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
             CompactString::new("from_date"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(date_str)] => from_date(date_str),
@@ -1953,6 +1976,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Creates an array from the given values.",
                 params: &["values"],
+            },
+        );
+        map.insert(
+            CompactString::new("flatten"),
+            BuiltinFunctionDoc {
+                description: "Flattens a nested array into a single level array.",
+                params: &["array"],
             },
         );
         map.insert(
