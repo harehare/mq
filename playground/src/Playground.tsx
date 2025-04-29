@@ -21,6 +21,7 @@ type SharedData = {
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const IS_UPDATE_KEY = "mq-playground.is_update";
+const INPUT_FORMAT_KEY = "mq-playground.input_format";
 const EXAMPLES: {
   name: string;
   code: string;
@@ -274,8 +275,18 @@ export const Playground = () => {
     useState<RunOptions["linkUrlStyle"]>(null);
   const [linkTitleStyle, setLinkTitleStyle] =
     useState<RunOptions["linkTitleStyle"]>(null);
-  const [inputFormat, setInputFormat] =
-    useState<RunOptions["inputFormat"]>(null);
+  const [inputFormat, setInputFormat] = useState<RunOptions["inputFormat"]>(
+    (() => {
+      const format = localStorage.getItem(INPUT_FORMAT_KEY);
+      return format === "markdown"
+        ? "markdown"
+        : format === "text"
+        ? "text"
+        : format === "html"
+        ? "html"
+        : null;
+    })()
+  );
 
   useEffect(() => {
     init().then(() => {
@@ -596,6 +607,7 @@ export const Playground = () => {
         localStorage.setItem(CODE_KEY, code || "");
         localStorage.setItem(MARKDOWN_KEY, markdown || "");
         localStorage.setItem(IS_UPDATE_KEY, String(isUpdate));
+        localStorage.setItem(INPUT_FORMAT_KEY, inputFormat || "markdown");
       }
     };
 
@@ -603,7 +615,7 @@ export const Playground = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [code, markdown, isUpdate]);
+  }, [code, markdown, isUpdate, inputFormat]);
 
   return (
     <div className="playground-container">
