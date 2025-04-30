@@ -103,6 +103,10 @@
   <priority>1.0</priority>
 </url>
 <url>
+  <loc>https://mqlang.org/book/reference/nodes</loc>
+  <priority>1.0</priority>
+</url>
+<url>
   <loc>https://mqlang.org/book/reference/string_interpolation</loc>
   <priority>1.0</priority>
 </url>
