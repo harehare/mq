@@ -293,6 +293,21 @@ fn engine() -> Engine {
            mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
       ], position: None, depth: 1 }))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("test".to_string()), title: None, values: Vec::new(), position: None }))].into()))]
+#[case::selector("nodes | .h",
+      vec![
+        Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
+        Value::String("test".to_string()),
+      ],
+      Ok(vec![
+        Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
+        Value::NONE
+      ].into()))]
+#[case::selector("nodes | .h",
+      vec![
+        Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })),
+        Value::String("test".to_string()),
+      ],
+      Ok(vec![Value::NONE, Value::NONE].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
