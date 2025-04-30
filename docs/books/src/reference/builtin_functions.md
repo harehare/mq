@@ -1,6 +1,6 @@
 # Builtin functions
-| Function Name | Description | Parameters | Example |
-| --- | --- | --- | --- |
+|Function Name|Description|Parameters|Example|
+|---|---|---|---|
 |`abs`|Returns the absolute value of the given number.|`number`|abs(number)|
 |`add`|Adds two values.|`value1`, `value2`|add(value1, value2)|
 |`and`|Performs a logical AND operation on two boolean values.|`value1`, `value2`|and(value1, value2)|
@@ -15,7 +15,8 @@
 |`compact`|Removes None values from the given array.|`array`|compact(array)|
 |`contains`| Checks if string contains a substring|`haystack`, `needle`|contains(haystack, needle)|
 |`csv2table`| Convert csv string to markdown table|`csv`|csv2table(csv)|
-|`debug`|Prints the debug information of the given value.|`value`|debug(value)|
+|`csv2table_row`| Convert csv string to markdown table row|`row`|csv2table_row(row)|
+|`debug`| Prints the debug information of the given value.|`msg`|debug(msg)|
 |`del`|Deletes the element at the specified index in the array or string.|`array_or_string`, `index`|del(array_or_string, index)|
 |`div`|Divides the first value by the second value.|`value1`, `value2`|div(value1, value2)|
 |`downcase`|Converts the given string to lowercase.|`input`|downcase(input)|
@@ -25,6 +26,7 @@
 |`explode`|Splits the given string into an array of characters.|`string`|explode(string)|
 |`filter`| Filters the elements of an array based on a provided callback function.|`v`, `f`|filter(v, f)|
 |`first`| Returns the first element of an array|`arr`|first(arr)|
+|`flatten`|Flattens a nested array into a single level array.|`array`|flatten(array)|
 |`floor`|Rounds the given number down to the nearest integer.|`number`|floor(number)|
 |`from_date`|Converts a date string to a timestamp.|`date_str`|from_date(date_str)|
 |`get_md_list_level`|Returns the indent level of a markdown list node.|`list`|get_md_list_level(list)|
@@ -101,6 +103,7 @@
 |`sort`|Sorts the elements of the given array.|`array`|sort(array)|
 |`split`|Splits the given string by the specified separator.|`string`, `separator`|split(string, separator)|
 |`starts_with`|Checks if the given string starts with the specified substring.|`string`, `substring`|starts_with(string, substring)|
+|`stderr`|Prints a message to standard error and returns the current value.|`message`|stderr(message)|
 |`sub`|Subtracts the second value from the first value.|`value1`, `value2`|sub(value1, value2)|
 |`test`| Tests if string matches a pattern|`s`, `pattern`|test(s, pattern)|
 |`to_array`| Converts input to an array|`a`|to_array(a)|
@@ -129,6 +132,7 @@
 |`trim`|Trims whitespace from both ends of the given string.|`input`|trim(input)|
 |`trunc`|Truncates the given number to an integer by removing the fractional part.|`number`|trunc(number)|
 |`tsv2table`| Convert tsv string to markdown table|`tsv`|tsv2table(tsv)|
+|`tsv2table_row`| Convert tsv string to markdown table row|`row`|tsv2table_row(row)|
 |`type`|Returns the type of the given value.|`value`|type(value)|
 |`uniq`|Removes duplicate elements from the given array.|`array`|uniq(array)|
 |`upcase`|Converts the given string to uppercase.|`input`|upcase(input)|
