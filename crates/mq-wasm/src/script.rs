@@ -27,7 +27,7 @@ export interface Diagnostic {
 export interface RunOptions {
     isMdx: boolean,
     isUpdate: boolean,
-    inputFormat: 'html' | 'markdown' | null,
+    inputFormat: 'html' | 'markdown' | 'text' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -83,6 +83,8 @@ pub enum InputFormat {
     Html,
     #[serde(rename = "markdown")]
     Markdown,
+    #[serde(rename = "text")]
+    Text,
 }
 
 impl FromStr for InputFormat {
@@ -177,27 +179,35 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
 
     engine.load_builtin_module();
 
-    let markdown = match options.input_format {
-        Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
-        Some(InputFormat::Markdown) if is_mdx => mq_markdown::Markdown::from_mdx_str(content),
-        _ => mq_markdown::Markdown::from_str(content),
-    }
-    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let input = match options.input_format {
+        Some(InputFormat::Text) => content
+            .lines()
+            .map(mq_lang::Value::from)
+            .collect::<Vec<_>>(),
+        _ => {
+            let md = match options.input_format {
+                Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
+                Some(InputFormat::Markdown) if is_mdx => {
+                    mq_markdown::Markdown::from_mdx_str(content)
+                }
+                _ => mq_markdown::Markdown::from_str(content),
+            }
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+            md.nodes
+                .into_iter()
+                .map(mq_lang::Value::from)
+                .collect::<Vec<_>>()
+        }
+    };
 
     engine
-        .eval(
-            code,
-            markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
-        )
+        .eval(code, input.clone().into_iter())
         .map_err(|e| JsValue::from_str(&format!("{}", &e.cause)))
         .map(|result_values| {
-            let values = if is_update {
-                let values: mq_lang::Values = markdown
-                    .nodes
-                    .into_iter()
-                    .map(mq_lang::Value::from)
-                    .collect::<Vec<_>>()
-                    .into();
+            let values = if matches!(options.input_format, Some(InputFormat::Markdown)) && is_update
+            {
+                let values: mq_lang::Values = input.into();
                 values.update_with(result_values)
             } else {
                 result_values

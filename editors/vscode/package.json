@@ -35,6 +35,12 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "snippets": [
+      {
+        "language": "mq",
+        "path": "./snippets/mq.json"
+      }
+    ],
     "languages": [
       {
         "id": "mq",

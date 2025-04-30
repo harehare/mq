@@ -180,6 +180,7 @@ define_token_parser!(elif, "elif", TokenKind::Elif);
 define_token_parser!(none, "None", TokenKind::None);
 define_token_parser!(include, "include", TokenKind::Include);
 define_token_parser!(foreach, "foreach", TokenKind::Foreach);
+define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(
     empty_string,
     "\"\"",
@@ -195,7 +196,7 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
 
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, let_, self_, while_, until, if_, elif, else_, none, include, foreach,
+        nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach,
     ))
     .parse(input)
 }

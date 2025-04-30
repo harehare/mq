@@ -21,7 +21,15 @@ type SharedData = {
 const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const IS_UPDATE_KEY = "mq-playground.is_update";
-const EXAMPLES = [
+const INPUT_FORMAT_KEY = "mq-playground.input_format";
+const EXAMPLES: {
+  name: string;
+  code: string;
+  markdown: string;
+  isMdx: boolean;
+  isUpdate: boolean;
+  format: RunOptions["inputFormat"];
+}[] = [
   {
     name: "Hello World",
     code: `# Hello world
@@ -37,6 +45,7 @@ code
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Update child node",
@@ -48,6 +57,7 @@ code
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Markdown Toc",
@@ -86,6 +96,7 @@ else:
 - item 2`,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract js code",
@@ -105,6 +116,7 @@ console.log("Hello, World!");
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Exclude js code",
@@ -124,6 +136,7 @@ console.log("Hello, World!");
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract mdx",
@@ -140,6 +153,7 @@ In {year}, the snowfall was above average.
 `,
     isMdx: true,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Custom function",
@@ -154,6 +168,7 @@ In {year}, the snowfall was above average.
     markdown: `# sample_codes`,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Generate sitemap",
@@ -175,6 +190,7 @@ In {year}, the snowfall was above average.
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract table",
@@ -199,6 +215,7 @@ In {year}, the snowfall was above average.
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
   },
   {
     name: "Extract list",
@@ -220,6 +237,22 @@ In {year}, the snowfall was above average.
 `,
     isMdx: false,
     isUpdate: false,
+    format: "markdown",
+  },
+  {
+    name: "CSV to markdown table",
+    code: `nodes | csv2table()`,
+    markdown: `Product, Category, Price, Stock
+---,---,---,---
+Laptop, Electronics, $1200, 45
+Monitor, Electronics, $350, 28
+Chair, Furniture, $150, 73
+Desk,  Furniture, $200, 14
+Keyboard, Accessories, $80, 35
+`,
+    isMdx: false,
+    isUpdate: false,
+    format: "text",
   },
 ];
 
@@ -242,8 +275,18 @@ export const Playground = () => {
     useState<RunOptions["linkUrlStyle"]>(null);
   const [linkTitleStyle, setLinkTitleStyle] =
     useState<RunOptions["linkTitleStyle"]>(null);
-  const [inputFormat, setInputFormat] =
-    useState<RunOptions["inputFormat"]>(null);
+  const [inputFormat, setInputFormat] = useState<RunOptions["inputFormat"]>(
+    (() => {
+      const format = localStorage.getItem(INPUT_FORMAT_KEY);
+      return format === "markdown"
+        ? "markdown"
+        : format === "text"
+        ? "text"
+        : format === "html"
+        ? "html"
+        : null;
+    })()
+  );
 
   useEffect(() => {
     init().then(() => {
@@ -342,7 +385,7 @@ export const Playground = () => {
     setMarkdown(selected.markdown);
     setIsMdx(selected.isMdx);
     setIsUpdate(selected.isUpdate);
-    setInputFormat("markdown");
+    setInputFormat(selected.format);
   }, []);
 
   const handleShare = useCallback(() => {
@@ -446,8 +489,8 @@ export const Playground = () => {
       triggerCharacters: [" ", "|"],
       provideCompletionItems: (model, position) => {
         const values = definedValues("");
+        const wordRange = model.getWordUntilPosition(position);
         const suggestions: languages.CompletionItem[] = values.map((value) => {
-          const wordRange = model.getWordUntilPosition(position);
           return {
             label: value.name,
             kind:
@@ -479,7 +522,74 @@ export const Playground = () => {
           };
         });
 
-        return { suggestions };
+        const snippets: languages.CompletionItem[] = [
+          {
+            label: "foreach",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "foreach (${1:item}, ${2:items}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop over each item in a collection",
+            documentation:
+              "Creates a foreach loop to iterate through items in a collection",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "while",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "while (${1:condition}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop while condition is true",
+            documentation:
+              "Creates a while loop that continues execution as long as condition is true",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "until",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "until (${1:condition}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop until condition is true",
+            documentation:
+              "Creates an until loop that continues execution until condition becomes true",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "def",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "def ${0}(${1:args}): ${2:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Define a custom function",
+            documentation:
+              "Creates a reusable function with custom parameters that can be called elsewhere in the script",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+        ];
+
+        return { suggestions: [...suggestions, ...snippets] };
       },
     });
     monaco.languages.register({ id: "mq" });
@@ -488,7 +598,7 @@ export const Playground = () => {
         root: [
           [/^#.*$/, "comment"],
           [
-            /\b(let|def|while|foreach|until|if|elif|else|self|None)\b/,
+            /\b(let|def|while|foreach|until|if|elif|else|self|None|nodes)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
@@ -564,6 +674,7 @@ export const Playground = () => {
         localStorage.setItem(CODE_KEY, code || "");
         localStorage.setItem(MARKDOWN_KEY, markdown || "");
         localStorage.setItem(IS_UPDATE_KEY, String(isUpdate));
+        localStorage.setItem(INPUT_FORMAT_KEY, inputFormat || "markdown");
       }
     };
 
@@ -571,7 +682,7 @@ export const Playground = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [code, markdown, isUpdate]);
+  }, [code, markdown, isUpdate, inputFormat]);
 
   return (
     <div className="playground-container">
@@ -673,6 +784,7 @@ export const Playground = () => {
                 >
                   <option value="markdown">Markdown</option>
                   <option value="html">HTML</option>
+                  <option value="text">Text</option>
                 </select>
               </label>
             </div>

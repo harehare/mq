@@ -188,6 +188,8 @@ $ mq '.[][] | select(contains("name"))'
 $ mq 'or(.[], .h) | select(contains("name"))'
 # Exclude js code
 $ mq 'select(not(.code("js")))'
+# CSV to markdown table
+$ mq 'nodes | csv2table()'
 ```
 
 ### Advanced Usage

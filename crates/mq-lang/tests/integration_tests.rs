@@ -207,7 +207,7 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())])].into()))]
-#[case::csv2table("csv2table()",
+#[case::csv2table_row("csv2table_row()",
             vec![Value::String("a,b,c".to_string()), Value::String("1,2,3".to_string())],
             Ok(vec![
               Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
@@ -293,6 +293,21 @@ fn engine() -> Engine {
            mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
       ], position: None, depth: 1 }))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("test".to_string()), title: None, values: Vec::new(), position: None }))].into()))]
+#[case::selector("nodes | .h",
+      vec![
+        Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
+        Value::String("test".to_string()),
+      ],
+      Ok(vec![
+        Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
+        Value::NONE
+      ].into()))]
+#[case::selector("nodes | .h",
+      vec![
+        Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })),
+        Value::String("test".to_string()),
+      ],
+      Ok(vec![Value::NONE, Value::NONE].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

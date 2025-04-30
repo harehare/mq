@@ -70,6 +70,13 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
+                TokenKind::Nodes if root => {
+                    let ast = self.parse_all_nodes(Rc::clone(token))?;
+                    asts.push(ast);
+                }
+                TokenKind::Nodes => {
+                    return Err(ParseError::UnexpectedToken((**token).clone()));
+                }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
                 _ => {
                     let ast = self.parse_expr(Rc::clone(token))?;
@@ -124,6 +131,13 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Self_),
+        }))
+    }
+
+    fn parse_all_nodes(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        Ok(Rc::new(Node {
+            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+            expr: Rc::new(Expr::Nodes),
         }))
     }
 
@@ -763,6 +777,11 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Tab(_),
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Nodes,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
@@ -2125,6 +2144,74 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Include, module_id: 1.into()})))]
+    #[case::nodes(
+        vec![
+            token(TokenKind::Nodes),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Nodes),
+            })
+        ]))]
+    #[case::nodes_error_in_subprogram(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("test"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Nodes),
+            token(TokenKind::SemiColon)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Nodes))))]
+    #[case::nodes_then_selector(
+        vec![
+            token(TokenKind::Nodes),
+            token(TokenKind::Pipe),
+            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Nodes),
+            }),
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+            })
+        ]))]
+    #[case::root_level_with_multiple_pipes(
+        vec![
+            token(TokenKind::Nodes),
+            token(TokenKind::Pipe),
+            token(TokenKind::Nodes),
+            token(TokenKind::Pipe),
+            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Pipe),
+            token(TokenKind::Selector(CompactString::new(".text"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Nodes),
+            }),
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Nodes),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+            }),
+            Rc::new(Node {
+                token_id: 3.into(),
+                expr: Rc::new(Expr::Selector(Selector::Text)),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

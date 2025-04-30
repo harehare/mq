@@ -75,7 +75,7 @@ impl Evaluator {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        let program = program.iter().try_fold(
+        let mut program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
             |mut nodes: Vec<Rc<ast::Node>>, node: &Rc<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
@@ -99,14 +99,44 @@ impl Evaluator {
             },
         )?;
 
-        input
-            .map(|runtime_value| match &runtime_value {
-                RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
-                _ => self
-                    .eval_program(&program, runtime_value, Rc::clone(&self.env))
-                    .map_err(InnerError::Eval),
-            })
-            .collect()
+        let nodes_index = &program.iter().position(|node| node.is_nodes());
+
+        if let Some(index) = nodes_index {
+            let (program, nodes_program) = program.split_at_mut(*index);
+            let program = program.to_vec();
+            let nodes_program = nodes_program.to_vec();
+            let values: Result<Vec<RuntimeValue>, InnerError> = input
+                .map(|runtime_value| match &runtime_value {
+                    RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
+                    _ => self
+                        .eval_program(&program, runtime_value, Rc::clone(&self.env))
+                        .map_err(InnerError::Eval),
+                })
+                .collect();
+
+            if nodes_program.is_empty() {
+                values
+            } else {
+                self.eval_program(&nodes_program, values?.into(), Rc::clone(&self.env))
+                    .map(|value| {
+                        if let RuntimeValue::Array(values) = value {
+                            values
+                        } else {
+                            vec![value]
+                        }
+                    })
+                    .map_err(InnerError::Eval)
+            }
+        } else {
+            input
+                .map(|runtime_value| match &runtime_value {
+                    RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
+                    _ => self
+                        .eval_program(&program, runtime_value, Rc::clone(&self.env))
+                        .map_err(InnerError::Eval),
+                })
+                .collect()
+        }
     }
 
     fn eval_markdown_node(
@@ -237,6 +267,23 @@ impl Evaluator {
                     RuntimeValue::NONE
                 }
             }
+            RuntimeValue::Array(values) => {
+                let values = values
+                    .iter()
+                    .map(|value| match value {
+                        RuntimeValue::Markdown(node_value, _) => {
+                            if builtin::eval_selector(node_value, ident) {
+                                value.clone()
+                            } else {
+                                RuntimeValue::NONE
+                            }
+                        }
+                        _ => RuntimeValue::NONE,
+                    })
+                    .collect::<Vec<_>>();
+
+                RuntimeValue::Array(values)
+            }
             _ => RuntimeValue::NONE,
         }
     }
@@ -284,7 +331,7 @@ impl Evaluator {
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
-            ast::Expr::Self_ => Ok(runtime_value.clone()),
+            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
@@ -3087,6 +3134,98 @@ mod tests {
              ast_call("get_url", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::flatten_array_of_arrays(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]),
+                RuntimeValue::Array(vec![RuntimeValue::String("c".to_string()), RuntimeValue::String("d".to_string())])
+            ])],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("d".to_string())
+            ])]))]
+    #[case::flatten_array_with_nested_arrays(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::Array(vec![RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]),
+                RuntimeValue::String("d".to_string())
+            ])],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("d".to_string())
+            ])]))]
+    #[case::flatten_deeply_nested_arrays(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Array(vec![
+                    RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]),
+                    RuntimeValue::String("c".to_string())
+                ]),
+                RuntimeValue::String("d".to_string())
+            ])],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("d".to_string())
+            ])]))]
+    #[case::flatten_empty_array(vec![RuntimeValue::Array(Vec::new())],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(Vec::new())]))]
+    #[case::flatten_array_with_empty_arrays(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Array(Vec::new()),
+                RuntimeValue::Array(Vec::new())
+            ])],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(Vec::new())]))]
+    #[case::flatten_mixed_type_arrays(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into())]),
+                RuntimeValue::Array(vec![RuntimeValue::Bool(true), RuntimeValue::String("b".to_string())])
+            ])],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Bool(true),
+                RuntimeValue::String("b".to_string())
+            ])]))]
+    #[case::flatten_array_with_none_values(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::NONE]),
+                RuntimeValue::Array(vec![RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())])
+            ])],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::NONE,
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string())
+            ])]))]
+    #[case::flatten_non_array(vec![RuntimeValue::String("test".to_string())],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::String("test".to_string())]))]
+    #[case::flatten_none(vec![RuntimeValue::NONE],
+            vec![
+                ast_call("flatten", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::NONE]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

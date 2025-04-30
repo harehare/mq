@@ -156,11 +156,17 @@ def is_list2(list): and(is_list(list), eq(get_md_list_level(list), 1));
 # Checks if markdown is list with indentation level 3
 def is_list3(list): and(is_list(list), eq(get_md_list_level(list), 2));
 
+# Convert csv string to markdown table row
+def csv2table_row(row): split(row, ",") | to_md_table_row();
+
 # Convert csv string to markdown table
-def csv2table(csv): split(csv, ",") | to_md_table_row();
+def csv2table(csv): map(csv, csv2table_row);
+
+# Convert tsv string to markdown table row
+def tsv2table_row(row): split(row, "	") | to_md_table_row();
 
 # Convert tsv string to markdown table
-def tsv2table(tsv): split(tsv, "	") | to_md_table_row();
+def tsv2table(tsv): map(tsv, tsv2table_row);
 
 # Verifies that a condition is true and raises an error if it's false.
 def assert(cond):
