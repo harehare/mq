@@ -489,8 +489,8 @@ export const Playground = () => {
       triggerCharacters: [" ", "|"],
       provideCompletionItems: (model, position) => {
         const values = definedValues("");
+        const wordRange = model.getWordUntilPosition(position);
         const suggestions: languages.CompletionItem[] = values.map((value) => {
-          const wordRange = model.getWordUntilPosition(position);
           return {
             label: value.name,
             kind:
@@ -522,7 +522,74 @@ export const Playground = () => {
           };
         });
 
-        return { suggestions };
+        const snippets: languages.CompletionItem[] = [
+          {
+            label: "foreach",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "foreach (${1:item}, ${2:items}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop over each item in a collection",
+            documentation:
+              "Creates a foreach loop to iterate through items in a collection",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "while",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "while (${1:condition}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop while condition is true",
+            documentation:
+              "Creates a while loop that continues execution as long as condition is true",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "until",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "until (${1:condition}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop until condition is true",
+            documentation:
+              "Creates an until loop that continues execution until condition becomes true",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "def",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "def ${0}(${1:args}): ${2:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Define a custom function",
+            documentation:
+              "Creates a reusable function with custom parameters that can be called elsewhere in the script",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+        ];
+
+        return { suggestions: [...suggestions, ...snippets] };
       },
     });
     monaco.languages.register({ id: "mq" });

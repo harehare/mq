@@ -4,27 +4,27 @@
         "body": [
             "foreach (${1:item}, ${2:values}): ${0:body};"
         ],
-        "description": "foreach loop in mq"
+        "description": "Loop over each item in a collection"
     },
     "while": {
         "prefix": "while",
         "body": [
             "while (${1:condition}): ${0:body};"
         ],
-        "description": "while loop in mq"
+        "description": "Loop while condition is true"
     },
     "until": {
         "prefix": "until",
         "body": [
             "until (${1:condition}): ${0:body};"
         ],
-        "description": "while loop in mq"
+        "description": "Loop until condition is true"
     },
     "def": {
         "prefix": "def",
         "body": [
             "def ${0}(${1:args}): ${2:body};"
         ],
-        "description": "function definition in mq"
+        "description": "Define a custom function"
     }
 }
