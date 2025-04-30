@@ -18,7 +18,7 @@ nodes
 nodes | select(.h)
 ```
 
-### Extracting all links
+### Converting all text to uppercase
 
 ```mq
 nodes | map(upcase)
