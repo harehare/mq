@@ -14,7 +14,7 @@ use url::Url;
 #[derive(Parser, Debug)]
 #[command(name = "mq")]
 #[command(author = "Takahiro Sato. <harehare1110@gmail.com>")]
-#[command(version = "0.1.2")]
+#[command(version = "0.1.3")]
 #[command(after_help = "Examples:\n\n\
     To filter markdown nodes:\n\
     $ mq 'query' file.md\n\n\

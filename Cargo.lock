@@ -1265,7 +1265,7 @@ dependencies = [
 
 [[package]]
 name = "mq-cli"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "mq-lang",
  "rstest",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "compact_str",
  "itertools",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1336,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang-fuzz"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arbitrary",
  "itertools",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lsp"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bimap",
  "dashmap 6.1.0",
@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "compact_str",
  "html2md-rs",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "mq-mcp"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "miette",
  "mq-lang",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arboard",
  "colored 3.0.0",
@@ -1412,14 +1412,14 @@ dependencies = [
 
 [[package]]
 name = "mq-test"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "scopeguard",
 ]
 
 [[package]]
 name = "mq-wasm"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "itertools",
  "js-sys",

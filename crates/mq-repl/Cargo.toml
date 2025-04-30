@@ -8,7 +8,7 @@ license-file = "LICENSE"
 name = "mq-repl"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.1.2"
+version = "0.1.3"
 
 [dependencies]
 arboard = "3.5.0"
