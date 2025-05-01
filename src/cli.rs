@@ -5,13 +5,14 @@ use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::Engine;
+use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
 use url::Url;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
 #[command(author = "Takahiro Sato. <harehare1110@gmail.com>")]
 #[command(version = "0.1.3")]
@@ -37,6 +38,10 @@ pub struct Cli {
 
     #[clap(subcommand)]
     commands: Option<Commands>,
+
+    /// Number of files to process before switching to parallel processing
+    #[arg(short = 'P', default_value_t = 10)]
+    parallel_threshold: usize,
 
     #[command(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
@@ -255,25 +260,19 @@ impl Cli {
                 Ok(())
             }
             None => {
-                let mut engine = self.create_engine()?;
-
-                if let Some(raw_file) = &self.input.raw_file {
-                    for v in raw_file.chunks(2) {
-                        let path = PathBuf::from_str(&v[1]).into_diagnostic()?;
-
-                        if !path.exists() {
-                            return Err(miette!("File not found: {}", path.display()));
-                        }
-
-                        let content = fs::read_to_string(&path).into_diagnostic()?;
-                        engine.define_string_value(&v[0], &content);
-                    }
-                }
-
                 let query = self.get_query()?;
+                let files = self.read_contents()?;
 
-                for (file, content) in self.read_contents()? {
-                    self.execute(&mut engine, &query, file, &content)?;
+                if files.len() > self.parallel_threshold {
+                    files.par_iter().try_for_each(|(file, content)| {
+                        let mut engine = self.create_engine()?;
+                        self.execute(&mut engine, &query, file, content)
+                    })?;
+                } else {
+                    let mut engine = self.create_engine()?;
+                    files.iter().try_for_each(|(file, content)| {
+                        self.execute(&mut engine, &query, file, content)
+                    })?;
                 }
 
                 Ok(())
@@ -315,6 +314,19 @@ impl Cli {
             }
         }
 
+        if let Some(raw_file) = &self.input.raw_file {
+            for v in raw_file.chunks(2) {
+                let path = PathBuf::from_str(&v[1]).into_diagnostic()?;
+
+                if !path.exists() {
+                    return Err(miette!("File not found: {}", path.display()));
+                }
+
+                let content = fs::read_to_string(&path).into_diagnostic()?;
+                engine.define_string_value(&v[0], &content);
+            }
+        }
+
         Ok(engine)
     }
 
@@ -335,7 +347,7 @@ impl Cli {
         &self,
         engine: &mut mq_lang::Engine,
         query: &str,
-        file: Option<PathBuf>,
+        file: &Option<PathBuf>,
         content: &str,
     ) -> miette::Result<()> {
         if let Some(file) = file {
@@ -498,6 +510,7 @@ mod tests {
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("self".to_string()),
             files: None,
+            ..Cli::default()
         };
 
         assert!(cli.run().is_ok());
@@ -524,6 +537,7 @@ mod tests {
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("self".to_string()),
             files: Some(vec![temp_file_path]),
+            ..Cli::default()
         };
 
         assert!(cli.run().is_ok());
@@ -555,6 +569,7 @@ mod tests {
                 verbose: clap_verbosity_flag::Verbosity::new(0, 0),
                 query: Some("self".to_string()),
                 files: Some(vec![temp_file_path.clone()]),
+                ..Cli::default()
             };
 
             assert!(cli.run().is_ok());
@@ -583,6 +598,7 @@ mod tests {
                 verbose: clap_verbosity_flag::Verbosity::new(0, 0),
                 query: Some("self".to_string()),
                 files: Some(vec![temp_file_path.clone()]),
+                ..Cli::default()
             };
 
             assert!(cli.run().is_ok());
@@ -610,6 +626,7 @@ mod tests {
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
             files: Some(vec![temp_file_path]),
+            ..Cli::default()
         };
 
         assert!(cli.run().is_ok());
@@ -636,6 +653,7 @@ mod tests {
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
             files: Some(vec![temp_file_path]),
+            ..Cli::default()
         };
 
         assert!(cli.run().is_ok());
@@ -662,6 +680,7 @@ mod tests {
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("self".to_string()),
             files: Some(vec![temp_file_path]),
+            ..Cli::default()
         };
 
         assert!(cli.run().is_ok());
@@ -694,6 +713,7 @@ mod tests {
             verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("math".to_owned()),
             files: Some(vec![temp_md_file_path]),
+            ..Cli::default()
         };
 
         assert!(cli.run().is_ok());

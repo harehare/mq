@@ -112,6 +112,11 @@ In {year}, the snowfall was above average.
     "# h1\n\nheader\n\n## h2\n\nheader\n\n# h3\n\nheader\n",
     Some("# h1\n## h2\n# h3\n"),
 )]
+#[case::parallel(
+    vec!["--unbuffered", "-P", "0", r#"nodes | .h"#],
+    "# h1\n\nheader\n\n## h2\n\nheader\n\n# h3\n\nheader\n",
+    Some("# h1\n## h2\n# h3\n"),
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

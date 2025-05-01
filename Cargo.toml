@@ -50,6 +50,7 @@ mq-hir = {workspace = true}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true, features = ["json"]}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.3"}
+rayon = "1.10.0"
 url = {workspace = true}
 
 [dev-dependencies]
