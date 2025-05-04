@@ -308,6 +308,51 @@ fn engine() -> Engine {
         Value::String("test".to_string()),
       ],
       Ok(vec![Value::NONE, Value::NONE].into()))]
+#[case::sort_by("sort_by(get_title)",
+      vec![Value::Array(vec![
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+      ])],
+      Ok(vec![Value::Array(vec![
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+      ])].into()))]
+#[case::sort_by("sort_by(get_url)",
+      vec![Value::Array(vec![
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+      ])],
+      Ok(vec![Value::Array(vec![
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+          Value::Markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang2".to_string()), title: Some(mq_markdown::Title::new("1".to_string())), values: vec![
+            mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })
+          ], position: None })),
+      ])].into()))]
+#[case::sort_by(r#"def sort_test(v): if (eq(v, "3")): "1" elif (eq(v, "1")): "3" else: v; sort_by(sort_test)"#,
+      vec![Value::Array(vec![
+         "2".to_string().into(),
+         "1".to_string().into(),
+         "3".to_string().into(),
+      ])],
+      Ok(vec![Value::Array(vec![
+         "3".to_string().into(),
+         "2".to_string().into(),
+         "1".to_string().into(),
+      ])].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

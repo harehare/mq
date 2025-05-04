@@ -70,6 +70,7 @@ pub use engine::Engine;
 pub use error::Error;
 pub use eval::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc,
+    INTERNAL_FUNCTION_DOC,
 };
 pub use eval::module::Module;
 pub use eval::module::ModuleLoader;
@@ -77,7 +78,6 @@ pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use range::{Position, Range};
 pub use value::{Value, Values};
-
 pub type MqResult = Result<Values, Box<Error>>;
 
 pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {

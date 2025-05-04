@@ -139,6 +139,30 @@ impl Hir {
             });
         });
 
+        self.builtin
+            .internal_functions
+            .clone()
+            .keys()
+            .for_each(|name| {
+                self.add_symbol(Symbol {
+                    value: Some(name.clone()),
+                    kind: SymbolKind::Function(
+                        mq_lang::INTERNAL_FUNCTION_DOC[name]
+                            .params
+                            .iter()
+                            .map(|p| CompactString::new(p))
+                            .collect::<Vec<_>>(),
+                    ),
+                    source: SourceInfo::new(Some(self.builtin.source_id), None),
+                    scope: self.builtin.scope_id,
+                    doc: vec![(
+                        mq_lang::Range::default(),
+                        mq_lang::INTERNAL_FUNCTION_DOC[name].description.to_string(),
+                    )],
+                    parent: None,
+                });
+            });
+
         self.builtin.selectors.clone().keys().for_each(|name| {
             self.add_symbol(Symbol {
                 value: Some(name.clone()),

@@ -899,6 +899,26 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("_sort_by_impl"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Array(array)] => {
+                    let mut vec = array.to_vec();
+                    vec.sort_by(|a, b| match (a, b) {
+                        (RuntimeValue::Array(a1), RuntimeValue::Array(a2)) => a1
+                            .first()
+                            .map(|v| v.to_string())
+                            .unwrap_or_default()
+                            .partial_cmp(&a2.first().map(|v| v.to_string()).unwrap_or_default())
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        _ => unreachable!(),
+                    });
+                    Ok(RuntimeValue::Array(vec))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
             CompactString::new("compact"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
@@ -1919,6 +1939,21 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
             CompactString::new(".definition"),
             BuiltinSelectorDoc {
                 description: "Selects a definition node.",
+                params: &[],
+            },
+        );
+
+        map
+    });
+
+pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFunctionDoc>> =
+    LazyLock::new(|| {
+        let mut map = FxHashMap::default();
+
+        map.insert(
+            CompactString::new("_sort_by_impl"),
+            BuiltinFunctionDoc{
+                description: "Internal implementation of sort_by functionality that sorts arrays of arrays using the first element as the key.",
                 params: &[],
             },
         );
