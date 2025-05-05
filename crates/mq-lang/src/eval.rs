@@ -415,6 +415,10 @@ impl Evaluator {
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
 
+            if !cond_value.is_true() {
+                return Ok(RuntimeValue::NONE);
+            }
+
             while cond_value.is_true() {
                 runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
                 cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
@@ -438,6 +442,10 @@ impl Evaluator {
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
             let mut values = Vec::with_capacity(100);
+
+            if !cond_value.is_true() {
+                return Ok(RuntimeValue::NONE);
+            }
 
             while cond_value.is_true() {
                 runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
