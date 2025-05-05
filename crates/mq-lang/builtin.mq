@@ -100,6 +100,27 @@ def is_h4(md): eq(to_md_name(md), "h4");
 # Checks if markdown is h5 heading
 def is_h5(md): eq(to_md_name(md), "h5");
 
+# Checks if markdown is h6 heading
+def is_h6(md): eq(to_md_name(md), "h6");
+
+# Checks if markdown is not an h1 heading
+def is_not_h1(md): is_h1(md) | not();
+
+# Checks if markdown is not an h2 heading
+def is_not_h2(md): is_h2(md) | not();
+
+# Checks if markdown is not an h3 heading
+def is_not_h3(md): is_h3(md) | not();
+
+# Checks if markdown is not an h4 heading
+def is_not_h4(md): is_h4(md) | not();
+
+# Checks if markdown is not an h5 heading
+def is_not_h5(md): is_h5(md) | not();
+
+# Checks if markdown is not an h6 heading
+def is_not_h6(md): is_h6(md) | not();
+
 # Checks if markdown is emphasis
 def is_em(md): eq(to_md_name(md), "emphasis");
 
@@ -183,3 +204,67 @@ def debug(msg):
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): array(f(x), x);
   | _sort_by_impl(decorate_arr) | map(last);
+
+
+# Skips the first n elements of an array and returns the rest
+def skip(arr, n):
+  if (lt(n, 0)):
+    error("n must be non-negative")
+  elif (gt(n, len(arr))):
+    array()
+  else:
+    slice(arr, n, len(arr));
+
+# Takes the first n elements of an array
+def take(arr, n):
+  if (lt(n, 0)):
+    error("n must be non-negative")
+  elif (gt(n, len(arr))):
+    arr
+  else:
+    slice(arr, 0, n);
+
+def _find_index_impl(arr, f, idx):
+  if (eq(idx, len(arr))):
+    -1
+  elif (f(nth(arr, idx))):
+    idx
+  else:
+    _find_index_impl(arr, f, add(idx, 1));
+
+# Returns the index of the first element in an array that satisfies the provided function.
+def find_index(arr, f):
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  else:
+    _find_index_impl(arr, f, 0);
+
+# Skips elements from the beginning of an array while the provided function returns true
+def skip_while(arr, f):
+  let i = 0
+  | let si = if (not(is_array(arr))):
+  error("first argument must be an array")
+elif (is_empty(arr)):
+  0
+else:
+  until (and(lt(i, len(arr)), f(nth(arr, i)))):
+    let i = add(i, 1) | i;
+  | if (is_none(si)):
+    array()
+  else:
+    slice(arr, si, len(arr));
+
+# Takes elements from the beginning of an array while the provided function returns true
+def take_while(arr, f):
+  let i = 0
+  | let ti = if (not(is_array(arr))):
+  error("first argument must be an array")
+elif (is_empty(arr)):
+  0
+else:
+  until (and(lt(i, len(arr)), f(nth(arr, i)))):
+    let i = add(i, 1) | i;
+  | if (is_none(ti)):
+    array()
+  else:
+    slice(arr, 0, ti);

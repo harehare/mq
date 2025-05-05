@@ -830,6 +830,7 @@ impl<'a> Parser<'a> {
                 ".h3" | ".###" => self.parse_head(token, 3),
                 ".h4" | ".####" => self.parse_head(token, 4),
                 ".h5" | ".#####" => self.parse_head(token, 5),
+                ".h6" | ".######" => self.parse_head(token, 6),
                 ".>" | ".blockquote" => Ok(Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Blockquote)),

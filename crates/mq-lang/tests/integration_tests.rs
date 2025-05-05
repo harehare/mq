@@ -353,6 +353,83 @@ fn engine() -> Engine {
          "2".to_string().into(),
          "1".to_string().into(),
       ])].into()))]
+#[case::find_index("
+      def is_even(x):
+        eq(mod(x, 2), 0);
+      | find_index(array(1, 3, 5, 6, 7), is_even)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into())])],
+        Ok(vec![Value::Number(3.into())].into()))]
+#[case::find_index("
+      def is_greater_than_five(x):
+        gt(x, 5);
+      | find_index(array(1, 3, 5, 6, 7), is_greater_than_five)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into())])],
+        Ok(vec![Value::Number(3.into())].into()))]
+#[case::find_index_no_match("
+      def is_negative(x):
+        lt(x, 0);
+      | find_index(array(1, 3, 5, 6, 7), is_negative)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into())])],
+        Ok(vec![Value::Number((-1).into())].into()))]
+#[case::find_index_empty_array("
+      def is_even(x):
+        eq(mod(x, 2), 0);
+      | find_index(array(), is_even)
+      ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Number((-1).into())].into()))]
+#[case::skip_while("
+      def is_less_than_four(x):
+        lt(x, 4);
+      | skip_while(array(1, 2, 3, 4, 5, 1, 2), is_less_than_four)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(4.into()), Value::Number(5.into()), Value::Number(1.into()), Value::Number(2.into())])].into()))]
+#[case::skip_while_all_match("
+      def is_positive(x):
+        gt(x, 0);
+      | skip_while(array(1, 2, 3), is_positive)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::skip_while_empty_array("
+      def is_positive(x):
+        gt(x, 0);
+      | skip_while(array(), is_positive)
+      ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::take_while("
+      def is_less_than_four(x):
+        lt(x, 4);
+      | take_while(array(1, 2, 3, 4, 5, 1, 2), is_less_than_four)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+#[case::take_while_none_match("
+      def is_negative(x):
+        lt(x, 0);
+      | take_while(array(1, 2, 3), is_negative)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::take_while_all_match("
+      def is_positive(x):
+        gt(x, 0);
+      | take_while(array(1, 2, 3), is_positive)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+#[case::take_while_empty_array("
+      def is_positive(x):
+        gt(x, 0);
+      | take_while(array(), is_positive)
+      ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Array(vec![])].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
