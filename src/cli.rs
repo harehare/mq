@@ -231,7 +231,7 @@ impl Cli {
                             value: Some(value),
                             doc,
                             ..
-                        } => Some(mq_lang::Value::String(
+                        } if !symbol.is_internal_function() => Some(mq_lang::Value::String(
                             [
                                 format!("`{}`", value),
                                 doc.iter().map(|(_, d)| d.to_string()).join("\n"),

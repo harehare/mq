@@ -55,6 +55,16 @@ impl Symbol {
     pub fn is_parameter(&self) -> bool {
         matches!(self.kind, SymbolKind::Parameter)
     }
+
+    pub fn is_internal_function(&self) -> bool {
+        if matches!(self.kind, SymbolKind::Function(_)) {
+            self.value
+                .as_ref()
+                .map_or(false, |value| value.as_str().starts_with("_"))
+        } else {
+            false
+        }
+    }
 }
 
 impl fmt::Display for Symbol {
