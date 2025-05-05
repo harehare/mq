@@ -381,6 +381,55 @@ fn engine() -> Engine {
       ",
         vec![Value::Array(vec![])],
         Ok(vec![Value::Number((-1).into())].into()))]
+#[case::skip_while("
+      def is_less_than_four(x):
+        lt(x, 4);
+      | skip_while(array(1, 2, 3, 4, 5, 1, 2), is_less_than_four)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(4.into()), Value::Number(5.into()), Value::Number(1.into()), Value::Number(2.into())])].into()))]
+#[case::skip_while_all_match("
+      def is_positive(x):
+        gt(x, 0);
+      | skip_while(array(1, 2, 3), is_positive)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::skip_while_empty_array("
+      def is_positive(x):
+        gt(x, 0);
+      | skip_while(array(), is_positive)
+      ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::take_while("
+      def is_less_than_four(x):
+        lt(x, 4);
+      | take_while(array(1, 2, 3, 4, 5, 1, 2), is_less_than_four)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+#[case::take_while_none_match("
+      def is_negative(x):
+        lt(x, 0);
+      | take_while(array(1, 2, 3), is_negative)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::take_while_all_match("
+      def is_positive(x):
+        gt(x, 0);
+      | take_while(array(1, 2, 3), is_positive)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+#[case::take_while_empty_array("
+      def is_positive(x):
+        gt(x, 0);
+      | take_while(array(), is_positive)
+      ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Array(vec![])].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

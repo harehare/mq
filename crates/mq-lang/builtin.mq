@@ -188,7 +188,7 @@ def sort_by(arr, f):
 # Skips the first n elements of an array and returns the rest
 def skip(arr, n):
   if (lt(n, 0)):
-    error("skip: n must be non-negative")
+    error("n must be non-negative")
   elif (gt(n, len(arr))):
     array()
   else:
@@ -197,22 +197,53 @@ def skip(arr, n):
 # Takes the first n elements of an array
 def take(arr, n):
   if (lt(n, 0)):
-    error("take: n must be non-negative")
+    error("n must be non-negative")
   elif (gt(n, len(arr))):
     arr
   else:
     slice(arr, 0, n);
 
+def _find_index_impl(arr, f, idx):
+  if (eq(idx, len(arr))):
+    -1
+  elif (f(nth(arr, idx))):
+    idx
+  else:
+    _find_index_impl(arr, f, add(idx, 1));
+
 # Returns the index of the first element in an array that satisfies the provided function.
 def find_index(arr, f):
-  def _find_index_impl(arr, f, idx):
-    if (eq(idx, len(arr))):
-      -1
-    elif (f(nth(arr, idx))):
-      idx
-    else:
-      _find_index_impl(arr, f, add(idx, 1));
-  | if (not(is_array(arr))):
-  error("find_index: first argument must be an array")
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  else:
+    _find_index_impl(arr, f, 0);
+
+# Skips elements from the beginning of an array while the provided function returns true
+def skip_while(arr, f):
+  let i = 0
+  | let si = if (not(is_array(arr))):
+  error("first argument must be an array")
+elif (is_empty(arr)):
+  0
 else:
-  _find_index_impl(arr, f, 0);
+  until (and(lt(i, len(arr)), f(nth(arr, i)))):
+    let i = add(i, 1) | i;
+  | if (is_none(si)):
+  array()
+else:
+  slice(arr, si, len(arr));
+
+# Takes elements from the beginning of an array while the provided function returns true
+def take_while(arr, f):
+  let i = 0
+  | let ti = if (not(is_array(arr))):
+  error("first argument must be an array")
+elif (is_empty(arr)):
+  0
+else:
+  until (and(lt(i, len(arr)), f(nth(arr, i)))):
+    let i = add(i, 1) | i;
+  | if (is_none(ti)):
+  array()
+else:
+  slice(arr, 0, ti);
