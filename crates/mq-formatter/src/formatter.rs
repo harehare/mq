@@ -211,6 +211,7 @@ impl Formatter {
     }
 
     fn format_if(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        let is_prev_pipe = self.is_prev_pipe();
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
@@ -226,10 +227,22 @@ impl Formatter {
                 self.append_space();
             }
 
-            self.format_node(Arc::clone(then_expr), indent_level + 1);
+            let block_indent_level = if is_prev_pipe {
+                indent_level + 2
+            } else {
+                indent_level + 1
+            };
+
+            self.format_node(Arc::clone(then_expr), block_indent_level);
+
+            let node_indent_level = if is_prev_pipe {
+                indent_level + 1
+            } else {
+                indent_level
+            };
 
             for child in rest {
-                self.format_node(Arc::clone(child), indent_level);
+                self.format_node(Arc::clone(child), node_indent_level);
             }
         }
     }
