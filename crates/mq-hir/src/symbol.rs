@@ -60,7 +60,7 @@ impl Symbol {
         if matches!(self.kind, SymbolKind::Function(_)) {
             self.value
                 .as_ref()
-                .map_or(false, |value| value.as_str().starts_with("_"))
+                .is_some_and(|value| value.as_str().starts_with("_"))
         } else {
             false
         }
