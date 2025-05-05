@@ -353,6 +353,34 @@ fn engine() -> Engine {
          "2".to_string().into(),
          "1".to_string().into(),
       ])].into()))]
+#[case::find_index("
+      def is_even(x):
+        eq(mod(x, 2), 0);
+      | find_index(array(1, 3, 5, 6, 7), is_even)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into())])],
+        Ok(vec![Value::Number(3.into())].into()))]
+#[case::find_index("
+      def is_greater_than_five(x):
+        gt(x, 5);
+      | find_index(array(1, 3, 5, 6, 7), is_greater_than_five)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into())])],
+        Ok(vec![Value::Number(3.into())].into()))]
+#[case::find_index_no_match("
+      def is_negative(x):
+        lt(x, 0);
+      | find_index(array(1, 3, 5, 6, 7), is_negative)
+      ",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into())])],
+        Ok(vec![Value::Number((-1).into())].into()))]
+#[case::find_index_empty_array("
+      def is_even(x):
+        eq(mod(x, 2), 0);
+      | find_index(array(), is_even)
+      ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Number((-1).into())].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

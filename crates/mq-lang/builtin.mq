@@ -202,3 +202,17 @@ def take(arr, n):
     arr
   else:
     slice(arr, 0, n);
+
+# Returns the index of the first element in an array that satisfies the provided function.
+def find_index(arr, f):
+  def _find_index_impl(arr, f, idx):
+    if (eq(idx, len(arr))):
+      -1
+    elif (f(nth(arr, idx))):
+      idx
+    else:
+      _find_index_impl(arr, f, add(idx, 1));
+  | if (not(is_array(arr))):
+  error("find_index: first argument must be an array")
+else:
+  _find_index_impl(arr, f, 0);
