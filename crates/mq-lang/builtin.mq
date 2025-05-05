@@ -183,3 +183,22 @@ def debug(msg):
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): array(f(x), x);
   | _sort_by_impl(decorate_arr) | map(last);
+
+
+# Skips the first n elements of an array and returns the rest
+def skip(arr, n):
+  if (lt(n, 0)):
+    error("skip: n must be non-negative")
+  elif (gt(n, len(arr))):
+    array()
+  else:
+    slice(arr, n, len(arr));
+
+# Takes the first n elements of an array
+def take(arr, n):
+  if (lt(n, 0)):
+    error("take: n must be non-negative")
+  elif (gt(n, len(arr))):
+    arr
+  else:
+    slice(arr, 0, n);
