@@ -229,9 +229,9 @@ else:
   until (and(lt(i, len(arr)), f(nth(arr, i)))):
     let i = add(i, 1) | i;
   | if (is_none(si)):
-  array()
-else:
-  slice(arr, si, len(arr));
+    array()
+  else:
+    slice(arr, si, len(arr));
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
@@ -244,6 +244,6 @@ else:
   until (and(lt(i, len(arr)), f(nth(arr, i)))):
     let i = add(i, 1) | i;
   | if (is_none(ti)):
-  array()
-else:
-  slice(arr, 0, ti);
+    array()
+  else:
+    slice(arr, 0, ti);
