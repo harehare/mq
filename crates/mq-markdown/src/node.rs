@@ -812,7 +812,7 @@ impl Node {
                     "  ".repeat(level as usize),
                     options.list_style,
                     checked
-                        .map(|it| if it { "[x] " } else { "[] " })
+                        .map(|it| if it { "[x] " } else { "[ ] " })
                         .unwrap_or_else(|| ""),
                     Self::values_to_string(values, options)
                 )
@@ -2785,7 +2785,7 @@ mod tests {
     #[case::list(Node::List(List{index: 0, level: 2, checked: None, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "    - test")]
     #[case::list(Node::List(List{index: 0, level: 1, checked: None, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Plus, ..Default::default() }, "  + test")]
     #[case::list(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Star, ..Default::default() }, "  * [x] test")]
-    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [] test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [ ] test")]
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test")]
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test")]
