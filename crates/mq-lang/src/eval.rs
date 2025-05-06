@@ -3257,7 +3257,7 @@ mod tests {
             vec![
                  ast_call("to_text", SmallVec::new())
             ],
-            Ok(vec!["".to_string().into()]))]
+            Ok(vec![RuntimeValue::NONE]))]
     #[case::starts_with(vec![RuntimeValue::NONE],
        vec![
             ast_call("starts_with", smallvec![

@@ -250,6 +250,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_html"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
                 [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
                 [RuntimeValue::Markdown(node_value, _)] => {
                     Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
@@ -261,6 +262,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_csv"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
                 [RuntimeValue::Array(array)] => Ok(array.iter().join(",").into()),
                 [a] => Ok(a.to_string().into()),
                 _ => unreachable!(),
@@ -269,6 +271,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_tsv"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
                 [RuntimeValue::Array(array)] => Ok(array.iter().join("\t").into()),
                 [a] => Ok(a.to_string().into()),
                 _ => unreachable!(),
@@ -277,6 +280,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_string"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
                 [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.to_string().into()),
                 [RuntimeValue::Array(array)] => {
                     let result_value: Result<Vec<RuntimeValue>, Error> = array
@@ -364,7 +368,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_text"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok("".to_owned().into()),
+                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
                 [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.value().into()),
                 [RuntimeValue::Array(array)] => Ok(array
                     .iter()
@@ -892,6 +896,17 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
                     vec.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                    let vec = vec
+                        .into_iter()
+                        .map(|v| match v {
+                            RuntimeValue::Markdown(mut node, s) => {
+                                node.set_position(None);
+                                RuntimeValue::Markdown(node, s)
+                            }
+                            _ => v,
+                        })
+                        .collect();
                     Ok(RuntimeValue::Array(vec))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
@@ -906,12 +921,29 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     vec.sort_by(|a, b| match (a, b) {
                         (RuntimeValue::Array(a1), RuntimeValue::Array(a2)) => a1
                             .first()
-                            .map(|v| v.to_string())
-                            .unwrap_or_default()
-                            .partial_cmp(&a2.first().map(|v| v.to_string()).unwrap_or_default())
+                            .unwrap()
+                            .partial_cmp(a2.first().unwrap())
                             .unwrap_or(std::cmp::Ordering::Equal),
                         _ => unreachable!(),
                     });
+                    let vec = vec
+                        .into_iter()
+                        .map(|v| match v {
+                            RuntimeValue::Array(mut arr) if arr.len() >= 2 => {
+                                if let RuntimeValue::Markdown(node, s) = &arr[1] {
+                                    let mut new_node = node.clone();
+                                    new_node.set_position(None);
+
+                                    arr[1] = RuntimeValue::Markdown(new_node, s.clone());
+                                    RuntimeValue::Array(arr)
+                                } else {
+                                    RuntimeValue::Array(arr)
+                                }
+                            }
+                            _ => unreachable!(),
+                        })
+                        .collect();
+
                     Ok(RuntimeValue::Array(vec))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
