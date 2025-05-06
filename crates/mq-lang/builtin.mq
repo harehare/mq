@@ -82,6 +82,13 @@ def last(arr):
   else:
     nth(arr, sub(len(arr), 1));
 
+# Returns the second element of an array
+def second(arr):
+  if (lt(len(arr), 2)):
+    None
+  else:
+    nth(arr, 1);
+
 # Checks if markdown is heading
 def is_h(md): eq(to_md_name(md), "h");
 
@@ -203,7 +210,7 @@ def debug(msg):
 # Sorts an array using a key function that extracts a comparable value for each element.
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): array(f(x), x);
-  | _sort_by_impl(decorate_arr) | map(last);
+  | _sort_by_impl(decorate_arr) | map(second);
 
 
 # Skips the first n elements of an array and returns the rest
