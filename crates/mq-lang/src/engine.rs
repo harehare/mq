@@ -31,12 +31,12 @@ pub struct Engine {
 
 impl Default for Engine {
     fn default() -> Self {
-        let token_arena = Rc::new(RefCell::new(Arena::new(100_000)));
+        let token_arena = Rc::new(RefCell::new(Arena::new(10000)));
 
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(None), Rc::clone(&token_arena)),
             options: Options::default(),
-            token_arena: Rc::clone(&token_arena),
+            token_arena,
         }
     }
 }

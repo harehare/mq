@@ -1125,6 +1125,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     a1.push(a2.clone());
                     Ok(RuntimeValue::Array(a1))
                 }
+                [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(a.clone()),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
