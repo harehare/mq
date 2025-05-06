@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use compact_str::CompactString;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::SmallVec;
 
 use crate::{Program, ast::node::Args};
@@ -16,7 +16,7 @@ pub struct Optimizer {
 impl Optimizer {
     pub fn new() -> Self {
         Self {
-            constant_table: FxHashMap::default(),
+            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
         }
     }
 

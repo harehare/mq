@@ -7,7 +7,7 @@ use compact_str::CompactString;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::{Regex, RegexBuilder};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::process::exit;
@@ -82,7 +82,7 @@ impl BuiltinFunction {
 
 pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>> =
     LazyLock::new(|| {
-        let mut map = FxHashMap::default();
+        let mut map = FxHashMap::with_capacity_and_hasher(100, FxBuildHasher);
 
         map.insert(
             CompactString::new("halt"),
@@ -1605,7 +1605,7 @@ pub struct BuiltinSelectorDoc {
 
 pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelectorDoc>> =
     LazyLock::new(|| {
-        let mut map = FxHashMap::default();
+        let mut map = FxHashMap::with_capacity_and_hasher(100, FxBuildHasher);
 
         map.insert(
             CompactString::new(".h"),
@@ -1985,7 +1985,7 @@ pub struct BuiltinFunctionDoc {
 
 pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFunctionDoc>> =
     LazyLock::new(|| {
-        let mut map = FxHashMap::default();
+        let mut map = FxHashMap::with_capacity_and_hasher(100, FxBuildHasher);
 
         map.insert(
             CompactString::new("halt"),

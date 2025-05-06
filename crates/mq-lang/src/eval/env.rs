@@ -5,7 +5,7 @@ use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
 use crate::arena::Arena;
 use crate::{AstIdent, AstNode, Token, ast};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display};
 use std::rc::{Rc, Weak};
@@ -53,7 +53,7 @@ impl Display for Env {
 impl Env {
     pub fn with_parent(parent: Weak<RefCell<Env>>) -> Self {
         Self {
-            context: FxHashMap::default(),
+            context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
             parent: Some(parent),
         }
     }
