@@ -46,6 +46,8 @@ Options:
           Set the link URL surround style for markdown links [default: none] [possible values: none, angle]
   -o, --output <FILE>
           Output to the specified file
+  -P <PARALLEL_THRESHOLD>
+          Number of files to process before switching to parallel processing [default: 10]
   -v, --verbose...
           Increase logging verbosity
   -q, --quiet...
