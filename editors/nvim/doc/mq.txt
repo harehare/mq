@@ -1,0 +1,167 @@
+*mq.txt*  Neovim plugin for mq markdown processing tool
+
+==============================================================================
+CONTENTS                                                            *mq-contents*
+
+    1. Introduction .................... |mq-introduction|
+    2. Requirements ................... |mq-requirements|
+    3. Installation ................... |mq-installation|
+    4. Usage .......................... |mq-usage|
+    5. Configuration .................. |mq-configuration|
+    6. Commands ....................... |mq-commands|
+    7. Mappings ....................... |mq-mappings|
+    8. Snippets ...................... |mq-snippets|
+    9. License ........................ |mq-license|
+
+==============================================================================
+INTRODUCTION                                                    *mq-introduction*
+
+mq.nvim is a Neovim plugin for mq, a jq-like command-line tool for Markdown
+processing. It provides LSP integration, syntax highlighting, and commands for
+working with mq queries in Neovim.
+
+==============================================================================
+REQUIREMENTS                                                  *mq-requirements*
+
+- Neovim 0.6.0+
+- mq-lsp binary installed and available in PATH
+- (Optional) nvim-lspconfig for enhanced LSP configuration
+- (Optional) One of the following snippet engines for snippet support:
+  - LuaSnip
+  - coc.nvim with coc-snippets
+  - vsnip
+
+==============================================================================
+INSTALLATION                                                  *mq-installation*
+
+Using packer.nvim: >
+    use {
+      'josephscade/mq',
+      rtp = 'editors/nvim',
+      requires = { 'neovim/nvim-lspconfig' }
+    }
+<
+
+Using lazy.nvim: >
+    {
+      'josephscade/mq',
+      dir = 'editors/nvim',
+      dependencies = { 'neovim/nvim-lspconfig' }
+    }
+<
+
+==============================================================================
+USAGE                                                              *mq-usage*
+
+After installation, the plugin automatically provides:
+
+- Filetype detection for .mq files
+- Syntax highlighting for mq query language
+- LSP integration for code completion, diagnostics, etc.
+- Snippets for common mq query patterns
+
+==============================================================================
+CONFIGURATION                                                *mq-configuration*
+
+Basic setup: >
+    require('mq').setup()
+<
+
+Advanced configuration: >
+    require('mq').setup({
+      -- Path to the mq-lsp executable (default: 'mq-lsp')
+      lsp_bin = 'mq-lsp',
+
+      -- Additional LSP server settings
+      lsp_settings = {
+        -- LSP server settings here
+      },
+
+      -- Enable or disable features
+      features = {
+        highlighting = true, -- Enable syntax highlighting
+        formatting = true,   -- Enable format-on-save
+        snippets = true      -- Enable snippets support
+      }
+    })
+<
+
+==============================================================================
+COMMANDS                                                       *mq-commands*
+
+*:MqFormat*  Format the current mq buffer using the LSP formatter.
+
+*:MqRun* [markdown-file]  Run the current mq query on the specified markdown
+file. If no file is specified, you'll be prompted for one.
+
+*:MqRunBuffer* [markdown-file]  Run the current buffer content as an mq query on
+the specified markdown file, without saving the buffer first.
+
+*:MqNew*  Create a new buffer with a basic mq query template.
+
+*:MqSnippets*  Display a list of all available mq snippets with their
+descriptions and usage information.
+
+*:MqCheckHealth*  Check the health of the mq plugin installation, including
+binary dependencies and integration with other plugins.
+
+==============================================================================
+MAPPINGS                                                       *mq-mappings*
+
+The following mappings are available in mq buffers when LSP is active:
+
+  gd          Go to definition
+  K           Show hover documentation
+  <C-k>       Show signature help
+  <Leader>rn  Rename symbol
+  <Leader>ca  Code action
+  gr          Show references
+
+==============================================================================
+SNIPPETS                                                       *mq-snippets*
+
+The plugin provides several snippets to quickly create common mq queries.
+To use them, you need one of the supported snippet engines:
+
+- LuaSnip
+- coc.nvim with coc-snippets
+- vsnip
+
+Available snippets:
+
+Basic query (prefix: mq-basic):
+    A simple query to select all level 1 headings.
+
+Filter query (prefix: mq-filter):
+    A query that filters elements based on content.
+
+Map query (prefix: mq-map):
+    A query that maps elements to a new structure.
+
+Filter and map (prefix: mq-filter-map):
+    A query that filters elements and maps them to a new structure.
+
+Function query (prefix: mq-function):
+    A query that uses functions to transform values before comparison.
+
+Complex query (prefix: mq-complex):
+    A complex query with multiple conditions.
+
+Extract code blocks (prefix: mq-code):
+    Extract code blocks with a specific language.
+
+Extract lists (prefix: mq-lists):
+    Extract all list items.
+
+Extract links (prefix: mq-links):
+    Extract all links.
+
+Extract checked list items (prefix: mq-checked):
+    Extract checked items from lists.
+
+Use the :MqSnippets command to see all available snippets with examples.
+
+==============================================================================
+LICENSE                                                         *mq-license*
+
+MIT License
