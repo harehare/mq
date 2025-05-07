@@ -988,6 +988,38 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     .markdown_node()
                     .map(|md| split_re(md.value().as_str(), s))
                     .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                [RuntimeValue::Array(array), v] => {
+                    if array.is_empty() {
+                        return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())]));
+                    }
+
+                    let mut positions = Vec::new();
+                    for (i, a) in array.iter().enumerate() {
+                        if a == v {
+                            positions.push(i);
+                        }
+                    }
+
+                    if positions.is_empty() {
+                        return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(
+                            array.clone(),
+                        )]));
+                    }
+
+                    let mut result = Vec::with_capacity(positions.len() + 1);
+                    let mut start = 0;
+
+                    for pos in positions {
+                        result.push(RuntimeValue::Array(array[start..pos].to_vec()));
+                        start = pos + 1;
+                    }
+
+                    if start < array.len() {
+                        result.push(RuntimeValue::Array(array[start..].to_vec()));
+                    }
+
+                    Ok(RuntimeValue::Array(result))
+                }
                 [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),

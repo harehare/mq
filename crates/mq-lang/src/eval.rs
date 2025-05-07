@@ -1628,6 +1628,75 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "split".to_string(),
                                                     args: vec![1.to_string().into(), ",".to_string().into()]})))]
+    #[case::split_array(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("value1".to_string()),
+            RuntimeValue::String("separator".to_string()),
+            RuntimeValue::String("value2".to_string()),
+        ])],
+        vec![
+            ast_call("split", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("separator".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![RuntimeValue::String("value1".to_string())]),
+            RuntimeValue::Array(vec![RuntimeValue::String("value2".to_string())])
+        ])]))]
+    #[case::split_array_multiple_separators(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("value1".to_string()),
+            RuntimeValue::String("separator".to_string()),
+            RuntimeValue::String("value2".to_string()),
+            RuntimeValue::String("separator".to_string()),
+            RuntimeValue::String("value3".to_string()),
+        ])],
+        vec![
+            ast_call("split", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("separator".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![RuntimeValue::String("value1".to_string())]),
+            RuntimeValue::Array(vec![RuntimeValue::String("value2".to_string())]),
+            RuntimeValue::Array(vec![RuntimeValue::String("value3".to_string())])
+        ])]))]
+    #[case::split_array_no_separator(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("value1".to_string()),
+            RuntimeValue::String("value2".to_string()),
+            RuntimeValue::String("value3".to_string()),
+        ])],
+        vec![
+            ast_call("split", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("separator".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::Array(vec![
+            RuntimeValue::String("value1".to_string()),
+            RuntimeValue::String("value2".to_string()),
+            RuntimeValue::String("value3".to_string())
+        ])
+        ])]))]
+    #[case::split_array_empty(vec![RuntimeValue::Array(Vec::new())],
+        vec![
+            ast_call("split", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("separator".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())])]))]
+    #[case::split_array_mixed_types(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::String("separator".to_string()),
+            RuntimeValue::Bool(true),
+        ])],
+        vec![
+            ast_call("split", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("separator".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]),
+            RuntimeValue::Array(vec![RuntimeValue::Bool(true)])
+        ])]))]
     #[case::join1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_call("join", smallvec![
