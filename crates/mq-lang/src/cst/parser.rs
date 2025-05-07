@@ -259,6 +259,11 @@ impl<'a> Parser<'a> {
                 } => self.parse_def(leading_trivia),
                 Token {
                     range: _,
+                    kind: TokenKind::Fn,
+                    ..
+                } => self.parse_fn(leading_trivia),
+                Token {
+                    range: _,
                     kind: TokenKind::If,
                     ..
                 } => self.parse_if(leading_trivia),
@@ -497,6 +502,11 @@ impl<'a> Parser<'a> {
                 range: _,
                 kind: TokenKind::Self_,
                 ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Fn,
+                ..
             } => self.parse_expr(leading_trivia, false),
             _ => Err(ParseError::UnexpectedToken(Arc::clone(&token))),
         }
@@ -521,6 +531,31 @@ impl<'a> Parser<'a> {
         children.append(&mut params);
 
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        let (mut program, _) = self.parse_program(false);
+
+        children.append(&mut program);
+
+        node.children = children;
+        Ok(Arc::new(node))
+    }
+
+    fn parse_fn(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Arc<Node>> = Vec::with_capacity(100);
+
+        let mut node = Node {
+            kind: NodeKind::Fn,
+            token: Some(Arc::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        let mut params = self.parse_params()?;
+        children.append(&mut params);
+        children.push(self.next_node(|kind| matches!(kind, TokenKind::Arrow), NodeKind::Token)?);
 
         let (mut program, _) = self.parse_program(false);
 
@@ -2415,6 +2450,231 @@ mod tests {
                     leading_trivia: Vec::new(),
                     trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(1))))],
                     children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::fn_with_arrow_and_program(
+        vec![
+            Arc::new(token(TokenKind::Fn)),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Arrow)),
+            Arc::new(token(TokenKind::Ident("x".into()))),
+            Arc::new(token(TokenKind::SemiColon)),
+            Arc::new(token(TokenKind::Pipe)),
+            Arc::new(token(TokenKind::Ident("y".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Fn,
+                    token: Some(Arc::new(token(TokenKind::Fn))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Arrow))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Arc::new(Node {
+                    kind: NodeKind::Token,
+                    token: Some(Arc::new(token(TokenKind::Pipe))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+                Arc::new(Node {
+                    kind: NodeKind::Ident,
+                    token: Some(Arc::new(token(TokenKind::Ident("y".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::fn_with_parameter_and_arrow(
+        vec![
+            Arc::new(token(TokenKind::Fn)),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("param".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Arrow)),
+            Arc::new(token(TokenKind::Ident("body".into()))),
+            Arc::new(token(TokenKind::SemiColon)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Fn,
+                    token: Some(Arc::new(token(TokenKind::Fn))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("param".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Arrow))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("body".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::fn_with_multiple_parameters(
+        vec![
+            Arc::new(token(TokenKind::Fn)),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("param1".into()))),
+            Arc::new(token(TokenKind::Comma)),
+            Arc::new(token(TokenKind::Ident("param2".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Arrow)),
+            Arc::new(token(TokenKind::StringLiteral("result".into()))),
+            Arc::new(token(TokenKind::SemiColon)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Fn,
+                    token: Some(Arc::new(token(TokenKind::Fn))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("param1".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Comma))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("param2".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::Arrow))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::StringLiteral("result".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
                 }),
             ],
             ErrorReporter::default()
