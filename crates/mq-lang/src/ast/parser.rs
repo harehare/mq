@@ -97,6 +97,7 @@ impl<'a> Parser<'a> {
             TokenKind::Selector(_) => self.parse_selector(token),
             TokenKind::Let => self.parse_let(token),
             TokenKind::Def => self.parse_def(token),
+            TokenKind::Fn => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
@@ -282,6 +283,29 @@ impl<'a> Parser<'a> {
                 args,
                 program,
             )),
+        }))
+    }
+
+    fn parse_fn(&mut self, fn_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let fn_token_id = self.token_arena.borrow_mut().alloc(fn_token);
+        let args = self.parse_args()?;
+
+        if !args.is_empty() && !args.iter().all(|a| matches!(&*a.expr, Expr::Ident(_))) {
+            return Err(ParseError::UnexpectedToken(
+                (*self.token_arena.borrow()[fn_token_id]).clone(),
+            ));
+        }
+
+        let token_id = args.last().map(|last| last.token_id).unwrap_or(fn_token_id);
+        self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::Arrow)
+        })?;
+
+        let program = self.parse_program(false)?;
+
+        Ok(Rc::new(Node {
+            token_id: fn_token_id,
+            expr: Rc::new(Expr::Fn(args, program)),
         }))
     }
 
@@ -641,6 +665,11 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::If,
                     module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Fn,
+                    module_id: _,
                 } => {
                     let expr = self.parse_expr(Rc::clone(token))?;
                     args.push(expr);
@@ -782,6 +811,11 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Nodes,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Arrow,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
@@ -2211,6 +2245,188 @@ mod tests {
             Rc::new(Node {
                 token_id: 3.into(),
                 expr: Rc::new(Expr::Selector(Selector::Text)),
+            })
+        ]))]
+    #[case::fn_simple(
+        vec![
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::StringLiteral("result".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Fn(
+                    SmallVec::new(),
+                    vec![
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("result".to_owned()))),
+                        })
+                    ],
+                )),
+            })
+        ]))]
+    #[case::fn_with_args(
+        vec![
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(CompactString::new("y"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::Ident(CompactString::new("contains"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(CompactString::new("y"))),
+            token(TokenKind::RParen),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Fn(
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                        }),
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 6.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 4.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 5.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ],
+                )),
+            })
+        ]))]
+    #[case::fn_with_multiple_statements(
+        vec![
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::StringLiteral("first".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::StringLiteral("second".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Fn(
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                        }),
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 3.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("first".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("second".to_owned()))),
+                        })
+                    ],
+                )),
+            })
+        ]))]
+    #[case::fn_with_invalid_args(
+        vec![
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("invalid".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::StringLiteral("result".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Fn))))]
+    #[case::fn_without_arrow(
+        vec![
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::StringLiteral("result".to_owned())),
+            token(TokenKind::SemiColon),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::StringLiteral("result".to_owned())))))]
+    #[case::fn_without_body(
+        vec![
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::SemiColon),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::SemiColon))))]
+    #[case::fn_nested_in_call(
+        vec![
+            token(TokenKind::Ident(CompactString::new("apply"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Fn),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Arrow),
+            token(TokenKind::StringLiteral("processed".to_owned())),
+            token(TokenKind::SemiColon),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("apply", Some(Rc::new(token(TokenKind::Ident(CompactString::new("apply")))))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Fn(
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                    }),
+                                ],
+                                vec![
+                                    Rc::new(Node {
+                                        token_id: 3.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::String("processed".to_owned()))),
+                                    })
+                                ],
+                            )),
+                        })
+                    ],
+                    false,
+                )),
             })
         ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {

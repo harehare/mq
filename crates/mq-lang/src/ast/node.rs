@@ -30,6 +30,7 @@ impl Node {
     pub fn range(&self, arena: Rc<Arena<Rc<Token>>>) -> Range {
         match &*self.expr {
             Expr::Def(_, _, program)
+            | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Until(_, program)
             | Expr::Foreach(_, _, program) => {
@@ -183,6 +184,7 @@ pub enum Literal {
 pub enum Expr {
     Call(Ident, Args, Optional),
     Def(Ident, Params, Program),
+    Fn(Params, Program),
     Let(Ident, Rc<Node>),
     Literal(Literal),
     Ident(Ident),
