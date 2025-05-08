@@ -298,7 +298,7 @@ impl<'a> Parser<'a> {
 
         let token_id = args.last().map(|last| last.token_id).unwrap_or(fn_token_id);
         self.next_token(token_id, |token_kind| {
-            matches!(token_kind, TokenKind::Arrow)
+            matches!(token_kind, TokenKind::Colon)
         })?;
 
         let program = self.parse_program(false)?;
@@ -811,11 +811,6 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Nodes,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Arrow,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
@@ -2252,7 +2247,7 @@ mod tests {
             token(TokenKind::Fn),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
-            token(TokenKind::Arrow),
+            token(TokenKind::Colon),
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
@@ -2278,7 +2273,7 @@ mod tests {
             token(TokenKind::Comma),
             token(TokenKind::Ident(CompactString::new("y"))),
             token(TokenKind::RParen),
-            token(TokenKind::Arrow),
+            token(TokenKind::Colon),
             token(TokenKind::Ident(CompactString::new("contains"))),
             token(TokenKind::LParen),
             token(TokenKind::Ident(CompactString::new("x"))),
@@ -2329,7 +2324,7 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::Ident(CompactString::new("x"))),
             token(TokenKind::RParen),
-            token(TokenKind::Arrow),
+            token(TokenKind::Colon),
             token(TokenKind::StringLiteral("first".to_owned())),
             token(TokenKind::Pipe),
             token(TokenKind::StringLiteral("second".to_owned())),
@@ -2364,12 +2359,12 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("invalid".to_owned())),
             token(TokenKind::RParen),
-            token(TokenKind::Arrow),
+            token(TokenKind::Colon),
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
         Err(ParseError::UnexpectedToken(token(TokenKind::Fn))))]
-    #[case::fn_without_arrow(
+    #[case::fn_without_colon(
         vec![
             token(TokenKind::Fn),
             token(TokenKind::LParen),
@@ -2383,7 +2378,7 @@ mod tests {
             token(TokenKind::Fn),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
-            token(TokenKind::Arrow),
+            token(TokenKind::Colon),
             token(TokenKind::SemiColon),
         ],
         Err(ParseError::UnexpectedToken(token(TokenKind::SemiColon))))]
@@ -2395,7 +2390,7 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::Ident(CompactString::new("x"))),
             token(TokenKind::RParen),
-            token(TokenKind::Arrow),
+            token(TokenKind::Colon),
             token(TokenKind::StringLiteral("processed".to_owned())),
             token(TokenKind::SemiColon),
             token(TokenKind::RParen),

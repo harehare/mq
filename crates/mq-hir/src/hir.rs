@@ -815,31 +815,7 @@ impl Hir {
                 parent,
             });
 
-            let (params, program) = {
-                let expr_index = node
-                    .children
-                    .iter()
-                    .position(|child| {
-                        matches!(child.token.as_ref().unwrap().kind, TokenKind::Arrow)
-                    })
-                    .unwrap_or_default();
-
-                (
-                    node.children
-                        .iter()
-                        .take(expr_index)
-                        .filter(|child| !child.is_token())
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                    node.children
-                        .iter()
-                        .skip(expr_index)
-                        .filter(|child| !child.is_token())
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                )
-            };
-
+            let (params, program) = node.split_cond_and_program();
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
                 kind: SymbolKind::Function(Vec::new()),
@@ -957,10 +933,10 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::selector(".h", ".h", SymbolKind::Selector)]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
-    #[case::fn_expr("fn() -> 42", "fn", SymbolKind::Keyword)]
-    #[case::fn_with_params("fn(x, y) -> add(x, y);", "x", SymbolKind::Variable)]
-    #[case::fn_with_body("fn() -> let x = 1 | x;", "x", SymbolKind::Variable)]
-    #[case::fn_anonymous("let f = fn() -> 42;", "fn", SymbolKind::Keyword)]
+    #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]
+    #[case::fn_with_params("fn(x, y): add(x, y);", "x", SymbolKind::Variable)]
+    #[case::fn_with_body("fn(): let x = 1 | x;", "x", SymbolKind::Variable)]
+    #[case::fn_anonymous("let f = fn(): 42;", "fn", SymbolKind::Keyword)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

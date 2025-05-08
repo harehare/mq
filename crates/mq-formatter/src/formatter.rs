@@ -83,12 +83,13 @@ impl Formatter {
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
-            | mq_lang::CstNodeKind::Until => {
-                self.format_expr(&node, indent_level_consider_new_line, indent_level)
-            }
-            mq_lang::CstNodeKind::Fn => {
-                self.format_fn(&node, indent_level_consider_new_line, indent_level)
-            }
+            | mq_lang::CstNodeKind::Until
+            | mq_lang::CstNodeKind::Fn => self.format_expr(
+                &node,
+                indent_level_consider_new_line,
+                indent_level,
+                !matches!(node.kind, mq_lang::CstNodeKind::Fn),
+            ),
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Include => {
@@ -128,6 +129,7 @@ impl Formatter {
         node: &Arc<mq_lang::CstNode>,
         indent_level: usize,
         block_indent_level: usize,
+        append_space_after_keyword: bool,
     ) {
         let is_prev_pipe = self.is_prev_pipe();
 
@@ -135,7 +137,10 @@ impl Formatter {
             self.append_indent(indent_level);
         }
         self.output.push_str(&node.to_string());
-        self.append_space();
+
+        if append_space_after_keyword {
+            self.append_space();
+        }
 
         let expr_index = node
             .children
@@ -144,61 +149,6 @@ impl Formatter {
                 c.token
                     .as_ref()
                     .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
-                    .unwrap_or(false)
-            })
-            .unwrap();
-
-        node.children.iter().take(expr_index).for_each(|child| {
-            self.format_node(
-                Arc::clone(child),
-                if child.has_new_line() {
-                    block_indent_level + 1
-                } else {
-                    block_indent_level
-                },
-            );
-        });
-
-        let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
-        let colon_node = expr_nodes.next().unwrap();
-
-        self.format_node(Arc::clone(colon_node), block_indent_level + 1);
-
-        if !expr_nodes.peek().unwrap().has_new_line() {
-            self.append_space();
-        }
-
-        let block_indent_level = if is_prev_pipe {
-            block_indent_level + 2
-        } else {
-            block_indent_level + 1
-        };
-
-        expr_nodes.for_each(|child| {
-            self.format_node(Arc::clone(child), block_indent_level);
-        });
-    }
-
-    fn format_fn(
-        &mut self,
-        node: &Arc<mq_lang::CstNode>,
-        indent_level: usize,
-        block_indent_level: usize,
-    ) {
-        let is_prev_pipe = self.is_prev_pipe();
-
-        if node.has_new_line() {
-            self.append_indent(indent_level);
-        }
-        self.output.push_str(&node.to_string());
-
-        let expr_index = node
-            .children
-            .iter()
-            .position(|c| {
-                c.token
-                    .as_ref()
-                    .map(|token| matches!(token.kind, mq_lang::TokenKind::Arrow))
                     .unwrap_or(false)
             })
             .unwrap();
@@ -468,7 +418,6 @@ impl Formatter {
                     }
                 }
                 mq_lang::TokenKind::Colon => self.output.push_str(&format!("{}", token)),
-                mq_lang::TokenKind::Arrow => self.output.push_str(&format!(" {}", token)),
                 mq_lang::TokenKind::Equal => self.output.push_str(&format!(" {} ", token)),
                 mq_lang::TokenKind::Pipe => {
                     if node.has_new_line() {
@@ -720,14 +669,14 @@ s"test${val1}"
     )]
     #[case::include("include  \"test.mq\"", "include \"test.mq\"")]
     #[case::nodes("nodes|nodes", "nodes | nodes")]
-    #[case::fn_("fn() -> program;", "fn() -> program;")]
+    #[case::fn_("fn(): program;", "fn(): program;")]
     #[case::fn_multiline(
-        "fn(arg1,arg2)->
+        "fn(arg1,arg2):
         program;",
-        "fn(arg1, arg2) ->
+        "fn(arg1, arg2):
   program;"
     )]
-    #[case::fn_args("map( fn()->program;)", "map(fn() -> program;)")]
+    #[case::fn_args("map( fn():program;)", "map(fn(): program;)")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

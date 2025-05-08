@@ -555,7 +555,7 @@ impl<'a> Parser<'a> {
 
         let mut params = self.parse_params()?;
         children.append(&mut params);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Arrow), NodeKind::Token)?);
+        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let (mut program, _) = self.parse_program(false);
 
@@ -2455,12 +2455,12 @@ mod tests {
             ErrorReporter::default()
         )
     )]
-    #[case::fn_with_arrow_and_program(
+    #[case::fn_with_program(
         vec![
             Arc::new(token(TokenKind::Fn)),
             Arc::new(token(TokenKind::LParen)),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Arrow)),
+            Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::SemiColon)),
             Arc::new(token(TokenKind::Pipe)),
@@ -2491,7 +2491,7 @@ mod tests {
                         }),
                         Arc::new(Node {
                             kind: NodeKind::Token,
-                            token: Some(Arc::new(token(TokenKind::Arrow))),
+                            token: Some(Arc::new(token(TokenKind::Colon))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
@@ -2530,13 +2530,13 @@ mod tests {
             ErrorReporter::default()
         )
     )]
-    #[case::fn_with_parameter_and_arrow(
+    #[case::fn_with_parameter_and_program(
         vec![
             Arc::new(token(TokenKind::Fn)),
             Arc::new(token(TokenKind::LParen)),
             Arc::new(token(TokenKind::Ident("param".into()))),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Arrow)),
+            Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("body".into()))),
             Arc::new(token(TokenKind::SemiColon)),
             Arc::new(token(TokenKind::Eof)),
@@ -2572,7 +2572,7 @@ mod tests {
                         }),
                         Arc::new(Node {
                             kind: NodeKind::Token,
-                            token: Some(Arc::new(token(TokenKind::Arrow))),
+                            token: Some(Arc::new(token(TokenKind::Colon))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
@@ -2605,7 +2605,7 @@ mod tests {
             Arc::new(token(TokenKind::Comma)),
             Arc::new(token(TokenKind::Ident("param2".into()))),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Arrow)),
+            Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::StringLiteral("result".into()))),
             Arc::new(token(TokenKind::SemiColon)),
             Arc::new(token(TokenKind::Eof)),
@@ -2655,7 +2655,7 @@ mod tests {
                         }),
                         Arc::new(Node {
                             kind: NodeKind::Token,
-                            token: Some(Arc::new(token(TokenKind::Arrow))),
+                            token: Some(Arc::new(token(TokenKind::Colon))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),

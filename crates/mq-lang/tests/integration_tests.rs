@@ -431,7 +431,7 @@ fn engine() -> Engine {
         vec![Value::Array(vec![])],
         Ok(vec![Value::Array(vec![])].into()))]
 #[case::anonymous_fn("
-        let f = fn(x) -> add(x, 1);
+        let f = fn(x): add(x, 1);
         | f(10)
         ",
           vec![Value::Number(0.into())],
@@ -439,13 +439,13 @@ fn engine() -> Engine {
 #[case::anonymous_fn_passed("
           def apply_func(f, x):
             f(x);
-          | apply_func(fn(x)-> mul(x, 2);, 5)
+          | apply_func(fn(x): mul(x, 2);, 5)
           ",
             vec![Value::Number(0.into())],
             Ok(vec![Value::Number(10.into())].into()))]
 #[case::anonymous_fn_return("
           def make_multiplier(factor):
-            fn(x)-> mul(x, factor);;
+            fn(x): mul(x, factor);;
           | let double = make_multiplier(2)
           | double(5)
           ",

@@ -182,7 +182,6 @@ define_token_parser!(include, "include", TokenKind::Include);
 define_token_parser!(foreach, "foreach", TokenKind::Foreach);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(fn_, "fn", TokenKind::Fn);
-define_token_parser!(arrow, "->", TokenKind::Arrow);
 define_token_parser!(
     empty_string,
     "\"\"",
@@ -199,7 +198,6 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
         nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach, fn_,
-        arrow,
     ))
     .parse(input)
 }
@@ -634,16 +632,16 @@ mod tests {
                           ]), module_id: 1.into()},
                    Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]
                 ))]
-    #[case::function_declaration("fn() -> program;",
+    #[case::function_declaration("fn(): program;",
             Options::default(),
             Ok(vec![
               Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::Fn, module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::LParen, module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::RParen, module_id: 1.into()},
-              Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 8} }, kind: TokenKind::Arrow, module_id: 1.into()},
-              Token{range: Range { start: Position {line: 1, column: 9}, end: Position {line: 1, column: 16} }, kind: TokenKind::Ident(CompactString::new("program")), module_id: 1.into()},
-              Token{range: Range { start: Position {line: 1, column: 16}, end: Position {line: 1, column: 17} }, kind: TokenKind::SemiColon, module_id: 1.into()},
-              Token{range: Range { start: Position {line: 1, column: 17}, end: Position {line: 1, column: 17} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+              Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 6} }, kind: TokenKind::Colon, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }, kind: TokenKind::Ident(CompactString::new("program")), module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 15} }, kind: TokenKind::SemiColon, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
