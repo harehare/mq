@@ -240,6 +240,9 @@ impl Hir {
             mq_lang::CstNodeKind::Def => {
                 self.add_def_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Fn => {
+                self.add_fn_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Call => {
                 self.add_call_expr(node, source_id, scope_id, parent);
             }
@@ -791,6 +794,91 @@ impl Hir {
         }
     }
 
+    fn add_fn_expr(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Fn,
+            ..
+        } = &**node
+        {
+            self.symbols.insert(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let (params, program) = {
+                let expr_index = node
+                    .children
+                    .iter()
+                    .position(|child| {
+                        matches!(child.token.as_ref().unwrap().kind, TokenKind::Arrow)
+                    })
+                    .unwrap_or_default();
+
+                (
+                    node.children
+                        .iter()
+                        .take(expr_index)
+                        .filter(|child| !child.is_token())
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    node.children
+                        .iter()
+                        .skip(expr_index)
+                        .filter(|child| !child.is_token())
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                )
+            };
+
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Function(Vec::new()),
+                source: SourceInfo::new(Some(source_id), None),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Function(symbol_id),
+                Some(scope_id),
+            ));
+
+            let mut param_names = Vec::with_capacity(params.len());
+
+            params.iter().skip(1).for_each(|child| {
+                param_names.push(child.name().unwrap_or("arg".into()));
+                self.add_symbol(Symbol {
+                    value: child.name(),
+                    kind: SymbolKind::Parameter,
+                    source: SourceInfo::new(Some(source_id), Some(child.range())),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent,
+                });
+            });
+
+            self.symbols[symbol_id].kind = SymbolKind::Function(param_names);
+
+            program.iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            });
+        } else {
+            unreachable!()
+        }
+    }
+
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
         let scope_id = self.scopes.insert(scope.clone());
 
@@ -869,6 +957,10 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::selector(".h", ".h", SymbolKind::Selector)]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
+    #[case::fn_expr("fn() -> 42", "fn", SymbolKind::Keyword)]
+    #[case::fn_with_params("fn(x, y) -> add(x, y);", "x", SymbolKind::Variable)]
+    #[case::fn_with_body("fn() -> let x = 1 | x;", "x", SymbolKind::Variable)]
+    #[case::fn_anonymous("let f = fn() -> 42;", "fn", SymbolKind::Keyword)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
