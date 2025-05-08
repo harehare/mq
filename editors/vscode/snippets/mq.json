@@ -26,5 +26,12 @@
             "def ${0}(${1:args}): ${2:body};"
         ],
         "description": "Define a custom function"
+    },
+    "fn": {
+        "prefix": "fn",
+        "body": [
+            "fn(${0:args}): ${1:body};"
+        ],
+        "description": "Define an anonymous function"
     }
 }
