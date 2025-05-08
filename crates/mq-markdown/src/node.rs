@@ -62,7 +62,7 @@ impl Url {
 
     pub fn to_string_with(&self, options: &RenderOptions) -> String {
         match options.link_url_style {
-            UrlSurroundStyle::None if self.0.is_empty() => "<>".to_string(),
+            UrlSurroundStyle::None if self.0.is_empty() => "".to_string(),
             UrlSurroundStyle::None => self.0.clone(),
             UrlSurroundStyle::Angle => format!("<{}>", self.0),
         }
@@ -2799,7 +2799,7 @@ mod tests {
     #[case::code(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: Some("meta".to_string()), position: None}), RenderOptions::default(), "```rust meta\ncode\n```")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: url")]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: url \"title\"")]
-    #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("".to_string()), title: None, label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: <>")]
+    #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("".to_string()), title: None, label: Some("label".to_string()), position: None}), RenderOptions::default(), "[label]: ")]
     #[case::delete(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "~~test~~")]
     #[case::emphasis(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "*test*")]
     #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec!["label".to_string().into()], position: None}), RenderOptions::default(), "[^id]: label")]
@@ -2814,7 +2814,7 @@ mod tests {
     #[case::code_inline(Node::CodeInline(CodeInline{value: "code".into(), position: None}), RenderOptions::default(), "`code`")]
     #[case::math_inline(Node::MathInline(MathInline{value: "x^2".into(), position: None}), RenderOptions::default(), "$x^2$")]
     #[case::link(Node::Link(Link{url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value](url \"title\")")]
-    #[case::link(Node::Link(Link{url: Url::new("".to_string()), title: None, values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value](<>)")]
+    #[case::link(Node::Link(Link{url: Url::new("".to_string()), title: None, values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value]()")]
     #[case::link(Node::Link(Link{url: Url::new("url".to_string()), title: None, values: vec!["value".to_string().into()], position: None}), RenderOptions::default(), "[value](url)")]
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["id".to_string().into()], label: Some("id".to_string()), position: None}), RenderOptions::default(), "[id]")]
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec!["open".to_string().into()], label: Some("id".to_string()), position: None}), RenderOptions::default(), "[open][id]")]
@@ -3532,7 +3532,7 @@ mod tests {
     #[rstest]
     #[case(Url::new("https://example.com".to_string()), RenderOptions{link_url_style: UrlSurroundStyle::None, ..Default::default()}, "https://example.com")]
     #[case(Url::new("https://example.com".to_string()), RenderOptions{link_url_style: UrlSurroundStyle::Angle, ..Default::default()}, "<https://example.com>")]
-    #[case(Url::new("".to_string()), RenderOptions::default(), "<>")]
+    #[case(Url::new("".to_string()), RenderOptions::default(), "")]
     fn test_url_to_string_with(
         #[case] url: Url,
         #[case] options: RenderOptions,
