@@ -587,6 +587,22 @@ export const Playground = () => {
               endColumn: wordRange.endColumn,
             },
           },
+          {
+            label: "fn",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "fn(${0:args}): ${1:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Define an anonymous function",
+            documentation:
+              "Creates an anonymous function that can be used inline without naming it",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
         ];
 
         return { suggestions: [...suggestions, ...snippets] };
