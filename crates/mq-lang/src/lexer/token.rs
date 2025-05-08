@@ -52,6 +52,7 @@ pub enum TokenKind {
     None,
     Include,
     Foreach,
+    Fn,
     Comment(String),
     Env(CompactString),
     Selector(CompactString),
@@ -96,6 +97,7 @@ impl Display for TokenKind {
             TokenKind::None => write!(f, "None"),
             TokenKind::Include => write!(f, "include"),
             TokenKind::Question => write!(f, "?"),
+            TokenKind::Fn => write!(f, "fn"),
             TokenKind::NewLine => writeln!(f),
             TokenKind::InterpolatedString(segments) => {
                 write!(f, "{}", segments.iter().join(""))

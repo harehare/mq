@@ -341,6 +341,11 @@ impl Evaluator {
                 env.borrow_mut().define(ident, function.clone());
                 Ok(function)
             }
+            ast::Expr::Fn(params, program) => {
+                let function =
+                    RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
+                Ok(function)
+            }
             ast::Expr::Let(ident, node) => {
                 let let_ = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
                 env.borrow_mut().define(ident, let_);

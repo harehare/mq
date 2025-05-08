@@ -78,6 +78,7 @@ pub struct Node {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     Call,
+    Fn,
     Def,
     Let,
     Literal,

@@ -17,6 +17,7 @@
     - [? Operator](reference/q_operator.md)
     - [Environment variables](reference/env.md)
     - [Def Expression](reference/def.md)
+    - [Fn Expression](reference/fn.md)
     - [Let Expression](reference/let.md)
     - [If Expression](reference/if.md)
     - [While Expression](reference/while.md)

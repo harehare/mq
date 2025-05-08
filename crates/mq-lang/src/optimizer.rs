@@ -216,6 +216,18 @@ impl Optimizer {
                     expr: Rc::new(ast::Expr::Def(ident.clone(), params, program)),
                 })
             }
+            ast::Expr::Fn(params, program) => {
+                let params = params.clone();
+                let program = program
+                    .iter()
+                    .map(|node| self.optimize_node(Rc::clone(node)))
+                    .collect::<Vec<_>>();
+
+                Rc::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Rc::new(ast::Expr::Fn(params, program)),
+                })
+            }
             ast::Expr::While(cond, program) => {
                 let program = program
                     .iter()
