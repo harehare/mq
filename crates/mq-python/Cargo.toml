@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "mq_python"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+name = "mq_python"
+
+[dependencies]
+mq-lang = {workspace = true}
+mq-markdown = {workspace = true}
+pyo3 = {version = "0.24.2", features = ["extension-module", "abi3-py39"]}

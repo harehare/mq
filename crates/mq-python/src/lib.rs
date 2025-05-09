@@ -1,0 +1,128 @@
+use std::str::FromStr;
+
+use pyo3::prelude::*;
+
+#[pyclass(eq, eq_int, module = "mq_python")]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+enum InputFormat {
+    #[pyo3(name = "MARKDOWN")]
+    #[default]
+    Markdown,
+    #[pyo3(name = "HTML")]
+    Html,
+    #[pyo3(name = "TEXT")]
+    Text,
+}
+
+#[pyclass(eq, eq_int, module = "mq_python")]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ListStyle {
+    #[pyo3(name = "DASH")]
+    #[default]
+    Dash,
+    #[pyo3(name = "PLUS")]
+    Plus,
+    #[pyo3(name = "STAR")]
+    Star,
+}
+
+#[pyclass(eq, eq_int, module = "mq_python")]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum TitleSurroundStyle {
+    #[pyo3(name = "DOUBLE")]
+    #[default]
+    Double,
+    #[pyo3(name = "SINGLE")]
+    Single,
+    #[pyo3(name = "ParEN")]
+    PAREN,
+}
+
+#[pyclass(eq, eq_int, module = "mq_python")]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum UrlSurroundStyle {
+    #[pyo3(name = "DOUBLE")]
+    Angle,
+    #[pyo3(name = "DOUBLE")]
+    #[default]
+    None,
+}
+
+#[pyclass(eq, module = "mq_python")]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+struct Options {
+    format: InputFormat,
+    is_mdx: bool,
+    is_update: bool,
+    input_format: Option<InputFormat>,
+    list_style: Option<ListStyle>,
+    link_title_style: Option<TitleSurroundStyle>,
+    link_url_style: Option<UrlSurroundStyle>,
+}
+
+#[pyfunction]
+#[pyo3(signature = (content, query, options=None))]
+fn query(content: &str, query: &str, options: Option<Options>) -> PyResult<Vec<String>> {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    let options = options.unwrap_or_default();
+
+    let input = match options.input_format {
+        Some(InputFormat::Text) => content
+            .lines()
+            .map(mq_lang::Value::from)
+            .collect::<Vec<_>>(),
+        _ => {
+            let md = match options.input_format {
+                Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
+                Some(InputFormat::Markdown) if options.is_mdx => {
+                    mq_markdown::Markdown::from_mdx_str(content)
+                }
+                _ => mq_markdown::Markdown::from_str(content),
+            }
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Error evaluating query: {}",
+                    e
+                ))
+            })?;
+
+            md.nodes
+                .into_iter()
+                .map(mq_lang::Value::from)
+                .collect::<Vec<_>>()
+        }
+    };
+
+    engine
+        .eval(query, input.into_iter())
+        .map(|values| {
+            values
+                .into_iter()
+                .filter_map(|value| {
+                    if value.is_none() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Error evaluating query: {}",
+                e
+            ))
+        })
+}
+
+#[pymodule]
+fn mq_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<InputFormat>()?;
+    m.add_class::<ListStyle>()?;
+    m.add_class::<UrlSurroundStyle>()?;
+    m.add_class::<TitleSurroundStyle>()?;
+    m.add_class::<Options>()?;
+    m.add_function(wrap_pyfunction!(query, m)?)?;
+    Ok(())
+}
