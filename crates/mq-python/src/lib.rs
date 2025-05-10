@@ -114,7 +114,11 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<Stri
                     } else {
                         let value = value.to_string();
 
-                        if value.is_empty() { None } else { Some(value) }
+                        if value.is_empty() {
+                            None
+                        } else {
+                            Some(value)
+                        }
                     }
                 })
                 .collect::<Vec<_>>()
