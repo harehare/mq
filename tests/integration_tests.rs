@@ -68,7 +68,7 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     Some("# test\n")
 )]
 #[case::mdx_input(
-    vec!["--unbuffered", "--mdx", "select(is_mdx())"],
+    vec!["--unbuffered", "-I", "mdx", "select(is_mdx())"],
     r##"import {Chart} from './snowfall.js'
 export const year = 2023
 

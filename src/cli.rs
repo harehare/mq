@@ -55,6 +55,7 @@ pub struct Cli {
 enum InputFormat {
     #[default]
     Markdown,
+    Mdx,
     Html,
     Text,
     Null,
@@ -117,10 +118,6 @@ struct InputArgs {
     /// Sets file contents that can be referenced at runtime
     #[arg(long="rawfile", value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
-
-    /// Enable MDX parsing
-    #[arg(long, default_value_t = false)]
-    mdx: bool,
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -355,19 +352,16 @@ impl Cli {
         }
 
         let input = match self.input.input_format {
-            InputFormat::Markdown => {
-                let markdown: mq_markdown::Markdown = if self.input.mdx {
-                    mq_markdown::Markdown::from_mdx_str(content)?
-                } else {
-                    mq_markdown::Markdown::from_str(content)?
-                };
-
-                markdown
-                    .nodes
-                    .into_iter()
-                    .map(mq_lang::Value::from)
-                    .collect::<Vec<_>>()
-            }
+            InputFormat::Markdown => mq_markdown::Markdown::from_str(content)?
+                .nodes
+                .into_iter()
+                .map(mq_lang::Value::from)
+                .collect::<Vec<_>>(),
+            InputFormat::Mdx => mq_markdown::Markdown::from_mdx_str(content)?
+                .nodes
+                .into_iter()
+                .map(mq_lang::Value::from)
+                .collect::<Vec<_>>(),
             InputFormat::Html => mq_markdown::Markdown::from_html(content)?
                 .nodes
                 .into_iter()
