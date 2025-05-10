@@ -1,4 +1,4 @@
-# mq-python
+# mq
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 ![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
@@ -9,18 +9,18 @@ Python bindings for the mq Markdown processor.
 
 ## Overview
 
-`mq-python` provides Python bindings to the [`mq`](https://github.com/harehare/mq), allowing Python developers to use mq's Markdown processing capabilities directly from Python code.
+`mq` provides Python bindings to the [`mq`](https://github.com/harehare/mq), allowing Python developers to use mq's Markdown processing capabilities directly from Python code.
 
 ## Installation
 
 ```bash
-pip install mq-python
+pip install mq
 ```
 
 ## Usage
 
 ````python
-from mq_python import mq
+import mq
 
 # Process a markdown string with an mq query
 markdown = '# Hello\n\nThis is a paragraph\n\n## Section\n\nMore text.\n\n```js\nconsole.log("code")\n```'
@@ -46,7 +46,7 @@ You can combine `mq` with [markitdown](https://github.com/microsoft/markitdown) 
 
 ```python
 from markitdown import MarkItDown
-from mq_python import mq
+import mq
 
 markitdown = MarkItDown()
 result = markitdown.convert("https://github.com/harehare/mq")

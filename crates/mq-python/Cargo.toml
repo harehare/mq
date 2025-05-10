@@ -5,7 +5,7 @@ version = "0.1.0"
 
 [lib]
 crate-type = ["cdylib"]
-name = "mq_python"
+name = "mq"
 
 [dependencies]
 mq-lang = {workspace = true}

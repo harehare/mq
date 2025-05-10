@@ -1,5 +1,5 @@
 import pytest
-from mq_python import mq
+import mq
 
 
 @pytest.mark.parametrize(

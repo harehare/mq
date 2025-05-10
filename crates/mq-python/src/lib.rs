@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use pyo3::prelude::*;
 
-#[pyclass(eq, eq_int, module = "mq")]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 enum InputFormat {
     #[pyo3(name = "MARKDOWN")]
@@ -16,7 +16,7 @@ enum InputFormat {
     Text,
 }
 
-#[pyclass(eq, eq_int, module = "mq")]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ListStyle {
     #[pyo3(name = "DASH")]
@@ -28,7 +28,7 @@ pub enum ListStyle {
     Star,
 }
 
-#[pyclass(eq, eq_int, module = "mq")]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum TitleSurroundStyle {
     #[pyo3(name = "DOUBLE")]
@@ -40,7 +40,7 @@ pub enum TitleSurroundStyle {
     PAREN,
 }
 
-#[pyclass(eq, eq_int, module = "mq")]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum UrlSurroundStyle {
     #[pyo3(name = "DOUBLE")]
@@ -50,7 +50,7 @@ pub enum UrlSurroundStyle {
     None,
 }
 
-#[pyclass(eq, module = "mq")]
+#[pyclass(eq)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct Options {
     #[pyo3(get, set)]
@@ -114,11 +114,7 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<Stri
                     } else {
                         let value = value.to_string();
 
-                        if value.is_empty() {
-                            None
-                        } else {
-                            Some(value)
-                        }
+                        if value.is_empty() { None } else { Some(value) }
                     }
                 })
                 .collect::<Vec<_>>()
