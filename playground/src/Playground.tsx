@@ -1,13 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
-import init, {
-  runScript,
-  formatScript,
-  definedValues,
-  diagnostics,
-  RunOptions,
-} from "./mq-wasm/mq_wasm";
+import init, * as mq from "./mq-wasm/mq_wasm";
 import { FaGithub } from "react-icons/fa6";
 import { languages } from "monaco-editor";
 import LZString from "lz-string";
@@ -15,7 +9,7 @@ import LZString from "lz-string";
 type SharedData = {
   code: string;
   markdown: string;
-  options: RunOptions;
+  options: mq.Options;
 };
 
 const CODE_KEY = "mq-playground.code";
@@ -26,9 +20,8 @@ const EXAMPLES: {
   name: string;
   code: string;
   markdown: string;
-  isMdx: boolean;
   isUpdate: boolean;
-  format: RunOptions["inputFormat"];
+  format: mq.Options["inputFormat"];
 }[] = [
   {
     name: "Hello World",
@@ -43,7 +36,6 @@ select(or(.[], .code, .h)) | upcase() | add(" Hello World")?`,
 code
 \`\`\`
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -55,7 +47,6 @@ code
 - item1
 - item2
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -94,7 +85,6 @@ else:
 
 - item 1
 - item 2`,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -114,7 +104,6 @@ print("Hello, World!")
 console.log("Hello, World!");
 \`\`\`
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -134,7 +123,6 @@ print("Hello, World!")
 console.log("Hello, World!");
 \`\`\`
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -151,9 +139,8 @@ In {year}, the snowfall was above average.
 
 <Chart color="#fcb32c" year={year} />
 `,
-    isMdx: true,
     isUpdate: false,
-    format: "markdown",
+    format: "mdx",
   },
   {
     name: "Custom function",
@@ -166,7 +153,6 @@ In {year}, the snowfall was above average.
   | join("");
 | snake_to_camel()`,
     markdown: `# sample_codes`,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -188,7 +174,6 @@ In {year}, the snowfall was above average.
   - [Chapter3](Chapter3.md)
 - [Chapter4](Chapter4.md)
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -213,7 +198,6 @@ In {year}, the snowfall was above average.
 | USB Cable | Accessories | $12 | 89 |
 | Coffee Maker | Appliances | $85 | 24 |
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -235,7 +219,6 @@ In {year}, the snowfall was above average.
   - Mouse: $25
   - USB Cable: $12
 `,
-    isMdx: false,
     isUpdate: false,
     format: "markdown",
   },
@@ -250,7 +233,6 @@ Chair, Furniture, $150, 73
 Desk,  Furniture, $200, 14
 Keyboard, Accessories, $80, 35
 `,
-    isMdx: false,
     isUpdate: false,
     format: "text",
   },
@@ -263,19 +245,18 @@ export const Playground = () => {
   const [markdown, setMarkdown] = useState<string | undefined>(
     localStorage.getItem(MARKDOWN_KEY) ?? EXAMPLES[0].markdown
   );
-  const [isMdx, setIsMdx] = useState(false);
   const [isUpdate, setIsUpdate] = useState(
     localStorage.getItem(IS_UPDATE_KEY) === "true"
   );
   const [isEmbed, setIsEmbed] = useState(false);
   const [result, setResult] = useState("");
   const [wasmLoaded, setWasmLoaded] = useState(false);
-  const [listStyle, setListStyle] = useState<RunOptions["listStyle"]>(null);
+  const [listStyle, setListStyle] = useState<mq.Options["listStyle"]>(null);
   const [linkUrlStyle, setLinkUrlStyle] =
-    useState<RunOptions["linkUrlStyle"]>(null);
+    useState<mq.Options["linkUrlStyle"]>(null);
   const [linkTitleStyle, setLinkTitleStyle] =
-    useState<RunOptions["linkTitleStyle"]>(null);
-  const [inputFormat, setInputFormat] = useState<RunOptions["inputFormat"]>(
+    useState<mq.Options["linkTitleStyle"]>(null);
+  const [inputFormat, setInputFormat] = useState<mq.Options["inputFormat"]>(
     (() => {
       const format = localStorage.getItem(INPUT_FORMAT_KEY);
       return format === "markdown"
@@ -284,6 +265,8 @@ export const Playground = () => {
         ? "text"
         : format === "html"
         ? "html"
+        : format === "mdx"
+        ? "mdx"
         : null;
     })()
   );
@@ -308,7 +291,6 @@ export const Playground = () => {
                 ? parsedData.markdown
                 : "",
             options: {
-              isMdx: !!options.isMdx,
               isUpdate: !!options.isUpdate,
               inputFormat: options.inputFormat || null,
               listStyle: options.listStyle,
@@ -318,7 +300,6 @@ export const Playground = () => {
           };
           setCode(data.code);
           setMarkdown(data.markdown);
-          setIsMdx(data.options.isMdx === true);
           setIsUpdate(data.options.isUpdate === true);
           setInputFormat(data.options.inputFormat);
           setListStyle(data.options.listStyle);
@@ -348,8 +329,7 @@ export const Playground = () => {
 
     try {
       setResult(
-        runScript(code, markdown, {
-          isMdx,
+        mq.run(code, markdown, {
           isUpdate,
           inputFormat,
           listStyle,
@@ -364,7 +344,6 @@ export const Playground = () => {
     code,
     markdown,
     inputFormat,
-    isMdx,
     isUpdate,
     listStyle,
     linkUrlStyle,
@@ -376,14 +355,13 @@ export const Playground = () => {
       return;
     }
 
-    setCode(await formatScript(code));
+    setCode(await mq.format(code));
   }, [code]);
 
   const handleChangeExample = useCallback((index: number) => {
     const selected = EXAMPLES[index];
     setCode(selected.code);
     setMarkdown(selected.markdown);
-    setIsMdx(selected.isMdx);
     setIsUpdate(selected.isUpdate);
     setInputFormat(selected.format);
   }, []);
@@ -393,7 +371,6 @@ export const Playground = () => {
       code: code || "",
       markdown: markdown || "",
       options: {
-        isMdx: isMdx || false,
         isUpdate: isUpdate || false,
         inputFormat: inputFormat || null,
         listStyle: listStyle || null,
@@ -419,7 +396,6 @@ export const Playground = () => {
     code,
     markdown,
     inputFormat,
-    isMdx,
     isUpdate,
     listStyle,
     linkUrlStyle,
@@ -429,7 +405,7 @@ export const Playground = () => {
   const handleChangeListStyle = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
-      setListStyle(value as RunOptions["listStyle"]);
+      setListStyle(value as mq.Options["listStyle"]);
     },
     []
   );
@@ -437,7 +413,7 @@ export const Playground = () => {
   const handleChangeLinkUrlStyle = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
-      setLinkUrlStyle(value as RunOptions["linkUrlStyle"]);
+      setLinkUrlStyle(value as mq.Options["linkUrlStyle"]);
     },
     []
   );
@@ -468,7 +444,7 @@ export const Playground = () => {
             return;
           }
 
-          const errors = diagnostics(model.getValue());
+          const errors = mq.diagnostics(model.getValue());
           monaco.editor.setModelMarkers(
             model,
             "mq",
@@ -488,7 +464,7 @@ export const Playground = () => {
     monaco.languages.registerCompletionItemProvider("mq", {
       triggerCharacters: [" ", "|"],
       provideCompletionItems: (model, position) => {
-        const values = definedValues("");
+        const values = mq.definedValues("");
         const wordRange = model.getWordUntilPosition(position);
         const suggestions: languages.CompletionItem[] = values.map((value) => {
           return {
@@ -795,10 +771,11 @@ export const Playground = () => {
                   className="dropdown"
                   value={inputFormat || "markdown"}
                   onChange={(e) =>
-                    setInputFormat(e.target.value as RunOptions["inputFormat"])
+                    setInputFormat(e.target.value as mq.Options["inputFormat"])
                   }
                 >
                   <option value="markdown">Markdown</option>
+                  <option value="mdx">MDX</option>
                   <option value="html">HTML</option>
                   <option value="text">Text</option>
                 </select>
@@ -873,7 +850,7 @@ export const Playground = () => {
                     const linkTitleStyle =
                       value === "none"
                         ? null
-                        : (value as RunOptions["linkTitleStyle"]);
+                        : (value as mq.Options["linkTitleStyle"]);
                     setLinkTitleStyle(linkTitleStyle);
                   }}
                 >
@@ -883,20 +860,6 @@ export const Playground = () => {
                   <option value="paren">Paren</option>
                 </select>
               </label>
-              <div>
-                <label className="label">
-                  <input
-                    type="checkbox"
-                    checked={isMdx}
-                    onChange={(e) => setIsMdx(e.target.checked)}
-                    style={{
-                      marginRight: "5px",
-                      cursor: "pointer",
-                    }}
-                  />
-                  <div>Enable MDX</div>
-                </label>
-              </div>
               <div>
                 <label className="label">
                   <input
