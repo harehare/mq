@@ -76,10 +76,12 @@ export const year = 2023
 
 In {year}, the snowfall was above average.
 
-<Chart color="#fcb32c" year={year} />"##,
+<Chart color="#fcb32c" year={year} />
+<Component />"##,
     Some(r##"{Chart}
 {year}
 <Chart color="#fcb32c" year={year} />
+<Component />
 "##)
 )]
 #[case::nested_item(

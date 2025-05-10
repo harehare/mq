@@ -1428,6 +1428,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-python"
+version = "0.1.0"
+dependencies = [
+ "mq-lang",
+ "mq-markdown",
+ "pyo3",
+]
+
+[[package]]
 name = "mq-repl"
 version = "0.1.4"
 dependencies = [
@@ -1467,15 +1476,6 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-test",
-]
-
-[[package]]
-name = "mq_python"
-version = "0.1.0"
-dependencies = [
- "mq-lang",
- "mq-markdown",
- "pyo3",
 ]
 
 [[package]]

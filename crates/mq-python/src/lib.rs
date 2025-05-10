@@ -2,21 +2,21 @@ use std::str::FromStr;
 
 use pyo3::prelude::*;
 
-#[pyclass(eq, eq_int, module = "mq_python")]
+#[pyclass(eq, eq_int, module = "mq")]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 enum InputFormat {
     #[pyo3(name = "MARKDOWN")]
     #[default]
     Markdown,
     #[pyo3(name = "HTML")]
-    Mdx,
-    #[pyo3(name = "MDX")]
     Html,
+    #[pyo3(name = "MDX")]
+    Mdx,
     #[pyo3(name = "TEXT")]
     Text,
 }
 
-#[pyclass(eq, eq_int, module = "mq_python")]
+#[pyclass(eq, eq_int, module = "mq")]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ListStyle {
     #[pyo3(name = "DASH")]
@@ -28,7 +28,7 @@ pub enum ListStyle {
     Star,
 }
 
-#[pyclass(eq, eq_int, module = "mq_python")]
+#[pyclass(eq, eq_int, module = "mq")]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum TitleSurroundStyle {
     #[pyo3(name = "DOUBLE")]
@@ -40,7 +40,7 @@ pub enum TitleSurroundStyle {
     PAREN,
 }
 
-#[pyclass(eq, eq_int, module = "mq_python")]
+#[pyclass(eq, eq_int, module = "mq")]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum UrlSurroundStyle {
     #[pyo3(name = "DOUBLE")]
@@ -50,16 +50,25 @@ pub enum UrlSurroundStyle {
     None,
 }
 
-#[pyclass(eq, module = "mq_python")]
+#[pyclass(eq, module = "mq")]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct Options {
-    format: InputFormat,
-    is_mdx: bool,
-    is_update: bool,
+    #[pyo3(get, set)]
     input_format: Option<InputFormat>,
+    #[pyo3(get, set)]
     list_style: Option<ListStyle>,
+    #[pyo3(get, set)]
     link_title_style: Option<TitleSurroundStyle>,
+    #[pyo3(get, set)]
     link_url_style: Option<UrlSurroundStyle>,
+}
+
+#[pymethods]
+impl Options {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 #[pyfunction]
@@ -68,7 +77,6 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<Stri
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
     let options = options.unwrap_or_default();
-
     let input = match options.input_format {
         Some(InputFormat::Text) => content
             .lines()
@@ -77,9 +85,8 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<Stri
         _ => {
             let md = match options.input_format {
                 Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
-                Some(InputFormat::Markdown) if options.is_mdx => {
-                    mq_markdown::Markdown::from_mdx_str(content)
-                }
+                Some(InputFormat::Markdown) => mq_markdown::Markdown::from_str(content),
+                Some(InputFormat::Mdx) => mq_markdown::Markdown::from_mdx_str(content),
                 _ => mq_markdown::Markdown::from_str(content),
             }
             .map_err(|e| {
@@ -125,7 +132,7 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<Stri
 }
 
 #[pymodule]
-fn mq_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn mq(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<InputFormat>()?;
     m.add_class::<ListStyle>()?;
     m.add_class::<UrlSurroundStyle>()?;

@@ -2,18 +2,24 @@
 authors = [
   {name = "harehare", email = "harehare1110@gmail.com"},
 ]
+classifiers = [
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
 dependencies = []
 description = "Python bindings for mq, a jq-like command-line tool for Markdown processing"
+license = {text = "MIT"}
 name = "mq-python"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 version = "0.1.0"
 
 [project.scripts]
 mq-python = "mq_python:main"
 
 [tool.maturin]
-module-name = "mq_python.mq_python"
+module-name = "mq_python.mq"
 python-packages = ["mq_python"]
 python-source = "src"
 
@@ -23,5 +29,5 @@ requires = ["maturin>=1.0,<2.0"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.5",
+  "pytest>=8.3.5",
 ]

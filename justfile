@@ -52,7 +52,11 @@ build-wasm:
 # Build mq-python package for Python
 [working-directory: 'crates/mq-python']
 build-python:
-    maturin build
+    maturin build --release --target aarch64-unknown-linux-gnu --zig
+    maturin build --release --target x86_64-unknown-linux-gnu --zig
+    maturin build --release --target aarch64-apple-darwin --zig
+    maturin build --release --target x86_64-apple-darwin --zig
+    maturin build --release --target x86_64-pc-windows-gnu --zig --features pyo3/generate-import-lib
 
 # Run formatting, linting and all tests
 test: lint

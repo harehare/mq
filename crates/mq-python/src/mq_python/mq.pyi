@@ -31,35 +31,23 @@ class UrlSurroundStyle:
 class Options:
     """Configuration options for mq processing."""
 
-    def __init__(
-        self,
-        format: InputFormat = ...,  # Input document format
-        is_update: bool = ...,  # Whether to update document in-place
-        input_format: InputFormat = None,  # Alternative input format specification
-        list_style: ListStyle = None,  # Style to use for lists in output
-        link_title_style: TitleSurroundStyle = None,  # Style for surrounding link titles
-        link_url_style: UrlSurroundStyle = None,  # Style for surrounding URLs
-    ) -> None: ...
+    def __init__(self) -> None: ...
     @property
-    def format(self) -> InputFormat: ...
+    def input_format(self) -> InputFormat: ...
     @property
-    def is_update(self) -> bool: ...
+    def list_style(self) -> ListStyle: ...
     @property
-    def input_format(self) -> InputFormat | None: ...
+    def link_title_style(self) -> TitleSurroundStyle: ...
     @property
-    def list_style(self) -> ListStyle | None: ...
-    @property
-    def link_title_style(self) -> TitleSurroundStyle | None: ...
-    @property
-    def link_url_style(self) -> UrlSurroundStyle | None: ...
+    def link_url_style(self) -> UrlSurroundStyle: ...
 
 def run(code: str, content: str, options: Optional[Options]) -> List[str]:
     """
     Run an mq query against markdown content with the specified options.
 
     Args:
+        code: The mq query to run against the content
         content: The markdown content to process
-        query: The mq query to run against the content
         options: Configuration options for processing
 
     Returns:

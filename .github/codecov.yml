@@ -1,4 +1,5 @@
 ignore:
   - "crates/mq-wasm"
+  - "crates/mq-python"
   - "crates/mq-lsp/src/capabilities.rs"
   - "crates/mq-repl/src/repl.rs"
