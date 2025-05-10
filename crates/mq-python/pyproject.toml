@@ -9,6 +9,7 @@ classifiers = [
 ]
 dependencies = []
 description = "Python bindings for mq, a jq-like command-line tool for Markdown processing"
+keywords = ["markdown", "jq", "command-line", "tool"]
 license = {text = "MIT"}
 name = "mq-python"
 readme = "README.md"

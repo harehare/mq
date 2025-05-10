@@ -1,4 +1,13 @@
+<div align="center">
+    <img src="https://mqlang.org/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
+</div>
+
 # mq-python
+
+[![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
+![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
+[![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
+[![CodSpeed Badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/harehare/mq)
 
 Python bindings for the mq Markdown processor.
 
