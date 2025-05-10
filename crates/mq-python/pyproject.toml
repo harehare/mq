@@ -14,10 +14,7 @@ license = {text = "MIT"}
 name = "mq-python"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.1.0"
-
-[project.scripts]
-mq-python = "mq_python:main"
+version = "0.1.3"
 
 [tool.maturin]
 module-name = "mq_python.mq"

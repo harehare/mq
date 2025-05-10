@@ -1,7 +1,3 @@
-<div align="center">
-    <img src="https://mqlang.org/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
-</div>
-
 # mq-python
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
