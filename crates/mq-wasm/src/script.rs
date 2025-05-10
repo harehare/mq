@@ -24,10 +24,9 @@ export interface Diagnostic {
   message: string,
 }
 
-export interface RunOptions {
-    isMdx: boolean,
+export interface Options {
     isUpdate: boolean,
-    inputFormat: 'html' | 'markdown' | 'text' | null,
+    inputFormat: 'html' | 'markdown' | 'text' | 'mdx' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -35,7 +34,7 @@ export interface RunOptions {
 
 export function definedValues(code: string): ReadonlyArray<DefinedValue>;
 export function diagnostics(code: string): ReadonlyArray<Diagnostic>;
-export function runScript(code: string, content: string, options: RunOptions): string;
+export function run(code: string, content: string, options: Options): string;
 "#;
 
 #[derive(Serialize, Deserialize)]
@@ -67,8 +66,7 @@ pub struct Diagnostic {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[wasm_bindgen(js_name=RunOptions, skip_typescript)]
-struct RunOptions {
-    is_mdx: bool,
+struct Options {
     is_update: bool,
     input_format: Option<InputFormat>,
     list_style: Option<ListStyle>,
@@ -83,6 +81,8 @@ pub enum InputFormat {
     Html,
     #[serde(rename = "markdown")]
     Markdown,
+    #[serde(rename = "mdx")]
+    Mdx,
     #[serde(rename = "text")]
     Text,
 }
@@ -168,12 +168,11 @@ impl FromStr for UrlSurroundStyle {
     }
 }
 
-#[wasm_bindgen(js_name=runScript, skip_typescript)]
-pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
-    let options: RunOptions = serde_wasm_bindgen::from_value(options)
+#[wasm_bindgen(js_name=run, skip_typescript)]
+pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
+    let options: Options = serde_wasm_bindgen::from_value(options)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
 
-    let is_mdx = options.is_mdx;
     let is_update = options.is_update;
     let mut engine = mq_lang::Engine::default();
 
@@ -187,9 +186,7 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
         _ => {
             let md = match options.input_format {
                 Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
-                Some(InputFormat::Markdown) if is_mdx => {
-                    mq_markdown::Markdown::from_mdx_str(content)
-                }
+                Some(InputFormat::Mdx) => mq_markdown::Markdown::from_mdx_str(content),
                 _ => mq_markdown::Markdown::from_str(content),
             }
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -251,8 +248,8 @@ pub fn run_script(code: &str, content: &str, options: JsValue) -> Result<String,
         })
 }
 
-#[wasm_bindgen(js_name=formatScript)]
-pub fn format_script(code: &str) -> Result<String, JsValue> {
+#[wasm_bindgen(js_name=format)]
+pub fn format(code: &str) -> Result<String, JsValue> {
     mq_formatter::Formatter::default()
         .format(code)
         .map_err(|e| JsValue::from_str(&format!("{:?}", &e)))
@@ -334,11 +331,10 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_run_simple() {
-        let result = run_script(
+        let result = run(
             "downcase() | ltrimstr(\"hello\") | upcase() | trim()",
             "Hello world",
-            serde_wasm_bindgen::to_value(&RunOptions {
-                is_mdx: false,
+            serde_wasm_bindgen::to_value(&Options {
                 is_update: true,
                 input_format: None,
                 list_style: None,
@@ -353,11 +349,10 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_run_list() {
-        let result = run_script(
+        let result = run(
             ".[]",
             "- test",
-            serde_wasm_bindgen::to_value(&RunOptions {
-                is_mdx: false,
+            serde_wasm_bindgen::to_value(&Options {
                 is_update: true,
                 input_format: None,
                 list_style: Some(ListStyle::Star),
@@ -372,11 +367,10 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_run_link() {
-        let result = run_script(
+        let result = run(
             ".link",
             "[test](https://example.com)",
-            serde_wasm_bindgen::to_value(&RunOptions {
-                is_mdx: false,
+            serde_wasm_bindgen::to_value(&Options {
                 is_update: true,
                 input_format: None,
                 list_style: None,
@@ -392,11 +386,10 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_script_run_invalid_syntax() {
         assert!(
-            run_script(
+            run(
                 "invalid syntax",
                 "test",
-                serde_wasm_bindgen::to_value(&RunOptions {
-                    is_mdx: false,
+                serde_wasm_bindgen::to_value(&Options {
                     is_update: true,
                     input_format: None,
                     list_style: None,
@@ -412,7 +405,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_format() {
-        let result = format_script(r#"downcase()|ltrimstr("hello")|upcase()|trim()"#).unwrap();
+        let result = format(r#"downcase()|ltrimstr("hello")|upcase()|trim()"#).unwrap();
         assert_eq!(
             result,
             r#"downcase() | ltrimstr("hello") | upcase() | trim()"#
@@ -422,6 +415,6 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     fn test_script_format_invalid() {
-        assert!(format_script("x=>").is_err());
+        assert!(format("x=>").is_err());
     }
 }
