@@ -35,6 +35,7 @@ members = [
   "crates/mq-wasm",
   "crates/mq-test",
   "crates/mq-mcp",
+  "crates/mq-python",
 ]
 
 [dependencies]

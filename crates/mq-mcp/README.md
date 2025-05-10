@@ -1,3 +1,7 @@
+<div align="center">
+    <img src="https://mqlang.org/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
+</div>
+
 # mq-mcp
 
 The `mq-mcp` crate provides the MCP functionality for the `mq`, a jq-like processor for Markdown files. It handles the evaluation and execution of commands against Markdown documents.

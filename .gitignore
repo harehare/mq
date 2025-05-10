@@ -77,3 +77,5 @@ Thumbs.db
 docs/assets
 docs/playground.html
 docs/logo.svg
+
+*.so

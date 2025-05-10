@@ -49,6 +49,26 @@ build-bench:
 build-wasm:
     wasm-pack build --release --target web --out-dir ../../playground/src/mq-wasm
 
+# Build mq-python package for Python
+[working-directory: 'crates/mq-python']
+build-python:
+    rm ../../target/wheels/*
+    maturin build --release --target aarch64-unknown-linux-gnu --zig
+    maturin build --release --target x86_64-unknown-linux-gnu --zig
+    maturin build --release --target aarch64-apple-darwin --zig
+    maturin build --release --target x86_64-apple-darwin --zig
+    maturin build --release --target x86_64-pc-windows-gnu --zig --features pyo3/generate-import-lib
+
+# Publish test mq-python package for Python
+[working-directory: 'crates/mq-python']
+publish-python-test: build-python
+    twine upload --repository testpypi ../../target/wheels/*
+
+# Publish mq-python package for Python
+[working-directory: 'crates/mq-python']
+publish-python: build-python
+    twine upload ../../target/wheels/*
+
 # Run formatting, linting and all tests
 test: lint
     cargo test --examples
