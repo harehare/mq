@@ -49,6 +49,11 @@ build-bench:
 build-wasm:
     wasm-pack build --release --target web --out-dir ../../playground/src/mq-wasm
 
+# Build mq-python package for Python
+[working-directory: 'crates/mq-python']
+build-python:
+    maturin build
+
 # Run formatting, linting and all tests
 test: lint
     cargo test --examples

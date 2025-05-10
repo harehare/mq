@@ -4,6 +4,7 @@ class InputFormat:
     """The format of the input document."""
 
     MARKDOWN: "InputFormat"  # Markdown format
+    MDX: "InputFormat"  # MDX format
     HTML: "InputFormat"  # HTML format
     TEXT: "InputFormat"  # Plain text format
 
@@ -33,7 +34,6 @@ class Options:
     def __init__(
         self,
         format: InputFormat = ...,  # Input document format
-        is_mdx: bool = ...,  # Whether to treat input as MDX
         is_update: bool = ...,  # Whether to update document in-place
         input_format: InputFormat = None,  # Alternative input format specification
         list_style: ListStyle = None,  # Style to use for lists in output
@@ -42,8 +42,6 @@ class Options:
     ) -> None: ...
     @property
     def format(self) -> InputFormat: ...
-    @property
-    def is_mdx(self) -> bool: ...
     @property
     def is_update(self) -> bool: ...
     @property
@@ -55,7 +53,7 @@ class Options:
     @property
     def link_url_style(self) -> UrlSurroundStyle | None: ...
 
-def query(content: str, query: str, options: Optional[Options]) -> List[str]:
+def run(code: str, content: str, options: Optional[Options]) -> List[str]:
     """
     Run an mq query against markdown content with the specified options.
 
@@ -67,4 +65,3 @@ def query(content: str, query: str, options: Optional[Options]) -> List[str]:
     Returns:
         List of results as strings
     """
-    ...

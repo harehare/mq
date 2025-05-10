@@ -9,6 +9,8 @@ enum InputFormat {
     #[default]
     Markdown,
     #[pyo3(name = "HTML")]
+    Mdx,
+    #[pyo3(name = "MDX")]
     Html,
     #[pyo3(name = "TEXT")]
     Text,
@@ -61,8 +63,8 @@ struct Options {
 }
 
 #[pyfunction]
-#[pyo3(signature = (content, query, options=None))]
-fn query(content: &str, query: &str, options: Option<Options>) -> PyResult<Vec<String>> {
+#[pyo3(signature = (code, content, options=None))]
+fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<String>> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
     let options = options.unwrap_or_default();
@@ -95,7 +97,7 @@ fn query(content: &str, query: &str, options: Option<Options>) -> PyResult<Vec<S
     };
 
     engine
-        .eval(query, input.into_iter())
+        .eval(code, input.into_iter())
         .map(|values| {
             values
                 .into_iter()
@@ -103,7 +105,13 @@ fn query(content: &str, query: &str, options: Option<Options>) -> PyResult<Vec<S
                     if value.is_none() {
                         None
                     } else {
-                        Some(value.to_string())
+                        let value = value.to_string();
+
+                        if value.is_empty() {
+                            None
+                        } else {
+                            Some(value)
+                        }
                     }
                 })
                 .collect::<Vec<_>>()
@@ -123,6 +131,6 @@ fn mq_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<UrlSurroundStyle>()?;
     m.add_class::<TitleSurroundStyle>()?;
     m.add_class::<Options>()?;
-    m.add_function(wrap_pyfunction!(query, m)?)?;
+    m.add_function(wrap_pyfunction!(run, m)?)?;
     Ok(())
 }
