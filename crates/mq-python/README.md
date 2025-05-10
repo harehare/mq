@@ -9,7 +9,7 @@ Python bindings for the mq Markdown processor.
 
 ## Overview
 
-`mq-python` provides Python bindings to the [`mq`](https://github.com/harehare/mq) library, allowing Python developers to use mq's Markdown processing capabilities directly from Python code.
+`mq-python` provides Python bindings to the [`mq`](https://github.com/harehare/mq), allowing Python developers to use mq's Markdown processing capabilities directly from Python code.
 
 ## Installation
 

@@ -67,7 +67,7 @@ publish-python-test: build-python
 # Publish mq-python package for Python
 [working-directory: 'crates/mq-python']
 publish-python: build-python
-    twine upload ../../target/wheels/*
+    twine upload --repository pypi ../../target/wheels/*
 
 # Run formatting, linting and all tests
 test: lint
