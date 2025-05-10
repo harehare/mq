@@ -30,7 +30,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mq"
+name = "mq-py"
 version = "0.1.0"
 source = { editable = "." }
 

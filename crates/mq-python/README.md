@@ -9,12 +9,12 @@ Python bindings for the mq Markdown processor.
 
 ## Overview
 
-`mq` provides Python bindings to the [`mq`](https://github.com/harehare/mq), allowing Python developers to use mq's Markdown processing capabilities directly from Python code.
+`markdown-query` provides Python bindings to the [`mq`](https://github.com/harehare/mq), allowing Python developers to use mq's Markdown processing capabilities directly from Python code.
 
 ## Installation
 
 ```bash
-pip install mq
+pip install markdown-query
 ```
 
 ## Usage

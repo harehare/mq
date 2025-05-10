@@ -10,10 +10,10 @@ dependencies = []
 description = "Python bindings for mq, a jq-like command-line tool for Markdown processing"
 keywords = ["markdown", "jq", "command-line", "tool"]
 license = {text = "MIT"}
-name = "mq"
+name = "markdown-query"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.1.0"
+version = "0.1.1"
 
 [tool.maturin]
 module-name = "mq.mq"
