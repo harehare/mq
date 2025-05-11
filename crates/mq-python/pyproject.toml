@@ -13,7 +13,7 @@ license = {text = "MIT"}
 name = "markdown-query"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.1.1"
+version = "0.1.2"
 
 [tool.maturin]
 module-name = "mq.mq"
@@ -28,3 +28,9 @@ requires = ["maturin>=1.0,<2.0"]
 dev = [
   "pytest>=8.3.5",
 ]
+
+[project.urls]
+Documentation = "https://mqlang.org/book/"
+Homepage = "https://mqlang.org/"
+Issues = "https://github.com/harehare/mq/issues"
+Repository = "https://github.com/harehare/mq.git"
