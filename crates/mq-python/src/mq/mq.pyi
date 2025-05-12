@@ -179,8 +179,7 @@ def run(code: str, content: str, options: Optional[Options] = None) -> MQResult:
         options: Configuration options for processing. If None, default options are used.
 
     Returns:
-        MQResult object containing the query results which may include various value types
-        such as strings, numbers, arrays, booleans, markdown content, etc.
+        MQResult object containing the query results
 
     Raises:
         RuntimeError: If there's an error parsing the markdown or evaluating the query
@@ -190,7 +189,7 @@ def run(code: str, content: str, options: Optional[Options] = None) -> MQResult:
         import mq
 
         # Create query to extract all headings
-        query = "select heading"
+        query = ".h1"
 
         # Markdown content
         content = "# Title\\n\\nSome content\\n\\n## Subtitle\\n\\nMore content"
