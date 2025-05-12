@@ -31,7 +31,7 @@ import mq
 )
 def test_mq_queries(code, content, expected):
     result = mq.run(code, content, None)
-    assert result == expected
+    assert result.values == expected
 
 
 @pytest.mark.parametrize(
@@ -62,7 +62,7 @@ def test_input_formats(input_format, code, content, expected):
     options.input_format = input_format
 
     result = mq.run(code, content, options)
-    assert result == expected
+    assert result.values == expected
 
 
 def test_invalid_query():

@@ -60,3 +60,12 @@ steps:
 mq supports an MCP server for integration with LLM applications.
 
 See the [MCP documentation](https://github.com/harehare/mq/blob/main/crates/mq-mcp/README.md) for more information.
+
+## Python
+
+You can use mq in Python through the `markdown-query` package:
+
+```sh
+# Install from PyPI
+pip install markdown-query
+```

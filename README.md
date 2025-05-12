@@ -99,6 +99,15 @@ mq supports an MCP server for integration with LLM applications.
 
 See the [MCP documentation](https://github.com/harehare/mq/blob/main/crates/mq-mcp/README.md) for more information.
 
+## Python
+
+You can use mq in Python through the `markdown-query` package:
+
+```sh
+# Install from PyPI
+pip install markdown-query
+```
+
 ## Usage
 
 For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
@@ -119,8 +128,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file

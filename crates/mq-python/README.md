@@ -25,19 +25,23 @@ import mq
 # Process a markdown string with an mq query
 markdown = '# Hello\n\nThis is a paragraph\n\n## Section\n\nMore text.\n\n```js\nconsole.log("code")\n```'
 
-print(mq.run("select(or(.h1, .code))", markdown, None))
+print(mq.run("select(or(.h1, .code))", markdown, None).values)
 # ['# Hello', '```js\nconsole.log("code")\n```']
 
-print(mq.run("select(or(.h1, .code)) | to_text()", markdown, None))
+print(mq.run("select(or(.h1, .code)) | to_text()", markdown, None).values)
 # ['Hello', 'console.log("code")']
+
+
+print(mq.run("select(or(.h1, .code)) | to_text()", markdown, None)[0].text)
+# Hello
 
 # Process a html string with an mq query
 markdown = '<h1>Title</h1><p>Paragraph</p>'
 
 options = mq.Options()
 options.input_format = mq.InputFormat.HTML
-print(mq.run(".h1 | upcase()", markdown, options))
-# ['TITLE']
+print(mq.run(".h1 | upcase()", markdown, options).values)
+# ['# TITLE']
 ````
 
 ### Using with markitdown

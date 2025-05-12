@@ -1,6 +1,10 @@
+pub mod result;
+pub mod value;
 use std::str::FromStr;
 
 use pyo3::prelude::*;
+use result::MQResult;
+use value::MQValue;
 
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -8,10 +12,10 @@ enum InputFormat {
     #[pyo3(name = "MARKDOWN")]
     #[default]
     Markdown,
-    #[pyo3(name = "HTML")]
-    Html,
     #[pyo3(name = "MDX")]
     Mdx,
+    #[pyo3(name = "HTML")]
+    Html,
     #[pyo3(name = "TEXT")]
     Text,
 }
@@ -73,7 +77,7 @@ impl Options {
 
 #[pyfunction]
 #[pyo3(signature = (code, content, options=None))]
-fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<String>> {
+fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
     let options = options.unwrap_or_default();
@@ -105,23 +109,8 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<Vec<Stri
 
     engine
         .eval(code, input.into_iter())
-        .map(|values| {
-            values
-                .into_iter()
-                .filter_map(|value| {
-                    if value.is_none() {
-                        None
-                    } else {
-                        let value = value.to_string();
-
-                        if value.is_empty() {
-                            None
-                        } else {
-                            Some(value)
-                        }
-                    }
-                })
-                .collect::<Vec<_>>()
+        .map(|values| MQResult {
+            values: values.into_iter().map(Into::into).collect::<Vec<_>>(),
         })
         .map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
@@ -138,6 +127,8 @@ fn mq(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<UrlSurroundStyle>()?;
     m.add_class::<TitleSurroundStyle>()?;
     m.add_class::<Options>()?;
+    m.add_class::<MQResult>()?;
+    m.add_class::<MQValue>()?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
     Ok(())
 }
