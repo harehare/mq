@@ -110,10 +110,7 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult
     engine
         .eval(code, input.into_iter())
         .map(|values| MQResult {
-            values: values
-                .into_iter()
-                .map(|value| value.into())
-                .collect::<Vec<_>>(),
+            values: values.into_iter().map(Into::into).collect::<Vec<_>>(),
         })
         .map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(

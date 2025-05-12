@@ -4,33 +4,18 @@ use std::fmt;
 #[pyclass]
 #[derive(Debug, Clone)]
 pub enum MQValue {
-    String {
-        value: String,
-    },
-    Number {
-        value: f64,
-    },
     Array {
         value: Vec<MQValue>,
-    },
-    Bool {
-        value: bool,
     },
     Markdown {
         value: String,
         markdown_type: MarkdownType,
     },
-    NoneValue {},
-    Function {},
-    NativeFunction {},
 }
 
 impl fmt::Display for MQValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MQValue::String { value } => write!(f, "{}", value),
-            MQValue::Number { value } => write!(f, "{}", value),
-            MQValue::Bool { value } => write!(f, "{}", value),
             MQValue::Array { value } => write!(
                 f,
                 "{}",
@@ -41,9 +26,6 @@ impl fmt::Display for MQValue {
                     .join("\n")
             ),
             MQValue::Markdown { value, .. } => write!(f, "{}", value),
-            MQValue::NoneValue {} => write!(f, ""),
-            MQValue::Function {} => write!(f, "<function>"),
-            MQValue::NativeFunction {} => write!(f, "<native_function>"),
         }
     }
 }
@@ -51,8 +33,6 @@ impl fmt::Display for MQValue {
 impl PartialEq for MQValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (MQValue::String { value: a }, MQValue::String { value: b }) => a == b,
-            (MQValue::Number { value: a }, MQValue::Number { value: b }) => a == b,
             (MQValue::Array { value: a }, MQValue::Array { value: b }) => a == b,
             (
                 MQValue::Markdown {
@@ -64,10 +44,6 @@ impl PartialEq for MQValue {
                     markdown_type: bt,
                 },
             ) => a == b && at == bt,
-            (MQValue::NoneValue {}, MQValue::NoneValue {}) => true,
-            (MQValue::Function {}, MQValue::Function {}) => false,
-            (MQValue::NativeFunction {}, MQValue::NativeFunction {}) => false,
-            (MQValue::Bool { value: a }, MQValue::Bool { value: b }) => a == b,
             _ => false,
         }
     }
@@ -113,10 +89,6 @@ pub enum MarkdownType {
 impl From<mq_lang::Value> for MQValue {
     fn from(value: mq_lang::Value) -> Self {
         match value {
-            mq_lang::Value::String(value) => MQValue::String { value },
-            mq_lang::Value::Number(value) => MQValue::Number {
-                value: value.value(),
-            },
             mq_lang::Value::Array(arr) => MQValue::Array {
                 value: arr.into_iter().map(|v| v.into()).collect(),
             },
@@ -124,10 +96,30 @@ impl From<mq_lang::Value> for MQValue {
                 value: node.to_string(),
                 markdown_type: node.into(),
             },
-            mq_lang::Value::Bool(value) => MQValue::Bool { value },
-            mq_lang::Value::None => MQValue::NoneValue {},
-            mq_lang::Value::Function(..) => MQValue::Function {},
-            mq_lang::Value::NativeFunction(..) => MQValue::NativeFunction {},
+            mq_lang::Value::String(s) => MQValue::Markdown {
+                value: s,
+                markdown_type: MarkdownType::Text,
+            },
+            mq_lang::Value::Number(n) => MQValue::Markdown {
+                value: n.to_string(),
+                markdown_type: MarkdownType::Text,
+            },
+            mq_lang::Value::Bool(b) => MQValue::Markdown {
+                value: b.to_string(),
+                markdown_type: MarkdownType::Text,
+            },
+            mq_lang::Value::Function(..) => MQValue::Markdown {
+                value: "".to_string(),
+                markdown_type: MarkdownType::Empty,
+            },
+            mq_lang::Value::NativeFunction(..) => MQValue::Markdown {
+                value: "".to_string(),
+                markdown_type: MarkdownType::Empty,
+            },
+            mq_lang::Value::None => MQValue::Markdown {
+                value: "".to_string(),
+                markdown_type: MarkdownType::Empty,
+            },
         }
     }
 }
@@ -193,14 +185,6 @@ impl MQValue {
         }
     }
 
-    pub fn is_string(&self) -> bool {
-        matches!(self, MQValue::String { .. })
-    }
-
-    pub fn is_number(&self) -> bool {
-        matches!(self, MQValue::Number { .. })
-    }
-
     pub fn is_array(&self) -> bool {
         matches!(self, MQValue::Array { .. })
     }
@@ -209,30 +193,12 @@ impl MQValue {
         matches!(self, MQValue::Markdown { .. })
     }
 
-    pub fn is_bool(&self) -> bool {
-        matches!(self, MQValue::Bool { .. })
-    }
-
-    pub fn is_none(&self) -> bool {
-        matches!(self, MQValue::NoneValue {})
-    }
-
-    pub fn is_function(&self) -> bool {
-        matches!(self, MQValue::Function {})
-    }
-
-    pub fn is_native_function(&self) -> bool {
-        matches!(self, MQValue::NativeFunction {})
-    }
-
     pub fn __str__(&self) -> String {
         self.text()
     }
 
     pub fn __repr__(&self) -> String {
         match self {
-            MQValue::String { value } => format!("MQValue::STRING(\"{}\")", value),
-            MQValue::Number { value } => format!("MQValue::NUMBER({})", value),
             MQValue::Array { value: arr } => format!(
                 "MQValue::ARRAY([{}])",
                 arr.iter()
@@ -246,31 +212,20 @@ impl MQValue {
             } => {
                 format!("MQValue::Markdown(\"{}\", {:?})", value, markdown_type)
             }
-            MQValue::Bool { value } => format!("MQValue::BOOL({})", value),
-            MQValue::NoneValue {} => "MQValue::NONE".to_string(),
-            MQValue::Function {} => "MQValue::FUNCTION".to_string(),
-            MQValue::NativeFunction {} => "MQValue::NATIVE_FUNCTION".to_string(),
         }
     }
 
     pub fn __bool__(&self) -> bool {
         match self {
-            MQValue::String { value } => !value.is_empty(),
-            MQValue::Number { value } => *value != 0.0,
             MQValue::Array { value } => !value.is_empty(),
             MQValue::Markdown { value, .. } => !value.is_empty(),
-            MQValue::NoneValue {} => false,
-            MQValue::Bool { value } => *value,
-            MQValue::Function {} | MQValue::NativeFunction {} => true,
         }
     }
 
     pub fn __len__(&self) -> usize {
         match self {
-            MQValue::String { value } => value.len(),
             MQValue::Array { value } => value.len(),
             MQValue::Markdown { value, .. } => value.len(),
-            _ => 0,
         }
     }
 
@@ -284,8 +239,6 @@ impl MQValue {
 
     pub fn __lt__(&self, other: &Self) -> bool {
         match (self, other) {
-            (MQValue::String { value: a }, MQValue::String { value: b }) => a < b,
-            (MQValue::Number { value: a }, MQValue::Number { value: b }) => a < b,
             (MQValue::Array { value: a }, MQValue::Array { value: b }) => {
                 if a.len() != b.len() {
                     a.len() < b.len()
@@ -305,8 +258,6 @@ impl MQValue {
 
     pub fn __gt__(&self, other: &Self) -> bool {
         match (self, other) {
-            (MQValue::String { value: a }, MQValue::String { value: b }) => a > b,
-            (MQValue::Number { value: a }, MQValue::Number { value: b }) => a > b,
             (MQValue::Array { value: a }, MQValue::Array { value: b }) => {
                 if a.len() != b.len() {
                     a.len() > b.len()

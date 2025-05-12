@@ -99,22 +99,6 @@ class MQValue:
             Optional[MarkdownType]: The markdown type of the document, or None if not applicable.
         """
 
-    def is_string(self) -> bool:
-        """
-        Check if this value is a string.
-
-        Returns:
-            True if this value is a string, False otherwise
-        """
-
-    def is_number(self) -> bool:
-        """
-        Check if this value is a number.
-
-        Returns:
-            True if this value is a number, False otherwise
-        """
-
     def is_array(self) -> bool:
         """
         Check if this value is an array.
@@ -129,38 +113,6 @@ class MQValue:
 
         Returns:
             True if this value is a markdown node, False otherwise
-        """
-
-    def is_bool(self) -> bool:
-        """
-        Check if this value is a boolean.
-
-        Returns:
-            True if this value is a boolean, False otherwise
-        """
-
-    def is_none(self) -> bool:
-        """
-        Check if this value is None.
-
-        Returns:
-            True if this value is None, False otherwise
-        """
-
-    def is_function(self) -> bool:
-        """
-        Check if this value is a function.
-
-        Returns:
-            True if this value is a function, False otherwise
-        """
-
-    def is_native_function(self) -> bool:
-        """
-        Check if this value is a native function.
-
-        Returns:
-            True if this value is a native function, False otherwise
         """
 
     def __str__(self) -> str: ...
