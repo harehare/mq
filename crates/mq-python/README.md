@@ -36,7 +36,7 @@ markdown = '<h1>Title</h1><p>Paragraph</p>'
 
 options = mq.Options()
 options.input_format = mq.InputFormat.HTML
-print(mq.run(".h1 | upcase()", markdown, options))
+print(mq.run(".h1 | upcase()", markdown, options).values)
 # ['TITLE']
 ````
 
