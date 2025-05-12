@@ -167,10 +167,12 @@ use pyo3::prelude::*;
 
 #[pymethods]
 impl MQValue {
+    #[getter]
     pub fn text(&self) -> String {
         self.to_string()
     }
 
+    #[getter]
     pub fn array(&self) -> Vec<Self> {
         match self {
             MQValue::Array { value } => value.clone(),
@@ -178,6 +180,7 @@ impl MQValue {
         }
     }
 
+    #[getter]
     pub fn markdown_type(&self) -> Option<MarkdownType> {
         match self {
             MQValue::Markdown { markdown_type, .. } => Some(*markdown_type),

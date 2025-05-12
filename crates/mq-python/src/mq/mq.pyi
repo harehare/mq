@@ -83,6 +83,16 @@ class MQValue:
     Represents a value in the mq query result.
     """
 
+    @property
+    def text(self) -> str:
+        """
+        Get the text representation of the value.
+
+        Returns:
+            str: The text representation of the value
+        """
+
+    @property
     def array(self) -> List["MQValue"]:
         """
         Get the value as an array.
@@ -91,6 +101,7 @@ class MQValue:
             List[MQValue]: The value as an array of MQValue objects
         """
 
+    @property
     def markdown_type(self) -> Optional[MarkdownType]:
         """
         Get the markdown type of the document.

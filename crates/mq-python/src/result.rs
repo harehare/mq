@@ -11,11 +11,7 @@ pub struct MQResult {
 impl MQResult {
     #[getter]
     pub fn text(&self) -> String {
-        self.values
-            .iter()
-            .map(|value| value.text())
-            .collect::<Vec<String>>()
-            .join("\n")
+        self.values().join("\n")
     }
 
     #[getter]
