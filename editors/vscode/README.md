@@ -1,7 +1,3 @@
-<div align="center">
-    <img src="./assets/logo.png" style="width: 128px; height: 128px; margin-right: 10px;"/>
-</div>
-
 # mq support for Visual Studio Code
 
 This extension adds support for the mq to Visual Studio Code.
