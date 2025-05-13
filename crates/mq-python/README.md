@@ -31,9 +31,14 @@ print(mq.run("select(or(.h1, .code))", markdown, None).values)
 print(mq.run("select(or(.h1, .code)) | to_text()", markdown, None).values)
 # ['Hello', 'console.log("code")']
 
-
 print(mq.run("select(or(.h1, .code)) | to_text()", markdown, None)[0].text)
 # Hello
+
+print([m for m in mq.run("select(or(.h1, .code))", markdown, None)])
+# MarkdownType.Heading
+
+print(mq.run("select(or(.h1, .code))", markdown, None)[0].markdown_type)
+# MarkdownType.Heading
 
 # Process a html string with an mq query
 markdown = '<h1>Title</h1><p>Paragraph</p>'

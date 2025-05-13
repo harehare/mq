@@ -173,7 +173,7 @@ impl MQValue {
     }
 
     #[getter]
-    pub fn array(&self) -> Vec<Self> {
+    pub fn values(&self) -> Vec<Self> {
         match self {
             MQValue::Array { value } => value.clone(),
             a => vec![a.clone()],
@@ -194,6 +194,20 @@ impl MQValue {
 
     pub fn is_markdown(&self) -> bool {
         matches!(self, MQValue::Markdown { .. })
+    }
+
+    pub fn __getitem__(&self, idx: usize) -> PyResult<MQValue> {
+        let array = self.values();
+
+        if idx < array.len() {
+            Ok(array[idx].clone())
+        } else {
+            Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "Index {} out of range for MQResult with length {}",
+                idx,
+                array.len()
+            )))
+        }
     }
 
     pub fn __str__(&self) -> String {
