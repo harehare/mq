@@ -588,7 +588,6 @@ export const Playground = () => {
     monaco.languages.setMonarchTokensProvider("mq", {
       tokenizer: {
         root: [
-          [/^#.*$/, "comment"],
           [
             /\b(let|def|while|foreach|until|if|elif|else|self|None|nodes)\b/,
             "keyword",
@@ -602,7 +601,9 @@ export const Playground = () => {
           [/(([a-zA-Z_]\w*)\s*\()/, "function"],
           [/\(|\)|\[|\]/, "delimiter.parenthesis"],
           [/[a-zA-Z_]\w*/, "variable"],
+          [/^ *#.*/, "comment"],
         ],
+        comment: [],
         multilineString: [
           [/\$\{[^}]*\}/, "variable"],
           [/[^"$]+/, "string"],
