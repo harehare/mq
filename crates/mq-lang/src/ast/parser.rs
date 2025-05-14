@@ -62,6 +62,8 @@ impl<'a> Parser<'a> {
                         if let Some(token) = self.tokens.peek() {
                             if let TokenKind::Eof = &token.kind {
                                 break;
+                            } else if let TokenKind::Comment(_) = &token.kind {
+                                continue;
                             } else {
                                 return Err(ParseError::UnexpectedEOFDetected(self.module_id));
                             }
@@ -213,6 +215,7 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::Elif)
                     | Some(TokenKind::SemiColon)
                     | Some(TokenKind::Eof)
+                    | Some(TokenKind::Comment(_))
                     | None => Ok(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
                         expr: Rc::new(Expr::Call(
@@ -233,6 +236,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Elif)
             | Some(TokenKind::SemiColon)
             | Some(TokenKind::Eof)
+            | Some(TokenKind::Comment(_))
             | None => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
                 expr: Rc::new(Expr::Ident(Ident::new_with_token(
