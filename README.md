@@ -135,7 +135,7 @@ Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [default: markdown] [possible values: markdown, html, text, null]
+          Set input format [default: markdown] [possible values: markdown, mdx, html, text, null]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -144,8 +144,6 @@ Options:
           Sets string that can be referenced at runtime
       --rawfile <NAME> <FILE>
           Sets file contents that can be referenced at runtime
-      --mdx
-          Enable MDX parsing
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json]
   -U, --update
