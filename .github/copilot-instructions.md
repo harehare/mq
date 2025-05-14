@@ -28,9 +28,13 @@ The mq project follows this main directory structure:
   - `mq-lsp` - Language Server Protocol implementation
   - `mq-markdown` - Markdown parser and manipulation utilities
   - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
+  - `mq-mcp` - MCP implementation for mq
+  - `mq-python` - Python bindings for integrating mq functionality into Python applications
 - `/docs` - Documentation and user guides
+- `/editors` - Editor integrations and plugins for popular code editors
+- `/assets` - Static assets such as images, icons, and other resources
 - `/examples` - Usage examples
-- `/tests` - Integration tests
+- `/tests` - Integration tests- `/src` - Main CLI tool source code
 
 ## Pull Request Review Criteria
 
