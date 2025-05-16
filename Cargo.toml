@@ -31,6 +31,7 @@ members = [
   "crates/mq-lsp",
   "crates/mq-hir",
   "crates/mq-formatter",
+  "crates/mq-tui",
   "fuzz",
   "crates/mq-wasm",
   "crates/mq-test",
@@ -46,9 +47,13 @@ miette = {workspace = true, features = ["fancy"]}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true}
+mq-lsp = {path = "./crates/mq-lsp", version = "0.1.5"}
 mq-markdown = {workspace = true, features = ["json"]}
+mq-mcp = {path = "./crates/mq-mcp", version = "0.1.5"}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.5"}
+mq-tui = {path = "./crates/mq-tui", version = "0.1.5"}
 rayon = "1.10.0"
+tokio = {version = "1.27.0", features = ["io-util", "io-std", "rt-multi-thread"]}
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
@@ -79,7 +84,7 @@ codegen-units = 1
 lto = "fat"
 opt-level = 3
 panic = 'abort'
-strip = "symbols"
+strip = true
 
 [profile.bench]
 inherits = "release"

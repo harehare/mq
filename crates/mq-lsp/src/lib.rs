@@ -15,24 +15,6 @@
 //! # Usage
 //!
 //! To use this LSP server, you need to integrate it with an LSP client. The server reads from stdin and writes to stdout, making it compatible with various editors and IDEs that support LSP.
-//!
-//! ## Installation
-//!
-//! You can install `mq-lsp` using Cargo, the Rust package manager:
-//!
-//! ```bash
-//! $ cargo install --git https://github.com/harehare/mq.git mq-lsp
-//! # Installing from cargo is under preparation.
-//! $ cargo install mq-lsp
-//! ```
-//!
-//! ### Homebrew
-//! ```bash
-//! # Using Homebrew (macOS and Linux)
-//! $ brew install harehare/tap/mq-lsp
-//! ```
-//!
-//! Make sure you have Rust and Cargo installed on your system. After installation, the `mq-lsp` binary will be available in your system path.
 pub mod capabilities;
 pub mod completions;
 pub mod document_symbol;
@@ -41,3 +23,6 @@ pub mod goto_definition;
 pub mod hover;
 pub mod references;
 pub mod semantic_tokens;
+pub mod server;
+
+pub use server::start;

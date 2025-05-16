@@ -226,6 +226,24 @@ $ markitdown test.xlsx | mq '.[][]'
 
 ```
 
+### Interactive TUI
+
+You can use the TUI (Text-based User Interface) to visually explore and query Markdown files:
+
+```sh
+# Launch the TUI with a markdown file
+$ mq tui file.md
+```
+
+The TUI provides an interactive environment to:
+
+- Enter and edit queries with real-time results
+- Navigate through markdown nodes
+- View detailed information about each node
+- Access a query history
+
+For more details about the TUI usage and features, see the [TUI documentation](docs/tui-docs.md).
+
 ## Development
 
 ### Prerequisites

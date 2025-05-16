@@ -1,0 +1,19 @@
+[package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+description = "TUI for mq, a jq-like Markdown processing tool"
+documentation = "https://mqlang.org/book/"
+edition = "2024"
+name = "mq-tui"
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.1.5"
+
+[dependencies]
+crossterm = "0.27.0"
+itertools = {workspace = true}
+log = "0.4.27"
+miette = {workspace = true}
+mq-lang = {workspace = true}
+mq-markdown = {workspace = true}
+ratatui = "0.26.1"
+unicode-width = "0.1.13"
