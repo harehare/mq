@@ -36,6 +36,7 @@
 //! ```
 mod arena;
 mod ast;
+#[cfg(feature = "cst")]
 mod cst;
 mod engine;
 mod error;
