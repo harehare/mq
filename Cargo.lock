@@ -1355,6 +1355,7 @@ dependencies = [
  "rayon",
  "rstest",
  "tokio",
+ "url",
 ]
 
 [[package]]
