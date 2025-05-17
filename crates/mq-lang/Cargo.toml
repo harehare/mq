@@ -17,9 +17,7 @@ base64 = "0.22.1"
 chrono = "0.4.41"
 compact_str = {workspace = true}
 dirs = {workspace = true}
-env_logger = "0.11.6"
 itertools = {workspace = true}
-log = "0.4.27"
 miette = {workspace = true, features = ["fancy"]}
 mq-markdown = {workspace = true}
 nom = {version = "8.0.0"}
@@ -29,6 +27,11 @@ regex = "1.11.1"
 rustc-hash = {workspace = true}
 smallvec = "1.15.0"
 thiserror = {workspace = true}
+
+[features]
+cst = []
+default = ["std"]
+std = []
 
 [dev-dependencies]
 divan = {version = "2.8.1", package = "codspeed-divan-compat"}

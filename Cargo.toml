@@ -40,11 +40,8 @@ members = [
 
 [dependencies]
 clap = {version = "4.5.38", features = ["derive"]}
-clap-verbosity-flag = "3.0.2"
 clap_complete = "4.5.50"
-env_logger = "0.11.6"
 itertools = {workspace = true}
-log = "0.4.27"
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
@@ -52,7 +49,6 @@ mq-lang = {workspace = true}
 mq-markdown = {workspace = true, features = ["json"]}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.5"}
 rayon = "1.10.0"
-url = {workspace = true}
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
@@ -79,6 +75,7 @@ name = "mq"
 path = "src/main.rs"
 
 [profile.release]
+codegen-units = 1
 lto = "fat"
 opt-level = 3
 panic = 'abort'

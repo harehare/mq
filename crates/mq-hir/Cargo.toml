@@ -13,7 +13,7 @@ version = "0.1.5"
 [dependencies]
 compact_str = {workspace = true}
 itertools = {workspace = true}
-mq-lang = {workspace = true}
+mq-lang = {workspace = true, features = ["cst"]}
 rustc-hash = {workspace = true}
 slotmap = "1.0.7"
 strsim = "0.11.1"

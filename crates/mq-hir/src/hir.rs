@@ -108,6 +108,12 @@ impl Hir {
         self.add_nodes(url, &nodes)
     }
 
+    pub fn add_code_without_url(&mut self, code: &str) -> (SourceId, ScopeId) {
+        let (nodes, _) = mq_lang::parse_recovery(code);
+
+        self.add_nodes(Url::parse("file:///").unwrap(), &nodes)
+    }
+
     pub fn add_builtin(&mut self) {
         if self.builtin.loaded || self.builtin.disabled {
             return;

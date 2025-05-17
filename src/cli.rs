@@ -10,7 +10,6 @@ use std::collections::VecDeque;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{env, fs, path::PathBuf};
-use url::Url;
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -42,9 +41,6 @@ pub struct Cli {
     /// Number of files to process before switching to parallel processing
     #[arg(short = 'P', default_value_t = 10)]
     parallel_threshold: usize,
-
-    #[command(flatten)]
-    pub verbose: clap_verbosity_flag::Verbosity,
 
     #[arg(value_name = "QUERY OR FILE")]
     query: Option<String>,
@@ -216,8 +212,7 @@ impl Cli {
             Some(Commands::Docs) => {
                 let query = self.get_query().unwrap_or_default();
                 let mut hir = mq_hir::Hir::default();
-                let file = Url::parse("file:///").into_diagnostic()?;
-                hir.add_code(file, &query);
+                hir.add_code_without_url(&query);
 
                 let mut doc_csv = hir
                     .symbols()
@@ -501,7 +496,6 @@ mod tests {
             },
             output: OutputArgs::default(),
             commands: None,
-            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("self".to_string()),
             files: None,
             ..Cli::default()
@@ -528,7 +522,6 @@ mod tests {
             },
             output: OutputArgs::default(),
             commands: None,
-            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("self".to_string()),
             files: Some(vec![temp_file_path]),
             ..Cli::default()
@@ -560,7 +553,6 @@ mod tests {
                     ..Default::default()
                 },
                 commands: None,
-                verbose: clap_verbosity_flag::Verbosity::new(0, 0),
                 query: Some("self".to_string()),
                 files: Some(vec![temp_file_path.clone()]),
                 ..Cli::default()
@@ -589,7 +581,6 @@ mod tests {
                     ..Default::default()
                 },
                 commands: None,
-                verbose: clap_verbosity_flag::Verbosity::new(0, 0),
                 query: Some("self".to_string()),
                 files: Some(vec![temp_file_path.clone()]),
                 ..Cli::default()
@@ -617,7 +608,6 @@ mod tests {
                 indent_width: 2,
                 check: false,
             }),
-            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
             files: Some(vec![temp_file_path]),
             ..Cli::default()
@@ -644,7 +634,6 @@ mod tests {
                 indent_width: 2,
                 check: true,
             }),
-            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: None,
             files: Some(vec![temp_file_path]),
             ..Cli::default()
@@ -671,7 +660,6 @@ mod tests {
                 ..Default::default()
             },
             commands: None,
-            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("self".to_string()),
             files: Some(vec![temp_file_path]),
             ..Cli::default()
@@ -704,7 +692,6 @@ mod tests {
             },
             output: OutputArgs::default(),
             commands: None,
-            verbose: clap_verbosity_flag::Verbosity::new(0, 0),
             query: Some("math".to_owned()),
             files: Some(vec![temp_md_file_path]),
             ..Cli::default()

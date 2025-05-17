@@ -11,7 +11,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.1.5"
 
 [dependencies]
-mq-lang = {workspace = true}
+mq-lang = {workspace = true, features = ["cst"]}
 rustc-hash = {workspace = true}
 
 [dev-dependencies]

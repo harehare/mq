@@ -50,6 +50,7 @@ use error::InnerError;
 use lexer::Lexer;
 use std::cell::RefCell;
 use std::rc::Rc;
+#[cfg(feature = "cst")]
 use std::sync::Arc;
 
 pub use arena::Arena;
@@ -61,11 +62,6 @@ pub use ast::node::Literal as AstLiteral;
 pub use ast::node::Node as AstNode;
 pub use ast::node::Params as AstParams;
 pub use ast::parser::Parser as AstParser;
-pub use cst::node::Node as CstNode;
-pub use cst::node::NodeKind as CstNodeKind;
-pub use cst::node::Trivia as CstTrivia;
-pub use cst::parser::ErrorReporter as CstErrorReporter;
-pub use cst::parser::Parser as CstParser;
 pub use engine::Engine;
 pub use error::Error;
 pub use eval::builtin::{
@@ -78,8 +74,21 @@ pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use range::{Position, Range};
 pub use value::{Value, Values};
+
+#[cfg(feature = "cst")]
+pub use cst::node::Node as CstNode;
+#[cfg(feature = "cst")]
+pub use cst::node::NodeKind as CstNodeKind;
+#[cfg(feature = "cst")]
+pub use cst::node::Trivia as CstTrivia;
+#[cfg(feature = "cst")]
+pub use cst::parser::ErrorReporter as CstErrorReporter;
+#[cfg(feature = "cst")]
+pub use cst::parser::Parser as CstParser;
+
 pub type MqResult = Result<Values, Box<Error>>;
 
+#[cfg(feature = "cst")]
 pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     let tokens = Lexer::new(lexer::Options {
         ignore_errors: true,
@@ -182,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cst")]
     fn test_parse_recovery_success() {
         let code = "add(1, 2)";
         let (cst_nodes, errors) = parse_recovery(code);
@@ -191,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cst")]
     fn test_parse_recovery_with_errors() {
         let code = "add(1,";
         let (cst_nodes, errors) = parse_recovery(code);
@@ -200,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "cst")]
     fn test_parse_recovery_with_error_lexer() {
         let code = "add(1, \"";
         let (cst_nodes, errors) = parse_recovery(code);

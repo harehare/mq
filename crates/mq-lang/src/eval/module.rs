@@ -5,7 +5,6 @@ use crate::{
     lexer::{self, Lexer, error::LexerError},
 };
 use compact_str::CompactString;
-use log::debug;
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 use thiserror::Error;
 
@@ -108,9 +107,6 @@ impl ModuleLoader {
         if program.len() != modules.len() + vars.len() {
             return Err(ModuleError::InvalidModule);
         }
-
-        debug!("modules: {:?}", modules);
-        debug!("vars: {:?}", vars);
 
         Ok(Some(Module {
             name: module_name.to_string(),
