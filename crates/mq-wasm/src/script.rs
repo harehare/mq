@@ -25,7 +25,7 @@ export interface Diagnostic {
 
 export interface Options {
     isUpdate: boolean,
-    inputFormat: 'html' | 'markdown' | 'text' | 'mdx' | null,
+    inputFormat: 'markdown' | 'text' | 'mdx' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -184,7 +184,6 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
             .collect::<Vec<_>>(),
         _ => {
             let md = match options.input_format {
-                Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
                 Some(InputFormat::Mdx) => mq_markdown::Markdown::from_mdx_str(content),
                 _ => mq_markdown::Markdown::from_str(content),
             }

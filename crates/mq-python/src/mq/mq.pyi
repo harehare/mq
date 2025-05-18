@@ -6,8 +6,7 @@ class InputFormat(Enum):
 
     MARKDOWN: 1
     MDX: 2
-    HTML: 3
-    TEXT: 4
+    TEXT: 3
 
 class ListStyle(Enum):
     """Style to use for markdown lists."""
@@ -186,7 +185,7 @@ def run(code: str, content: str, options: Optional[Options] = None) -> MQResult:
 
     Args:
         code: The mq query string to run against the content
-        content: The markdown content to process (or HTML/text depending on options)
+        content: The markdown content to process (or text depending on options)
         options: Configuration options for processing. If None, default options are used.
 
     Returns:

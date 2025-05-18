@@ -263,8 +263,6 @@ export const Playground = () => {
         ? "markdown"
         : format === "text"
         ? "text"
-        : format === "html"
-        ? "html"
         : format === "mdx"
         ? "mdx"
         : null;
@@ -777,7 +775,6 @@ export const Playground = () => {
                 >
                   <option value="markdown">Markdown</option>
                   <option value="mdx">MDX</option>
-                  <option value="html">HTML</option>
                   <option value="text">Text</option>
                 </select>
               </label>

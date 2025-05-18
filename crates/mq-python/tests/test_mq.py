@@ -49,12 +49,6 @@ def test_mq_queries(code, content, expected):
             "# MDX Content\n\n<Component />",
             ["<Component />"],
         ),
-        (
-            mq.InputFormat.HTML,
-            ".h1",
-            "<h1>Title</h1><p>Paragraph</p>",
-            ["# Title"],
-        ),
     ],
 )
 def test_input_formats(input_format, code, content, expected):

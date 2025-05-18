@@ -258,16 +258,6 @@ impl ServerHandler for Server {
 }
 
 pub async fn start() -> miette::Result<()> {
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .finish();
-
-    if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
-        eprintln!("Failed to set global logger: {}", err);
-    }
-
-    unsafe { std::env::set_var("NO_COLOR", "1") };
     let transport = (stdin(), stdout());
     let server = Server;
 

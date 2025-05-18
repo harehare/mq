@@ -52,7 +52,6 @@ enum InputFormat {
     #[default]
     Markdown,
     Mdx,
-    Html,
     Text,
     Null,
 }
@@ -385,11 +384,6 @@ impl Cli {
                 .map(mq_lang::Value::from)
                 .collect::<Vec<_>>(),
             InputFormat::Mdx => mq_markdown::Markdown::from_mdx_str(content)?
-                .nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>(),
-            InputFormat::Html => mq_markdown::Markdown::from_html(content)?
                 .nodes
                 .into_iter()
                 .map(mq_lang::Value::from)
