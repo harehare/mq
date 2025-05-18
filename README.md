@@ -126,8 +126,8 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 Commands:
   repl        Start a REPL session for interactive query execution
   lsp         Start a language server for mq
-  mcp         Start a TUI for mq Start an MCP server for mq
-  tui         
+  mcp         Start an MCP server for mq
+  tui         Start a TUI for mq
   fmt         Format mq files based on specified formatting options
   completion  Generate shell completion scripts for supported shells
   docs        Show functions documentation for the query
