@@ -14,7 +14,7 @@ use std::{env, fs, path::PathBuf};
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
 #[command(author = "Takahiro Sato. <harehare1110@gmail.com>")]
-#[command(version = "0.1.5")]
+#[command(version = "0.1.6")]
 #[command(after_help = "Examples:\n\n\
     To filter markdown nodes:\n\
     $ mq 'query' file.md\n\n\
