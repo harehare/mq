@@ -8,6 +8,9 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
   repl        Start a REPL session for interactive query execution
+  lsp         Start a language server for mq
+  mcp         Start a TUI for mq Start an MCP server for mq
+  tui         
   fmt         Format mq files based on specified formatting options
   completion  Generate shell completion scripts for supported shells
   docs        Show functions documentation for the query
@@ -21,7 +24,7 @@ Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [default: markdown] [possible values: markdown, mdx, html, text, null]
+          Set input format [default: markdown] [possible values: markdown, mdx, text, null]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -46,10 +49,6 @@ Options:
           Output to the specified file
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
-  -v, --verbose...
-          Increase logging verbosity
-  -q, --quiet...
-          Decrease logging verbosity
   -h, --help
           Print help
   -V, --version

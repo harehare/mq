@@ -19,7 +19,7 @@ let code = r#"
   def main():
     let x = 42; | x;
   "#;
-hir.add_code(Url::from_str("file:///main.rs").unwrap(), code);
+hir.add_code(Some(Url::from_str("file:///main.rs").unwrap()), code);
 
 // Retrieve symbols from the HIR
 let symbols: Vec<(SymbolId, &Symbol)> = hir.symbols().collect::<Vec<_>>();

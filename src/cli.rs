@@ -152,9 +152,9 @@ enum Commands {
     Repl,
     /// Start a language server for mq
     Lsp,
-    /// Start a TUI for mq
     /// Start an MCP server for mq
     Mcp,
+    /// Start a TUI for mq
     Tui {
         /// Path to the file to be opened in TUI mode
         #[arg(value_name = "FILE")]
