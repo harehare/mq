@@ -102,16 +102,10 @@ impl Hir {
         });
     }
 
-    pub fn add_code(&mut self, url: Url, code: &str) -> (SourceId, ScopeId) {
+    pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId) {
         let (nodes, _) = mq_lang::parse_recovery(code);
 
-        self.add_nodes(url, &nodes)
-    }
-
-    pub fn add_code_without_url(&mut self, code: &str) -> (SourceId, ScopeId) {
-        let (nodes, _) = mq_lang::parse_recovery(code);
-
-        self.add_nodes(Url::parse("file:///").unwrap(), &nodes)
+        self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes)
     }
 
     pub fn add_builtin(&mut self) {
@@ -375,7 +369,7 @@ impl Hir {
                 let module_name = child.name().unwrap();
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
                     let code = self.module_loader.read_file(&module_name);
-                    let (module_source_id, _) = self.add_code(url, &code.unwrap_or_default());
+                    let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
 
                     self.add_symbol(Symbol {
                         value: Some(module_name.clone()),
@@ -898,10 +892,9 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_kind: Vec<SymbolKind>,
     ) {
         let mut hir = Hir::new();
-        let url = Url::parse("file:///test").unwrap();
 
         hir.builtin.disabled = true;
-        hir.add_code(url, code);
+        hir.add_code(None, code);
 
         let symbols = hir
             .symbols()
@@ -949,8 +942,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_kind: SymbolKind,
     ) {
         let mut hir = Hir::new();
-        let url = Url::parse("file:///test").unwrap();
-        hir.add_code(url, code);
+        hir.add_code(None, code);
 
         let symbol = hir
             .symbols
@@ -1005,8 +997,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_kind: SymbolKind,
     ) {
         let mut hir = Hir::new();
-        let url = Url::parse("file:///test").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), code);
+        let (source_id, _) = hir.add_code(None, code);
 
         let (_, symbol) = hir.find_symbol_in_position(source_id, pos).unwrap();
         assert_eq!(symbol.value, Some(expected_name.into()));

@@ -16,15 +16,12 @@ impl Hir {
 }
 #[cfg(test)]
 mod tests {
-    use url::Url;
-
     use super::*;
 
     #[test]
     fn test_references() {
         let mut hir = Hir::new();
-        let url = Url::parse("file:///test").unwrap();
-        let _ = hir.add_code(url.clone(), "def func1(): 1; let val1 = func1()");
+        let _ = hir.add_code(None, "def func1(): 1; let val1 = func1()");
 
         assert_eq!(
             hir.references(hir.symbols().collect::<Vec<_>>().first().unwrap().0),

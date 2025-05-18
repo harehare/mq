@@ -69,7 +69,7 @@ mod tests {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
         let position = Position::new(0, 5);
-        hir.add_code(url.clone(), "def func1(): 1;");
+        hir.add_code(Some(url.clone()), "def func1(): 1;");
 
         let hover = response(Arc::new(RwLock::new(hir)), url, position);
 
@@ -89,7 +89,7 @@ mod tests {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
         let position = Position::new(0, 5);
-        hir.add_code(url.clone(), "let val = 1 | val");
+        hir.add_code(Some(url.clone()), "let val = 1 | val");
 
         let hover = response(Arc::new(RwLock::new(hir)), url, position);
 

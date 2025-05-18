@@ -212,7 +212,7 @@ impl Cli {
             Some(Commands::Docs) => {
                 let query = self.get_query().unwrap_or_default();
                 let mut hir = mq_hir::Hir::default();
-                hir.add_code_without_url(&query);
+                hir.add_code(None, &query);
 
                 let mut doc_csv = hir
                     .symbols()

@@ -473,7 +473,7 @@ mod tests {
             .hir
             .write()
             .unwrap()
-            .add_code(uri.clone(), "def main(): 1;");
+            .add_code(Some(uri.clone()), "def main(): 1;");
 
         let result = backend
             .semantic_tokens_full(SemanticTokensParams {
@@ -727,7 +727,7 @@ mod tests {
             .hir
             .write()
             .unwrap()
-            .add_code(uri.clone(), "def main(): 1;");
+            .add_code(Some(uri.clone()), "def main(): 1;");
 
         let result = backend
             .semantic_tokens_range(SemanticTokensRangeParams {

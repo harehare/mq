@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -276,8 +275,7 @@ pub fn diagnostics(code: &str) -> JsValue {
 #[wasm_bindgen(js_name=definedValues, skip_typescript)]
 pub fn defined_values(code: &str) -> Result<JsValue, JsValue> {
     let mut hir = mq_hir::Hir::default();
-    let file = Url::parse("file:///").unwrap();
-    hir.add_code(file, code);
+    hir.add_code(None, code);
 
     let symbols = hir
         .symbols()

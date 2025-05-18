@@ -47,8 +47,6 @@ impl Scope {
 }
 #[cfg(test)]
 mod tests {
-    use url::Url;
-
     use crate::Hir;
 
     use super::*;
@@ -56,8 +54,7 @@ mod tests {
     #[test]
     fn test_add_child() {
         let mut hir = Hir::new();
-        let url = Url::parse("file:///test").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), "let x = 5");
+        let (source_id, _) = hir.add_code(None, "let x = 5");
         let source = SourceInfo::new(Some(source_id), None);
         let mut scope = Scope::new(source, ScopeKind::Module(source_id), None);
         let child_id = ScopeId::default();
@@ -70,8 +67,7 @@ mod tests {
     #[test]
     fn test_symbol_id() {
         let mut hir = Hir::new();
-        let url = Url::parse("file:///test").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), "let x = 5");
+        let (source_id, _) = hir.add_code(None, "let x = 5");
         let source = SourceInfo::new(Some(source_id), None);
         let symbol_id = hir.symbols().collect::<Vec<_>>().first().unwrap().0;
 

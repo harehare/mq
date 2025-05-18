@@ -200,7 +200,7 @@ mod tests {
         let url = Url::parse("file:///test.mq").unwrap();
 
         hir.add_code(
-            url.clone(),
+            Some(url.clone()),
             "let val1 = 1 | def func1(): 1; def func2(): \"2\"; def func3(x): x; def func4(): false; | .h | func1() | func2() | func3(1) | func4()",
         );
 
@@ -215,7 +215,7 @@ mod tests {
         let mut hir = mq_hir::Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
 
-        hir.add_code(url.clone(), "# This is a comment\ndef func1(): 1;");
+        hir.add_code(Some(url.clone()), "# This is a comment\ndef func1(): 1;");
 
         let hir = Arc::new(RwLock::new(hir));
         let tokens = response(hir, url);

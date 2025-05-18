@@ -46,7 +46,7 @@ mod tests {
     fn test_goto_definition_found() {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
-        hir.add_code(url.clone(), "def func1(): 1; func1()");
+        hir.add_code(Some(url.clone()), "def func1(): 1; func1()");
 
         let result = response(Arc::new(RwLock::new(hir)), url.clone(), Position::new(0, 4));
 
@@ -73,7 +73,7 @@ mod tests {
     fn test_goto_definition_no_text_range() {
         let mut hir = mq_hir::Hir::new();
         let url = Url::parse("file:///test.mq").unwrap();
-        hir.add_code(url.clone(), "let x = 42;");
+        hir.add_code(Some(url.clone()), "let x = 42;");
 
         let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 11));
         assert!(result.is_none());

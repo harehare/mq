@@ -83,7 +83,7 @@ mod tests {
         let (source_id, _) = hir
             .write()
             .unwrap()
-            .add_code(url.clone(), "def func1(): 1; let x = func1()");
+            .add_code(Some(url.clone()), "def func1(): 1; let x = func1()");
         source_map.insert(url.to_string(), source_id);
 
         let position = Position::new(0, 5);

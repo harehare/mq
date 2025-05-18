@@ -86,15 +86,12 @@ impl Hir {
 }
 #[cfg(test)]
 mod tests {
-    use url::Url;
-
     use super::*;
 
     #[test]
     fn test_find_similar_names() {
         let mut hir = Hir::default();
-        let url = Url::parse("file:///test").unwrap();
-        let _ = hir.add_code(url.clone(), "let test = 1 | let test2 = 1 | let test3 = 1");
+        let _ = hir.add_code(None, "let test = 1 | let test2 = 1 | let test3 = 1");
 
         let similar = hir.find_similar_names("test");
         assert!(similar.is_some());
@@ -109,8 +106,7 @@ mod tests {
     #[test]
     fn test_errors() {
         let mut hir = Hir::default();
-        let url = Url::parse("file:///test").unwrap();
-        let _ = hir.add_code(url.clone(), "let abc = 1 | unknown_var | let xyz = 2");
+        let _ = hir.add_code(None, "let abc = 1 | unknown_var | let xyz = 2");
 
         let errors = hir.errors();
         assert_eq!(errors.len(), 1);
@@ -128,8 +124,7 @@ mod tests {
     #[test]
     fn test_error_ranges() {
         let mut hir = Hir::default();
-        let url = Url::parse("file:///test").unwrap();
-        let _ = hir.add_code(url.clone(), "let abc = 1 | unknown_var | let xyz = 2");
+        let _ = hir.add_code(None, "let abc = 1 | unknown_var | let xyz = 2");
 
         let error_ranges = hir.error_ranges();
         assert_eq!(error_ranges.len(), 1);

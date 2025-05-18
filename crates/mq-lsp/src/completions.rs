@@ -118,7 +118,7 @@ mod tests {
         let mut hir = Hir::default();
         let mut source_map = BiMap::new();
         let url = Url::parse("file:///unknown.mql").unwrap();
-        let (source_id, _) = hir.add_code(url.clone(), "def func1(): 1;");
+        let (source_id, _) = hir.add_code(Some(url.clone()), "def func1(): 1;");
 
         source_map.insert(url.to_string(), source_id);
 
