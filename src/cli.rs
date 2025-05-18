@@ -52,7 +52,6 @@ enum InputFormat {
     #[default]
     Markdown,
     Mdx,
-    Html,
     Text,
     Null,
 }
@@ -151,6 +150,16 @@ struct OutputArgs {
 enum Commands {
     /// Start a REPL session for interactive query execution
     Repl,
+    /// Start a language server for mq
+    Lsp,
+    /// Start a TUI for mq
+    /// Start an MCP server for mq
+    Mcp,
+    Tui {
+        /// Path to the file to be opened in TUI mode
+        #[arg(value_name = "FILE")]
+        file_path: PathBuf,
+    },
     /// Format mq files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
@@ -184,6 +193,28 @@ impl Cli {
         match &self.commands {
             Some(Commands::Repl) => {
                 mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
+            }
+            Some(Commands::Tui { file_path }) => {
+                let mut app = {
+                    let content = fs::read_to_string(file_path).into_diagnostic()?;
+                    mq_tui::App::with_file(content, file_path.to_string_lossy().into_owned())
+                };
+
+                app.run()?;
+
+                Ok(())
+            }
+            Some(Commands::Lsp) => {
+                tokio::runtime::Runtime::new()
+                    .into_diagnostic()?
+                    .block_on(async { mq_lsp::start().await });
+                Ok(())
+            }
+            Some(Commands::Mcp) => {
+                let _ = tokio::runtime::Runtime::new()
+                    .into_diagnostic()?
+                    .block_on(async { mq_mcp::start().await });
+                Ok(())
             }
             Some(Commands::Fmt {
                 indent_width,
@@ -353,11 +384,6 @@ impl Cli {
                 .map(mq_lang::Value::from)
                 .collect::<Vec<_>>(),
             InputFormat::Mdx => mq_markdown::Markdown::from_mdx_str(content)?
-                .nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>(),
-            InputFormat::Html => mq_markdown::Markdown::from_html(content)?
                 .nodes
                 .into_iter()
                 .map(mq_lang::Value::from)

@@ -5,6 +5,7 @@
   - [Install](start/install.md)
   - [Development](start/development.md)
   - [Playground](start/playground.md)
+  - [TUI](start/tui.md)
   - [Example](start/example.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)

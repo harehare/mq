@@ -62,11 +62,6 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     "",
     Some("3\n")
 )]
-#[case::html_input(
-    vec!["--unbuffered", "-I", "html", ".h"],
-    "<html><body><h1>test</h1></body></html>",
-    Some("# test\n")
-)]
 #[case::mdx_input(
     vec!["--unbuffered", "-I", "mdx", "select(is_mdx())"],
     r##"import {Chart} from './snowfall.js'

@@ -14,8 +14,6 @@ enum InputFormat {
     Markdown,
     #[pyo3(name = "MDX")]
     Mdx,
-    #[pyo3(name = "HTML")]
-    Html,
     #[pyo3(name = "TEXT")]
     Text,
 }
@@ -88,7 +86,6 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult
             .collect::<Vec<_>>(),
         _ => {
             let md = match options.input_format {
-                Some(InputFormat::Html) => mq_markdown::Markdown::from_html(content),
                 Some(InputFormat::Markdown) => mq_markdown::Markdown::from_str(content),
                 Some(InputFormat::Mdx) => mq_markdown::Markdown::from_mdx_str(content),
                 _ => mq_markdown::Markdown::from_str(content),

@@ -267,13 +267,13 @@ const startLspServer = async () => {
   if (process.env._MQ_DEBUG_BIN) {
     lspPath = process.env._MQ_DEBUG_BIN;
   } else {
-    const config = vscode.workspace.getConfiguration("mq-lsp");
+    const config = vscode.workspace.getConfiguration("mq");
     const configLspPath = config.get<string>("lspPath");
 
     if (configLspPath) {
       lspPath = configLspPath;
     } else {
-      lspPath = await which("mq-lsp", { nothrow: true });
+      lspPath = await which("mq", { nothrow: true });
     }
 
     if (lspPath === null) {
@@ -284,7 +284,7 @@ const startLspServer = async () => {
 
   const run: lc.Executable = {
     command: lspPath,
-    args: [],
+    args: ["lsp"],
     options: {
       cwd: ".",
     },
@@ -339,7 +339,7 @@ const installLspServer = async (
     "Install LSP Server",
     "mq-lsp",
     new vscode.ShellExecution(
-      `cargo install --git https://github.com/harehare/mq.git mq-lsp${
+      `cargo install --git https://github.com/harehare/mq.git mq-cli${
         force ? " --force" : ""
       }`
     )

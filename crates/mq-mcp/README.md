@@ -40,15 +40,6 @@ Extracted content can be further processed with functions:
 
 ## Usage
 
-## Installation
-
-### Homebrew
-
-```bash
-# Using Homebrew (macOS and Linux)
-$ brew install harehare/tap/mq-mcp
-```
-
 ### VS Code
 
 To use `mq-mcp` with Visual Studio Code, add the following configuration to your `.vscode/settings.json`:
@@ -59,8 +50,8 @@ To use `mq-mcp` with Visual Studio Code, add the following configuration to your
     "servers": {
       "mq-mcp": {
         "type": "stdio",
-        "command": "/path/to/mq-mcp",
-        "args": []
+        "command": "/path/to/mq",
+        "args": ["mcp"]
       }
     }
   }
@@ -78,8 +69,8 @@ For integrating with Claude:
   "mcpServers": {
     "mcp": {
       "mq-mcp": {
-        "command": "/path/to/mq-mcp",
-        "args": []
+        "command": "/path/to/mq",
+        "args": ["mcp"]
       }
     }
   }
