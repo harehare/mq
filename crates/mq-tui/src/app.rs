@@ -29,7 +29,7 @@ pub struct App {
     /// The query to run on the Markdown content
     query: String,
     /// The current results from the query
-    results: Vec<mq_lang::Value>,
+    results: Vec<mq_markdown::Node>,
     /// Currently selected result index
     selected_idx: usize,
     /// Last query execution time
@@ -312,16 +312,22 @@ impl App {
         let markdown_result = Markdown::from_str(&self.content);
         match markdown_result {
             Ok(markdown) => {
-                let md_nodes = markdown
-                    .nodes
-                    .into_iter()
-                    .map(mq_lang::Value::from)
-                    .collect::<Vec<_>>();
-
                 if !self.query.is_empty() {
+                    let md_nodes = markdown
+                        .nodes
+                        .into_iter()
+                        .map(mq_lang::Value::from)
+                        .collect::<Vec<_>>();
+
                     match engine.eval(&self.query, md_nodes.into_iter()) {
                         Ok(results) => {
-                            self.results = results.compact();
+                            self.results = results
+                                .into_iter()
+                                .map(|runtime_value| match runtime_value {
+                                    mq_lang::Value::Markdown(node) => node.clone(),
+                                    _ => runtime_value.to_string().into(),
+                                })
+                                .collect();
                             self.error_msg = None;
                         }
                         Err(err) => {
@@ -331,7 +337,7 @@ impl App {
                     }
                 } else {
                     // Show all nodes when query is empty
-                    self.results = md_nodes;
+                    self.results = markdown.nodes;
                     self.error_msg = None;
                 }
             }
@@ -360,7 +366,7 @@ impl App {
     }
 
     /// Get the current results
-    pub fn results(&self) -> &[mq_lang::Value] {
+    pub fn results(&self) -> &[mq_markdown::Node] {
         &self.results
     }
 

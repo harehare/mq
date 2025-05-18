@@ -91,8 +91,9 @@ fn draw_results_list(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = results
-        .iter()
+    let items: Vec<ListItem> = mq_markdown::Markdown::new(results.to_vec())
+        .to_string()
+        .lines()
         .enumerate()
         .map(|(i, value)| {
             let content = Line::from(value.to_string());
