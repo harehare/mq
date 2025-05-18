@@ -10,6 +10,7 @@ Set TypingSpeed 50ms
 Set FontFamily "Hack Nerd Font"
 Set Padding 16
 Set WindowBar Colorful
+Set Framerate 20
 
 Hide
 Type "clear"
