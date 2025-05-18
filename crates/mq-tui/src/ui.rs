@@ -195,7 +195,7 @@ fn draw_help_screen(frame: &mut Frame) {
     let area = frame.size();
 
     let width = area.width.clamp(20, 60);
-    let height = area.height.clamp(10, 20);
+    let height = area.height.clamp(10, 25);
     let x = (area.width.saturating_sub(width)) / 2;
     let y = (area.height.saturating_sub(height)) / 2;
 
