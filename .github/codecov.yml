@@ -1,6 +1,6 @@
 ignore:
   - "crates/mq-wasm"
-  - "crates/mq-tui"
+  - "crates/mq-tui/tests/tests.rs"
   - "crates/mq-python"
   - "crates/mq-lsp/src/capabilities.rs"
   - "crates/mq-repl/src/repl.rs"

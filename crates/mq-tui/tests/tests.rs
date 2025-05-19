@@ -150,3 +150,91 @@ fn test_query_editing() {
     .unwrap();
     assert_eq!(app.query(), "tes");
 }
+
+#[test]
+fn test_quit_command() {
+    let mut app = create_test_app();
+
+    let result = app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('q'),
+        KeyModifiers::NONE,
+    )));
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_query_submission() {
+    let mut app = create_test_app();
+
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char(':'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('.'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('h'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    assert_eq!(app.query(), ".h");
+    assert_eq!(app.mode(), Mode::Normal);
+    assert!(!app.results().is_empty());
+}
+
+#[test]
+fn test_page_navigation() {
+    let mut app = create_test_app();
+    app.exec_query();
+
+    let initial_idx = app.selected_idx();
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::PageDown,
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+    assert!(app.selected_idx() > initial_idx);
+
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::PageUp,
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+    assert_eq!(app.selected_idx(), initial_idx);
+}
+
+#[test]
+fn test_home_end_navigation() {
+    let mut app = create_test_app();
+    app.set_query(".h".to_string());
+    app.exec_query();
+
+    app.handle_event(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)))
+        .unwrap();
+    assert_eq!(app.selected_idx(), app.results().len() - 1);
+
+    app.handle_event(Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE)))
+        .unwrap();
+    assert_eq!(app.selected_idx(), 0);
+}
+
+#[test]
+fn test_resize_event() {
+    let mut app = create_test_app();
+
+    app.handle_event(Event::Resize(100, 50)).unwrap();
+    assert_eq!(app.mode(), Mode::Normal);
+}
