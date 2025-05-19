@@ -16,4 +16,4 @@ miette = {workspace = true}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
 ratatui = "0.26.1"
-unicode-width = "0.1.13"
+unicode-width = "0.2.0"
