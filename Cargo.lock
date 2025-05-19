@@ -1496,7 +1496,7 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "ratatui",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
