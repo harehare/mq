@@ -7,11 +7,17 @@
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 ![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
 [![codecov](https://codecov.io/gh/harehare/mq/graph/badge.svg?token=E4UD7Q9NC3)](https://codecov.io/gh/harehare/mq)
-[![CodSpeed Badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/harehare/mq)
+[![CodSpeed Badge](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json?style=for-the-badge)](https://codspeed.io/harehare/mq)
 ![](https://tokei.rs/b1/github/harehare/mq?category=code)
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
+
+[Visit the site 🌐](https://mqlang.org)
+&mdash;
+[Read the book 📖](https://mqlang.org/book)
+&mdash;
+[Playground 🎮](https://mqlang.org/playground)
 
 ![demo](assets/demo.gif)
 
@@ -96,12 +102,6 @@ steps:
   - run: mq '.code' README.md
 ```
 
-## MCP (Model Context Protocol) server
-
-mq supports an MCP server for integration with LLM applications.
-
-See the [MCP documentation](https://github.com/harehare/mq/blob/main/crates/mq-mcp/README.md) for more information.
-
 ## Python
 
 You can use mq in Python through the `markdown-query` package:
@@ -134,8 +134,8 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -224,66 +224,7 @@ $ markitdown https://github.com/harehare/mq | mq '.code'
 
 # Extract table from markdown
 $ markitdown test.xlsx | mq '.[][]'
-
 ```
-
-## Development
-
-### Prerequisites
-
-- [Rust](https://www.rust-lang.org/tools/install)
-- [just](https://github.com/casey/just) - a command runner
-- [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) (optional, for WebAssembly support)
-
-### Setting up the development environment
-
-Clone the repository:
-
-```sh
-git clone https://github.com/harehare/mq.git
-cd mq
-```
-
-Install development dependencies:
-
-```sh
-# Using cargo
-cargo install just wasm-pack
-```
-
-Or if you prefer using asdf:
-
-```sh
-# Using asdf
-asdf install
-```
-
-### Common development tasks
-
-Here are some useful commands to help you during development:
-
-```sh
-# Run the CLI with the provided arguments
-just run '.code'
-
-# Run formatting, linting and all tests
-just test
-
-# Run formatter and linter
-just lint
-
-# Build the project in release mode
-just build
-
-# Update documentation
-just docs
-```
-
-Check the `just --list` for more available commands and build options.
-
-## Playground
-
-An [Online Playground](https://mqlang.org/playground) is available, powered by WebAssembly.
 
 ## License
 
