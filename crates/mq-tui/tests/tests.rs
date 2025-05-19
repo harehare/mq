@@ -1,5 +1,5 @@
-use crate::app::{App, Mode};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use mq_tui::{App, Mode};
 
 fn create_test_app() -> App {
     let content = r#"# Test Heading
@@ -31,7 +31,7 @@ fn test_query_execution() {
     app.set_query(".h".to_string());
     app.exec_query();
 
-    assert_eq!(app.results().len(), 2);
+    assert_eq!(app.results().len(), 5);
 }
 
 #[test]

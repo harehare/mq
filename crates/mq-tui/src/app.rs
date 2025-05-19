@@ -410,17 +410,11 @@ impl App {
         &self.query_history
     }
 
-    /// Set the query string (primarily for testing)
-    #[cfg(test)]
     pub fn set_query(&mut self, query: String) {
         self.query = query;
         self.cursor_position = self.query.len();
     }
 
-    // No need for a separate testing exec_query since the method already exists
-
-    /// Set the mode (primarily for testing)
-    #[cfg(test)]
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }
