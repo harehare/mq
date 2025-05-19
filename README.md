@@ -2,6 +2,12 @@
     <img src="docs/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
 </div>
 
+[Visit the site 🌐](https://mqlang.org)
+&mdash;
+[Read the book 📖](https://mqlang.org/book)
+&mdash;
+[Playground 🎮](https://mqlang.org/playground)
+
 # mq
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
@@ -12,12 +18,6 @@
 
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
-
-[Visit the site 🌐](https://mqlang.org)
-&mdash;
-[Read the book 📖](https://mqlang.org/book)
-&mdash;
-[Playground 🎮](https://mqlang.org/playground)
 
 ![demo](assets/demo.gif)
 
