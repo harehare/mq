@@ -63,31 +63,31 @@
     ],
     "commands": [
       {
-        "command": "mq-lsp.new",
+        "command": "mq.new",
         "title": "mq: New File"
       },
       {
-        "command": "mq-lsp.installLSPServer",
+        "command": "mq.installLSPServer",
         "title": "mq: Install LSP Server"
       },
       {
-        "command": "mq-lsp.startLSPServer",
+        "command": "mq.startLSPServer",
         "title": "mq: Start LSP Server"
       },
       {
-        "command": "mq-lsp.setSelectedTextAsInput",
+        "command": "mq.setSelectedTextAsInput",
         "title": "mq: Set selected text as input"
       },
       {
-        "command": "mq-lsp.runSelectedText",
+        "command": "mq.runSelectedText",
         "title": "mq: Run selected text"
       },
       {
-        "command": "mq-lsp.showInput",
+        "command": "mq.showInput",
         "title": "mq: Show input text"
       },
       {
-        "command": "mq-lsp.executeMqFile",
+        "command": "mq.executeMqFile",
         "title": "mq: Execute mq file"
       }
     ],
@@ -95,12 +95,12 @@
       "type": "object",
       "title": "LSP Configuration",
       "properties": {
-        "mq-lsp.lspPath": {
+        "mq.lspPath": {
           "type": "string",
           "default": "",
           "description": "Path to the LSP server executable"
         },
-        "mq-lsp.showExamplesInNewFile": {
+        "mq.showExamplesInNewFile": {
           "type": "boolean",
           "default": true,
           "description": "Show examples when creating a new file"
