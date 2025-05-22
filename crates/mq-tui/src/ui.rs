@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{
@@ -18,7 +18,7 @@ pub fn draw_ui(frame: &mut Frame, app: &App) {
             Constraint::Min(0),    // Results area
             Constraint::Length(1), // Status line
         ])
-        .split(frame.size());
+        .split(frame.area());
 
     if app.mode() == Mode::Query {
         draw_query_input(frame, app, chunks[0]);
@@ -65,10 +65,10 @@ fn draw_query_input(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(query_text, area);
 
     let cursor_x = app.cursor_position() as u16 + 1; // +1 for block border
-    frame.set_cursor(
+    frame.set_cursor_position(Position::new(
         area.x + cursor_x,
         area.y + 1, // +1 for block border
-    );
+    ));
 }
 
 fn draw_results_list(frame: &mut Frame, app: &App, area: Rect) {
@@ -192,7 +192,7 @@ fn draw_detail_view(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_help_screen(frame: &mut Frame) {
-    let area = frame.size();
+    let area = frame.area();
 
     let width = area.width.clamp(20, 60);
     let height = area.height.clamp(10, 25);
@@ -300,7 +300,7 @@ fn draw_help_screen(frame: &mut Frame) {
 }
 
 fn draw_error_popup(frame: &mut Frame, error: &str) {
-    let frame_size = frame.size();
+    let frame_size = frame.area();
 
     let width = frame_size.width.clamp(20, 60);
     let height = 3;
