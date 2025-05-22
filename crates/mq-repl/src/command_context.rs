@@ -1,5 +1,6 @@
 use std::{fmt, fs, str::FromStr};
 
+#[cfg(feature = "clipboard")]
 use arboard::Clipboard;
 use miette::{IntoDiagnostic, miette};
 use strum::IntoEnumIterator;
@@ -128,16 +129,22 @@ impl CommandContext {
     pub fn execute(&mut self, to_run: &str) -> miette::Result<CommandOutput> {
         match to_run.to_string().into() {
             Command::Copy => {
-                let text = self
-                    .input
-                    .iter()
-                    .map(|runtime_value| runtime_value.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let mut clipboard = Clipboard::new().unwrap();
-
-                clipboard.set_text(text).into_diagnostic()?;
-                Ok(CommandOutput::None)
+                #[cfg(feature = "clipboard")]
+                {
+                    let text = self
+                        .input
+                        .iter()
+                        .map(|runtime_value| runtime_value.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let mut clipboard = Clipboard::new().map_err(|e| miette!("Failed to initialize clipboard: {}", e))?;
+                    clipboard.set_text(text).into_diagnostic()?;
+                    Ok(CommandOutput::None)
+                }
+                #[cfg(not(feature = "clipboard"))]
+                {
+                    Ok(CommandOutput::String(vec!["Clipboard feature is not enabled. Compile with '--features clipboard' to enable.".to_string()]))
+                }
             }
             Command::Env(name, value) => {
                 unsafe { std::env::set_var(name, value) };

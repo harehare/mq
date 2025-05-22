@@ -15,5 +15,5 @@ log = "0.4.27"
 miette = {workspace = true}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
-ratatui = "0.29.0"
+ratatui = {version = "0.29.0", default-features = false, features = ["crossterm"]}
 unicode-width = "0.2.0"

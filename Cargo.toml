@@ -53,7 +53,7 @@ mq-mcp = {path = "./crates/mq-mcp", version = "0.1.6"}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.6"}
 mq-tui = {path = "./crates/mq-tui", version = "0.1.6"}
 rayon = "1.10.0"
-tokio = {version = "1.27.0", features = ["io-util", "io-std", "rt-multi-thread"]}
+tokio = {version = "1.27.0", features = ["io-util", "io-std", "rt"]}
 url = {workspace = true}
 
 [dev-dependencies]
@@ -83,7 +83,7 @@ path = "src/main.rs"
 [profile.release]
 codegen-units = 1
 lto = "fat"
-opt-level = 3
+opt-level = "z"
 panic = 'abort'
 strip = true
 

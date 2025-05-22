@@ -13,7 +13,7 @@ version = "0.1.6"
 [dependencies]
 compact_str = {workspace = true}
 itertools = {workspace = true}
-markdown = "1.0.0"
+markdown = {version = "1.0.0", default-features = false, features = ["constructs", "html", "unicode"]}
 miette = {version = "7.6.0"}
 serde = {version = "1.0.219", features = ["derive"], optional = true}
 serde_json = {version = "1.0.140", optional = true}
