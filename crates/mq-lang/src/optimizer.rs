@@ -1,16 +1,17 @@
 use std::rc::Rc;
 
 use compact_str::CompactString;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 
-use crate::{Program, ast::node::Args};
+use crate::{Program, ast::IdentName, ast::node::Args}; // Corrected import for IdentName
 
 use super::ast::node as ast;
 
 #[derive(Debug, Default)]
 pub struct Optimizer {
     constant_table: FxHashMap<ast::Ident, Rc<ast::Expr>>,
+    // No need to store used_identifiers here if it's collected and used per optimize call.
 }
 
 impl Optimizer {
@@ -20,13 +21,138 @@ impl Optimizer {
         }
     }
 
-    pub fn optimize(&mut self, program: &Program) -> Program {
-        program
-            .iter()
-            .map(|node| self.optimize_node(Rc::clone(node)))
-            .collect::<Vec<_>>()
+    fn collect_used_identifiers_in_node(
+        node: &Rc<ast::Node>,
+        used_idents: &mut FxHashSet<IdentName>,
+        // TODO: Add handling for scopes if necessary for more complex DCE.
+        // For now, this collects all idents used in any readable position.
+        // Def/Fn parameter names and Let binding names are definitions, not uses here.
+    ) {
+        match &*node.expr {
+            ast::Expr::Ident(ident) => {
+                used_idents.insert(ident.name.clone());
+            }
+            ast::Expr::Call(func_ident, args, _) => {
+                // The function name itself is a use if it's not a built-in.
+                // However, the current task is about 'let' bound variables.
+                // If 'func_ident' refers to a let-bound function, it's a use.
+                used_idents.insert(func_ident.name.clone());
+                for arg in args {
+                    Self::collect_used_identifiers_in_node(arg, used_idents);
+                }
+            }
+            ast::Expr::Let(_ident, value_node) => {
+                // The _ident is a definition. Collect uses from its value.
+                Self::collect_used_identifiers_in_node(value_node, used_idents);
+            }
+            ast::Expr::Def(_ident, _params, program_nodes) => {
+                // _ident and _params are definitions for the sub-scope.
+                // Collect uses from the body of the function/definition.
+                for stmt in program_nodes {
+                    Self::collect_used_identifiers_in_node(stmt, used_idents);
+                }
+            }
+            ast::Expr::Fn(_params, program_nodes) => {
+                // _params are definitions for the sub-scope.
+                // Collect uses from the body of the function.
+                // For this pass, we are collecting all idents that appear in readable positions.
+                for stmt in program_nodes {
+                    Self::collect_used_identifiers_in_node(stmt, used_idents);
+                }
+            }
+            ast::Expr::If(conditions) => {
+                for (cond_node_opt, body_node) in conditions {
+                    if let Some(cond_node) = cond_node_opt {
+                        Self::collect_used_identifiers_in_node(cond_node, used_idents);
+                    }
+                    Self::collect_used_identifiers_in_node(body_node, used_idents);
+                }
+            }
+            ast::Expr::While(cond_node, program_nodes)
+            | ast::Expr::Until(cond_node, program_nodes) => {
+                Self::collect_used_identifiers_in_node(cond_node, used_idents);
+                for stmt in program_nodes {
+                    Self::collect_used_identifiers_in_node(stmt, used_idents);
+                }
+            }
+            ast::Expr::Foreach(_item_ident, collection_node, program_nodes) => {
+                // _item_ident is a definition for the sub-scope.
+                Self::collect_used_identifiers_in_node(collection_node, used_idents);
+                for stmt in program_nodes {
+                    Self::collect_used_identifiers_in_node(stmt, used_idents);
+                }
+            }
+            ast::Expr::InterpolatedString(segments) => {
+                for segment in segments {
+                    if let ast::StringSegment::Ident(ident) = segment {
+                        used_idents.insert(ident.name.clone());
+                    }
+                }
+            }
+            ast::Expr::Include(ast::Literal::String(_path_str)) => {
+                // If paths could be dynamic via idents, that would be a use.
+                // For literal string paths, no idents used here.
+            }
+            // Note: ast::Literal does not have an Ident variant. Include only takes Literal::String.
+            // The following case is effectively dead code if Literal::Ident is not possible.
+            // ast::Expr::Include(ast::Literal::Ident(ident)) => {
+            //    used_idents.insert(ident.name.clone());
+            // }
+            // Literal, Selector, Nodes, Self_ generally don't contain user-defined idents that are "uses"
+            // of let-bound variables in the same way.
+            ast::Expr::Literal(_)
+            | ast::Expr::Selector(_)
+            | ast::Expr::Nodes
+            | ast::Expr::Self_
+            | ast::Expr::Include(_) => {
+                // No idents to collect from these directly in terms of variable usage.
+            }
+        }
     }
 
+    fn collect_used_identifiers(&self, program: &Program) -> FxHashSet<IdentName> {
+        let mut used_idents = FxHashSet::default();
+        for node in program {
+            Self::collect_used_identifiers_in_node(node, &mut used_idents);
+        }
+        used_idents
+    }
+
+    pub fn optimize(&mut self, program: &Program) -> Program {
+        // Pass 1: Collect all used identifiers
+        let used_identifiers = self.collect_used_identifiers(program);
+
+        // Pass 2: Optimize and eliminate unused Let bindings
+        let mut optimized_program = Vec::new();
+        for node in program.iter() {
+            match &*node.expr {
+                ast::Expr::Let(ident, _value) => {
+                    if used_identifiers.contains(&ident.name) {
+                        // If used, optimize the node (which also handles constant prop for this let)
+                        // and add it to the program.
+                        optimized_program.push(self.optimize_node(Rc::clone(node)));
+                    } else {
+                        // If not used, remove it from constant_table if it was a const
+                        // and do not add this Let node to the optimized_program.
+                        if self.constant_table.contains_key(ident) {
+                            // Check using Ident struct
+                            self.constant_table.remove(ident);
+                        }
+                        // Optionally, log that a variable was removed, for debugging.
+                        // e.g., println!("Optimizer: Removed unused variable '{}'", ident.name);
+                    }
+                }
+                _ => {
+                    // For all other node types, optimize them as usual.
+                    optimized_program.push(self.optimize_node(Rc::clone(node)));
+                }
+            }
+        }
+        optimized_program
+    }
+
+    // optimize_node remains largely the same, but its handling of Let within the main optimize loop is now conditional.
+    // The constant_table logic for Let nodes in optimize_node will only be hit if the Let node is deemed used.
     fn optimize_node(&mut self, node: Rc<ast::Node>) -> Rc<ast::Node> {
         match &*node.expr {
             ast::Expr::Call(ident, args, optional) => {
@@ -196,14 +322,26 @@ impl Optimizer {
                     expr: Rc::new(ast::Expr::If(conditions)),
                 })
             }
-            ast::Expr::Let(ident, value) => match &*value.expr {
-                ast::Expr::Literal(_) => {
+            ast::Expr::Let(ident, value) => {
+                // First, optimize the value part of the Let node.
+                let optimized_value = self.optimize_node(Rc::clone(value));
+                // If the optimized value is a literal, this variable is a candidate for constant propagation.
+                if let ast::Expr::Literal(_) = &*optimized_value.expr {
+                    // Add to constant_table. If this Let node is later removed by DCE,
+                    // the main optimize loop should ideally remove it from constant_table.
+                    // However, with the new two-pass approach, this optimize_node for Let
+                    // is only called if the variable is USED. So, adding to constant_table here is correct.
                     self.constant_table
-                        .insert(ident.clone(), Rc::clone(&value.expr));
-                    Rc::clone(&node)
+                        .insert(ident.clone(), Rc::clone(&optimized_value.expr));
                 }
-                _ => Rc::clone(&node),
-            },
+                // Reconstruct the Let node with the optimized value.
+                // This node itself might be removed later if the variable `ident` is unused,
+                // but that decision is made in the main `optimize` loop.
+                Rc::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Rc::new(ast::Expr::Let(ident.clone(), optimized_value)),
+                })
+            }
             ast::Expr::Def(ident, params, program) => {
                 let params = params.clone();
                 let program = program
@@ -264,6 +402,7 @@ impl Optimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::node::{Expr as AstExpr, Ident, Literal, Node}; // Added Ident
     use rstest::rstest;
     use smallvec::smallvec;
 
@@ -457,7 +596,205 @@ mod tests {
                     expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                 })
             ])]
+    #[case::dead_code_elimination_simple_unused(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("unused_var"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("used_var"),
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Ident(Ident::new("used_var"))),
+            }),
+        ],
+        // Expected: unused_var is removed
+        vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("used_var"),
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
+            }),
+        ]
+    )]
+    #[case::dead_code_elimination_used_variable_kept(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("x"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("x"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+            }),
+        ]
+    )]
+    #[case::dead_code_elimination_multiple_unused(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("a"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("b"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
+            }),
+             Rc::new(Node {
+                token_id: 6.into(),
+                expr: Rc::new(AstExpr::Ident(Ident::new("c"))),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
+            }),
+             Rc::new(Node {
+                token_id: 6.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))),
+            }),
+        ]
+    )]
+    #[case::dead_code_elimination_mixed_used_unused(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("unused1"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("unused2"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
+            }),
+            Rc::new(Node {
+                token_id: 6.into(),
+                expr: Rc::new(AstExpr::Ident(Ident::new("used1"))),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(Ident::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
+            }),
+            Rc::new(Node {
+                token_id: 6.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))),
+            }),
+        ]
+    )]
+    #[case::dead_code_elimination_unused_constant_candidate(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("const_unused"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(100.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("another_var"),
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Ident(Ident::new("another_var"))),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("another_var"),
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+            }),
+        ]
+    )]
     fn test(#[case] input: Program, #[case] expected: Program) {
-        assert_eq!(Optimizer::new().optimize(&input), expected);
+        let mut optimizer = Optimizer::new();
+        let optimized_program = optimizer.optimize(&input);
+        assert_eq!(optimized_program, expected);
+
+        // Additionally, for the unused constant candidate test, check constant_table
+        if input.len() == 3 && expected.len() == 2 {
+            // Heuristic for this specific test case
+            if let AstExpr::Let(ident, _) = &*input[0].expr {
+                if ident.name.as_str() == "const_unused" {
+                    assert!(
+                        !optimizer.constant_table.contains_key(ident),
+                        "const_unused should be removed from constant_table"
+                    );
+                }
+            }
+        }
     }
 }
