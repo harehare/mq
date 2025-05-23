@@ -1737,54 +1737,6 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".#"),
-            BuiltinSelectorDoc {
-                description: "Selects a heading node with the 1 depth.",
-                params: &[],
-            },
-        );
-
-        map.insert(
-            CompactString::new(".##"),
-            BuiltinSelectorDoc {
-                description: "Selects a heading node with the 2 depth.",
-                params: &[],
-            },
-        );
-
-        map.insert(
-            CompactString::new(".###"),
-            BuiltinSelectorDoc {
-                description: "Selects a heading node with the 3 depth.",
-                params: &[],
-            },
-        );
-
-        map.insert(
-            CompactString::new(".####"),
-            BuiltinSelectorDoc {
-                description: "Selects a heading node with the 4 depth.",
-                params: &[],
-            },
-        );
-
-        map.insert(
-            CompactString::new(".#####"),
-            BuiltinSelectorDoc {
-                description: "Selects a heading node with the 5 depth.",
-                params: &[],
-            },
-        );
-
-        map.insert(
-            CompactString::new(".######"),
-            BuiltinSelectorDoc {
-                description: "Selects a heading node with the 6 depth.",
-                params: &[],
-            },
-        );
-
-        map.insert(
             CompactString::new(".code"),
             BuiltinSelectorDoc {
                 description: "Selects a code block node with the specified language.",

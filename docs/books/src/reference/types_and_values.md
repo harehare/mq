@@ -4,7 +4,7 @@
 
 - `42` (a number)
 - `"Hello, world!"` (a string)
-- `array(1, 2, 3)` (an array)
+- `[1, 2, 3]`, `array(1, 2, 3)` (an array)
 - `true`, `false` (a boolean)
 - `None`
 
