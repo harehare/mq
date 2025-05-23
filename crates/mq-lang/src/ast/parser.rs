@@ -858,12 +858,12 @@ impl<'a> Parser<'a> {
                         }))
                     }
                 }
-                ".h1" | ".#" => self.parse_head(token, 1),
-                ".h2" | ".##" => self.parse_head(token, 2),
-                ".h3" | ".###" => self.parse_head(token, 3),
-                ".h4" | ".####" => self.parse_head(token, 4),
-                ".h5" | ".#####" => self.parse_head(token, 5),
-                ".h6" | ".######" => self.parse_head(token, 6),
+                ".h1" => self.parse_head(token, 1),
+                ".h2" => self.parse_head(token, 2),
+                ".h3" => self.parse_head(token, 3),
+                ".h4" => self.parse_head(token, 4),
+                ".h5" => self.parse_head(token, 5),
+                ".h6" => self.parse_head(token, 6),
                 ".>" | ".blockquote" => Ok(Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Blockquote)),
@@ -1908,17 +1908,6 @@ mod tests {
                 expr: Rc::new(Expr::Selector(Selector::Heading(None))),
             })
         ]))]
-    #[case::h1_shorthand(
-        vec![
-            token(TokenKind::Selector(CompactString::new(".#"))),
-            token(TokenKind::Eof)
-        ],
-        Ok(vec![
-            Rc::new(Node {
-                token_id: 0.into(),
-                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
-            })
-        ]))]
     #[case::while_(
         vec![
             token(TokenKind::While),
@@ -2443,9 +2432,7 @@ mod tests {
 
     #[rstest]
     #[case::heading(".h1", Selector::Heading(Some(1)))]
-    #[case::heading_sharp(".#", Selector::Heading(Some(1)))]
     #[case::heading_h3(".h3", Selector::Heading(Some(3)))]
-    #[case::heading_sharp3(".###", Selector::Heading(Some(3)))]
     #[case::blockquote(".>", Selector::Blockquote)]
     #[case::blockquote_full(".blockquote", Selector::Blockquote)]
     #[case::footnote(".^", Selector::Footnote)]
