@@ -451,6 +451,31 @@ fn engine() -> Engine {
           ",
             vec![Value::Number(0.into())],
             Ok(vec![Value::Number(10.into())].into()))]
+#[case::array_empty("[]",
+              vec![Value::Number(0.into())],
+              Ok(vec![Value::Array(vec![])].into()))]
+#[case::array_with_elements("[1, 2, 3]",
+              vec![Value::Number(0.into())],
+              Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+#[case::array_nested("[[1, 2], [3, 4]]",
+              vec![Value::Number(0.into())],
+              Ok(vec![Value::Array(vec![
+                Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())]),
+                Value::Array(vec![Value::Number(3.into()), Value::Number(4.into())])
+              ])].into()))]
+#[case::array_mixed_types("[1, \"test\", []]",
+              vec![Value::Number(0.into())],
+              Ok(vec![Value::Array(vec![
+                Value::Number(1.into()),
+                Value::String("test".to_string()),
+                Value::Array(vec![])
+              ])].into()))]
+#[case::array_length("len([])",
+              vec![Value::Number(0.into())],
+              Ok(vec![Value::Number(0.into())].into()))]
+#[case::array_length("len([1, 2, 3, 4])",
+              vec![Value::Number(0.into())],
+              Ok(vec![Value::Number(4.into())].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

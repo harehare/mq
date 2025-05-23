@@ -111,6 +111,7 @@ impl<'a> Parser<'a> {
             TokenKind::BoolLiteral(_) => self.parse_literal(token),
             TokenKind::StringLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
+            TokenKind::LBracket => self.parse_array(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
@@ -134,6 +135,31 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Self_),
+        }))
+    }
+
+    fn parse_array(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&token));
+        let mut elements: SmallVec<[Rc<Node>; 4]> = SmallVec::new();
+
+        while let Some(token) = self.tokens.next() {
+            match &token.kind {
+                TokenKind::RBracket => break,
+                TokenKind::Comma => continue,
+                _ => {
+                    let expr = self.parse_expr(Rc::clone(token))?;
+                    elements.push(expr);
+                }
+            }
+        }
+
+        Ok(Rc::new(Node {
+            token_id,
+            expr: Rc::new(Expr::Call(
+                Ident::new_with_token("array", Some(token)),
+                elements,
+                false,
+            )),
         }))
     }
 
@@ -187,6 +213,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Pipe)
             | Some(TokenKind::SemiColon)
             | Some(TokenKind::Eof)
+            | Some(TokenKind::RBracket)
             | None => Ok(literal_node),
             Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
         }
@@ -650,6 +677,14 @@ impl<'a> Parser<'a> {
                 }
                 Token {
                     range: _,
+                    kind: TokenKind::LBracket,
+                    module_id: _,
+                } => {
+                    let expr = self.parse_array(Rc::clone(token))?;
+                    args.push(expr);
+                }
+                Token {
+                    range: _,
                     kind: TokenKind::LParen,
                     module_id: _,
                 } => {
@@ -745,11 +780,6 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Equal,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::LBracket,
                     module_id: _,
                 }
                 | Token {
@@ -2417,6 +2447,181 @@ mod tests {
                 )),
             })
         ]))]
+    #[case::empty_array(
+                vec![
+                    token(TokenKind::LBracket),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            SmallVec::new(),
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::array_with_elements(
+                vec![
+                    token(TokenKind::LBracket),
+                    token(TokenKind::StringLiteral("first".to_owned())),
+                    token(TokenKind::Comma),
+                    token(TokenKind::NumberLiteral(42.into())),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::String("first".to_owned()))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(42.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::array_with_mixed_elements(
+                vec![
+                    token(TokenKind::LBracket),
+                    token(TokenKind::StringLiteral("text".to_owned())),
+                    token(TokenKind::Comma),
+                    token(TokenKind::BoolLiteral(true)),
+                    token(TokenKind::Comma),
+                    token(TokenKind::None),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::String("text".to_owned()))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 3.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::None)),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::array_with_nested_array(
+                vec![
+                    token(TokenKind::LBracket),
+                    token(TokenKind::LBracket),
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Comma),
+                    token(TokenKind::LBracket),
+                    token(TokenKind::NumberLiteral(2.into())),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Call(
+                                        Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 2.into(),
+                                                expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                            }),
+                                        ],
+                                        false,
+                                    )),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 3.into(),
+                                    expr: Rc::new(Expr::Call(
+                                        Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 4.into(),
+                                                expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                            }),
+                                        ],
+                                        false,
+                                    )),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::array_with_trailing_comma(
+                vec![
+                    token(TokenKind::LBracket),
+                    token(TokenKind::StringLiteral("value".to_owned())),
+                    token(TokenKind::Comma),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::array_unclosed(
+                    vec![
+                        token(TokenKind::LBracket),
+                        token(TokenKind::StringLiteral("value".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::array_invalid_token(
+                    vec![
+                        token(TokenKind::LBracket),
+                        token(TokenKind::Pipe),
+                        token(TokenKind::RBracket),
+                        token(TokenKind::Eof)
+                    ],
+                    Err(ParseError::UnexpectedToken(token(TokenKind::Pipe))))]
+    #[case::array_nested_unclosed(
+                    vec![
+                        token(TokenKind::LBracket),
+                        token(TokenKind::LBracket),
+                        token(TokenKind::StringLiteral("inner".to_owned())),
+                        token(TokenKind::RBracket),
+                        token(TokenKind::Eof)
+                    ],
+                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
