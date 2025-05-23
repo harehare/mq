@@ -18,7 +18,7 @@ chrono = "0.4.41"
 compact_str = {workspace = true}
 dirs = {workspace = true}
 itertools = {workspace = true}
-miette = {workspace = true, features = ["fancy"]}
+miette = {workspace = true}
 mq-markdown = {workspace = true}
 nom = {version = "8.0.0"}
 nom_locate = "5.0.0"

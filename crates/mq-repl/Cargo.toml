@@ -15,7 +15,7 @@ arboard = "3.5.0"
 colored = "3.0.0"
 dirs = {workspace = true}
 itertools = {workspace = true}
-miette = {version = "7.6.0", features = ["fancy"]}
+miette = {version = "7.6.0"}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
