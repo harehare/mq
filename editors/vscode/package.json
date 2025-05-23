@@ -93,14 +93,16 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "LSP Configuration",
+      "title": "mq LSP Configuration",
       "properties": {
         "mq.lspPath": {
+          "title": "LSP Server Path",
           "type": "string",
           "default": "",
           "description": "Path to the LSP server executable"
         },
         "mq.showExamplesInNewFile": {
+          "title": "Show examples in new file",
           "type": "boolean",
           "default": true,
           "description": "Show examples when creating a new file"
