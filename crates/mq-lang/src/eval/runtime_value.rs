@@ -3,6 +3,8 @@ use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
     rc::Rc,
+    collections::HashMap,
+    hash::{Hash, Hasher},
 };
 
 use crate::{AstIdent, AstParams, Program, Value, number::Number};
@@ -16,7 +18,8 @@ pub enum Selector {
     Index(usize),
 }
 
-#[derive(Clone, PartialEq)]
+// PartialEq, PartialOrd, Eq, Hash will be implemented manually
+#[derive(Clone)]
 pub enum RuntimeValue {
     Number(Number),
     Bool(bool),
@@ -25,8 +28,84 @@ pub enum RuntimeValue {
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Rc<RefCell<Env>>),
     NativeFunction(AstIdent),
+    Map(Rc<RefCell<HashMap<RuntimeValue, RuntimeValue>>>),
     None,
 }
+
+impl PartialEq for RuntimeValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a == b,
+            (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a == b,
+            (RuntimeValue::String(a), RuntimeValue::String(b)) => a == b,
+            (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
+            (RuntimeValue::Markdown(a, s_a), RuntimeValue::Markdown(b, s_b)) => {
+                // Consider selector for equality if necessary, for now, basic node comparison
+                a == b && s_a == s_b
+            }
+            (RuntimeValue::Map(a), RuntimeValue::Map(b)) => *a.borrow() == *b.borrow(),
+            (RuntimeValue::None, RuntimeValue::None) => true,
+            // Functions are generally not comparable by value for equality in this context.
+            // Equality might mean they are the same instance or have the same definition,
+            // which is complex. For now, different instances are not equal.
+            (RuntimeValue::Function(p1, prog1, e1), RuntimeValue::Function(p2, prog2, e2)) => {
+                // Basic equality: same parameters and program structure. Env comparison is tricky.
+                // This is a shallow comparison. For deep equality, one might compare env captures too.
+                p1 == p2 && prog1 == prog2 && Rc::ptr_eq(e1, e2)
+            }
+            (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
+            _ => false, // Different types
+        }
+    }
+}
+
+impl Eq for RuntimeValue {}
+
+impl Hash for RuntimeValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state); // Hash the enum variant
+        match self {
+            RuntimeValue::Number(n) => n.hash(state),
+            RuntimeValue::Bool(b) => b.hash(state),
+            RuntimeValue::String(s) => s.hash(state),
+            RuntimeValue::Markdown(md, selector) => {
+                md.to_string().hash(state); // Hash string representation of markdown
+                selector.hash(state); // Hash selector if present
+            }
+            RuntimeValue::Map(map_rc) => {
+                let map_borrow = map_rc.borrow();
+                // To ensure a consistent hash, sort keys by their string representation before hashing.
+                // This is crucial because HashMap iteration order is not guaranteed.
+                let mut sorted_keys: Vec<_> = map_borrow.keys().collect();
+                // Sorting requires RuntimeValue to be Ord or implement a consistent sorting key.
+                // For simplicity, we'll sort by string representation of keys.
+                // This might be slow for complex keys.
+                sorted_keys.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+
+                for k in sorted_keys {
+                    k.hash(state);
+                    map_borrow.get(k).unwrap().hash(state);
+                }
+            }
+            RuntimeValue::Array(arr) => {
+                for item in arr {
+                    item.hash(state);
+                }
+            }
+            RuntimeValue::None => {} // Nothing to hash for None besides discriminant
+            // Functions are typically not used as HashMap keys.
+            // If they were, hashing their definition or a unique ID would be needed.
+            // For now, we don't provide a meaningful hash beyond the discriminant.
+            RuntimeValue::Function(params, program, _env) => {
+                params.hash(state);
+                program.hash(state);
+                // Hashing env is complex and might lead to issues if envs are mutable.
+            }
+            RuntimeValue::NativeFunction(ident) => ident.hash(state),
+        }
+    }
+}
+
 
 impl From<Node> for RuntimeValue {
     fn from(node: Node) -> Self {
@@ -72,6 +151,8 @@ impl From<Value> for RuntimeValue {
             Value::String(s) => RuntimeValue::String(s),
             Value::Array(a) => RuntimeValue::Array(a.into_iter().map(Into::into).collect()),
             Value::Markdown(m) => RuntimeValue::Markdown(m, None),
+            // Assuming Value::Map does not exist yet, or would be handled if it did.
+            // For now, no direct conversion from Value to RuntimeValue::Map.
             Value::Function(params, program) => {
                 RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::default())))
             }
@@ -89,18 +170,25 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a.partial_cmp(b),
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a.partial_cmp(b),
             (RuntimeValue::Markdown(a, _), RuntimeValue::Markdown(b, _)) => {
-                let a = a.to_string();
-                let b = b.to_string();
-                a.to_string().partial_cmp(&b)
+                // Simplified comparison, might need refinement based on how Markdown nodes are ordered
+                a.to_string().partial_cmp(&b.to_string())
             }
-            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => {
-                match a1.partial_cmp(a2) {
-                    Some(Ordering::Equal) => b1.partial_cmp(b2),
-                    Some(Ordering::Greater) => Some(Ordering::Greater),
-                    Some(Ordering::Less) => Some(Ordering::Less),
-                    _ => None,
+            // Comparing functions is complex. For now, they are not ordered relative to each other unless identical.
+            (RuntimeValue::Function(p1, prog1, e1), RuntimeValue::Function(p2, prog2, e2)) => {
+                 if p1 == p2 && prog1 == prog2 && Rc::ptr_eq(e1, e2) {
+                    Some(Ordering::Equal)
+                } else {
+                    None // Or define an arbitrary order if needed
                 }
             }
+            (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => {
+                // Native functions could be ordered by name, for example
+                a.name.partial_cmp(&b.name)
+            }
+            // Maps are generally not ordered with other types or each other.
+            (RuntimeValue::Map(_), RuntimeValue::Map(_)) => None, // Or define an arbitrary order if needed
+            (RuntimeValue::None, RuntimeValue::None) => Some(Ordering::Equal),
+            // For any other combination of types, ordering is not defined.
             _ => None,
         }
     }
@@ -124,6 +212,15 @@ impl Debug for RuntimeValue {
                 .collect::<Vec<String>>()
                 .join("\n"),
             RuntimeValue::Markdown(m, _) => m.to_string(),
+            RuntimeValue::Map(map_rc) => {
+                let map_borrow = map_rc.borrow();
+                let entries = map_borrow
+                    .iter()
+                    .map(|(k, v)| format!("{:?} -> {:?}", k, v)) // Use Debug for inner parts
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Map({})", entries)
+            }
             RuntimeValue::None => "None".to_string(),
             RuntimeValue::Function(params, _, _) => format!("function{}", params.len()),
             RuntimeValue::NativeFunction(ident) => format!("native_function: {}", ident),
@@ -145,6 +242,7 @@ impl RuntimeValue {
             RuntimeValue::String(_) => "string",
             RuntimeValue::Markdown(_, _) => "markdown",
             RuntimeValue::Array(_) => "array",
+            RuntimeValue::Map(_) => "map",
             RuntimeValue::None => "None",
             RuntimeValue::Function(_, _, _) => "function",
             RuntimeValue::NativeFunction(_) => "native_function",
@@ -163,6 +261,16 @@ impl RuntimeValue {
                 .collect::<Vec<String>>()
                 .join("\n"),
             RuntimeValue::Markdown(m, _) => m.value(),
+            RuntimeValue::Map(map_rc) => {
+                // Represent map as string, perhaps similar to Display or a simpler form
+                let map_borrow = map_rc.borrow();
+                let entries = map_borrow
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k.text(), v.text()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{ {} }}", entries)
+            }
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),
         }
@@ -185,8 +293,9 @@ impl RuntimeValue {
             RuntimeValue::Array(a) => a.is_empty(),
             RuntimeValue::String(s) => s.is_empty(),
             RuntimeValue::Markdown(m, _) => m.value().is_empty(),
+            RuntimeValue::Map(map_rc) => map_rc.borrow().is_empty(),
             RuntimeValue::None => true,
-            _ => false,
+            _ => false, // Numbers, bools, functions are not considered "empty" in this sense
         }
     }
 
@@ -196,26 +305,28 @@ impl RuntimeValue {
             RuntimeValue::Number(n) => n.value() != 0.0,
             RuntimeValue::String(s) => !s.is_empty(),
             RuntimeValue::Array(a) => !a.is_empty(),
+            RuntimeValue::Map(map_rc) => !map_rc.borrow().is_empty(),
             RuntimeValue::Markdown(node, selector) => match selector {
                 Some(Selector::Index(i)) => node.find_at_index(*i).is_some(),
-                None => true,
+                None => true, // A markdown node itself is considered "true"
             },
-            RuntimeValue::Function(_, _, _) => true,
-            RuntimeValue::NativeFunction(_) => true,
+            RuntimeValue::Function(_, _, _) => true, // Functions are truthy
+            RuntimeValue::NativeFunction(_) => true, // Native functions are truthy
             RuntimeValue::None => false,
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            RuntimeValue::Number(n) => n.value() as usize,
-            RuntimeValue::Bool(_) => 1,
+            RuntimeValue::Number(n) => n.value() as usize, // Or perhaps 1, depending on semantics
+            RuntimeValue::Bool(_) => 1, // Or 0, depending on semantics
             RuntimeValue::String(s) => s.len(),
             RuntimeValue::Array(a) => a.len(),
-            RuntimeValue::Markdown(m, _) => m.value().len(),
+            RuntimeValue::Map(map_rc) => map_rc.borrow().len(),
+            RuntimeValue::Markdown(m, _) => m.value().len(), // Length of the text content
             RuntimeValue::None => 0,
-            RuntimeValue::Function(..) => 0,
-            RuntimeValue::NativeFunction(..) => 0,
+            RuntimeValue::Function(..) => 0, // Or 1, if it represents a single item
+            RuntimeValue::NativeFunction(..) => 0, // Or 1
         }
     }
 
@@ -250,6 +361,15 @@ impl RuntimeValue {
                 .collect::<Vec<String>>()
                 .join("\n"),
             RuntimeValue::Markdown(m, _) => m.to_string(),
+            RuntimeValue::Map(map_rc) => {
+                let map_borrow = map_rc.borrow();
+                let entries = map_borrow
+                    .iter()
+                    .map(|(k, v)| format!("{} -> {}", k.string(), v.string()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Map({})", entries)
+            }
             RuntimeValue::None => "None".to_string(),
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),

@@ -197,6 +197,7 @@ pub enum Expr {
     Include(Literal),
     Self_,
     Nodes,
+    Map(Vec<(Rc<Node>, Rc<Node>)>),
 }
 #[cfg(test)]
 mod tests {

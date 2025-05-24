@@ -361,6 +361,15 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Map(pairs) => {
+                let mut map = std::collections::HashMap::new();
+                for (key_node, value_node) in pairs {
+                    let key = self.eval_expr(runtime_value, Rc::clone(key_node), Rc::clone(&env))?;
+                    let value = self.eval_expr(runtime_value, Rc::clone(value_node), Rc::clone(&env))?;
+                    map.insert(key, value);
+                }
+                Ok(RuntimeValue::Map(Rc::new(RefCell::new(map))))
+            }
         }
     }
 

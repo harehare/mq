@@ -165,7 +165,10 @@ define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
+define_token_parser!(l_brace, "{", TokenKind::LBrace);
+define_token_parser!(r_brace, "}", TokenKind::RBrace);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
+define_token_parser!(arrow, "->", TokenKind::Arrow);
 define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_token_parser!(equal, "=", TokenKind::Equal);
@@ -182,6 +185,7 @@ define_token_parser!(include, "include", TokenKind::Include);
 define_token_parser!(foreach, "foreach", TokenKind::Foreach);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(fn_, "fn", TokenKind::Fn);
+define_token_parser!(map_, "Map", TokenKind::Map);
 define_token_parser!(
     empty_string,
     "\"\"",
@@ -190,14 +194,16 @@ define_token_parser!(
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, equal, pipe, question,
+        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, l_brace, r_brace, equal,
+        pipe, question, arrow,
     ))
     .parse(input)
 }
 
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach, fn_,
+        nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach, map_,
+        fn_,
     ))
     .parse(input)
 }

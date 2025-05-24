@@ -476,6 +476,93 @@ fn engine() -> Engine {
 #[case::array_length("len([1, 2, 3, 4])",
               vec![Value::Number(0.into())],
               Ok(vec![Value::Number(4.into())].into()))]
+#[case::map_empty("Map()",
+        vec![Value::None],
+        {
+            let map_data = std::collections::HashMap::new();
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_simple_string_key_value("Map(\"name\" -> \"mq\")",
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::String("name".to_string()), Value::String("mq".to_string()));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_multiple_key_values("Map(\"key1\" -> 10, \"key2\" -> true, \"key3\" -> \"val3\")",
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::String("key1".to_string()), Value::Number(10.0.into()));
+            map_data.insert(Value::String("key2".to_string()), Value::Bool(true));
+            map_data.insert(Value::String("key3".to_string()), Value::String("val3".to_string()));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_different_key_types("Map(10 -> \"ten\", true -> \"is_true\")",
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::Number(10.0.into()), Value::String("ten".to_string()));
+            map_data.insert(Value::Bool(true), Value::String("is_true".to_string()));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_expressions_as_values("Map(\"sum\" -> add(5,3), \"is_positive\" -> gt(5,0))",
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::String("sum".to_string()), Value::Number(8.0.into()));
+            map_data.insert(Value::String("is_positive".to_string()), Value::Bool(true));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_expressions_as_keys("def get_key(): \"dynamic_key\"; | Map(get_key() -> \"value\")",
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::String("dynamic_key".to_string()), Value::String("value".to_string()));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_nested("Map(\"outer\" -> Map(\"inner_num\" -> 1, \"inner_bool\" -> false))",
+        vec![Value::None],
+        {
+            let mut inner_map_data = std::collections::HashMap::new();
+            inner_map_data.insert(Value::String("inner_num".to_string()), Value::Number(1.0.into()));
+            inner_map_data.insert(Value::String("inner_bool".to_string()), Value::Bool(false));
+            let inner_map = Value::Map(std::rc::Rc::new(std::cell::RefCell::new(inner_map_data)));
+
+            let mut outer_map_data = std::collections::HashMap::new();
+            outer_map_data.insert(Value::String("outer".to_string()), inner_map);
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(outer_map_data)))].into())
+        })]
+#[case::map_duplicate_key_overwrites("Map(\"key\" -> 1, \"key\" -> 2)", // Last one wins
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::String("key".to_string()), Value::Number(2.0.into()));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_key_collision_resistance_conceptual("Map(1 -> \"one_num\", \"1\" -> \"one_str\")",
+        vec![Value::None],
+        {
+            let mut map_data = std::collections::HashMap::new();
+            map_data.insert(Value::Number(1.0.into()), Value::String("one_num".to_string()));
+            map_data.insert(Value::String("1".to_string()), Value::String("one_str".to_string()));
+            Ok(vec![Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map_data)))].into())
+        })]
+#[case::map_inside_array("[Map(\"a\"->1), Map(\"b\"->2)]",
+        vec![Value::None],
+        {
+            let mut map1_data = std::collections::HashMap::new();
+            map1_data.insert(Value::String("a".to_string()), Value::Number(1.0.into()));
+            let map1 = Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map1_data)));
+
+            let mut map2_data = std::collections::HashMap::new();
+            map2_data.insert(Value::String("b".to_string()), Value::Number(2.0.into()));
+            let map2 = Value::Map(std::rc::Rc::new(std::cell::RefCell::new(map2_data)));
+            Ok(vec![Value::Array(vec![map1, map2])].into())
+        })]
+#[case::map_as_function_argument("def process_map(m): len(m); | process_map(Map(\"a\"->1, \"b\"->2))",
+        vec![Value::None],
+        Ok(vec![Value::Number(2.0.into())].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

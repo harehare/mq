@@ -114,9 +114,69 @@ impl<'a> Parser<'a> {
             TokenKind::LBracket => self.parse_array(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
+            TokenKind::Map => self.parse_map(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
+    }
+
+    fn parse_map(&mut self, map_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&map_token));
+
+        // Expect '(' after 'Map'
+        self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::LParen)
+        })?;
+
+        let mut pairs = Vec::new();
+        let mut expect_comma = false;
+
+        loop {
+            match self.tokens.peek() {
+                Some(token) if token.kind == TokenKind::RParen => {
+                    self.tokens.next(); // Consume ')'
+                    break;
+                }
+                Some(token) if token.kind == TokenKind::Eof => {
+                    return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                }
+                Some(token) if token.kind == TokenKind::Comma => {
+                    if !expect_comma {
+                        return Err(ParseError::UnexpectedToken((***token).clone()));
+                    }
+                    self.tokens.next(); // Consume ','
+                    expect_comma = false;
+                    continue;
+                }
+                Some(_) => {
+                    if expect_comma {
+                        // Expected a comma or closing parenthesis
+                        return Err(ParseError::UnexpectedToken((***self.tokens.peek().unwrap()).clone()));
+                    }
+                    // Parse Key
+                    let key_token = self.tokens.next().ok_or_else(|| ParseError::UnexpectedEOFDetected(self.module_id))?;
+                    let key_node = self.parse_expr(Rc::clone(key_token))?;
+
+                    // Expect '->'
+                    self.next_token(key_node.token_id, |token_kind| {
+                        matches!(token_kind, TokenKind::Arrow)
+                    })?;
+
+                    // Parse Value
+                    let value_token = self.tokens.next().ok_or_else(|| ParseError::UnexpectedEOFDetected(self.module_id))?;
+                    let value_node = self.parse_expr(Rc::clone(value_token))?;
+
+                    pairs.push((key_node, value_node));
+                    expect_comma = true;
+                }
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            }
+        }
+
+        Ok(Rc::new(Node {
+            token_id,
+            expr: Rc::new(Expr::Map(pairs)),
+        }))
     }
 
     fn parse_env(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -685,6 +745,14 @@ impl<'a> Parser<'a> {
                 }
                 Token {
                     range: _,
+                    kind: TokenKind::Map,
+                    module_id: _,
+                } => {
+                    let expr = self.parse_map(Rc::clone(token))?;
+                    args.push(expr);
+                }
+                Token {
+                    range: _,
                     kind: TokenKind::LParen,
                     module_id: _,
                 } => {
@@ -790,6 +858,21 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Pipe,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Arrow,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::LBrace,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::RBrace,
                     module_id: _,
                 }
                 | Token {

@@ -156,3 +156,78 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     )
     .unwrap()
 }
+
+// --- Map Creation Benchmarks ---
+
+#[divan::bench]
+fn eval_map_creation_empty() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module(); // Load built-ins in case Map relies on any (e.g. for internal ops)
+    engine
+        .eval(
+            "Map()",
+            vec![mq_lang::Value::None].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench]
+fn eval_map_creation_small_string_kv() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    let source = r#"Map(
+        "key1" -> "value1",
+        "key2" -> "value2",
+        "key3" -> "value3",
+        "key4" -> "value4",
+        "key5" -> "value5"
+    )"#;
+    engine
+        .eval(
+            source,
+            vec![mq_lang::Value::None].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench]
+fn eval_map_creation_medium_string_kv() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    let mut map_str = "Map(".to_string();
+    for i in 0..50 {
+        map_str.push_str(&format!(r#""key{}" -> "value{}","#, i, i));
+    }
+    if map_str.ends_with(',') { // Ensure no trailing comma if loop runs
+        map_str.pop();
+    }
+    map_str.push(')');
+    engine
+        .eval(
+            &map_str,
+            vec![mq_lang::Value::None].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench]
+fn eval_map_creation_mixed_primitives_kv() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    let source = r#"Map(
+        "s_key" -> "string_value",
+        10 -> true,
+        false -> 20.5,
+        "another_key" -> None,
+        "key_for_array" -> [1, "two", false]
+    )"#;
+    // Note: Array as value is fine, array as key would likely be problematic
+    // if not specifically handled for hashing/equality.
+    // For this benchmark, using it as a value is safe.
+    engine
+        .eval(
+            source,
+            vec![mq_lang::Value::None].into_iter(),
+        )
+        .unwrap()
+}
