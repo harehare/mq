@@ -107,6 +107,9 @@ impl Formatter {
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
+            mq_lang::CstNodeKind::Array => {
+                self.format_array(&node, indent_level_consider_new_line);
+            }
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
@@ -122,6 +125,14 @@ impl Formatter {
         node.children.iter().for_each(|child| {
             self.format_node(Arc::clone(child), indent_level);
         });
+    }
+
+    fn format_array(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+
+        for child in &node.children {
+            self.format_node(Arc::clone(child), 0);
+        }
     }
 
     fn format_expr(
@@ -677,6 +688,12 @@ s"test${val1}"
   program;"
     )]
     #[case::fn_args("map( fn():program;)", "map(fn(): program;)")]
+    #[case::array_empty("[]", "[]")]
+    #[case::array_single_element("[1]", "[1]")]
+    #[case::array_multiple_elements("[1,2,3]", "[1, 2, 3]")]
+    #[case::array_mixed_types("[1,\"test\",true]", "[1, \"test\", true]")]
+    #[case::array_nested("[[1,2],[3,4]]", "[[1, 2], [3, 4]]")]
+    #[case::array_with_spaces("[ 1 , 2 , 3 ]", "[1, 2, 3]")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
