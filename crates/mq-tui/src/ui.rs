@@ -324,3 +324,328 @@ fn draw_error_popup(frame: &mut Frame, error: &str) {
 
     frame.render_widget(error_text, popup_area);
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use itertools::Itertools;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use super::*;
+
+    fn create_test_app() -> App {
+        let mut app = App::new("".to_string());
+        app.set_query("test query".to_string());
+        app
+    }
+
+    fn create_app_with_results() -> App {
+        let mut app = App::new("test.md".to_string());
+        let results = vec![
+            mq_markdown::Node::Heading(mq_markdown::Heading {
+                depth: 1,
+                position: None,
+                values: vec![mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "Test Heading".to_string(),
+                    position: None,
+                })],
+            }),
+            mq_markdown::Node::Text(mq_markdown::Text {
+                value: "Test paragraph content".to_string(),
+                position: None,
+            }),
+            mq_markdown::Node::Code(mq_markdown::Code {
+                meta: None,
+                fence: true,
+                lang: Some("rust".to_string()),
+                value: "fn main() {}".to_string(),
+                position: None,
+            }),
+        ];
+        app.set_results(results);
+        app.set_last_exec_time(Duration::from_millis(150));
+        app
+    }
+
+    #[test]
+    fn test_draw_ui_normal_mode() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let app = create_test_app();
+
+        terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("mq-tui")
+        );
+    }
+
+    #[test]
+    fn test_draw_ui_query_mode() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = create_test_app();
+        app.set_mode(Mode::Query);
+
+        terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Query")
+        );
+    }
+
+    #[test]
+    fn test_draw_ui_help_mode() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = create_test_app();
+        app.set_mode(Mode::Help);
+
+        terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Keyboard Controls")
+        );
+    }
+
+    #[test]
+    fn test_draw_ui_with_error() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = create_test_app();
+        app.set_error_msg("Test error message".to_string());
+
+        terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Error")
+        );
+    }
+
+    #[test]
+    fn test_draw_results_list_with_data() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let app = create_app_with_results();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_results_list(frame, &app, area);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Results")
+        );
+    }
+
+    #[test]
+    fn test_draw_title_bar_without_filename() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let app = create_test_app();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_title_bar(frame, &app, area);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("mq-tui")
+        );
+    }
+
+    #[test]
+    fn test_draw_detail_view_empty_results() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let app = create_test_app();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_detail_view(frame, &app, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_detail_view_with_selection() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let app = create_app_with_results();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_detail_view(frame, &app, area);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Detail View")
+        );
+    }
+
+    #[test]
+    fn test_draw_help_screen_content() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+        terminal
+            .draw(|frame| {
+                draw_help_screen(frame);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Navigation")
+        );
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Query Mode")
+        );
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("Other Commands")
+        );
+    }
+
+    #[test]
+    fn test_draw_error_popup_content() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let error_msg = "Test error message";
+
+        terminal
+            .draw(|frame| {
+                draw_error_popup(frame, error_msg);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+        let content = buffer.content().iter().map(|c| c.symbol()).join("");
+
+        assert!(content.contains("Error"));
+        assert!(content.contains(error_msg));
+    }
+
+    #[test]
+    fn test_draw_query_input_cursor_position() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = create_test_app();
+        app.set_mode(Mode::Query);
+        app.set_cursor_position(5);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_query_input(frame, &app, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_ui_layout_constraints() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let app = create_test_app();
+
+        terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+
+        let mut small_terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
+        small_terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+    }
+}
