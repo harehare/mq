@@ -112,6 +112,7 @@ impl<'a> Parser<'a> {
             TokenKind::StringLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
             TokenKind::LBracket => self.parse_array(token),
+            TokenKind::MapStart => self.parse_map_literal(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
@@ -135,6 +136,83 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Self_),
+        }))
+    }
+
+    fn parse_map_literal(&mut self, map_start_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let map_start_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&map_start_token));
+        let mut entries: Vec<(Rc<Node>, Rc<Node>)> = Vec::new();
+
+        loop {
+            // Check for MapEnd or start of a key
+            match self.tokens.peek().map(|t| &t.kind) {
+                Some(TokenKind::MapEnd) => {
+                    self.tokens.next(); // Consume MapEnd
+                    break;
+                }
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)), // Unclosed map
+                _ => {
+                    // Parse Key
+                    let key_token = match self.tokens.next() {
+                        Some(t) => t,
+                        // Should be caught by Peek or EOFDetected from parse_expr
+                        None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                    };
+                    let key_node = self.parse_expr(Rc::clone(&key_token))?;
+
+                    // Expect Colon
+                    self.next_token(key_node.token_id, |k| matches!(k, TokenKind::Colon))
+                        .map_err(|e| match e {
+                            ParseError::UnexpectedToken(t) if t.kind == TokenKind::MapEnd => {
+                                ParseError::UnexpectedToken(t) // Report specific error for "Map { key }"
+                            }
+                            _ => ParseError::MissingColonInMapEntry((*key_token).clone())
+                        })?;
+
+                    // Parse Value
+                    let value_token = match self.tokens.next() {
+                        Some(t) => t,
+                        None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)), // Missing value after colon
+                    };
+                     // Check if value token is MapEnd directly after colon
+                    if value_token.kind == TokenKind::MapEnd {
+                        return Err(ParseError::UnexpectedToken((*value_token).clone()));
+                    }
+                    let value_node = self.parse_expr(Rc::clone(&value_token))?;
+                    entries.push((key_node, value_node));
+
+                    // Expect Comma or MapEnd
+                    match self.tokens.peek().map(|t| &t.kind) {
+                        Some(TokenKind::Comma) => {
+                            self.tokens.next(); // Consume Comma
+                                                // Handle trailing comma case: Map { key: val, }
+                            if let Some(next_token) = self.tokens.peek() {
+                                if next_token.kind == TokenKind::MapEnd {
+                                    self.tokens.next(); // Consume MapEnd
+                                    break;
+                                }
+                            } else {
+                                // EOF after comma
+                                return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                            }
+                        }
+                        Some(TokenKind::MapEnd) => {
+                            self.tokens.next(); // Consume MapEnd
+                            break;
+                        }
+                        Some(other) => {
+                             // Error: expected comma or MapEnd after value
+                            return Err(ParseError::MissingCommaInMap((*value_token).clone()));
+                        }
+                        None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)), // Unclosed map after value
+                    }
+                }
+            }
+        }
+
+        Ok(Rc::new(Node {
+            token_id: map_start_token_id,
+            expr: Rc::new(Expr::MapLiteral(entries)),
         }))
     }
 
@@ -674,6 +752,14 @@ impl<'a> Parser<'a> {
                     module_id: _,
                 } => {
                     args.push(self.parse_env(Rc::clone(token))?);
+                }
+                Token {
+                    range: _,
+                    kind: TokenKind::MapStart,
+                    module_id: _,
+                } => {
+                    let expr = self.parse_map_literal(Rc::clone(token))?;
+                    args.push(expr);
                 }
                 Token {
                     range: _,
@@ -2622,6 +2708,227 @@ mod tests {
                         token(TokenKind::Eof)
                     ],
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::map_empty(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::MapLiteral(vec![])),
+            })
+        ]))]
+    #[case::map_simple_string_key(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::MapLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::map_multiple_entries(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::Ident("a".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::StringLiteral("b".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident("two".into())),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::MapLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new("a"))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    ),
+                    (
+                        Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("b".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 5.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new("two"))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::map_expr_key_value( // Map { (1): call() } - assuming 1 is ident, call is ident
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident("call".into())),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // MapStart
+                expr: Rc::new(Expr::MapLiteral(vec![
+                    (
+                        // For simplicity, treating (1) as just NumberLiteral(1) for now
+                        // A real (1+1) would involve a Call node for +
+                        Rc::new(Node {
+                            token_id: 2.into(), // NumberLiteral
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 5.into(), // Ident("call")
+                            expr: Rc::new(Expr::Call(Ident::new("call"), smallvec![], false)),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::map_trailing_comma(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::MapLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("a".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::map_missing_colon(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            // Missing Colon here
+            token(TokenKind::NumberLiteral(123.into())),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::MissingColonInMapEntry(token(TokenKind::StringLiteral("key".to_owned())))))]
+    #[case::map_missing_comma(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            // Missing Comma here
+            token(TokenKind::StringLiteral("b".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::MissingCommaInMap(token(TokenKind::NumberLiteral(1.into())))))]
+    #[case::map_unexpected_token_instead_of_key(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::Colon), // Unexpected Colon
+            token(TokenKind::NumberLiteral(123.into())),
+            token(TokenKind::MapEnd),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Colon))))]
+    #[case::map_unclosed_after_key(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::MissingColonInMapEntry(token(TokenKind::StringLiteral("a".to_owned())))))]
+    #[case::map_unclosed_after_colon(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::map_unclosed_after_value(
+        vec![
+            token(TokenKind::MapStart),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+     #[case::map_key_is_map( // Map { Map{}: 1 }
+        vec![
+            token(TokenKind::MapStart), // Outer MapStart
+            token(TokenKind::MapStart), // Inner MapStart (key)
+            token(TokenKind::MapEnd),   // Inner MapEnd (key)
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::MapEnd),   // Outer MapEnd
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // Outer MapStart
+                expr: Rc::new(Expr::MapLiteral(vec![
+                    (
+                        Rc::new(Node { // Key is a MapLiteral
+                            token_id: 1.into(), // Inner MapStart
+                            expr: Rc::new(Expr::MapLiteral(vec![])),
+                        }),
+                        Rc::new(Node { // Value
+                            token_id: 3.into(), // NumberLiteral
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

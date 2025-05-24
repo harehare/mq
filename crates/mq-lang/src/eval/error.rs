@@ -43,4 +43,6 @@ pub enum EvalError {
     RuntimeError(ErrorToken, String),
     #[error("Divided by 0")]
     ZeroDivision(ErrorToken),
+    #[error("Type \"{received_type}\" is not hashable and cannot be used as a map key.")]
+    UnhashableType { token: ErrorToken, received_type: String },
 }

@@ -357,6 +357,39 @@ impl Evaluator {
             ast::Expr::InterpolatedString(_) => {
                 self.eval_interpolated_string(runtime_value, node, env)
             }
+            ast::Expr::MapLiteral(key_value_pairs) => {
+                let mut map = std::collections::HashMap::new();
+                for (key_node, value_node) in key_value_pairs {
+                    let key_rt_value =
+                        self.eval_expr(runtime_value, Rc::clone(key_node), Rc::clone(&env))?;
+                    let value_rt_value =
+                        self.eval_expr(runtime_value, Rc::clone(value_node), Rc::clone(&env))?;
+
+                    // Check for key hashability
+                    match key_rt_value {
+                        RuntimeValue::Number(_)
+                        | RuntimeValue::Bool(_)
+                        | RuntimeValue::String(_)
+                        | RuntimeValue::None => {
+                            // These types are considered hashable
+                        }
+                        _ => {
+                            // Type is not hashable, return error
+                            // We need the token from the key_node for the error.
+                            // If key_node itself doesn't directly give a token for its entire span,
+                            // we might need to find the primary token associated with it.
+                            // For now, using the token_id from key_node.
+                            let error_token = (*self.token_arena.borrow()[key_node.token_id]).clone();
+                            return Err(EvalError::UnhashableType {
+                                token: error_token,
+                                received_type: key_rt_value.name().to_string(),
+                            });
+                        }
+                    }
+                    map.insert(key_rt_value, value_rt_value);
+                }
+                Ok(RuntimeValue::Map(Rc::new(RefCell::new(map))))
+            }
             ast::Expr::Include(module_id) => {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
@@ -603,7 +636,9 @@ mod tests {
     use crate::ast::node::Args;
     use crate::range::Range;
     use crate::{AstExpr, AstNode, ModuleLoader};
+    use crate::ast::node::{Literal as AstLiteral, MapLiteral};
     use crate::{Token, TokenKind};
+    use std::collections::HashMap;
 
     use super::*;
     use mq_test::defer;
@@ -3506,6 +3541,102 @@ mod tests {
              ast_call("get_url", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    // Map Literal Evaluation Tests
+    #[case::map_literal_empty(vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::MapLiteral(vec![]))],
+        Ok(vec![RuntimeValue::Map(Rc::new(RefCell::new(HashMap::new())))])
+    )]
+    #[case::map_literal_simple(vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::MapLiteral(vec![
+            (
+                ast_node(ast::Expr::Literal(AstLiteral::String("key".to_string()))),
+                ast_node(ast::Expr::Literal(AstLiteral::Number(123.into())))
+            )
+        ]))],
+        Ok(vec![RuntimeValue::Map(Rc::new(RefCell::new({
+            let mut map = HashMap::new();
+            map.insert(RuntimeValue::String("key".to_string()), RuntimeValue::Number(123.into()));
+            map
+        })))])
+    )]
+    #[case::map_literal_multiple_entries(vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::MapLiteral(vec![
+            (
+                ast_node(ast::Expr::Literal(AstLiteral::String("a".to_string()))),
+                ast_node(ast::Expr::Literal(AstLiteral::Number(1.into())))
+            ),
+            (
+                ast_node(ast::Expr::Literal(AstLiteral::String("b".to_string()))),
+                ast_node(ast::Expr::Literal(AstLiteral::String("two".to_string())))
+            )
+        ]))],
+        Ok(vec![RuntimeValue::Map(Rc::new(RefCell::new({
+            let mut map = HashMap::new();
+            map.insert(RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into()));
+            map.insert(RuntimeValue::String("b".to_string()), RuntimeValue::String("two".to_string()));
+            map
+        })))])
+    )]
+    #[case::map_literal_expr_key_value(vec![RuntimeValue::NONE], // Map { (1+1): (2*3) }
+        vec![ast_node(ast::Expr::MapLiteral(vec![
+            (
+                ast_call("add", smallvec![ // Simulating 1+1
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(1.into()))),
+                ]),
+                ast_call("mul", smallvec![ // Simulating 2*3
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(2.into()))),
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(3.into()))),
+                ])
+            )
+        ]))],
+        Ok(vec![RuntimeValue::Map(Rc::new(RefCell::new({
+            let mut map = HashMap::new();
+            map.insert(RuntimeValue::Number(2.into()), RuntimeValue::Number(6.into()));
+            map
+        })))])
+    )]
+    #[case::map_literal_unhashable_key_array(vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::MapLiteral(vec![
+            (
+                ast_node(ast::Expr::Call(ast::Ident::new("array"), smallvec![ // [1,2]
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(2.into()))),
+                ], false)),
+                ast_node(ast::Expr::Literal(AstLiteral::String("value".to_string())))
+            )
+        ]))],
+        Err(InnerError::Eval(EvalError::UnhashableType{
+            token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() }, // Placeholder token
+            received_type: "array".to_string()
+        }))
+    )]
+     #[case::map_literal_unhashable_key_map(vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::MapLiteral(vec![
+            (
+                ast_node(ast::Expr::MapLiteral(vec![])), // Map{} as key
+                ast_node(ast::Expr::Literal(AstLiteral::String("value".to_string())))
+            )
+        ]))],
+        Err(InnerError::Eval(EvalError::UnhashableType{
+            token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() }, // Placeholder token
+            received_type: "map".to_string()
+        }))
+    )]
+    #[case::map_literal_unhashable_key_fn(vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::MapLiteral(vec![
+            (
+                ast_node(ast::Expr::Fn(smallvec![], vec![ // fn():1; as key
+                    ast_node(ast::Expr::Literal(AstLiteral::Number(1.into())))
+                ])),
+                ast_node(ast::Expr::Literal(AstLiteral::String("value".to_string())))
+            )
+        ]))],
+        Err(InnerError::Eval(EvalError::UnhashableType{
+            token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() }, // Placeholder token
+            received_type: "function".to_string()
+        }))
+    )]
     fn test_eval_process_none(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

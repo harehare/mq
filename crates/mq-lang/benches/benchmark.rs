@@ -156,3 +156,52 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     )
     .unwrap()
 }
+
+// --- Map Benchmarks ---
+
+fn generate_map_string(n: u64) -> String {
+    let entries = (0..n)
+        .map(|i| format!("\"key{}\": {}", i, i))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("Map {{ {} }}", entries)
+}
+
+#[divan::bench(args = [10, 100, 1000], name = "bench_map_creation")]
+fn bench_map_creation(n: u64) -> mq_lang::Values {
+    let map_string = generate_map_string(n);
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine.eval(&map_string, vec![].into_iter()).unwrap()
+}
+
+#[divan::bench(args = [10, 100, 1000], name = "bench_map_get")]
+fn bench_map_get(n: u64) -> mq_lang::Values {
+    let map_literal_string = generate_map_string(n);
+    let program = format!(
+        "let m = {}; get(m, \"key{}\"); get(m, \"key_non_existent\")",
+        map_literal_string,
+        n / 2
+    );
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine.eval(&program, vec![].into_iter()).unwrap()
+}
+
+#[divan::bench(args = [10, 100, 1000], name = "bench_map_keys")]
+fn bench_map_keys(n: u64) -> mq_lang::Values {
+    let map_literal_string = generate_map_string(n);
+    let program = format!("let m = {}; keys(m)", map_literal_string);
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine.eval(&program, vec![].into_iter()).unwrap()
+}
+
+#[divan::bench(args = [10, 100, 1000], name = "bench_map_values")]
+fn bench_map_values(n: u64) -> mq_lang::Values {
+    let map_literal_string = generate_map_string(n);
+    let program = format!("let m = {}; values(m)", map_literal_string);
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine.eval(&program, vec![].into_iter()).unwrap()
+}

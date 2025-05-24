@@ -1659,6 +1659,67 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
 
+        // Map functions
+        map.insert(
+            CompactString::new("get"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map_rc), key] => {
+                    match key {
+                        RuntimeValue::String(_) | RuntimeValue::Number(_) | RuntimeValue::Bool(_) | RuntimeValue::None => {
+                            let map = map_rc.borrow();
+                            Ok(map.get(key).cloned().unwrap_or(RuntimeValue::None))
+                        }
+                        _ => Err(Error::InvalidTypes(ident.to_string(), vec![key.clone()])), // Unhashable key type
+                    }
+                }
+                [a, b] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone(), b.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+
+        map.insert(
+            CompactString::new("contains_key"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map_rc), key] => {
+                     match key {
+                        RuntimeValue::String(_) | RuntimeValue::Number(_) | RuntimeValue::Bool(_) | RuntimeValue::None => {
+                            let map = map_rc.borrow();
+                            Ok(RuntimeValue::Bool(map.contains_key(key)))
+                        }
+                        _ => Ok(RuntimeValue::Bool(false)), // Unhashable key cannot be contained
+                    }
+                }
+                [a, b] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone(), b.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+
+        map.insert(
+            CompactString::new("keys"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map_rc)] => {
+                    let map = map_rc.borrow();
+                    let keys_array = map.keys().cloned().collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(keys_array))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+
+        map.insert(
+            CompactString::new("values"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map_rc)] => {
+                    let map = map_rc.borrow();
+                    let values_array = map.values().cloned().collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(values_array))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+
         map
     });
 
@@ -2604,6 +2665,36 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             params: &["node", "reference_id"],
             },
         );
+
+        // Map function docs
+        map.insert(
+            CompactString::new("get"),
+            BuiltinFunctionDoc {
+                description: "Retrieves a value from a map by its key. Returns None if the key is not found.",
+                params: &["map", "key"],
+            },
+        );
+        map.insert(
+            CompactString::new("contains_key"),
+            BuiltinFunctionDoc {
+                description: "Checks if a map contains the specified key.",
+                params: &["map", "key"],
+            },
+        );
+        map.insert(
+            CompactString::new("keys"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of all keys in the map.",
+                params: &["map"],
+            },
+        );
+        map.insert(
+            CompactString::new("values"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of all values in the map.",
+                params: &["map"],
+            },
+        );
         map
     });
 
@@ -2886,6 +2977,7 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
 mod tests {
     use mq_markdown::Node;
     use rstest::rstest;
+    use std::collections::HashMap;
 
     use super::*;
 
@@ -2902,7 +2994,8 @@ mod tests {
     #[case("div", smallvec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
     #[case("eq", smallvec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
     #[case("ne", smallvec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
-    fn test_eval_builtin(
+    // Map function tests will be added in a separate block
+    fn test_eval_builtin_existing( // Renamed to avoid conflict
         #[case] func_name: &str,
         #[case] args: Args,
         #[case] expected: Result<RuntimeValue, Error>,
@@ -2921,7 +3014,8 @@ mod tests {
     #[case("add", SmallVec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
     #[case("add", smallvec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
-    fn test_eval_builtin_errors(
+    // Map error tests will be added in a separate block
+    fn test_eval_builtin_errors_existing( // Renamed to avoid conflict
         #[case] func_name: &str,
         #[case] args: Args,
         #[case] expected_error: Error,
@@ -3118,13 +3212,167 @@ mod tests {
         ast::Selector::MdxJsEsm,
         true
     )]
-    fn test_eval_selector(
+    fn test_eval_selector( // This test remains as is
         #[case] node: Node,
         #[case] selector: ast::Selector,
         #[case] expected: bool,
     ) {
         assert_eq!(eval_selector(&node, &selector), expected);
     }
+
+    // Helper to create a RuntimeValue::Map for tests
+    fn create_test_map(entries: Vec<(RuntimeValue, RuntimeValue)>) -> RuntimeValue {
+        let mut map = HashMap::new();
+        for (k, v) in entries {
+            map.insert(k, v);
+        }
+        RuntimeValue::Map(Rc::new(RefCell::new(map)))
+    }
+
+    #[rstest]
+    // Tests for get(map, key)
+    #[case("get",
+        smallvec![create_test_map(vec![(RuntimeValue::String("a".into()), RuntimeValue::Number(1.into()))]), RuntimeValue::String("a".into())],
+        Ok(RuntimeValue::Number(1.into()))
+    )]
+    #[case("get", // Key not found
+        smallvec![create_test_map(vec![(RuntimeValue::String("a".into()), RuntimeValue::Number(1.into()))]), RuntimeValue::String("b".into())],
+        Ok(RuntimeValue::None)
+    )]
+    #[case("get", // Empty map
+        smallvec![create_test_map(vec![]), RuntimeValue::String("a".into())],
+        Ok(RuntimeValue::None)
+    )]
+    #[case("get", // Key is a number
+        smallvec![create_test_map(vec![(RuntimeValue::Number(10.into()), RuntimeValue::String("found".into()))]), RuntimeValue::Number(10.into())],
+        Ok(RuntimeValue::String("found".into()))
+    )]
+     #[case("get", // Key is a bool
+        smallvec![create_test_map(vec![(RuntimeValue::Bool(true), RuntimeValue::String("true_key".into()))]), RuntimeValue::Bool(true)],
+        Ok(RuntimeValue::String("true_key".into()))
+    )]
+    #[case("get", // Key is None
+        smallvec![create_test_map(vec![(RuntimeValue::None, RuntimeValue::String("none_key".into()))]), RuntimeValue::None],
+        Ok(RuntimeValue::String("none_key".into()))
+    )]
+
+    // Tests for contains_key(map, key)
+    #[case("contains_key",
+        smallvec![create_test_map(vec![(RuntimeValue::String("a".into()), RuntimeValue::Number(1.into()))]), RuntimeValue::String("a".into())],
+        Ok(RuntimeValue::Bool(true))
+    )]
+    #[case("contains_key", // Key not found
+        smallvec![create_test_map(vec![(RuntimeValue::String("a".into()), RuntimeValue::Number(1.into()))]), RuntimeValue::String("b".into())],
+        Ok(RuntimeValue::Bool(false))
+    )]
+    #[case("contains_key", // Key is number
+        smallvec![create_test_map(vec![(RuntimeValue::Number(5.into()), RuntimeValue::Number(1.into()))]), RuntimeValue::Number(5.into())],
+        Ok(RuntimeValue::Bool(true))
+    )]
+
+    // Tests for keys(map)
+    #[case("keys", smallvec![create_test_map(vec![
+            (RuntimeValue::String("a".into()), RuntimeValue::Number(1.into())),
+            (RuntimeValue::Number(2.into()), RuntimeValue::String("b".into()))
+        ])],
+        // Order doesn't matter, so check contents in test logic if needed, here just checking type and count
+        Ok(RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::Number(2.into())])) // Example, actual order may vary
+    )]
+     #[case("keys", // Empty map
+        smallvec![create_test_map(vec![])],
+        Ok(RuntimeValue::Array(vec![]))
+    )]
+
+    // Tests for values(map)
+    #[case("values", smallvec![create_test_map(vec![
+            (RuntimeValue::String("a".into()), RuntimeValue::Number(1.into())),
+            (RuntimeValue::Number(2.into()), RuntimeValue::String("b".into()))
+        ])],
+        Ok(RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::String("b".into())])) // Example, actual order may vary
+    )]
+    #[case("values", // Empty map
+        smallvec![create_test_map(vec![])],
+        Ok(RuntimeValue::Array(vec![]))
+    )]
+    fn test_eval_builtin_map_functions(
+        #[case] func_name: &str,
+        #[case] args: Args,
+        #[case] expected: Result<RuntimeValue, Error>,
+    ) {
+        let ident = ast::Ident {
+            name: CompactString::new(func_name),
+            token: None,
+        };
+        let result = eval_builtin(&RuntimeValue::None, &ident, &args);
+
+        match (result, expected) {
+            (Ok(RuntimeValue::Array(res_arr)), Ok(RuntimeValue::Array(exp_arr))) => {
+                assert_eq!(res_arr.len(), exp_arr.len());
+                // For keys/values, order is not guaranteed, so check for element presence if lengths match
+                for item in exp_arr {
+                    assert!(res_arr.contains(&item));
+                }
+            }
+            (Ok(res), Ok(exp)) => assert_eq!(res, exp),
+            (Err(res_err), Err(exp_err)) => assert_eq!(res_err, exp_err),
+            (res, exp) => panic!("Mismatch: Result {:?}, Expected {:?}", res, exp),
+        }
+    }
+
+    #[rstest]
+    // Error cases for map functions
+    #[case("get", // Wrong number of args for get
+        smallvec![create_test_map(vec![])],
+        Error::InvalidNumberOfArguments("get".to_string(), 2, 1)
+    )]
+    #[case("get", // First arg not a map for get
+        smallvec![RuntimeValue::String("not a map".into()), RuntimeValue::String("key".into())],
+        Error::InvalidTypes("get".to_string(), vec![RuntimeValue::String("not a map".into()), RuntimeValue::String("key".into())])
+    )]
+    #[case("get", // Unhashable key for get
+        smallvec![create_test_map(vec![]), RuntimeValue::Array(vec![])],
+        Error::InvalidTypes("get".to_string(), vec![RuntimeValue::Array(vec![])])
+    )]
+    #[case("contains_key", // Wrong number of args
+        smallvec![create_test_map(vec![])],
+        Error::InvalidNumberOfArguments("contains_key".to_string(), 2, 1)
+    )]
+    #[case("contains_key", // First arg not a map
+        smallvec![RuntimeValue::Number(123.into()), RuntimeValue::String("key".into())],
+        Error::InvalidTypes("contains_key".to_string(), vec![RuntimeValue::Number(123.into()), RuntimeValue::String("key".into())])
+    )]
+     // contains_key with unhashable key should return Bool(false), not an error by current design.
+     // Add a case if erroring is preferred.
+    #[case("keys", // Wrong number of args
+        smallvec![create_test_map(vec![]), RuntimeValue::String("extra".into())],
+        Error::InvalidNumberOfArguments("keys".to_string(), 1, 2)
+    )]
+    #[case("keys", // Arg not a map
+        smallvec![RuntimeValue::String("not a map".into())],
+        Error::InvalidTypes("keys".to_string(), vec![RuntimeValue::String("not a map".into())])
+    )]
+    #[case("values", // Wrong number of args
+        smallvec![create_test_map(vec![]), RuntimeValue::String("extra".into())],
+        Error::InvalidNumberOfArguments("values".to_string(), 1, 2)
+    )]
+    #[case("values", // Arg not a map
+        smallvec![RuntimeValue::Bool(true)],
+        Error::InvalidTypes("values".to_string(), vec![RuntimeValue::Bool(true)])
+    )]
+    fn test_eval_builtin_map_errors(
+        #[case] func_name: &str,
+        #[case] args: Args,
+        #[case] expected_error: Error,
+    ) {
+        let ident = ast::Ident {
+            name: CompactString::new(func_name),
+            token: None,
+        };
+        let result = eval_builtin(&RuntimeValue::None, &ident, &args);
+        assert!(result.is_err(), "Expected error for {} with args {:?}", func_name, args);
+        assert_eq!(result.unwrap_err(), expected_error);
+    }
+
 
     #[rstest]
     #[case(ParamNum::None, 0, true)]

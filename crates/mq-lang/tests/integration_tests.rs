@@ -476,6 +476,104 @@ fn engine() -> Engine {
 #[case::array_length("len([1, 2, 3, 4])",
               vec![Value::Number(0.into())],
               Ok(vec![Value::Number(4.into())].into()))]
+// MAP FUNCTIONALITY TESTS START HERE
+// Map Literal Parsing and Evaluation
+#[case::map_empty_literal("Map {}",
+    vec![],
+    Ok(vec![Value::Map(vec![])].into()))]
+#[case::map_simple_literal("Map { \"name\": \"mq\", \"version\": 1, \"active\": true, \"extra\": None }",
+    vec![],
+    Ok(vec![Value::Map(vec![
+        (Value::String("name".to_string()), Value::String("mq".to_string())),
+        (Value::String("version".to_string()), Value::Number(1.into())),
+        (Value::String("active".to_string()), Value::Bool(true)),
+        (Value::String("extra".to_string()), Value::None),
+    ])].into()))]
+#[case::map_expr_key_value("let x = \"key\"; Map { (add(x, \"1\")): mul(10, 2) }", // Changed from + and * to add() and mul()
+    vec![],
+    Ok(vec![Value::Map(vec![
+        (Value::String("key1".to_string()), Value::Number(20.into())),
+    ])].into()))]
+#[case::map_trailing_comma("Map { \"a\": 1, \"b\": 2, }",
+    vec![],
+    Ok(vec![Value::Map(vec![
+        (Value::String("a".to_string()), Value::Number(1.into())),
+        (Value::String("b".to_string()), Value::Number(2.into())),
+    ])].into()))]
+
+// Built-in Map Functions
+// get
+#[case::map_get_existing("let m = Map { \"a\": 100, \"b\": 200 }; get(m, \"a\")",
+    vec![],
+    Ok(vec![Value::Number(100.into())].into()))]
+#[case::map_get_non_existing("let m = Map { \"a\": 100 }; get(m, \"z\")",
+    vec![],
+    Ok(vec![Value::None].into()))]
+#[case::map_get_from_empty("get(Map{}, \"a\")",
+    vec![],
+    Ok(vec![Value::None].into()))]
+#[case::map_get_with_number_key("get(Map{10: \"ten\"}, 10)",
+    vec![],
+    Ok(vec![Value::String("ten".to_string())].into()))]
+
+// contains_key
+#[case::map_contains_key_existing("let m = Map { \"a\": 100, \"b\": 200 }; contains_key(m, \"a\")",
+    vec![],
+    Ok(vec![Value::Bool(true)].into()))]
+#[case::map_contains_key_non_existing("let m = Map { \"a\": 100 }; contains_key(m, \"z\")",
+    vec![],
+    Ok(vec![Value::Bool(false)].into()))]
+#[case::map_contains_key_in_empty("contains_key(Map{}, \"a\")",
+    vec![],
+    Ok(vec![Value::Bool(false)].into()))]
+#[case::map_contains_key_unhashable_type("contains_key(Map{\"a\":1}, [1,2])", // Array key is unhashable
+    vec![],
+    Ok(vec![Value::Bool(false)].into()))]
+
+
+// keys (results sorted for consistent testing)
+#[case::map_keys_empty("keys(Map{})",
+    vec![],
+    Ok(vec![Value::Array(vec![])].into()))]
+#[case::map_keys_simple("let m = Map { \"b\": 2, \"a\": 1 }; keys(m) | sort()", // Sort for consistent test
+    vec![],
+    Ok(vec![Value::Array(vec![
+        Value::String("a".to_string()),
+        Value::String("b".to_string()),
+    ])].into()))]
+
+// values (results sorted for consistent testing - if values are sortable)
+#[case::map_values_empty("values(Map{})",
+    vec![],
+    Ok(vec![Value::Array(vec![])].into()))]
+#[case::map_values_simple("let m = Map { \"b\": 20, \"a\": 10 }; values(m) | sort()", // Sort for consistent test
+    vec![],
+    Ok(vec![Value::Array(vec![
+        Value::Number(10.into()),
+        Value::Number(20.into()),
+    ])].into()))]
+
+// Complex Scenarios
+#[case::map_stored_in_variable("let my_map = Map { \"x\": 10 }; get(my_map, \"x\")",
+    vec![],
+    Ok(vec![Value::Number(10.into())].into()))]
+#[case::map_passed_to_udf("def get_val(m, k): get(m, k); get_val(Map { \"item\": 5 }, \"item\")",
+    vec![],
+    Ok(vec![Value::Number(5.into())].into()))]
+#[case::map_returned_from_udf("def create_map(): Map { \"r_key\": \"r_val\" }; let m = create_map(); get(m, \"r_key\")",
+    vec![],
+    Ok(vec![Value::String("r_val".to_string())].into()))]
+#[case::map_nested_literal("Map { \"outer_key\": Map { \"inner_key\": \"value\" } }",
+    vec![],
+    Ok(vec![Value::Map(vec![
+        (Value::String("outer_key".to_string()), Value::Map(vec![
+            (Value::String("inner_key".to_string()), Value::String("value".to_string()))
+        ]))
+    ])].into()))]
+#[case::map_get_nested("let m = Map { \"outer\": Map { \"inner\": \"found\" } }; get(get(m, \"outer\"), \"inner\")",
+    vec![],
+    Ok(vec![Value::String("found".to_string())].into()))]
+// MAP FUNCTIONALITY TESTS END HERE
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

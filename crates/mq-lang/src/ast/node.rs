@@ -64,6 +64,15 @@ impl Node {
                     end: end.end,
                 }
             }
+            Expr::MapLiteral(entries) => {
+                if entries.is_empty() {
+                    arena[self.token_id].range.clone()
+                } else {
+                    let start = entries.first().unwrap().0.range(Rc::clone(&arena)).start;
+                    let end = entries.last().unwrap().1.range(Rc::clone(&arena)).end;
+                    Range { start, end }
+                }
+            }
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -194,6 +203,7 @@ pub enum Expr {
     Until(Rc<Node>, Program),
     Foreach(Ident, Rc<Node>, Program),
     If(Branches),
+    MapLiteral(Vec<(Rc<Node>, Rc<Node>)>),
     Include(Literal),
     Self_,
     Nodes,
@@ -207,12 +217,16 @@ mod tests {
 
     use super::*;
 
-    fn create_token(range: Range) -> Rc<Token> {
+    fn create_test_token(range: Range, kind: TokenKind) -> Rc<Token> {
         Rc::new(Token {
             range,
-            kind: TokenKind::Eof,
+            kind,
             module_id: ArenaId::new(0),
         })
+    }
+
+    fn create_token(range: Range) -> Rc<Token> {
+        create_test_token(range, TokenKind::Eof)
     }
 
     #[test]
@@ -422,6 +436,60 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_node_range_map_literal_empty() {
+        let mut arena = Arena::new(10);
+        let map_range = Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 6), // Range of "Map {"
+        };
+        let map_token = create_test_token(map_range.clone(), TokenKind::MapStart);
+        let map_token_id = arena.alloc(map_token);
+
+        let map_node = Node {
+            token_id: map_token_id,
+            expr: Rc::new(Expr::MapLiteral(Vec::new())),
+        };
+        assert_eq!(map_node.range(Rc::new(arena)), map_range);
+    }
+
+    #[test]
+    fn test_node_range_map_literal_with_entries() {
+        let mut arena = Arena::new(10);
+
+        let key1_range = Range { start: Position::new(1, 8), end: Position::new(1, 13) }; // "key1"
+        let val1_range = Range { start: Position::new(1, 15), end: Position::new(1, 18) }; // 123
+        let key2_range = Range { start: Position::new(1, 20), end: Position::new(1, 25) }; // "key2"
+        let val2_range = Range { start: Position::new(1, 27), end: Position::new(1, 30) }; // 456
+
+        let key1_token_id = arena.alloc(create_test_token(key1_range.clone(), TokenKind::StringLiteral("key1".into())));
+        let val1_token_id = arena.alloc(create_test_token(val1_range.clone(), TokenKind::NumberLiteral(123.into())));
+        let key2_token_id = arena.alloc(create_test_token(key2_range.clone(), TokenKind::StringLiteral("key2".into())));
+        let val2_token_id = arena.alloc(create_test_token(val2_range.clone(), TokenKind::NumberLiteral(456.into())));
+
+        let node_key1 = Rc::new(Node { token_id: key1_token_id, expr: Rc::new(Expr::Literal(Literal::String("key1".into()))) });
+        let node_val1 = Rc::new(Node { token_id: val1_token_id, expr: Rc::new(Expr::Literal(Literal::Number(123.into()))) });
+        let node_key2 = Rc::new(Node { token_id: key2_token_id, expr: Rc::new(Expr::Literal(Literal::String("key2".into()))) });
+        let node_val2 = Rc::new(Node { token_id: val2_token_id, expr: Rc::new(Expr::Literal(Literal::Number(456.into()))) });
+
+        let map_token_id = arena.alloc(create_test_token(Range { start: Position::new(1,1), end: Position::new(1,6)}, TokenKind::MapStart)); // "Map {"
+
+        let map_node = Node {
+            token_id: map_token_id,
+            expr: Rc::new(Expr::MapLiteral(vec![
+                (node_key1, node_val1),
+                (node_key2, node_val2),
+            ])),
+        };
+
+        let expected_range = Range {
+            start: key1_range.start, // start of first key
+            end: val2_range.end,     // end of last value
+        };
+        assert_eq!(map_node.range(Rc::new(arena)), expected_range);
+    }
+
 
     #[test]
     fn test_node_range_call_with_args() {

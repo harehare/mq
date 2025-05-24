@@ -182,6 +182,8 @@ define_token_parser!(include, "include", TokenKind::Include);
 define_token_parser!(foreach, "foreach", TokenKind::Foreach);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(fn_, "fn", TokenKind::Fn);
+define_token_parser!(map_start, "Map {", TokenKind::MapStart);
+define_token_parser!(map_end, "}", TokenKind::MapEnd);
 define_token_parser!(
     empty_string,
     "\"\"",
@@ -190,14 +192,14 @@ define_token_parser!(
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, equal, pipe, question,
+        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, map_end, equal, pipe, question,
     ))
     .parse(input)
 }
 
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach, fn_,
+        nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach, fn_, map_start,
     ))
     .parse(input)
 }
@@ -642,6 +644,42 @@ mod tests {
               Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }, kind: TokenKind::Ident(CompactString::new("program")), module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 15} }, kind: TokenKind::SemiColon, module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::map_simple("Map { \"key\": 123 }",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} }, kind: TokenKind::MapStart, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 12} }, kind: TokenKind::StringLiteral("key".to_string()), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 13} }, kind: TokenKind::Colon, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 17} }, kind: TokenKind::NumberLiteral(123.into()), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 18}, end: Position {line: 1, column: 19} }, kind: TokenKind::MapEnd, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 19}, end: Position {line: 1, column: 19} }, kind: TokenKind::Eof, module_id: 1.into()},
+        ]))]
+    #[case::map_empty("Map {}",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} }, kind: TokenKind::MapStart, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 7} }, kind: TokenKind::MapEnd, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 7} }, kind: TokenKind::Eof, module_id: 1.into()},
+        ]))]
+    #[case::map_with_whitespace(" Map { } ",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 7} }, kind: TokenKind::MapStart, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 8}, end: Position {line: 1, column: 9} }, kind: TokenKind::MapEnd, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 10}, end: Position {line: 1, column: 10} }, kind: TokenKind::Eof, module_id: 1.into()},
+        ]))]
+    #[case::map_start_only("Map {",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} }, kind: TokenKind::MapStart, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 6} }, kind: TokenKind::Eof, module_id: 1.into()},
+        ]))]
+    #[case::map_end_only("}",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 2} }, kind: TokenKind::MapEnd, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 2} }, kind: TokenKind::Eof, module_id: 1.into()},
+        ]))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
