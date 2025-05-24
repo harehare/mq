@@ -1,12 +1,14 @@
 <div align="center">
-    <img src="docs/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
+    <img src="docs/assets/logo.svg" style="width: 128px; height: 128px;"/>
 </div>
 
-[Visit the site 🌐](https://mqlang.org)
-&mdash;
-[Read the book 📖](https://mqlang.org/book)
-&mdash;
-[Playground 🎮](https://mqlang.org/playground)
+<div align="center">
+    <a href="https://mqlang.org">Visit the site 🌐</a>
+    &mdash;
+    <a href="https://mqlang.org/book">Read the book 📖</a>
+    &mdash;
+    <a href="https://mqlang.org/playground">Playground 🎮</a>
+</div>
 
 # mq
 
