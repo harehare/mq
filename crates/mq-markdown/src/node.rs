@@ -702,6 +702,15 @@ impl From<String> for Node {
     }
 }
 
+impl From<&str> for Node {
+    fn from(value: &str) -> Self {
+        Self::Text(Text {
+            value: value.to_string(),
+            position: None,
+        })
+    }
+}
+
 impl Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string_with(&RenderOptions::default()))
