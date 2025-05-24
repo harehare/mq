@@ -802,77 +802,79 @@ export const Playground = () => {
         <div className="right-panel">
           <div className="editor-header output">
             <h2>Output</h2>
-            <div className="editor-actions">
-              <label className="label">
-                <div
-                  style={{
-                    marginRight: "4px",
-                  }}
-                >
-                  List Style:
-                </div>
-                <select className="dropdown" onChange={handleChangeListStyle}>
-                  <option value="dash">-</option>
-                  <option value="star">*</option>
-                  <option value="plus">+</option>
-                </select>
-              </label>
-              <label className="label">
-                <div
-                  style={{
-                    marginRight: "4px",
-                  }}
-                >
-                  URL Style:
-                </div>
-                <select
-                  className="dropdown"
-                  onChange={handleChangeLinkUrlStyle}
-                >
-                  <option value="none">None</option>
-                  <option value="angle">Angle</option>
-                </select>
-              </label>
-              <label className="label">
-                <div
-                  style={{
-                    marginRight: "4px",
-                  }}
-                >
-                  Title Style:
-                </div>
-                <select
-                  className="dropdown"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const linkTitleStyle =
-                      value === "none"
-                        ? null
-                        : (value as mq.Options["linkTitleStyle"]);
-                    setLinkTitleStyle(linkTitleStyle);
-                  }}
-                >
-                  <option value="none">None</option>
-                  <option value="double">Double</option>
-                  <option value="single">Single</option>
-                  <option value="paren">Paren</option>
-                </select>
-              </label>
-              <div>
+            {isEmbed && (
+              <div className="editor-actions">
                 <label className="label">
-                  <input
-                    type="checkbox"
-                    checked={isUpdate}
-                    onChange={(e) => setIsUpdate(e.target.checked)}
+                  <div
                     style={{
-                      marginRight: "5px",
-                      cursor: "pointer",
+                      marginRight: "4px",
                     }}
-                  />
-                  <div>Update Markdown</div>
+                  >
+                    List Style:
+                  </div>
+                  <select className="dropdown" onChange={handleChangeListStyle}>
+                    <option value="dash">-</option>
+                    <option value="star">*</option>
+                    <option value="plus">+</option>
+                  </select>
                 </label>
+                <label className="label">
+                  <div
+                    style={{
+                      marginRight: "4px",
+                    }}
+                  >
+                    URL Style:
+                  </div>
+                  <select
+                    className="dropdown"
+                    onChange={handleChangeLinkUrlStyle}
+                  >
+                    <option value="none">None</option>
+                    <option value="angle">Angle</option>
+                  </select>
+                </label>
+                <label className="label">
+                  <div
+                    style={{
+                      marginRight: "4px",
+                    }}
+                  >
+                    Title Style:
+                  </div>
+                  <select
+                    className="dropdown"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const linkTitleStyle =
+                        value === "none"
+                          ? null
+                          : (value as mq.Options["linkTitleStyle"]);
+                      setLinkTitleStyle(linkTitleStyle);
+                    }}
+                  >
+                    <option value="none">None</option>
+                    <option value="double">Double</option>
+                    <option value="single">Single</option>
+                    <option value="paren">Paren</option>
+                  </select>
+                </label>
+                <div>
+                  <label className="label">
+                    <input
+                      type="checkbox"
+                      checked={isUpdate}
+                      onChange={(e) => setIsUpdate(e.target.checked)}
+                      style={{
+                        marginRight: "5px",
+                        cursor: "pointer",
+                      }}
+                    />
+                    <div>Update Markdown</div>
+                  </label>
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div className="editor-content result-container">
             {!wasmLoaded ? (
