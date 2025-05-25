@@ -2,7 +2,8 @@
   "name": "mq-web",
   "description": "A jq-like command-line tool for Markdown processing",
   "version": "0.1.0",
-  "author": "mq contributors",
+  "author": "harehare",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/harehare/mq/issues"
   },
@@ -22,7 +23,6 @@
     "wasm",
     "webassembly"
   ],
-  "license": "MIT",
   "main": "dist/index.js",
   "repository": {
     "type": "git",
@@ -30,7 +30,7 @@
     "directory": "packages/mq-web"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && rm dist/.gitignore",
     "dev": "tsup --watch",
     "type-check": "tsc --noEmit"
   },

@@ -7,15 +7,8 @@
  * ```typescript
  * import { run, format, Mq } from 'mq-web';
  *
- * // One-off usage
  * const result = await run('.[]', '- item 1\n- item 2', { listStyle: 'star' });
  * console.log(result); // * item 1\n* item 2
- *
- * // Reusable instance
- * const mq = await Mq.create();
- * const formatted = await mq.format('map(.text)');
- * const diagnostics = await mq.diagnostics('invalid syntax');
- * ```
  */
 
 // Re-export everything from core and types

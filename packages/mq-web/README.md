@@ -1,4 +1,6 @@
-# mq-web
+<div align="center">
+  <img src="https://mqlang.org/assets/logo.svg" style="width: 128px; height: 128px;"/>
+</div>
 
 <div>
   <a href="https://mqlang.org">Visit the site 🌐</a>
@@ -7,6 +9,8 @@
   &mdash;
   <a href="https://mqlang.org/playground">Playground 🎮</a>
 </div>
+
+# mq-web
 
 A TypeScript/JavaScript package for running [mq](https://github.com/harehare/mq) (a jq-like command-line tool for Markdown processing) in web environments using WebAssembly.
 
