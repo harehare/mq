@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
-import init, * as mq from "./mq-wasm/mq_wasm";
+import * as mq from "mq-web";
 import { FaGithub } from "react-icons/fa6";
 import { languages } from "monaco-editor";
 import LZString from "lz-string";
@@ -250,7 +250,6 @@ export const Playground = () => {
   );
   const [isEmbed, setIsEmbed] = useState(false);
   const [result, setResult] = useState("");
-  const [wasmLoaded, setWasmLoaded] = useState(false);
   const [listStyle, setListStyle] = useState<mq.Options["listStyle"]>(null);
   const [linkUrlStyle, setLinkUrlStyle] =
     useState<mq.Options["linkUrlStyle"]>(null);
@@ -270,10 +269,6 @@ export const Playground = () => {
   );
 
   useEffect(() => {
-    init().then(() => {
-      setWasmLoaded(true);
-    });
-
     if (window.location.hash) {
       try {
         const compressed = window.location.hash.substring(1);
@@ -327,7 +322,7 @@ export const Playground = () => {
 
     try {
       setResult(
-        mq.run(code, markdown, {
+        await mq.run(code, markdown, {
           isUpdate,
           inputFormat,
           listStyle,
@@ -433,7 +428,7 @@ export const Playground = () => {
     });
 
     monaco.editor.onDidCreateEditor((editor) => {
-      editor.onDidChangeModelContent(() => {
+      editor.onDidChangeModelContent(async () => {
         const model = editor.getModel();
         if (model) {
           const modelLanguage = model.getLanguageId();
@@ -442,7 +437,7 @@ export const Playground = () => {
             return;
           }
 
-          const errors = mq.diagnostics(model.getValue());
+          const errors = await mq.diagnostics(model.getValue());
           monaco.editor.setModelMarkers(
             model,
             "mq",
@@ -461,8 +456,8 @@ export const Playground = () => {
 
     monaco.languages.registerCompletionItemProvider("mq", {
       triggerCharacters: [" ", "|"],
-      provideCompletionItems: (model, position) => {
-        const values = mq.definedValues("");
+      provideCompletionItems: async (model, position) => {
+        const values = await mq.definedValues("");
         const wordRange = model.getWordUntilPosition(position);
         const suggestions: languages.CompletionItem[] = values.map((value) => {
           return {
@@ -726,18 +721,10 @@ export const Playground = () => {
                 <button className="share-button" onClick={handleShare}>
                   Share
                 </button>
-                <button
-                  className="format-button"
-                  onClick={handleFormat}
-                  disabled={!wasmLoaded}
-                >
+                <button className="format-button" onClick={handleFormat}>
                   Format
                 </button>
-                <button
-                  className="run-button"
-                  onClick={handleRun}
-                  disabled={!wasmLoaded}
-                >
+                <button className="run-button" onClick={handleRun}>
                   ▶ Run
                 </button>
               </div>
@@ -877,9 +864,7 @@ export const Playground = () => {
             )}
           </div>
           <div className="editor-content result-container">
-            {!wasmLoaded ? (
-              <div className="loading-message">Loading WASM module...</div>
-            ) : (
+            {
               <Editor
                 height="100%"
                 defaultLanguage="markdown"
@@ -895,7 +880,7 @@ export const Playground = () => {
                 }}
                 theme="mq-base"
               />
-            )}
+            }
           </div>
         </div>
       </div>

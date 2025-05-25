@@ -43,7 +43,7 @@ console.log(formatted);
 
 ### Functions
 
-#### `run(code, content, options?, config?)`
+#### `run(code, content, options?)`
 
 Run an mq script on markdown content.
 
@@ -53,7 +53,7 @@ Run an mq script on markdown content.
 
 Returns: `Promise<string>` - The processed output
 
-#### `format(code, config?)`
+#### `format(code)`
 
 Format mq code.
 
@@ -61,7 +61,7 @@ Format mq code.
 
 Returns: `Promise<string>` - The formatted code
 
-#### `diagnostics(code, config?)`
+#### `diagnostics(code)`
 
 Get diagnostics for mq code.
 
@@ -69,7 +69,7 @@ Get diagnostics for mq code.
 
 Returns: `Promise<Diagnostic[]>` - Array of diagnostic messages
 
-#### `definedValues(code, config?)`
+#### `definedValues(code)`
 
 Get defined values (functions, selectors, variables) from mq code.
 
