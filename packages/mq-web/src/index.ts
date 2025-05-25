@@ -1,5 +1,5 @@
 /**
- * mq-web - A jq-like command-line tool for Markdown processing (WebAssembly package)
+ * mq-web - A jq-like command-line tool for Markdown processing
  *
  * This package provides async/await support for using mq in web environments.
  *
