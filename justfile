@@ -47,7 +47,7 @@ build-bench:
 # Build WebAssembly package for web use
 [working-directory: 'crates/mq-wasm']
 build-wasm:
-    wasm-pack build --release --target web --out-dir ../../playground/src/mq-wasm
+    wasm-pack build --release --target web --out-dir ../../packages/mq-web/mq-wasm
 
 # Build mq-python package for Python
 [working-directory: 'crates/mq-python']

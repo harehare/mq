@@ -1,0 +1,39 @@
+{
+  "name": "mq-web",
+  "type": "module",
+  "version": "0.1.6",
+  "description": "A jq-like command-line tool for Markdown processing - WebAssembly package for web environments",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src/mq-wasm"
+  ],
+  "scripts": {
+    "build:wasm": "cd ../../ && just build-wasm && rm packages/mq-web/mq-wasm/README.md && rm packages/mq-web/mq-wasm/package.json",
+    "build": "npm run build:wasm && tsup",
+    "dev": "tsup --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "markdown",
+    "jq",
+    "wasm",
+    "webassembly",
+    "cli",
+    "filter",
+    "transform"
+  ],
+  "author": "mq contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/satou-takahiro/mq.git",
+    "directory": "npm_modules/mq-web"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "sideEffects": false
+}
