@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 description = "Model Context Protocol (MCP) server implementation for mq"
 edition = "2024"

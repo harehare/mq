@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
@@ -27,6 +29,7 @@ regex = "1.11.1"
 rustc-hash = {workspace = true}
 smallvec = "1.15.0"
 thiserror = {workspace = true}
+typed_arena = "2.0.2"
 
 [features]
 cst = []

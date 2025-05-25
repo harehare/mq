@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 default-run = "mq"
