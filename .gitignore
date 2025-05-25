@@ -78,6 +78,3 @@ docs/playground.html
 docs/logo.svg
 
 *.so
-
-mq-wasm*
-mq_wasm*

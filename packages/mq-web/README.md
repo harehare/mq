@@ -1,7 +1,3 @@
-<div align="center">
-  <img src="https://mqlang.org/assets/logo.svg" style="width: 128px; height: 128px;"/>
-</div>
-
 <div>
   <a href="https://mqlang.org">Visit the site 🌐</a>
   &mdash;
