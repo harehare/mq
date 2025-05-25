@@ -71,7 +71,7 @@ Get diagnostics for mq code.
 
 - `code`: string - The mq code to analyze
 
-Returns: `Promise<Diagnostic[]>` - Array of diagnostic messages
+Returns: `Promise<ReadonlyArray<Diagnostic>>` - Array of diagnostic messages
 
 #### `definedValues(code)`
 
@@ -79,7 +79,7 @@ Get defined values (functions, selectors, variables) from mq code.
 
 - `code`: string - The mq code to analyze
 
-Returns: `Promise<DefinedValue[]>` - Array of defined values
+Returns: `Promise<ReadonlyArray<DefinedValue>>` - Array of defined values
 
 ## Examples
 
