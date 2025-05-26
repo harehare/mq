@@ -17,7 +17,7 @@ start-mcp:
     cargo watch -x run
 
 # Start the web playground development server
-[working-directory: 'playground']
+[working-directory: 'packages/playground']
 playground:
     npm run dev
 
