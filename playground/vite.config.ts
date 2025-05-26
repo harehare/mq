@@ -12,6 +12,7 @@ export default defineConfig({
       },
     },
   },
+  optimizeDeps: { exclude: ["mq-web"] },
   server: {
     open: "/playground.html",
     fs: {
