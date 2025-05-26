@@ -6,7 +6,7 @@ use base64::prelude::*;
 use compact_str::CompactString;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
-use regex::{Regex, RegexBuilder};
+use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
@@ -2828,11 +2828,7 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
             .map(|m| RuntimeValue::String(m.as_str().to_string()))
             .collect();
         Ok(RuntimeValue::Array(matches))
-    } else if let Ok(re) = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .dfa_size_limit(1 << 20)
-        .build()
-    {
+    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
         cache.insert(pattern.to_string(), re.clone());
         let matches: Vec<RuntimeValue> = re
             .find_iter(input)
@@ -2849,11 +2845,7 @@ fn replace_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeVa
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
         Ok(re.replace_all(input, replacement).to_string().into())
-    } else if let Ok(re) = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .dfa_size_limit(1 << 20)
-        .build()
-    {
+    } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
         cache.insert(pattern.to_string(), re.clone());
         Ok(re.replace_all(input, replacement).to_string().into())
     } else {

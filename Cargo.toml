@@ -41,7 +41,6 @@ members = [
 
 [dependencies]
 clap = {version = "4.5.38", features = ["derive"]}
-clap_complete = "4.5.50"
 itertools = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter = {workspace = true}

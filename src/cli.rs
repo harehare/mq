@@ -1,6 +1,5 @@
 use clap::CommandFactory;
 use clap::{Parser, Subcommand};
-use clap_complete::{Shell, generate};
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
@@ -169,11 +168,6 @@ enum Commands {
         #[arg(short, long)]
         check: bool,
     },
-    /// Generate shell completion scripts for supported shells
-    Completion {
-        #[arg(short, long, value_enum)]
-        shell: Shell,
-    },
     /// Show functions documentation for the query
     Docs,
 }
@@ -234,10 +228,6 @@ impl Cli {
                     }
                 }
 
-                Ok(())
-            }
-            Some(Commands::Completion { shell }) => {
-                generate(*shell, &mut Cli::command(), "mq", &mut std::io::stdout());
                 Ok(())
             }
             Some(Commands::Docs) => {

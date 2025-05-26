@@ -23,7 +23,7 @@ mq-markdown = {workspace = true}
 nom = {version = "8.0.0"}
 nom_locate = "5.0.0"
 percent-encoding = "2.3.1"
-regex = "1.11.1"
+regex-lite = "0.1.6"
 rustc-hash = {workspace = true}
 smallvec = "1.15.0"
 thiserror = {workspace = true}
