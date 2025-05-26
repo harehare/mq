@@ -52,7 +52,7 @@ mq-mcp = {path = "./crates/mq-mcp", version = "0.1.6"}
 mq-repl = {path = "./crates/mq-repl", version = "0.1.6"}
 mq-tui = {path = "./crates/mq-tui", version = "0.1.6"}
 rayon = "1.10.0"
-tokio = {version = "1.27.0", features = ["io-util", "io-std", "rt"]}
+tokio = {version = "1.45.1", features = ["io-util", "io-std", "rt"]}
 url = {workspace = true}
 
 [dev-dependencies]
