@@ -14,7 +14,7 @@
   "files": [
     "dist"
   ],
-  "homepage": "https://mqlang.org/book/",
+  "homepage": "https://mqlang.org",
   "keywords": [
     "filter",
     "jq",
