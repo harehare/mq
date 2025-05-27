@@ -56,7 +56,6 @@ jspm_packages/
 
 .cache/
 .vscode-test
-dist/
 .intentionally-empty-file.o
 
 

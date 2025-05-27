@@ -17,7 +17,7 @@ start-mcp:
     cargo watch -x run
 
 # Start the web playground development server
-[working-directory: 'playground']
+[working-directory: 'packages/playground']
 playground:
     npm run dev
 
@@ -47,7 +47,14 @@ build-bench:
 # Build WebAssembly package for web use
 [working-directory: 'crates/mq-wasm']
 build-wasm:
-    wasm-pack build --release --target web --out-dir ../../playground/src/mq-wasm
+    wasm-pack build --release --target web --out-dir ../../packages/mq-web/mq-wasm
+    rm ../../packages/mq-web/mq-wasm/README.md
+    rm ../../packages/mq-web/mq-wasm/package.json
+
+# Build mq-web package
+[working-directory: 'packages/mq-web']
+build-web: build-wasm
+    npm run build
 
 # Build mq-python package for Python
 [working-directory: 'crates/mq-python']

@@ -1,13 +1,13 @@
 <div align="center">
-    <img src="docs/assets/logo.svg" style="width: 128px; height: 128px;"/>
+  <img src="docs/assets/logo.svg" style="width: 128px; height: 128px;"/>
 </div>
 
 <div align="center">
-    <a href="https://mqlang.org">Visit the site 🌐</a>
-    &mdash;
-    <a href="https://mqlang.org/book">Read the book 📖</a>
-    &mdash;
-    <a href="https://mqlang.org/playground">Playground 🎮</a>
+  <a href="https://mqlang.org">Visit the site 🌐</a>
+  &mdash;
+  <a href="https://mqlang.org/book">Read the book 📖</a>
+  &mdash;
+  <a href="https://mqlang.org/playground">Playground 🎮</a>
 </div>
 
 # mq
