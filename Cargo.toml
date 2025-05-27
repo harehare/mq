@@ -40,7 +40,7 @@ members = [
 ]
 
 [dependencies]
-clap = {version = "4.5.38", features = ["derive"]}
+clap = {version = "4.5.39", features = ["derive"]}
 itertools = {workspace = true}
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter = {workspace = true}
