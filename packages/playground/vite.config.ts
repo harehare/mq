@@ -5,7 +5,7 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   build: {
-    outDir: "../docs",
+    outDir: "../../docs",
     rollupOptions: {
       input: {
         main: "playground.html",
