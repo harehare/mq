@@ -1,5 +1,5 @@
 {
-  description = "A Nix-flake-based Rust development environment with mq-cli";
+  description = "A Nix-flake-based Rust development environment with mq";
 
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
@@ -57,8 +57,8 @@
       });
 
       packages = forEachSupportedSystem ({ pkgs }: {
-        mq-cli = pkgs.rustPlatform.buildRustPackage rec {
-          pname = "mq-cli";
+        mq = pkgs.rustPlatform.buildRustPackage {
+          pname = "mq";
           version = "unstable";
 
           src = pkgs.fetchFromGitHub {
