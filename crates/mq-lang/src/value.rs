@@ -1,4 +1,4 @@
-use std::fmt::{self, Debug, Display, Formatter};
+use std::{collections::HashMap, fmt::{self, Debug, Display, Formatter}};
 
 use crate::{AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, number::Number};
 
@@ -13,6 +13,7 @@ pub enum Value {
     Markdown(Node),
     Function(AstParams, Program),
     NativeFunction(AstIdent),
+    Map(HashMap<String, Value>),
     None,
 }
 
@@ -64,6 +65,12 @@ impl From<RuntimeValue> for Value {
             RuntimeValue::Markdown(m, _) => Value::Markdown(m),
             RuntimeValue::Function(params, program, _) => Value::Function(params, program),
             RuntimeValue::NativeFunction(ident) => Value::NativeFunction(ident),
+            RuntimeValue::Map(rt_map) => Value::Map(
+                rt_map
+                    .into_iter()
+                    .map(|(k, v)| (k, Value::from(v)))
+                    .collect(),
+            ),
             RuntimeValue::None => Value::None,
         }
     }
@@ -84,6 +91,7 @@ impl Display for Value {
             Value::None => "".to_string(),
             Value::Function(_, _) => "function".to_string(),
             Value::NativeFunction(_) => "native_function".to_string(),
+            Value::Map(_) => "[object Map]".to_string(),
         };
 
         write!(f, "{}", value)
@@ -105,6 +113,14 @@ impl Debug for Value {
             Value::None => "None".to_string(),
             Value::Function(params, _) => format!("function{}", params.len()),
             Value::NativeFunction(ident) => format!("native_function: {}", ident),
+            Value::Map(map) => {
+                let s = map
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\": {:?}", k, v))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("{{{}}}", s)
+            }
         };
         write!(f, "{}", v)
     }
@@ -134,6 +150,7 @@ impl Value {
             Value::String(s) => s.len(),
             Value::Array(a) => a.len(),
             Value::Markdown(m) => m.value().len(),
+            Value::Map(m) => m.len(),
             _ => panic!("not supported"),
         }
     }
@@ -256,6 +273,7 @@ impl Values {
 mod tests {
     use mq_markdown::Text;
     use rstest::rstest;
+    use rustc_hash::FxHashMap;
     use smallvec::SmallVec;
 
     use super::*;
@@ -307,6 +325,16 @@ mod tests {
         let rt_value = RuntimeValue::Number(Number::from(42.0));
         let value = Value::from(rt_value);
         assert_eq!(value, Value::Number(Number::from(42.0)));
+
+        let mut rt_map = FxHashMap::default();
+        rt_map.insert("key1".to_string(), RuntimeValue::String("value1".to_string()));
+        rt_map.insert("key2".to_string(), RuntimeValue::Number(Number::from(123.0)));
+        let rt_value_map = RuntimeValue::Map(rt_map);
+        let value_map = Value::from(rt_value_map);
+        let mut expected_map = HashMap::new();
+        expected_map.insert("key1".to_string(), Value::String("value1".to_string()));
+        expected_map.insert("key2".to_string(), Value::Number(Number::from(123.0)));
+        assert_eq!(value_map, Value::Map(expected_map));
     }
 
     #[test]
@@ -319,6 +347,8 @@ mod tests {
             "a\nb"
         );
         assert_eq!(Value::None.to_string(), "");
+        let map_val = Value::Map(HashMap::new());
+        assert_eq!(map_val.to_string(), "[object Map]");
     }
 
     #[test]
@@ -375,6 +405,11 @@ mod tests {
             .len(),
             2
         );
+        let mut map = HashMap::new();
+        map.insert("key1".to_string(), Value::String("value1".to_string()));
+        map.insert("key2".to_string(), Value::Number(Number::from(123.0)));
+        assert_eq!(Value::Map(map.clone()).len(), 2);
+
 
         let markdown_node = Node::Text(Text {
             value: "test text".to_string(),
@@ -382,6 +417,15 @@ mod tests {
         });
         assert_eq!(Value::Markdown(markdown_node).len(), 9);
     }
+
+    #[test]
+    fn test_value_map_is_empty() {
+        let mut map = HashMap::new();
+        assert!(Value::Map(map.clone()).is_empty());
+        map.insert("key1".to_string(), Value::String("value1".to_string()));
+        assert!(!Value::Map(map).is_empty());
+    }
+
 
     #[test]
     fn test_values_len_and_empty() {
@@ -478,5 +522,49 @@ mod tests {
         let update_values = Values(vec![update]);
         let result = values.update_with(update_values);
         assert_eq!(result.0[0], expected);
+    }
+
+    #[test]
+    fn test_value_map_creation_and_equality() {
+        let mut map1 = HashMap::new();
+        map1.insert("a".to_string(), Value::Number(1.into()));
+        map1.insert("b".to_string(), Value::String("hello".into()));
+        let value_map1 = Value::Map(map1.clone());
+
+        let mut map2 = HashMap::new();
+        map2.insert("a".to_string(), Value::Number(1.into()));
+        map2.insert("b".to_string(), Value::String("hello".into()));
+        let value_map2 = Value::Map(map2.clone());
+
+        let mut map3 = HashMap::new();
+        map3.insert("a".to_string(), Value::Number(1.into()));
+        map3.insert("c".to_string(), Value::String("world".into()));
+        let value_map3 = Value::Map(map3.clone());
+
+        assert_eq!(value_map1, value_map2);
+        assert_ne!(value_map1, value_map3);
+    }
+
+    #[test]
+    fn test_value_map_debug_formatting() {
+        let mut map = HashMap::new();
+        map.insert("name".to_string(), Value::String("MQ".to_string()));
+        map.insert("version".to_string(), Value::Number(1.into()));
+        let value_map = Value::Map(map);
+
+        // The order of items in a HashMap is not guaranteed, so we need to check for both possible orderings
+        let option1 = r#"{"name": "MQ", "version": 1}"#;
+        let option2 = r#"{"version": 1, "name": "MQ"}"#;
+
+        let debug_str = format!("{:?}", value_map);
+        assert!(debug_str == option1 || debug_str == option2);
+
+
+        let mut nested_map = HashMap::new();
+        nested_map.insert("key".to_string(), Value::String("value".to_string()));
+        let mut map_with_nested = HashMap::new();
+        map_with_nested.insert("outer_key".to_string(), Value::Map(nested_map));
+        let value_map_nested = Value::Map(map_with_nested);
+        assert_eq!(format!("{:?}", value_map_nested), r#"{"outer_key": {"key": "value"}}"#);
     }
 }

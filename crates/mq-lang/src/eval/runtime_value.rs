@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{AstIdent, AstParams, Program, Value, number::Number};
-
+use rustc_hash::FxHashMap;
 use mq_markdown::Node;
 
 use super::env::Env;
@@ -25,6 +25,7 @@ pub enum RuntimeValue {
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Rc<RefCell<Env>>),
     NativeFunction(AstIdent),
+    Map(FxHashMap<String, RuntimeValue>),
     None,
 }
 
@@ -76,6 +77,12 @@ impl From<Value> for RuntimeValue {
                 RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::default())))
             }
             Value::NativeFunction(ident) => RuntimeValue::NativeFunction(ident),
+            Value::Map(value_map) => RuntimeValue::Map(
+                value_map
+                    .into_iter()
+                    .map(|(k, v)| (k, RuntimeValue::from(v)))
+                    .collect(),
+            ),
             Value::None => RuntimeValue::None,
         }
     }
@@ -101,6 +108,8 @@ impl PartialOrd for RuntimeValue {
                     _ => None,
                 }
             }
+            (RuntimeValue::Map(_), _) => None,
+            (_, RuntimeValue::Map(_)) => None,
             _ => None,
         }
     }
@@ -127,6 +136,16 @@ impl Debug for RuntimeValue {
             RuntimeValue::None => "None".to_string(),
             RuntimeValue::Function(params, _, _) => format!("function{}", params.len()),
             RuntimeValue::NativeFunction(ident) => format!("native_function: {}", ident),
+            RuntimeValue::Map(map) => {
+                let mut sorted_keys: Vec<&String> = map.keys().collect();
+                sorted_keys.sort_unstable();
+                let s = sorted_keys
+                    .iter()
+                    .map(|k| format!("\"{}\": {:?}", k, map.get(*k).unwrap()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("{{{}}}", s)
+            }
         };
         write!(f, "{}", v)
     }
@@ -148,6 +167,7 @@ impl RuntimeValue {
             RuntimeValue::None => "None",
             RuntimeValue::Function(_, _, _) => "function",
             RuntimeValue::NativeFunction(_) => "native_function",
+            RuntimeValue::Map(_) => "map",
         }
     }
 
@@ -165,6 +185,16 @@ impl RuntimeValue {
             RuntimeValue::Markdown(m, _) => m.value(),
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),
+            RuntimeValue::Map(map) => {
+                let mut sorted_keys: Vec<&String> = map.keys().collect();
+                sorted_keys.sort_unstable();
+                let s = sorted_keys
+                    .iter()
+                    .map(|k| format!("\"{}\": {}", k, map.get(*k).unwrap().text()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("{{{}}}", s)
+            }
         }
     }
 
@@ -185,6 +215,7 @@ impl RuntimeValue {
             RuntimeValue::Array(a) => a.is_empty(),
             RuntimeValue::String(s) => s.is_empty(),
             RuntimeValue::Markdown(m, _) => m.value().is_empty(),
+            RuntimeValue::Map(m) => m.is_empty(),
             RuntimeValue::None => true,
             _ => false,
         }
@@ -202,6 +233,7 @@ impl RuntimeValue {
             },
             RuntimeValue::Function(_, _, _) => true,
             RuntimeValue::NativeFunction(_) => true,
+            RuntimeValue::Map(_) => true,
             RuntimeValue::None => false,
         }
     }
@@ -213,6 +245,7 @@ impl RuntimeValue {
             RuntimeValue::String(s) => s.len(),
             RuntimeValue::Array(a) => a.len(),
             RuntimeValue::Markdown(m, _) => m.value().len(),
+            RuntimeValue::Map(m) => m.len(),
             RuntimeValue::None => 0,
             RuntimeValue::Function(..) => 0,
             RuntimeValue::NativeFunction(..) => 0,
@@ -253,14 +286,16 @@ impl RuntimeValue {
             RuntimeValue::None => "None".to_string(),
             RuntimeValue::Function(_, _, _) => "function".to_string(),
             RuntimeValue::NativeFunction(_) => "native_function".to_string(),
+            RuntimeValue::Map(_) => "[object Map]".to_string(),
         }
     }
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use crate::{AstExpr, AstNode, arena::ArenaId};
     use rstest::rstest;
-    use smallvec::{SmallVec, smallvec};
+    use smallvec::{smallvec, SmallVec};
 
     use super::*;
 
@@ -304,6 +339,8 @@ mod tests {
             "test"
         );
         assert_eq!(format!("{}", RuntimeValue::None), "None");
+        let map_val = RuntimeValue::Map(FxHashMap::default());
+        assert_eq!(format!("{}", map_val), "[object Map]");
     }
 
     #[test]
@@ -318,6 +355,17 @@ mod tests {
             "\"test\""
         );
         assert_eq!(format!("{:?}", RuntimeValue::None), "None");
+
+        let mut map = FxHashMap::default();
+        map.insert("name".to_string(), RuntimeValue::String("MQ".to_string()));
+        map.insert("version".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        let map_val = RuntimeValue::Map(map);
+        // Order of keys might vary, so check both possibilities or parse as JSON
+        let debug_str = format!("{:?}", map_val);
+        assert!(
+            debug_str == r#"{"name": "MQ", "version": 1}"#
+                || debug_str == r#"{"version": 1, "name": "MQ"}"#
+        );
     }
 
     #[test]
@@ -354,6 +402,9 @@ mod tests {
 
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("print"));
         assert_eq!(native_fn.string(), "native_function");
+
+        let map_val = RuntimeValue::Map(FxHashMap::default());
+        assert_eq!(map_val.string(), "[object Map]");
     }
 
     #[test]
@@ -386,6 +437,7 @@ mod tests {
             .name(),
             "markdown"
         );
+        assert_eq!(RuntimeValue::Map(FxHashMap::default()).name(), "map");
     }
 
     #[test]
@@ -422,6 +474,17 @@ mod tests {
             )
             .text(),
             "value"
+        );
+
+        let mut map = FxHashMap::default();
+        map.insert("key1".to_string(), RuntimeValue::String("value1".to_string()));
+        map.insert("key2".to_string(), RuntimeValue::Number(Number::from(123.0)));
+        let map_val = RuntimeValue::Map(map);
+        // Test with sorted keys for consistent output
+        let text_output = map_val.text();
+        assert!(
+            text_output == r#"{"key1": value1, "key2": 123}"#
+                || text_output == r#"{"key2": 123, "key1": value1}"#
         );
     }
 
@@ -466,6 +529,7 @@ mod tests {
             )
             .is_true()
         );
+        assert!(RuntimeValue::Map(FxHashMap::default()).is_true());
     }
 
     #[test]
@@ -524,6 +588,10 @@ mod tests {
             .len(),
             1
         );
+        let mut map = FxHashMap::default();
+        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
+        map.insert("b".to_string(), RuntimeValue::String("beta".to_string()));
+        assert_eq!(RuntimeValue::Map(map).len(), 2);
     }
 
     #[test]
@@ -550,6 +618,11 @@ mod tests {
 
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("debug"));
         assert_eq!(format!("{:?}", native_fn), "native_function: debug");
+
+        let mut map = FxHashMap::default();
+        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
+        let map_val = RuntimeValue::Map(map);
+        assert_eq!(format!("{:?}", map_val), r#"{"a": "alpha"}"#);
     }
 
     #[test]
@@ -595,6 +668,13 @@ mod tests {
             RuntimeValue::from(native_fn_value),
             RuntimeValue::NativeFunction(ident)
         );
+
+        let mut value_map = HashMap::new();
+        value_map.insert("key".to_string(), Value::String("val".to_string()));
+        let map_value = Value::Map(value_map);
+        let mut expected_rt_map = FxHashMap::default();
+        expected_rt_map.insert("key".to_string(), RuntimeValue::String("val".to_string()));
+        assert_eq!(RuntimeValue::from(map_value), RuntimeValue::Map(expected_rt_map));
     }
 
     #[test]
@@ -663,5 +743,56 @@ mod tests {
             RuntimeValue::None.update_markdown_value("test"),
             RuntimeValue::NONE
         );
+    }
+
+    #[test]
+    fn test_runtime_value_map_creation_and_equality() {
+        let mut map1_data = FxHashMap::default();
+        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map1_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        let map1 = RuntimeValue::Map(map1_data);
+
+        let mut map2_data = FxHashMap::default();
+        map2_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map2_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        let map2 = RuntimeValue::Map(map2_data);
+
+        let mut map3_data = FxHashMap::default();
+        map3_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map3_data.insert("c".to_string(), RuntimeValue::String("world".to_string()));
+        let map3 = RuntimeValue::Map(map3_data);
+
+        assert_eq!(map1, map2);
+        assert_ne!(map1, map3);
+    }
+
+    #[test]
+    fn test_runtime_value_map_is_empty() {
+        let empty_map = RuntimeValue::Map(FxHashMap::default());
+        assert!(empty_map.is_empty());
+
+        let mut map_data = FxHashMap::default();
+        map_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        let non_empty_map = RuntimeValue::Map(map_data);
+        assert!(!non_empty_map.is_empty());
+    }
+
+    #[test]
+    fn test_runtime_value_map_partial_ord() {
+        let mut map1_data = FxHashMap::default();
+        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        let map1 = RuntimeValue::Map(map1_data);
+
+        let mut map2_data = FxHashMap::default();
+        map2_data.insert("b".to_string(), RuntimeValue::Number(Number::from(2.0)));
+        let map2 = RuntimeValue::Map(map2_data);
+
+        assert_eq!(map1.partial_cmp(&map2), None);
+        assert_eq!(map2.partial_cmp(&map1), None);
+        assert_eq!(map1.partial_cmp(&map1), None); // Comparing with itself
+
+        let num_val = RuntimeValue::Number(Number::from(5.0));
+        assert_eq!(map1.partial_cmp(&num_val), None);
+        assert_eq!(num_val.partial_cmp(&map1), None);
     }
 }

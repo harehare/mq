@@ -1659,6 +1659,76 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
 
+        // Map functions
+        map.insert(
+            CompactString::new("new_map"),
+            BuiltinFunction::new(ParamNum::None, |_, _, args| {
+                if !args.is_empty() {
+                    // This case should ideally be caught by ParamNum::None check,
+                    // but as a safeguard or if used differently:
+                    return Err(Error::InvalidNumberOfArguments(
+                        "new_map".to_string(),
+                        0,
+                        args.len() as u8,
+                    ));
+                }
+                Ok(RuntimeValue::Map(FxHashMap::default()))
+            }),
+        );
+        map.insert(
+            CompactString::new("get"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map), RuntimeValue::String(key)] => {
+                    Ok(map.get(key).cloned().unwrap_or(RuntimeValue::None))
+                }
+                [a, b] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("set"),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map_val), RuntimeValue::String(key_val), value_val] => {
+                    let mut new_map = map_val.clone();
+                    new_map.insert(key_val.clone(), value_val.clone());
+                    Ok(RuntimeValue::Map(new_map))
+                }
+                [a, b, c] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone(), c.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("keys"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map)] => {
+                    let keys = map
+                        .keys()
+                        .map(|k| RuntimeValue::String(k.clone()))
+                        .collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(keys))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("values"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Map(map)] => {
+                    let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(values))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+
         map
     });
 
@@ -2604,6 +2674,43 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             params: &["node", "reference_id"],
             },
         );
+
+        // Map function docs
+        map.insert(
+            CompactString::new("new_map"),
+            BuiltinFunctionDoc {
+                description: "Creates a new, empty map.",
+                params: &[],
+            },
+        );
+        map.insert(
+            CompactString::new("get"),
+            BuiltinFunctionDoc {
+                description: "Retrieves a value from a map by its key. Returns None if the key is not found.",
+                params: &["map", "key"],
+            },
+        );
+        map.insert(
+            CompactString::new("set"),
+            BuiltinFunctionDoc {
+                description: "Sets a key-value pair in a map. If the key exists, its value is updated. Returns the modified map.",
+                params: &["map", "key", "value"],
+            },
+        );
+        map.insert(
+            CompactString::new("keys"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of keys from the map.",
+                params: &["map"],
+            },
+        );
+        map.insert(
+            CompactString::new("values"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of values from the map.",
+                params: &["map"],
+            },
+        );
         map
     });
 
@@ -3157,5 +3264,343 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(param_num.is_missing_one_params(num_args), expected);
+    }
+
+    // Tests for Map functions
+    #[test]
+    fn test_eval_builtin_new_map() {
+        let ident = ast::Ident {
+            name: CompactString::new("new_map"),
+            token: None,
+        };
+        let result = eval_builtin(&RuntimeValue::None, &ident, &smallvec![]);
+        assert!(result.is_ok());
+        let map_val = result.unwrap();
+        match map_val {
+            RuntimeValue::Map(map) => {
+                assert_eq!(map.len(), 0);
+            }
+            _ => panic!("Expected Map, got {:?}", map_val),
+        }
+        // Test with incorrect number of arguments
+        let result_err = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            &smallvec![RuntimeValue::Number(1.into())],
+        );
+        assert_eq!(
+            result_err,
+            Err(Error::InvalidNumberOfArguments(
+                "new_map".to_string(),
+                0,
+                1
+            ))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_set_map() {
+        let ident_set = ast::Ident {
+            name: CompactString::new("set"),
+            token: None,
+        };
+        let initial_map = RuntimeValue::Map(FxHashMap::default());
+
+        // Set a new key-value pair on an empty map
+        let args1 = smallvec![
+            initial_map.clone(),
+            RuntimeValue::String("name".into()),
+            RuntimeValue::String("Jules".into())
+        ];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, &args1);
+        assert!(result1.is_ok());
+        let map_val1 = result1.unwrap();
+        match &map_val1 {
+            RuntimeValue::Map(map) => {
+                assert_eq!(map.len(), 1);
+                assert_eq!(
+                    map.get("name"),
+                    Some(&RuntimeValue::String("Jules".into()))
+                );
+            }
+            _ => panic!("Expected Map, got {:?}", map_val1),
+        }
+
+        // Set a new key-value pair on a non-empty map
+        let args2 = smallvec![
+            map_val1.clone(),
+            RuntimeValue::String("age".into()),
+            RuntimeValue::Number(30.into())
+        ];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, &args2);
+        assert!(result2.is_ok());
+        let map_val2 = result2.unwrap();
+        match &map_val2 {
+            RuntimeValue::Map(map) => {
+                assert_eq!(map.len(), 2);
+                assert_eq!(
+                    map.get("name"),
+                    Some(&RuntimeValue::String("Jules".into()))
+                );
+                assert_eq!(map.get("age"), Some(&RuntimeValue::Number(30.into())));
+            }
+            _ => panic!("Expected Map, got {:?}", map_val2),
+        }
+
+        // Update an existing key's value
+        let args3 = smallvec![
+            map_val2.clone(),
+            RuntimeValue::String("name".into()),
+            RuntimeValue::String("Vincent".into())
+        ];
+        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, &args3);
+        assert!(result3.is_ok());
+        let map_val3 = result3.unwrap();
+        match &map_val3 {
+            RuntimeValue::Map(map) => {
+                assert_eq!(map.len(), 2);
+                assert_eq!(
+                    map.get("name"),
+                    Some(&RuntimeValue::String("Vincent".into()))
+                );
+                assert_eq!(map.get("age"), Some(&RuntimeValue::Number(30.into())));
+            }
+            _ => panic!("Expected Map, got {:?}", map_val3),
+        }
+
+        // Use different RuntimeValue types as values
+        let mut nested_map_data = FxHashMap::default();
+        nested_map_data.insert("level".into(), RuntimeValue::Number(2.into()));
+        let nested_map = RuntimeValue::Map(nested_map_data);
+        let args4 = smallvec![
+            map_val3.clone(),
+            RuntimeValue::String("nested".into()),
+            nested_map.clone()
+        ];
+        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, &args4);
+        assert!(result4.is_ok());
+        match result4.unwrap() {
+            RuntimeValue::Map(map) => {
+                assert_eq!(map.len(), 3);
+                assert_eq!(map.get("nested"), Some(&nested_map));
+            }
+            _ => panic!("Expected Map"),
+        }
+
+        // Error case: First argument is not a map
+        let args_err1 = smallvec![
+            RuntimeValue::String("not_a_map".into()),
+            RuntimeValue::String("key".into()),
+            RuntimeValue::String("value".into())
+        ];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "set".to_string(),
+                vec![
+                    RuntimeValue::String("not_a_map".into()),
+                    RuntimeValue::String("key".into()),
+                    RuntimeValue::String("value".into())
+                ]
+            ))
+        );
+
+        // Error case: Second argument (key) is not a string
+        let args_err2 = smallvec![
+            initial_map.clone(),
+            RuntimeValue::Number(123.into()),
+            RuntimeValue::String("value".into())
+        ];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidTypes(
+                "set".to_string(),
+                vec![
+                    initial_map.clone(),
+                    RuntimeValue::Number(123.into()),
+                    RuntimeValue::String("value".into())
+                ]
+            ))
+        );
+
+        // Error case: Incorrect number of arguments
+        let args_err3 = smallvec![initial_map.clone(), RuntimeValue::String("key".into())];
+        let result_err3 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err3);
+        assert_eq!(
+            result_err3,
+            Err(Error::InvalidNumberOfArguments("set".to_string(), 3, 2))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_get_map() {
+        let ident_get = ast::Ident {
+            name: CompactString::new("get"),
+            token: None,
+        };
+        let mut map_data = FxHashMap::default();
+        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        let map_val = RuntimeValue::Map(map_data);
+
+        // Getting an existing key's value
+        let args1 = smallvec![map_val.clone(), RuntimeValue::String("name".into())];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, &args1);
+        assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
+
+        // Attempting to get a non-existent key
+        let args2 = smallvec![map_val.clone(), RuntimeValue::String("location".into())];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, &args2);
+        assert_eq!(result2, Ok(RuntimeValue::None));
+
+        // Error case: First argument is not a map
+        let args_err1 = smallvec![
+            RuntimeValue::String("not_a_map".into()),
+            RuntimeValue::String("key".into())
+        ];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "get".to_string(),
+                vec![
+                    RuntimeValue::String("not_a_map".into()),
+                    RuntimeValue::String("key".into())
+                ]
+            ))
+        );
+
+        // Error case: Second argument (key) is not a string
+        let args_err2 = smallvec![map_val.clone(), RuntimeValue::Number(123.into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidTypes(
+                "get".to_string(),
+                vec![map_val.clone(), RuntimeValue::Number(123.into())]
+            ))
+        );
+
+        // Error case: Incorrect number of arguments
+        let args_err3 = smallvec![map_val.clone()];
+        let result_err3 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err3);
+        assert_eq!(
+            result_err3,
+            Err(Error::InvalidNumberOfArguments("get".to_string(), 2, 1))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_keys_map() {
+        let ident_keys = ast::Ident {
+            name: CompactString::new("keys"),
+            token: None,
+        };
+
+        // Getting keys from an empty map
+        let empty_map = RuntimeValue::Map(FxHashMap::default());
+        let args1 = smallvec![empty_map.clone()];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args1);
+        assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
+
+        // Getting keys from a non-empty map
+        let mut map_data = FxHashMap::default();
+        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        let map_val = RuntimeValue::Map(map_data);
+        let args2 = smallvec![map_val.clone()];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args2);
+        assert!(result2.is_ok());
+        match result2.unwrap() {
+            RuntimeValue::Array(keys_array) => {
+                assert_eq!(keys_array.len(), 2);
+                let mut keys_str: Vec<String> = keys_array
+                    .into_iter()
+                    .map(|k| match k {
+                        RuntimeValue::String(s) => s,
+                        _ => panic!("Expected string key"),
+                    })
+                    .collect();
+                keys_str.sort(); // Sort for consistent comparison
+                assert_eq!(keys_str, vec!["age".to_string(), "name".to_string()]);
+            }
+            _ => panic!("Expected Array of keys"),
+        }
+
+        // Error case: Argument is not a map
+        let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "keys".to_string(),
+                vec![RuntimeValue::String("not_a_map".into())]
+            ))
+        );
+
+        // Error case: Incorrect number of arguments
+        let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidNumberOfArguments("keys".to_string(), 1, 2))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_values_map() {
+        let ident_values = ast::Ident {
+            name: CompactString::new("values"),
+            token: None,
+        };
+
+        // Getting values from an empty map
+        let empty_map = RuntimeValue::Map(FxHashMap::default());
+        let args1 = smallvec![empty_map.clone()];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, &args1);
+        assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
+
+        // Getting values from a non-empty map
+        let mut map_data = FxHashMap::default();
+        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        let map_val = RuntimeValue::Map(map_data);
+        let args2 = smallvec![map_val.clone()];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, &args2);
+        assert!(result2.is_ok());
+        match result2.unwrap() {
+            RuntimeValue::Array(values_array) => {
+                assert_eq!(values_array.len(), 2);
+                // Values order might not be guaranteed, check for presence
+                assert!(values_array.contains(&RuntimeValue::String("Jules".into())));
+                assert!(values_array.contains(&RuntimeValue::Number(30.into())));
+            }
+            _ => panic!("Expected Array of values"),
+        }
+
+        // Error case: Argument is not a map
+        let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "values".to_string(),
+                vec![RuntimeValue::String("not_a_map".into())]
+            ))
+        );
+
+        // Error case: Incorrect number of arguments
+        let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidNumberOfArguments(
+                "values".to_string(),
+                1,
+                2
+            ))
+        );
     }
 }
