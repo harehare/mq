@@ -476,120 +476,61 @@ fn engine() -> Engine {
 #[case::array_length("len([1, 2, 3, 4])",
               vec![Value::Number(0.into())],
               Ok(vec![Value::Number(4.into())].into()))]
-// Map function integration tests
-#[case::map_new_empty("new_map()",
-            vec![],
-            Ok(vec![Value::Map(std::collections::HashMap::new())].into()))]
-#[case::map_set_get_string("let m = new_map(); set(m, \"name\", \"Jules\"); get(m, \"name\")",
-            vec![],
+#[case::dict_new_empty("dict()",
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::new_dict()].into()))]
+#[case::dict_set_get_string("let m = dict() | let m = set(m, \"name\", \"Jules\") | get(m, \"name\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::String("Jules".to_string())].into()))]
-#[case::map_set_get_number("let m = set(new_map(), \"age\", 30); get(m, \"age\")",
-            vec![],
+#[case::dict_set_get_number("let m = set(dict(), \"age\", 30) | get(m, \"age\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Number(30.into())].into()))]
-#[case::map_set_get_array("let m = set(new_map(), \"data\", [1, 2, 3]); get(m, \"data\")",
-            vec![],
+#[case::dict_set_get_array("let m = set(dict(), \"data\", [1, 2, 3]) | get(m, \"data\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
-#[case::map_set_get_bool("let m = set(new_map(), \"active\", true); get(m, \"active\")",
-            vec![],
+#[case::dict_set_get_bool("let m = set(dict(), \"active\", true) | get(m, \"active\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Bool(true)].into()))]
-#[case::map_set_get_none("let m = set(new_map(), \"nothing\", None); get(m, \"nothing\")",
-            vec![],
+#[case::dict_set_get_none("let m = set(dict(), \"nothing\", None) | get(m, \"nothing\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::None].into()))]
-#[case::map_get_non_existent("let m = new_map(); get(m, \"missing\")",
-            vec![],
+#[case::dict_get_non_existent("let m = dict() | get(m, \"missing\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::None].into()))]
-#[case::map_set_overwrite("let m = set(new_map(), \"name\", \"Jules\"); set(m, \"name\", \"Vincent\"); get(m, \"name\")",
-            vec![],
+#[case::dict_set_overwrite("let m = set(dict(), \"name\", \"Jules\") | let m = set(m, \"name\", \"Vincent\") | get(m, \"name\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::String("Vincent".to_string())].into()))]
-#[case::map_nested_set_get("let m1 = new_map(); let m2 = set(new_map(), \"level\", 2); set(m1, \"nested\", m2); get(get(m1, \"nested\"), \"level\")",
-            vec![],
+#[case::dict_nested_set_get("let m1 = dict() | let m2 = set(dict(), \"level\", 2) | let m = set(m1, \"nested\", m2) | get(get(m, \"nested\"), \"level\")",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Number(2.into())].into()))]
-#[case::map_keys_empty("keys(new_map())",
-            vec![],
+#[case::dict_keys_empty("keys(dict())",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Array(vec![])].into()))]
-#[case::map_keys_non_empty("let m = set(set(new_map(), \"a\", 1), \"b\", 2); keys(m)",
-            vec![],
-            // Order of keys is not guaranteed, so we check for presence and length in a more robust way if needed,
-            // but for simple cases, rstest might match if the underlying HashMap iterates consistently for small sizes.
-            // For robustness, one might eval `sort(keys(m))` and compare with a sorted array.
-            // Here, we rely on the typical (though not guaranteed) insertion order for small HashMaps.
-            // A more robust test would involve sorting the result or checking for contains.
-            // For now, let's assume a typical order for "a", "b" or "b", "a".
-            // This will be manually verified and adjusted if flaky.
-            // For this example, let's expect sorted for simplicity of the test case string
+#[case::dict_keys_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", 2) | keys(m)",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string())])].into()))]
-            // To make it robust: `sort(keys(m))` -> `Ok(vec![Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string())])].into()))]`
-#[case::map_values_empty("values(new_map())",
-            vec![],
+#[case::dict_values_empty("values(dict())",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Array(vec![])].into()))]
-#[case::map_values_non_empty("let m = set(set(new_map(), \"a\", 1), \"b\", \"hello\"); values(m)",
-            vec![],
-            // Similar to keys, order is not guaranteed.
-            // Test might need `sort(values(m))` if values are sortable, or check for contains.
-            // For this example, let's assume an order based on typical key insertion for "a", "b".
+#[case::dict_values_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", \"hello\") | values(m)",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::String("hello".to_string())])].into()))]
-#[case::map_len_empty("len(new_map())",
-            vec![],
+#[case::dict_len_empty("len(dict())",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Number(0.into())].into()))]
-#[case::map_len_non_empty("len(set(set(new_map(), \"a\", 1), \"b\", 2))",
-            vec![],
+#[case::dict_len_non_empty("len(set(set(dict(), \"a\", 1), \"b\", 2))",
+            vec![Value::Number(0.into())],
             Ok(vec![Value::Number(2.into())].into()))]
-#[case::map_type_is_map("type(new_map())",
-            vec![],
-            Ok(vec![Value::String("map".to_string())].into()))]
+#[case::dict_type_is_dict("type(dict())",
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::String("dict".to_string())].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
     #[case] input: Vec<Value>,
     #[case] expected: MqResult,
 ) {
-    let result = engine.eval(program, input.into_iter());
-
-    // Special handling for map_keys and map_values due to HashMap's iteration order
-    if program.contains("keys(m)") && program.contains("set(set(new_map(), \"a\", 1), \"b\", 2)") {
-        match (result, expected.clone()) {
-            (Ok(res_values), Ok(exp_values)) => {
-                let res_arr = res_values.values().first().unwrap();
-                let exp_arr = exp_values.values().first().unwrap();
-                if let (Value::Array(res_keys), Value::Array(exp_keys_options)) = (res_arr, exp_arr) {
-                    assert_eq!(res_keys.len(), exp_keys_options.len());
-                    let mut sorted_res_keys = res_keys.clone();
-                    sorted_res_keys.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
-                    // Check against both possible orders as HashMap iteration order is not guaranteed
-                    let mut option1 = vec![Value::String("a".to_string()), Value::String("b".to_string())];
-                    let mut option2 = vec![Value::String("b".to_string()), Value::String("a".to_string())];
-                    option1.sort_by(|a,b| a.to_string().cmp(&b.to_string()));
-                    option2.sort_by(|a,b| a.to_string().cmp(&b.to_string()));
-
-                    assert_eq!(sorted_res_keys, option1); // Compare with sorted expected keys
-                } else {
-                    assert_eq!(res_arr, exp_arr); // Fallback to direct comparison
-                }
-            }
-            _ => assert_eq!(result, expected), // Fallback for other types or errors
-        }
-    } else if program.contains("values(m)") && program.contains("set(set(new_map(), \"a\", 1), \"b\", \"hello\")") {
-         match (result, expected.clone()) {
-            (Ok(res_values), Ok(exp_values)) => {
-                let res_arr_val = res_values.values().first().unwrap();
-                let exp_arr_val = exp_values.values().first().unwrap();
-                 if let (Value::Array(res_vals), Value::Array(exp_vals_options)) = (res_arr_val, exp_arr_val) {
-                    assert_eq!(res_vals.len(), exp_vals_options.len());
-                    // Since values can be of different types and order is not guaranteed,
-                    // we check for the presence of each expected value.
-                    let expected_set: std::collections::HashSet<_> = exp_vals_options.iter().collect();
-                    let result_set: std::collections::HashSet<_> = res_vals.iter().collect();
-                    assert_eq!(result_set, expected_set);
-                } else {
-                    assert_eq!(res_arr_val, exp_arr_val); // Fallback
-                }
-            }
-            _ => assert_eq!(result, expected), // Fallback
-        }
-    }
-    else {
-        assert_eq!(result, expected);
-    }
+    assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
 
 #[rstest]
@@ -600,15 +541,14 @@ fn test_eval(
 #[case::invalid_definition("func1(1, 2)", vec![Value::Number(0.into())])]
 #[case::interpolated_string("s\"${val1} World!\"", vec![Value::Number(0.into())])]
 #[case::foreach("foreach(x, 1): add(x, 1);", vec![Value::Number(10.into())])]
-// Map error integration tests
-#[case::map_get_on_non_map("get(\"not_a_map\", \"key\")", vec![], /* Expected: Error */ )]
-#[case::map_set_on_non_map("set(123, \"key\", \"value\")", vec![], /* Expected: Error */ )]
-#[case::map_keys_on_non_map("keys([1,2,3])", vec![], /* Expected: Error */ )]
-#[case::map_values_on_non_map("values(true)", vec![], /* Expected: Error */ )]
-#[case::map_get_wrong_key_type("let m = new_map(); get(m, 123)", vec![], /* Expected: Error */ )]
-#[case::map_set_wrong_key_type("let m = new_map(); set(m, false, \"value\")", vec![], /* Expected: Error */ )]
-#[case::map_get_wrong_arg_count("let m = new_map(); get(m)", vec![], /* Expected: Error */ )]
-#[case::map_set_wrong_arg_count("let m = new_map(); set(m, \"key\")", vec![], /* Expected: Error */ )]
+#[case::dict_get_on_non_map("get(\"not_a_map\", \"key\")", vec![Value::Number(0.into())],)]
+#[case::dict_set_on_non_map("set(123, \"key\", \"value\")", vec![Value::Number(0.into())],)]
+#[case::dict_keys_on_non_map("keys([1,2,3])", vec![Value::Number(0.into())],)]
+#[case::dict_values_on_non_map("values(true)", vec![Value::Number(0.into())],)]
+#[case::dict_get_wrong_key_type("let m = new_dict() | get(m, 123)", vec![Value::Number(0.into())],)]
+#[case::dict_set_wrong_key_type("let m = new_dict() | set(m, false, \"value\")", vec![Value::Number(0.into())],)]
+#[case::dict_get_wrong_arg_count("let m = new_dict() | get(m)", vec![Value::Number(0.into())],)]
+#[case::dict_set_wrong_arg_count("let m = new_dict() | set(m, \"key\")", vec![Value::Number(0.into())],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }

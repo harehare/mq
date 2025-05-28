@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt::{self, Debug, Display, Formatter}};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 use crate::{AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, number::Number};
 
@@ -13,7 +16,7 @@ pub enum Value {
     Markdown(Node),
     Function(AstParams, Program),
     NativeFunction(AstIdent),
-    Map(HashMap<String, Value>),
+    Dict(BTreeMap<String, Value>),
     None,
 }
 
@@ -65,7 +68,7 @@ impl From<RuntimeValue> for Value {
             RuntimeValue::Markdown(m, _) => Value::Markdown(m),
             RuntimeValue::Function(params, program, _) => Value::Function(params, program),
             RuntimeValue::NativeFunction(ident) => Value::NativeFunction(ident),
-            RuntimeValue::Map(rt_map) => Value::Map(
+            RuntimeValue::Dict(rt_map) => Value::Dict(
                 rt_map
                     .into_iter()
                     .map(|(k, v)| (k, Value::from(v)))
@@ -91,7 +94,7 @@ impl Display for Value {
             Value::None => "".to_string(),
             Value::Function(_, _) => "function".to_string(),
             Value::NativeFunction(_) => "native_function".to_string(),
-            Value::Map(_) => "[object Map]".to_string(),
+            Value::Dict(_) => "[object Dict]".to_string(),
         };
 
         write!(f, "{}", value)
@@ -113,7 +116,7 @@ impl Debug for Value {
             Value::None => "None".to_string(),
             Value::Function(params, _) => format!("function{}", params.len()),
             Value::NativeFunction(ident) => format!("native_function: {}", ident),
-            Value::Map(map) => {
+            Value::Dict(map) => {
                 let s = map
                     .iter()
                     .map(|(k, v)| format!("\"{}\": {:?}", k, v))
@@ -130,6 +133,14 @@ impl Value {
     pub const NONE: Value = Self::None;
     pub const TRUE: Value = Self::Bool(true);
     pub const FALSE: Value = Self::Bool(false);
+
+    pub fn new_dict() -> Self {
+        Value::Dict(BTreeMap::new())
+    }
+
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
 
     pub fn is_none(&self) -> bool {
         matches!(self, Value::None)
@@ -150,7 +161,7 @@ impl Value {
             Value::String(s) => s.len(),
             Value::Array(a) => a.len(),
             Value::Markdown(m) => m.value().len(),
-            Value::Map(m) => m.len(),
+            Value::Dict(m) => m.len(),
             _ => panic!("not supported"),
         }
     }
@@ -259,6 +270,20 @@ impl Values {
                                 })
                                 .collect::<Vec<_>>(),
                         ),
+                        Value::Dict(map) => {
+                            let mut new_dict = BTreeMap::new();
+                            for (k, v) in map {
+                                if !v.is_none() && !v.is_empty() {
+                                    new_dict.insert(
+                                        k.clone(),
+                                        Value::Markdown(
+                                            node.clone().with_value(v.to_string().as_str()),
+                                        ),
+                                    );
+                                }
+                            }
+                            Value::Dict(new_dict)
+                        }
                     }
                 } else {
                     unreachable!()
@@ -273,7 +298,6 @@ impl Values {
 mod tests {
     use mq_markdown::Text;
     use rstest::rstest;
-    use rustc_hash::FxHashMap;
     use smallvec::SmallVec;
 
     use super::*;
@@ -326,15 +350,21 @@ mod tests {
         let value = Value::from(rt_value);
         assert_eq!(value, Value::Number(Number::from(42.0)));
 
-        let mut rt_map = FxHashMap::default();
-        rt_map.insert("key1".to_string(), RuntimeValue::String("value1".to_string()));
-        rt_map.insert("key2".to_string(), RuntimeValue::Number(Number::from(123.0)));
-        let rt_value_map = RuntimeValue::Map(rt_map);
+        let mut rt_map = BTreeMap::default();
+        rt_map.insert(
+            "key1".to_string(),
+            RuntimeValue::String("value1".to_string()),
+        );
+        rt_map.insert(
+            "key2".to_string(),
+            RuntimeValue::Number(Number::from(123.0)),
+        );
+        let rt_value_map = RuntimeValue::Dict(rt_map);
         let value_map = Value::from(rt_value_map);
-        let mut expected_map = HashMap::new();
+        let mut expected_map = BTreeMap::new();
         expected_map.insert("key1".to_string(), Value::String("value1".to_string()));
         expected_map.insert("key2".to_string(), Value::Number(Number::from(123.0)));
-        assert_eq!(value_map, Value::Map(expected_map));
+        assert_eq!(value_map, Value::Dict(expected_map));
     }
 
     #[test]
@@ -347,8 +377,8 @@ mod tests {
             "a\nb"
         );
         assert_eq!(Value::None.to_string(), "");
-        let map_val = Value::Map(HashMap::new());
-        assert_eq!(map_val.to_string(), "[object Map]");
+        let map_val = Value::Dict(BTreeMap::new());
+        assert_eq!(map_val.to_string(), "[object Dict]");
     }
 
     #[test]
@@ -405,11 +435,10 @@ mod tests {
             .len(),
             2
         );
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("key1".to_string(), Value::String("value1".to_string()));
         map.insert("key2".to_string(), Value::Number(Number::from(123.0)));
-        assert_eq!(Value::Map(map.clone()).len(), 2);
-
+        assert_eq!(Value::Dict(map.clone()).len(), 2);
 
         let markdown_node = Node::Text(Text {
             value: "test text".to_string(),
@@ -420,12 +449,11 @@ mod tests {
 
     #[test]
     fn test_value_map_is_empty() {
-        let mut map = HashMap::new();
-        assert!(Value::Map(map.clone()).is_empty());
+        let mut map = BTreeMap::new();
+        assert!(Value::Dict(map.clone()).is_empty());
         map.insert("key1".to_string(), Value::String("value1".to_string()));
-        assert!(!Value::Map(map).is_empty());
+        assert!(!Value::Dict(map).is_empty());
     }
-
 
     #[test]
     fn test_values_len_and_empty() {
@@ -526,20 +554,20 @@ mod tests {
 
     #[test]
     fn test_value_map_creation_and_equality() {
-        let mut map1 = HashMap::new();
+        let mut map1 = BTreeMap::new();
         map1.insert("a".to_string(), Value::Number(1.into()));
         map1.insert("b".to_string(), Value::String("hello".into()));
-        let value_map1 = Value::Map(map1.clone());
+        let value_map1 = Value::Dict(map1.clone());
 
-        let mut map2 = HashMap::new();
+        let mut map2 = BTreeMap::new();
         map2.insert("a".to_string(), Value::Number(1.into()));
         map2.insert("b".to_string(), Value::String("hello".into()));
-        let value_map2 = Value::Map(map2.clone());
+        let value_map2 = Value::Dict(map2.clone());
 
-        let mut map3 = HashMap::new();
+        let mut map3 = BTreeMap::new();
         map3.insert("a".to_string(), Value::Number(1.into()));
         map3.insert("c".to_string(), Value::String("world".into()));
-        let value_map3 = Value::Map(map3.clone());
+        let value_map3 = Value::Dict(map3.clone());
 
         assert_eq!(value_map1, value_map2);
         assert_ne!(value_map1, value_map3);
@@ -547,10 +575,10 @@ mod tests {
 
     #[test]
     fn test_value_map_debug_formatting() {
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("name".to_string(), Value::String("MQ".to_string()));
         map.insert("version".to_string(), Value::Number(1.into()));
-        let value_map = Value::Map(map);
+        let value_map = Value::Dict(map);
 
         // The order of items in a HashMap is not guaranteed, so we need to check for both possible orderings
         let option1 = r#"{"name": "MQ", "version": 1}"#;
@@ -559,12 +587,14 @@ mod tests {
         let debug_str = format!("{:?}", value_map);
         assert!(debug_str == option1 || debug_str == option2);
 
-
-        let mut nested_map = HashMap::new();
+        let mut nested_map = BTreeMap::new();
         nested_map.insert("key".to_string(), Value::String("value".to_string()));
-        let mut map_with_nested = HashMap::new();
-        map_with_nested.insert("outer_key".to_string(), Value::Map(nested_map));
-        let value_map_nested = Value::Map(map_with_nested);
-        assert_eq!(format!("{:?}", value_map_nested), r#"{"outer_key": {"key": "value"}}"#);
+        let mut map_with_nested = BTreeMap::new();
+        map_with_nested.insert("outer_key".to_string(), Value::Dict(nested_map));
+        let value_map_nested = Value::Dict(map_with_nested);
+        assert_eq!(
+            format!("{:?}", value_map_nested),
+            r#"{"outer_key": {"key": "value"}}"#
+        );
     }
 }

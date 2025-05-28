@@ -159,6 +159,7 @@ impl Evaluator {
                     mq_markdown::Node::Empty
                 }
                 RuntimeValue::Array(_)
+                | RuntimeValue::Dict(_)
                 | RuntimeValue::Bool(_)
                 | RuntimeValue::Number(_)
                 | RuntimeValue::String(_) => value.to_string().into(),
