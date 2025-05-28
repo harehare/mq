@@ -77,8 +77,8 @@
             description = "jq-like command-line tool for markdown processing";
             homepage = "https://github.com/harehare/mq";
             license = licenses.mit;
-            maintainers = with maintainers; [ YOUR_GITHUB_USERNAME ];
-            platforms = platforms.linux;
+            maintainers = with maintainers; [ harehare ];
+            platforms = platforms.unix;
           };
         };
       });
