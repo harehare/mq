@@ -5,6 +5,8 @@ book
 dist
 debug/
 target/
+.direnv/
+result
 
 **/*.rs.bk
 *.pdb
