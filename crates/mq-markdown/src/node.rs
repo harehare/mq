@@ -36,7 +36,7 @@ impl Display for ListStyle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -667,7 +667,7 @@ pub struct Position {
     pub end: Point,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -723,35 +723,29 @@ impl Node {
         E: std::error::Error,
         F: FnMut(&Node) -> Result<Node, E>,
     {
-        Self::_map_values(self.clone(), f)
+        Self::_map_values(self, f)
     }
 
-    fn _map_values<E, F>(node: Node, f: &mut F) -> Result<Node, E>
+    fn _map_values<E, F>(node_ref: &Node, f: &mut F) -> Result<Node, E>
     where
         E: std::error::Error,
         F: FnMut(&Node) -> Result<Node, E>,
     {
-        match f(&node)? {
-            Node::Fragment(mut v) => {
-                let values = v
+        match f(node_ref)? {
+            Node::Fragment(fragment_from_f) => { // fragment_from_f is an owned Fragment
+                let new_values = fragment_from_f
                     .values
-                    .into_iter()
-                    .map(|node| Self::_map_values(node, f))
-                    .collect::<Result<Vec<_>, _>>();
-                match values {
-                    Ok(values) => {
-                        v.values = values;
-                        Ok(Node::Fragment(v))
-                    }
-                    Err(e) => Err(e),
-                }
+                    .iter() // Iterates over &Node
+                    .map(|child_node_ref| Self::_map_values(child_node_ref, f))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Node::Fragment(Fragment { values: new_values }))
             }
-            node => Ok(node),
+            other_node => Ok(other_node), // other_node is already the owned result from f(node_ref)?
         }
     }
 
     pub fn to_fragment(&self) -> Node {
-        match self.clone() {
+        match self {
             Node::List(List { values, .. })
             | Node::TableCell(TableCell { values, .. })
             | Node::TableRow(TableRow { values, .. })
@@ -762,8 +756,10 @@ impl Node {
             | Node::Blockquote(Blockquote { values, .. })
             | Node::Delete(Delete { values, .. })
             | Node::Emphasis(Emphasis { values, .. })
-            | Node::Strong(Strong { values, .. }) => Self::Fragment(Fragment { values }),
-            node @ Node::Fragment(_) => node,
+            | Node::Strong(Strong { values, .. }) => {
+                Self::Fragment(Fragment { values: values.clone() })
+            }
+            Node::Fragment(fragment_ref) => Self::Fragment(fragment_ref.clone()),
             _ => Self::Empty,
         }
     }
@@ -809,7 +805,7 @@ impl Node {
     }
 
     pub fn to_string_with(&self, options: &RenderOptions) -> String {
-        match self.clone() {
+        match self {
             Self::List(List {
                 level,
                 checked,
@@ -818,12 +814,12 @@ impl Node {
             }) => {
                 format!(
                     "{}{} {}{}",
-                    "  ".repeat(level as usize),
+                    "  ".repeat(*level as usize),
                     options.list_style,
                     checked
                         .map(|it| if it { "[x] " } else { "[ ] " })
                         .unwrap_or_else(|| ""),
-                    Self::values_to_string(values, options)
+                    Self::values_to_string(values.clone(), options)
                 )
             }
             Self::TableRow(TableRow { values, .. }) => values
@@ -836,19 +832,21 @@ impl Node {
                 values,
                 ..
             }) => {
-                if last_cell_in_row || last_cell_of_in_table {
-                    format!("|{}|", Self::values_to_string(values, options))
+                if *last_cell_in_row || *last_cell_of_in_table {
+                    format!("|{}|", Self::values_to_string(values.clone(), options))
                 } else {
-                    format!("|{}", Self::values_to_string(values, options))
+                    format!("|{}", Self::values_to_string(values.clone(), options))
                 }
             }
             Self::TableHeader(TableHeader { align, .. }) => {
                 format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
-            Self::Blockquote(Blockquote { values, .. }) => Self::values_to_string(values, options)
-                .split('\n')
-                .map(|line| format!("> {}", line))
-                .join("\n"),
+            Self::Blockquote(Blockquote { values, .. }) => {
+                Self::values_to_string(values.clone(), options)
+                    .split('\n')
+                    .map(|line| format!("> {}", line))
+                    .join("\n")
+            }
             Self::Code(Code {
                 value,
                 lang,
@@ -856,15 +854,15 @@ impl Node {
                 meta,
                 ..
             }) => {
-                let meta = meta
+                let meta_str = meta
                     .as_deref()
-                    .map(|meta| format!(" {}", meta))
+                    .map(|m| format!(" {}", m))
                     .unwrap_or_default();
 
                 match lang {
-                    Some(lang) => format!("```{}{}\n{}\n```", lang, meta, value),
-                    None if fence => {
-                        format!("```{}\n{}\n```", lang.as_deref().unwrap_or(""), value)
+                    Some(l) => format!("```{}{}\n{}\n```", l, meta_str, value),
+                    None if *fence => {
+                        format!("```{}\n{}\n```", meta_str, value) // lang is None, meta might be there
                     }
                     None => value.lines().map(|line| format!("    {}", line)).join("\n"),
                 }
@@ -878,40 +876,41 @@ impl Node {
             }) => {
                 format!(
                     "[{}]: {}{}",
-                    label.unwrap_or(ident),
+                    label.as_ref().unwrap_or(ident),
                     url.to_string_with(options),
                     title
-                        .map(|title| format!(" {}", title.to_string_with(options)))
+                        .as_ref()
+                        .map(|t| format!(" {}", t.to_string_with(options)))
                         .unwrap_or_default()
                 )
             }
             Self::Delete(Delete { values, .. }) => {
-                format!("~~{}~~", Self::values_to_string(values, options))
+                format!("~~{}~~", Self::values_to_string(values.clone(), options))
             }
             Self::Emphasis(Emphasis { values, .. }) => {
-                format!("*{}*", Self::values_to_string(values, options))
+                format!("*{}*", Self::values_to_string(values.clone(), options))
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
-                format!("[^{}]: {}", ident, Self::values_to_string(values, options))
+                format!("[^{}]: {}", ident, Self::values_to_string(values.clone(), options))
             }
             Self::FootnoteRef(FootnoteRef { label, .. }) => {
-                format!("[^{}]", label.unwrap_or_default())
+                format!("[^{}]", label.as_deref().unwrap_or_default())
             }
             Self::Heading(Heading { depth, values, .. }) => {
                 format!(
                     "{} {}",
-                    "#".repeat(depth as usize),
-                    Self::values_to_string(values, options)
+                    "#".repeat(*depth as usize),
+                    Self::values_to_string(values.clone(), options)
                 )
             }
-            Self::Html(Html { value, .. }) => value,
+            Self::Html(Html { value, .. }) => value.clone(),
             Self::Image(Image {
                 alt, url, title, ..
             }) => format!(
                 "![{}]({}{})",
                 alt,
                 url.replace(' ', "%20"),
-                title.map(|it| format!(" \"{}\"", it)).unwrap_or_default()
+                title.as_ref().map(|it| format!(" \"{}\"", it.to_value())).unwrap_or_default()
             ),
             Self::ImageRef(ImageRef {
                 alt, ident, label, ..
@@ -919,7 +918,7 @@ impl Node {
                 if alt == ident {
                     format!("![{}]", ident)
                 } else {
-                    format!("![{}][{}]", alt, label.unwrap_or(ident))
+                    format!("![{}][{}]", alt, label.as_ref().unwrap_or(ident))
                 }
             }
             Self::CodeInline(CodeInline { value, .. }) => {
@@ -933,33 +932,34 @@ impl Node {
             }) => {
                 format!(
                     "[{}]({}{})",
-                    Self::values_to_string(values, options),
+                    Self::values_to_string(values.clone(), options),
                     url.to_string_with(options),
                     title
-                        .map(|title| format!(" {}", title.to_string_with(options)))
+                        .as_ref()
+                        .map(|t| format!(" {}", t.to_string_with(options)))
                         .unwrap_or_default(),
                 )
             }
             Self::LinkRef(LinkRef { values, label, .. }) => {
-                let ident = Self::values_to_string(values, options);
-
+                let ident_str = Self::values_to_string(values.clone(), options);
                 label
-                    .map(|label| {
-                        if label == ident {
-                            format!("[{}]", ident)
+                    .as_ref()
+                    .map(|lbl| {
+                        if lbl == &ident_str {
+                            format!("[{}]", ident_str)
                         } else {
-                            format!("[{}][{}]", ident, label)
+                            format!("[{}][{}]", ident_str, lbl)
                         }
                     })
-                    .unwrap_or(format!("[{}]", ident))
+                    .unwrap_or_else(|| format!("[{}]", ident_str))
             }
             Self::Math(Math { value, .. }) => format!("$$\n{}\n$$", value),
-            Self::Text(Text { value, .. }) => value,
+            Self::Text(Text { value, .. }) => value.clone(),
             Self::MdxFlowExpression(mdx_flow_expression) => {
                 format!("{{{}}}", mdx_flow_expression.value)
             }
             Self::MdxJsxFlowElement(mdx_jsx_flow_element) => {
-                let name = mdx_jsx_flow_element.name.unwrap_or_default();
+                let name = mdx_jsx_flow_element.name.as_deref().unwrap_or_default();
                 let attributes = if mdx_jsx_flow_element.attributes.is_empty() {
                     "".to_string()
                 } else {
@@ -967,26 +967,27 @@ impl Node {
                         " {}",
                         mdx_jsx_flow_element
                             .attributes
-                            .into_iter()
+                            .iter()
+                            .cloned()
                             .map(Self::mdx_attribute_content_to_string)
                             .join(" ")
                     )
                 };
 
                 if mdx_jsx_flow_element.children.is_empty() {
-                    format!("<{}{} />", name, attributes,)
+                    format!("<{}{} />", name, attributes)
                 } else {
                     format!(
                         "<{}{}>{}</{}>",
                         name,
                         attributes,
-                        Self::values_to_string(mdx_jsx_flow_element.children, options),
+                        Self::values_to_string(mdx_jsx_flow_element.children.clone(), options),
                         name
                     )
                 }
             }
             Self::MdxJsxTextElement(mdx_jsx_text_element) => {
-                let name = mdx_jsx_text_element.name.unwrap_or_default();
+                let name = mdx_jsx_text_element.name.as_deref().unwrap_or_default();
                 let attributes = if mdx_jsx_text_element.attributes.is_empty() {
                     "".to_string()
                 } else {
@@ -994,20 +995,21 @@ impl Node {
                         " {}",
                         mdx_jsx_text_element
                             .attributes
-                            .into_iter()
+                            .iter()
+                            .cloned()
                             .map(Self::mdx_attribute_content_to_string)
                             .join(" ")
                     )
                 };
 
                 if mdx_jsx_text_element.children.is_empty() {
-                    format!("<{}{} />", name, attributes,)
+                    format!("<{}{} />", name, attributes)
                 } else {
                     format!(
                         "<{}{}>{}</{}>",
                         name,
                         attributes,
-                        Self::values_to_string(mdx_jsx_text_element.children, options),
+                        Self::values_to_string(mdx_jsx_text_element.children.clone(), options),
                         name
                     )
                 }
@@ -1064,39 +1066,39 @@ impl Node {
     }
 
     pub fn value(&self) -> String {
-        match self.clone() {
-            Self::Blockquote(v) => Self::values_to_value(v.values),
+        match self {
+            Self::Blockquote(v) => Self::values_to_value(v.values.clone()),
             Self::Definition(d) => d.url.as_str().to_string(),
-            Self::Delete(v) => Self::values_to_value(v.values),
-            Self::Heading(h) => Self::values_to_value(h.values),
-            Self::Emphasis(v) => Self::values_to_value(v.values),
-            Self::Footnote(f) => Self::values_to_value(f.values),
-            Self::FootnoteRef(f) => f.ident,
-            Self::Html(v) => v.value,
-            Self::Yaml(v) => v.value,
-            Self::Toml(v) => v.value,
-            Self::Image(i) => i.url,
-            Self::ImageRef(i) => i.ident,
+            Self::Delete(v) => Self::values_to_value(v.values.clone()),
+            Self::Heading(h) => Self::values_to_value(h.values.clone()),
+            Self::Emphasis(v) => Self::values_to_value(v.values.clone()),
+            Self::Footnote(f) => Self::values_to_value(f.values.clone()),
+            Self::FootnoteRef(f) => f.ident.clone(),
+            Self::Html(v) => v.value.clone(),
+            Self::Yaml(v) => v.value.clone(),
+            Self::Toml(v) => v.value.clone(),
+            Self::Image(i) => i.url.clone(),
+            Self::ImageRef(i) => i.ident.clone(),
             Self::CodeInline(v) => v.value.to_string(),
             Self::MathInline(v) => v.value.to_string(),
             Self::Link(l) => l.url.as_str().to_string(),
-            Self::LinkRef(l) => l.ident,
-            Self::Math(v) => v.value,
-            Self::List(l) => Self::values_to_value(l.values),
-            Self::TableCell(c) => Self::values_to_value(c.values),
-            Self::TableRow(c) => Self::values_to_value(c.values),
-            Self::Code(c) => c.value,
-            Self::Strong(v) => Self::values_to_value(v.values),
-            Self::Text(t) => t.value,
+            Self::LinkRef(l) => l.ident.clone(),
+            Self::Math(v) => v.value.clone(),
+            Self::List(l) => Self::values_to_value(l.values.clone()),
+            Self::TableCell(c) => Self::values_to_value(c.values.clone()),
+            Self::TableRow(c) => Self::values_to_value(c.values.clone()),
+            Self::Code(c) => c.value.clone(),
+            Self::Strong(v) => Self::values_to_value(v.values.clone()),
+            Self::Text(t) => t.value.clone(),
             Self::Break { .. } => String::new(),
             Self::TableHeader(_) => String::new(),
             Self::MdxFlowExpression(mdx) => mdx.value.to_string(),
-            Self::MdxJsxFlowElement(mdx) => Self::values_to_value(mdx.children),
+            Self::MdxJsxFlowElement(mdx) => Self::values_to_value(mdx.children.clone()),
             Self::MdxTextExpression(mdx) => mdx.value.to_string(),
-            Self::MdxJsxTextElement(mdx) => Self::values_to_value(mdx.children),
+            Self::MdxJsxTextElement(mdx) => Self::values_to_value(mdx.children.clone()),
             Self::MdxJsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
-            Self::Fragment(v) => Self::values_to_value(v.values),
+            Self::Fragment(v) => Self::values_to_value(v.values.clone()),
             Self::Empty => String::new(),
         }
     }
@@ -1184,45 +1186,45 @@ impl Node {
 
     pub fn position(&self) -> Option<Position> {
         match self {
-            Self::Blockquote(v) => v.position.clone(),
-            Self::Definition(d) => d.position.clone(),
-            Self::Delete(v) => v.position.clone(),
-            Self::Heading(h) => h.position.clone(),
-            Self::Emphasis(v) => v.position.clone(),
-            Self::Footnote(f) => f.position.clone(),
-            Self::FootnoteRef(f) => f.position.clone(),
-            Self::Html(v) => v.position.clone(),
-            Self::Yaml(v) => v.position.clone(),
-            Self::Toml(v) => v.position.clone(),
-            Self::Image(i) => i.position.clone(),
-            Self::ImageRef(i) => i.position.clone(),
-            Self::CodeInline(v) => v.position.clone(),
-            Self::MathInline(v) => v.position.clone(),
-            Self::Link(l) => l.position.clone(),
-            Self::LinkRef(l) => l.position.clone(),
-            Self::Math(v) => v.position.clone(),
-            Self::Code(c) => c.position.clone(),
-            Self::TableCell(c) => c.position.clone(),
-            Self::TableRow(r) => r.position.clone(),
-            Self::TableHeader(c) => c.position.clone(),
-            Self::List(l) => l.position.clone(),
-            Self::Strong(s) => s.position.clone(),
-            Self::MdxFlowExpression(m) => m.position.clone(),
-            Self::MdxTextExpression(m) => m.position.clone(),
-            Self::MdxJsEsm(m) => m.position.clone(),
-            Self::MdxJsxFlowElement(m) => m.position.clone(),
-            Self::MdxJsxTextElement(m) => m.position.clone(),
-            Self::Break(b) => b.position.clone(),
-            Self::Text(t) => t.position.clone(),
-            Self::HorizontalRule(h) => h.position.clone(),
+            Self::Blockquote(v) => v.position,
+            Self::Definition(d) => d.position,
+            Self::Delete(v) => v.position,
+            Self::Heading(h) => h.position,
+            Self::Emphasis(v) => v.position,
+            Self::Footnote(f) => f.position,
+            Self::FootnoteRef(f) => f.position,
+            Self::Html(v) => v.position,
+            Self::Yaml(v) => v.position,
+            Self::Toml(v) => v.position,
+            Self::Image(i) => i.position,
+            Self::ImageRef(i) => i.position,
+            Self::CodeInline(v) => v.position,
+            Self::MathInline(v) => v.position,
+            Self::Link(l) => l.position,
+            Self::LinkRef(l) => l.position,
+            Self::Math(v) => v.position,
+            Self::Code(c) => c.position,
+            Self::TableCell(c) => c.position,
+            Self::TableRow(r) => r.position,
+            Self::TableHeader(c) => c.position,
+            Self::List(l) => l.position,
+            Self::Strong(s) => s.position,
+            Self::MdxFlowExpression(m) => m.position,
+            Self::MdxTextExpression(m) => m.position,
+            Self::MdxJsEsm(m) => m.position,
+            Self::MdxJsxFlowElement(m) => m.position,
+            Self::MdxJsxTextElement(m) => m.position,
+            Self::Break(b) => b.position,
+            Self::Text(t) => t.position,
+            Self::HorizontalRule(h) => h.position,
             Self::Fragment(v) => {
                 let positions: Vec<Position> =
                     v.values.iter().filter_map(|node| node.position()).collect();
 
                 match (positions.first(), positions.last()) {
                     (Some(start), Some(end)) => Some(Position {
-                        start: start.start.clone(),
-                        end: end.end.clone(),
+                        start: start.start,
+                        end: end.end,
                     }),
                     _ => None,
                 }
@@ -1399,255 +1401,291 @@ impl Node {
     }
 
     pub fn with_value(&self, value: &str) -> Self {
-        match self.clone() {
-            Self::Blockquote(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+        match self {
+            Self::Blockquote(v_ref) => {
+                let mut new_values = v_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
-                Self::Blockquote(v)
+                Self::Blockquote(Blockquote {
+                    values: new_values,
+                    position: v_ref.position,
+                })
             }
-            Self::Delete(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+            Self::Delete(v_ref) => {
+                let mut new_values = v_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
-                Self::Delete(v)
+                Self::Delete(Delete {
+                    values: new_values,
+                    position: v_ref.position,
+                })
             }
-            Self::Emphasis(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+            Self::Emphasis(v_ref) => {
+                let mut new_values = v_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
-                Self::Emphasis(v)
+                Self::Emphasis(Emphasis {
+                    values: new_values,
+                    position: v_ref.position,
+                })
             }
-            Self::Html(mut html) => {
-                html.value = value.to_string();
-                Self::Html(html)
-            }
-            Self::Yaml(mut yaml) => {
-                yaml.value = value.to_string();
-                Self::Yaml(yaml)
-            }
-            Self::Toml(mut toml) => {
-                toml.value = value.to_string();
-                Self::Toml(toml)
-            }
-            Self::CodeInline(mut code) => {
-                code.value = value.into();
-                Self::CodeInline(code)
-            }
-            Self::MathInline(mut math) => {
-                math.value = value.into();
-                Self::MathInline(math)
-            }
-            Self::Math(mut math) => {
-                math.value = value.to_string();
-                Self::Math(math)
-            }
-            Self::List(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+            Self::Html(html_ref) => Self::Html(Html {
+                value: value.to_string(),
+                position: html_ref.position,
+            }),
+            Self::Yaml(yaml_ref) => Self::Yaml(Yaml {
+                value: value.to_string(),
+                position: yaml_ref.position,
+            }),
+            Self::Toml(toml_ref) => Self::Toml(Toml {
+                value: value.to_string(),
+                position: toml_ref.position,
+            }),
+            Self::CodeInline(code_ref) => Self::CodeInline(CodeInline {
+                value: value.into(),
+                position: code_ref.position,
+            }),
+            Self::MathInline(math_ref) => Self::MathInline(MathInline {
+                value: value.into(),
+                position: math_ref.position,
+            }),
+            Self::Math(math_ref) => Self::Math(Math {
+                value: value.to_string(),
+                position: math_ref.position,
+            }),
+            Self::List(l_ref) => {
+                let mut new_values = l_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
-                Self::List(v)
+                Self::List(List {
+                    values: new_values,
+                    index: l_ref.index,
+                    level: l_ref.level,
+                    checked: l_ref.checked,
+                    position: l_ref.position,
+                })
             }
-            Self::TableCell(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+            Self::TableCell(tc_ref) => {
+                let mut new_values = tc_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
-                Self::TableCell(v)
+                Self::TableCell(TableCell {
+                    values: new_values,
+                    column: tc_ref.column,
+                    row: tc_ref.row,
+                    last_cell_in_row: tc_ref.last_cell_in_row,
+                    last_cell_of_in_table: tc_ref.last_cell_of_in_table,
+                    position: tc_ref.position,
+                })
             }
-            Self::TableRow(mut row) => {
-                row.values = row
-                    .values
-                    .iter()
-                    .zip(value.split(","))
-                    .map(|(cell, value)| cell.with_value(value))
-                    .collect::<Vec<_>>();
-
-                Self::TableRow(row)
-            }
-            Self::Strong(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+            Self::TableRow(row_ref) => {
+                let mut new_values = row_ref.values.clone();
+                for (cell_node, val_str) in new_values.iter_mut().zip(value.split(',')) {
+                    *cell_node = cell_node.with_value(val_str);
                 }
-
-                Self::Strong(v)
+                Self::TableRow(TableRow {
+                    values: new_values,
+                    position: row_ref.position,
+                })
             }
-            Self::Code(mut code) => {
-                code.value = value.to_string();
-                Self::Code(code)
-            }
-            Self::Image(mut image) => {
-                image.url = value.to_string();
-                Self::Image(image)
-            }
-            Self::ImageRef(mut image) => {
-                image.ident = value.to_string();
-                image.label = Some(value.to_string());
-                Self::ImageRef(image)
-            }
-            Self::Link(mut link) => {
-                link.url = Url(value.to_string());
-                Self::Link(link)
-            }
-            Self::LinkRef(mut v) => {
-                v.label = Some(value.to_string());
-                v.ident = value.to_string();
-                Self::LinkRef(v)
-            }
-            Self::Footnote(mut footnote) => {
-                footnote.ident = value.to_string();
-                Self::Footnote(footnote)
-            }
-            Self::FootnoteRef(mut footnote) => {
-                footnote.ident = value.to_string();
-                footnote.label = Some(value.to_string());
-                Self::FootnoteRef(footnote)
-            }
-            Self::Heading(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
+            Self::Strong(s_ref) => {
+                let mut new_values = s_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
-                Self::Heading(v)
+                Self::Strong(Strong {
+                    values: new_values,
+                    position: s_ref.position,
+                })
             }
-            Self::Definition(mut def) => {
-                def.url = Url(value.to_string());
-                Self::Definition(def)
-            }
-            node @ Self::Break { .. } => node,
-            node @ Self::TableHeader(_) => node,
-            node @ Self::HorizontalRule { .. } => node,
-            Self::Text(mut text) => {
-                text.value = value.to_string();
-                Self::Text(text)
-            }
-            Self::MdxFlowExpression(mut mdx) => {
-                mdx.value = value.into();
-                Self::MdxFlowExpression(mdx)
-            }
-            Self::MdxTextExpression(mut mdx) => {
-                mdx.value = value.into();
-                Self::MdxTextExpression(mdx)
-            }
-            Self::MdxJsEsm(mut mdx) => {
-                mdx.value = value.into();
-                Self::MdxJsEsm(mdx)
-            }
-            Self::MdxJsxFlowElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[0] = node.with_value(value);
+            Self::Code(code_ref) => Self::Code(Code {
+                value: value.to_string(),
+                lang: code_ref.lang.clone(),
+                fence: code_ref.fence,
+                meta: code_ref.meta.clone(),
+                position: code_ref.position,
+            }),
+            Self::Image(image_ref) => Self::Image(Image {
+                url: value.to_string(),
+                alt: image_ref.alt.clone(),
+                title: image_ref.title.clone(),
+                position: image_ref.position,
+            }),
+            Self::ImageRef(image_ref) => Self::ImageRef(ImageRef {
+                ident: value.to_string(),
+                label: Some(value.to_string()),
+                alt: image_ref.alt.clone(),
+                position: image_ref.position,
+            }),
+            Self::Link(link_ref) => Self::Link(Link {
+                url: Url(value.to_string()),
+                values: link_ref.values.clone(),
+                title: link_ref.title.clone(),
+                position: link_ref.position,
+            }),
+            Self::LinkRef(lr_ref) => Self::LinkRef(LinkRef {
+                ident: value.to_string(),
+                label: Some(value.to_string()),
+                values: lr_ref.values.clone(),
+                position: lr_ref.position,
+            }),
+            Self::Footnote(footnote_ref) => Self::Footnote(Footnote {
+                ident: value.to_string(),
+                values: footnote_ref.values.clone(),
+                position: footnote_ref.position,
+            }),
+            Self::FootnoteRef(fr_ref) => Self::FootnoteRef(FootnoteRef {
+                ident: value.to_string(),
+                label: Some(value.to_string()),
+                position: fr_ref.position,
+            }),
+            Self::Heading(h_ref) => {
+                let mut new_values = h_ref.values.clone();
+                if let Some(first_node) = new_values.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
+                Self::Heading(Heading {
+                    values: new_values,
+                    depth: h_ref.depth,
+                    position: h_ref.position,
+                })
+            }
+            Self::Definition(def_ref) => Self::Definition(Definition {
+                url: Url(value.to_string()),
+                ident: def_ref.ident.clone(),
+                title: def_ref.title.clone(),
+                label: def_ref.label.clone(),
+                position: def_ref.position,
+            }),
+            Self::Break(break_ref) => Self::Break(*break_ref),
+            Self::TableHeader(th_ref) => Self::TableHeader(th_ref.clone()),
+            Self::HorizontalRule(hr_ref) => Self::HorizontalRule(*hr_ref),
+            Self::Text(text_ref) => Self::Text(Text {
+                value: value.to_string(),
+                position: text_ref.position,
+            }),
+            Self::MdxFlowExpression(mdx_ref) => Self::MdxFlowExpression(MdxFlowExpression {
+                value: value.into(),
+                position: mdx_ref.position,
+            }),
+            Self::MdxTextExpression(mdx_ref) => Self::MdxTextExpression(MdxTextExpression {
+                value: value.into(),
+                position: mdx_ref.position,
+            }),
+            Self::MdxJsEsm(mdx_ref) => Self::MdxJsEsm(MdxJsEsm {
+                value: value.into(),
+                position: mdx_ref.position,
+            }),
+            Self::MdxJsxFlowElement(mdx_ref) => {
+                let mut new_children = mdx_ref.children.clone();
+                if let Some(first_node) = new_children.first_mut() {
+                    *first_node = first_node.with_value(value);
+                }
                 Self::MdxJsxFlowElement(MdxJsxFlowElement {
-                    name: mdx.name,
-                    attributes: mdx.attributes,
-                    children: mdx.children,
-                    ..mdx
+                    name: mdx_ref.name.clone(),
+                    attributes: mdx_ref.attributes.clone(),
+                    children: new_children,
+                    position: mdx_ref.position,
                 })
             }
-            Self::MdxJsxTextElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[0] = node.with_value(value);
+            Self::MdxJsxTextElement(mdx_ref) => {
+                let mut new_children = mdx_ref.children.clone();
+                if let Some(first_node) = new_children.first_mut() {
+                    *first_node = first_node.with_value(value);
                 }
-
                 Self::MdxJsxTextElement(MdxJsxTextElement {
-                    name: mdx.name,
-                    attributes: mdx.attributes,
-                    children: mdx.children,
-                    ..mdx
+                    name: mdx_ref.name.clone(),
+                    attributes: mdx_ref.attributes.clone(),
+                    children: new_children,
+                    position: mdx_ref.position,
                 })
             }
-            node @ Self::Fragment(_) | node @ Self::Empty => node,
+            Self::Fragment(frag_ref) => Self::Fragment(frag_ref.clone()),
+            Self::Empty => Self::Empty,
         }
     }
 
     pub fn with_children_value(&self, value: &str, index: usize) -> Self {
-        match self.clone() {
-            Self::Blockquote(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+        match self {
+            Self::Blockquote(v_ref) => {
+                let mut v = v_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::Blockquote(v)
             }
-            Self::Delete(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::Delete(v_ref) => {
+                let mut v = v_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::Delete(v)
             }
-            Self::Emphasis(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::Emphasis(v_ref) => {
+                let mut v = v_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::Emphasis(v)
             }
-            Self::List(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::List(l_ref) => {
+                let mut v = l_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::List(v)
             }
-            Self::TableCell(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::TableCell(tc_ref) => {
+                let mut v = tc_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::TableCell(v)
             }
-            Self::Strong(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::Strong(s_ref) => {
+                let mut v = s_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::Strong(v)
             }
-            Self::LinkRef(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::LinkRef(lr_ref) => {
+                let mut v = lr_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::LinkRef(v)
             }
-            Self::Heading(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
+            Self::Heading(h_ref) => {
+                let mut v = h_ref.clone();
+                if let Some(node_to_update) = v.values.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
                 Self::Heading(v)
             }
-            Self::MdxJsxFlowElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[index] = node.with_value(value);
+            Self::MdxJsxFlowElement(mdx_ref) => {
+                let mut mdx = mdx_ref.clone();
+                if let Some(node_to_update) = mdx.children.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
-                Self::MdxJsxFlowElement(MdxJsxFlowElement {
-                    name: mdx.name,
-                    attributes: mdx.attributes,
-                    children: mdx.children,
-                    ..mdx
-                })
+                Self::MdxJsxFlowElement(mdx)
             }
-            Self::MdxJsxTextElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[index] = node.with_value(value);
+            Self::MdxJsxTextElement(mdx_ref) => {
+                let mut mdx = mdx_ref.clone();
+                if let Some(node_to_update) = mdx.children.get_mut(index) {
+                    *node_to_update = node_to_update.with_value(value);
                 }
-
-                Self::MdxJsxTextElement(MdxJsxTextElement {
-                    name: mdx.name,
-                    attributes: mdx.attributes,
-                    children: mdx.children,
-                    ..mdx
-                })
+                Self::MdxJsxTextElement(mdx)
             }
-            a => a,
+            // For all other variants, clone self as they are not modified by this method.
+            // This handles Copy types like Break, HorizontalRule correctly by value copy due to Clone trait.
+            // And also correctly clones types like Text, Html, Code etc.
+            a_ref => a_ref.clone(),
         }
     }
 
