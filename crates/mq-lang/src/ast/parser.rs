@@ -57,7 +57,7 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.tokens.next() {
             match &token.kind {
                 TokenKind::Pipe | TokenKind::Comment(_) => continue, // Skip pipes and comments.
-                TokenKind::Eof => break,                            // End of file terminates the program.
+                TokenKind::Eof => break, // End of file terminates the program.
                 TokenKind::SemiColon => {
                     // Semicolons terminate sub-programs (e.g., in 'def', 'fn').
                     // In the root program, a semicolon is only allowed if followed by EOF or a comment then EOF.
@@ -69,10 +69,13 @@ impl<'a> Parser<'a> {
                             } else if let TokenKind::Comment(_) = &token.kind {
                                 // Allow comments before EOF after a semicolon
                                 let _ = self.tokens.next(); // Consume comment
-                                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Eof) | None) {
+                                if matches!(
+                                    self.tokens.peek().map(|t| &t.kind),
+                                    Some(TokenKind::Eof) | None
+                                ) {
                                     break;
                                 } else {
-                                     return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                                    return Err(ParseError::UnexpectedEOFDetected(self.module_id));
                                 }
                             } else {
                                 return Err(ParseError::UnexpectedEOFDetected(self.module_id));
@@ -881,13 +884,13 @@ impl<'a> Parser<'a> {
     // Helper to parse an argument that is expected to be a general expression.
     // This typically involves a recursive call to `parse_expr`.
     fn parse_arg_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        self.parse_expr(Rc::clone(token))
+        self.parse_expr(Rc::clone(&token))
     }
 
     // Helper to parse an argument that is expected to be a literal.
     // This typically involves a call to `parse_literal`.
     fn parse_arg_literal(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        self.parse_literal(Rc::clone(token))
+        self.parse_literal(Rc::clone(&token))
     }
 
     fn parse_head(&mut self, token: Rc<Token>, depth: u8) -> Result<Rc<Node>, ParseError> {
@@ -1073,7 +1076,11 @@ impl<'a> Parser<'a> {
     // Parses arguments for list selectors like `.list(index)` or `.list.checked(index)`.
     // The `checked` parameter distinguishes between `.list` and `.list.checked`.
     // Example: .list(0) or .list.checked(1)
-    fn parse_selector_list_args(&mut self, token: Rc<Token>, checked: bool) -> Result<Rc<Node>, ParseError> {
+    fn parse_selector_list_args(
+        &mut self,
+        token: Rc<Token>,
+        checked: bool,
+    ) -> Result<Rc<Node>, ParseError> {
         if let Ok(i) = self.parse_int_arg(Rc::clone(&token)) {
             Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
