@@ -40,13 +40,17 @@
       devShells = forEachSupportedSystem ({ pkgs }: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            rustToolchain
-            openssl
-            pkg-config
             cargo-deny
             cargo-edit
+            cargo-readme
             cargo-watch
+            just
+            nodejs_22
+            openssl
+            pkg-config
             rust-analyzer
+            rustToolchain
+            wasm-pack
           ];
 
           env = {
