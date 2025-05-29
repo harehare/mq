@@ -43,6 +43,7 @@ impl<'a> Parser<'a> {
     fn parse_program(&mut self, root: bool) -> Result<Program, ParseError> {
         let mut asts = Vec::with_capacity(1_000);
 
+        // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::Pipe | TokenKind::SemiColon => {
@@ -55,21 +56,30 @@ impl<'a> Parser<'a> {
 
         while let Some(token) = self.tokens.next() {
             match &token.kind {
-                TokenKind::Pipe | TokenKind::Comment(_) => continue,
-                TokenKind::Eof => break,
+                TokenKind::Pipe | TokenKind::Comment(_) => continue, // Skip pipes and comments.
+                TokenKind::Eof => break,                            // End of file terminates the program.
                 TokenKind::SemiColon => {
+                    // Semicolons terminate sub-programs (e.g., in 'def', 'fn').
+                    // In the root program, a semicolon is only allowed if followed by EOF or a comment then EOF.
+                    // Otherwise, it's an unexpected EOF because more expressions were expected.
                     if root {
                         if let Some(token) = self.tokens.peek() {
                             if let TokenKind::Eof = &token.kind {
                                 break;
                             } else if let TokenKind::Comment(_) = &token.kind {
-                                continue;
+                                // Allow comments before EOF after a semicolon
+                                let _ = self.tokens.next(); // Consume comment
+                                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Eof) | None) {
+                                    break;
+                                } else {
+                                     return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                                }
                             } else {
                                 return Err(ParseError::UnexpectedEOFDetected(self.module_id));
                             }
                         }
                     }
-
+                    // For non-root programs (e.g. function bodies), a semicolon explicitly ends the program.
                     break;
                 }
                 TokenKind::Nodes if root => {
@@ -97,13 +107,16 @@ impl<'a> Parser<'a> {
     fn parse_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         match &token.kind {
             TokenKind::Selector(_) => self.parse_selector(token),
-            TokenKind::Let => self.parse_let(token),
-            TokenKind::Def => self.parse_def(token),
+            // Delegate parsing of 'let' expressions.
+            TokenKind::Let => self.parse_expr_let(Rc::clone(&token)),
+            // Delegate parsing of 'def' (function definition) expressions.
+            TokenKind::Def => self.parse_expr_def(Rc::clone(&token)),
             TokenKind::Fn => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
-            TokenKind::If => self.parse_if(token),
+            // Delegate parsing of 'if' expressions.
+            TokenKind::If => self.parse_expr_if(Rc::clone(&token)),
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
             TokenKind::Include => self.parse_include(token),
             TokenKind::Self_ => self.parse_self(token),
@@ -275,7 +288,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_def(&mut self, def_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+    // Parses a 'def' expression (function definition).
+    // Syntax: def ident(arg1, arg2, ...): body_expr ;
+    // Example: def my_func(a, b): add(a, b) ;
+    fn parse_expr_def(&mut self, def_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
             Some(token) => match &***token {
@@ -439,7 +455,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_if(&mut self, if_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+    // Parses an 'if' expression, including optional 'elif' and 'else' branches.
+    // Syntax: if (condition): then_expr [ elif (condition): elif_expr ]* [ else: else_expr ]
+    // Example: if (x > 10): "greater" else: "smaller_or_equal"
+    fn parse_expr_if(&mut self, if_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&if_token));
         let args = self.parse_args()?;
 
@@ -527,7 +546,7 @@ impl<'a> Parser<'a> {
         Ok(nodes)
     }
 
-    fn parse_let(&mut self, let_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+    fn parse_expr_let(&mut self, let_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
             Some(token) => match &***token {
@@ -625,17 +644,24 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Ident(_),
                     module_id: _,
-                } => {
-                    let expr = self.parse_expr(Rc::clone(token))?;
-                    args.push(expr);
                 }
-                Token {
+                | Token {
                     range: _,
                     kind: TokenKind::Selector(_),
                     module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::If,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Fn,
+                    module_id: _,
                 } => {
-                    let expr = self.parse_expr(Rc::clone(token))?;
-                    args.push(expr);
+                    // Arguments that are complex expressions (idents, selectors, if, fn)
+                    args.push(self.parse_arg_expr(Rc::clone(token))?);
                 }
                 Token {
                     range: _,
@@ -657,8 +683,8 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::None,
                     module_id: _,
                 } => {
-                    let expr = self.parse_literal(Rc::clone(token))?;
-                    args.push(expr);
+                    // Arguments that are simple literals
+                    args.push(self.parse_arg_literal(Rc::clone(token))?);
                 }
                 Token {
                     range: _,
@@ -699,19 +725,6 @@ impl<'a> Parser<'a> {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
                         expr: Rc::new(Expr::Self_),
                     }));
-                }
-                Token {
-                    range: _,
-                    kind: TokenKind::If,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Fn,
-                    module_id: _,
-                } => {
-                    let expr = self.parse_expr(Rc::clone(token))?;
-                    args.push(expr);
                 }
                 Token {
                     range: _,
@@ -865,6 +878,18 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
+    // Helper to parse an argument that is expected to be a general expression.
+    // This typically involves a recursive call to `parse_expr`.
+    fn parse_arg_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        self.parse_expr(Rc::clone(token))
+    }
+
+    // Helper to parse an argument that is expected to be a literal.
+    // This typically involves a call to `parse_literal`.
+    fn parse_arg_literal(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        self.parse_literal(Rc::clone(token))
+    }
+
     fn parse_head(&mut self, token: Rc<Token>, depth: u8) -> Result<Rc<Node>, ParseError> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
@@ -875,19 +900,8 @@ impl<'a> Parser<'a> {
     fn parse_selector(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         if let TokenKind::Selector(selector) = &token.kind {
             match selector.as_str() {
-                ".h" => {
-                    if let Ok(depth) = self.parse_int_arg(Rc::clone(&token)) {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::Heading(Some(depth as u8)))),
-                        }))
-                    } else {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::Heading(None))),
-                        }))
-                    }
-                }
+                // Handles heading selectors like `.h` or `.h(level)`.
+                ".h" => self.parse_selector_heading_args(Rc::clone(&token)),
                 ".h1" => self.parse_head(token, 1),
                 ".h2" => self.parse_head(token, 2),
                 ".h3" => self.parse_head(token, 3),
@@ -966,35 +980,9 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::LinkRef)),
                 })),
-                ".list.checked" => {
-                    if let Ok(i) = self.parse_int_arg(Rc::clone(&token)) {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::List(
-                                Some(i as usize),
-                                Some(true),
-                            ))),
-                        }))
-                    } else {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::List(None, Some(true)))),
-                        }))
-                    }
-                }
-                ".list" => {
-                    if let Ok(i) = self.parse_int_arg(Rc::clone(&token)) {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::List(Some(i as usize), None))),
-                        }))
-                    } else {
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::List(None, None))),
-                        }))
-                    }
-                }
+                // Handles list selectors like `.list` or `.list(index)`, and `.list.checked` or `.list.checked(index)`.
+                ".list.checked" => self.parse_selector_list_args(Rc::clone(&token), true),
+                ".list" => self.parse_selector_list_args(Rc::clone(&token), false),
                 ".toml" => Ok(Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Toml)),
@@ -1038,43 +1026,86 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Text)),
                 })),
-                // .[], .[n] .[][], .[n][n]
-                "." => {
-                    let token1 = match self.tokens.peek() {
-                        Some(token) => Ok(Rc::clone(token)),
-                        None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                    }?;
-
-                    let ArrayIndex(i1) = self.parse_int_array_arg(&token1)?;
-                    let token2 = match self.tokens.peek() {
-                        Some(token) => Ok(Rc::clone(token)),
-                        None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                    }?;
-
-                    if let Token {
-                        range: _,
-                        kind: TokenKind::LBracket,
-                        module_id: _,
-                    } = &*token2
-                    {
-                        // .[n][n]
-                        let ArrayIndex(i2) = self.parse_int_array_arg(&token2)?;
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::Table(i1, i2))),
-                        }))
-                    } else {
-                        // .[n]
-                        Ok(Rc::new(Node {
-                            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::List(i1, None))),
-                        }))
-                    }
-                }
+                // Handles table/array indexing selectors like `.[index]` or `.[index1][index2]`.
+                "." => self.parse_selector_table_args(Rc::clone(&token)),
                 _ => Err(ParseError::UnexpectedToken((*token).clone())),
             }
         } else {
             Err(ParseError::InsufficientTokens((*token).clone()))
+        }
+    }
+
+    // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
+    // Example: .[0][1] or .[0]
+    fn parse_selector_table_args(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let token1 = match self.tokens.peek() {
+            Some(token) => Ok(Rc::clone(token)),
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        }?;
+
+        let ArrayIndex(i1) = self.parse_int_array_arg(&token1)?;
+        let token2 = match self.tokens.peek() {
+            Some(token) => Ok(Rc::clone(token)),
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        }?;
+
+        if let Token {
+            range: _,
+            kind: TokenKind::LBracket,
+            module_id: _,
+        } = &*token2
+        {
+            // .[n][n]
+            let ArrayIndex(i2) = self.parse_int_array_arg(&token2)?;
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Selector(Selector::Table(i1, i2))),
+            }))
+        } else {
+            // .[n]
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Selector(Selector::List(i1, None))),
+            }))
+        }
+    }
+
+    // Parses arguments for list selectors like `.list(index)` or `.list.checked(index)`.
+    // The `checked` parameter distinguishes between `.list` and `.list.checked`.
+    // Example: .list(0) or .list.checked(1)
+    fn parse_selector_list_args(&mut self, token: Rc<Token>, checked: bool) -> Result<Rc<Node>, ParseError> {
+        if let Ok(i) = self.parse_int_arg(Rc::clone(&token)) {
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Selector(Selector::List(
+                    Some(i as usize),
+                    if checked { Some(true) } else { None },
+                ))),
+            }))
+        } else {
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Selector(Selector::List(
+                    None,
+                    if checked { Some(true) } else { None },
+                ))),
+            }))
+        }
+    }
+
+    // Parses arguments for heading selectors like `.h(level)` or just `.h`.
+    // Example: .h(1) or .h
+    fn parse_selector_heading_args(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        if let Ok(depth) = self.parse_int_arg(Rc::clone(&token)) {
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Selector(Selector::Heading(Some(depth as u8)))),
+            }))
+        } else {
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Selector(Selector::Heading(None))),
+            }))
         }
     }
 
@@ -1231,27 +1262,37 @@ impl<'a> Parser<'a> {
         expected_eof: bool,
     ) -> Result<TokenId, ParseError> {
         match self.tokens.peek() {
+            // Token found and matches one of the expected kinds.
             Some(token) if expected_kinds(&token.kind) => Ok(self
                 .token_arena
                 .borrow_mut()
-                .alloc(Rc::clone(self.tokens.next().unwrap()))),
+                .alloc(Rc::clone(self.tokens.next().unwrap()))), // Consume and return.
+            // Token found but does not match expected kinds.
             Some(token) => Err(ParseError::UnexpectedToken(Token {
                 range: token.range.clone(),
                 kind: token.kind.clone(),
                 module_id: token.module_id,
             })),
-            None if expected_eof => {
-                let range = self.token_arena.borrow()[current_token_id].range.clone();
-                let module_id = self.token_arena.borrow()[current_token_id].module_id;
-                Ok(Rc::clone(&self.token_arena)
-                    .borrow_mut()
-                    .alloc(Rc::new(Token {
-                        range,
-                        kind: TokenKind::Eof,
-                        module_id,
-                    })))
+            // No token found (EOF).
+            None => {
+                if expected_eof {
+                    // If EOF is explicitly allowed in this context (e.g. end of a 'let' binding),
+                    // fabricate an EOF token to satisfy the parser's expectation.
+                    // This simplifies some parsing logic by not having to handle None explicitly everywhere.
+                    let range = self.token_arena.borrow()[current_token_id].range.clone();
+                    let module_id = self.token_arena.borrow()[current_token_id].module_id;
+                    Ok(Rc::clone(&self.token_arena)
+                        .borrow_mut()
+                        .alloc(Rc::new(Token {
+                            range,
+                            kind: TokenKind::Eof,
+                            module_id,
+                        })))
+                } else {
+                    // If EOF is not expected here, it's an error.
+                    Err(ParseError::UnexpectedEOFDetected(self.module_id))
+                }
             }
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         }
     }
 }
