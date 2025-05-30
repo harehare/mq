@@ -5,7 +5,10 @@ use std::{
     rc::Rc,
 };
 
-use crate::{AstIdent, AstParams, Program, Value, number::Number};
+// Program type will be Vec<ExprRef> after ast.rs is updated. For now, this assumes it.
+// If Program is still Vec<Rc<Node>> from ast.rs, this will cause issues until ast.rs is updated.
+// We are anticipating the change.
+use crate::{AstIdent, AstParams, Value, number::Number, ast::ExprRef}; 
 
 use mq_markdown::Node;
 
@@ -23,7 +26,7 @@ pub enum RuntimeValue {
     String(String),
     Array(Vec<RuntimeValue>),
     Markdown(Node, Option<Selector>),
-    Function(AstParams, Program, Rc<RefCell<Env>>),
+    Function(AstParams, Vec<ExprRef>, Rc<RefCell<Env>>), // Changed Program to Vec<ExprRef>
     NativeFunction(AstIdent),
     None,
 }
@@ -72,8 +75,8 @@ impl From<Value> for RuntimeValue {
             Value::String(s) => RuntimeValue::String(s),
             Value::Array(a) => RuntimeValue::Array(a.into_iter().map(Into::into).collect()),
             Value::Markdown(m) => RuntimeValue::Markdown(m, None),
-            Value::Function(params, program) => {
-                RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::default())))
+            Value::Function(params, program_body) => { // program_body is Vec<ExprRef>
+                RuntimeValue::Function(params, program_body, Rc::new(RefCell::new(Env::default())))
             }
             Value::NativeFunction(ident) => RuntimeValue::NativeFunction(ident),
             Value::None => RuntimeValue::None,

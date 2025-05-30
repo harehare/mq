@@ -56,7 +56,9 @@ use std::sync::Arc;
 
 pub use arena::Arena;
 pub use ast::IdentName as AstIdentName;
-pub use ast::Program;
+// Program type alias will be formally changed in ast.rs later.
+// For now, functions returning Program will return Vec<ExprRef>.
+pub use ast::Program; 
 pub use ast::node::Expr as AstExpr;
 pub use ast::node::Ident as AstIdent;
 pub use ast::node::Literal as AstLiteral;
@@ -111,10 +113,13 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     (cst_nodes, errors)
 }
 
+use ast::{ExprPool, ExprRef}; // Added ExprPool and ExprRef
+
 pub fn parse(
     code: &str,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-) -> Result<Program, Box<error::Error>> {
+    pool: &mut ExprPool, // Added ExprPool parameter
+) -> Result<Vec<ExprRef>, Box<error::Error>> { // Changed Program to Vec<ExprRef>
     let tokens = Lexer::new(lexer::Options::default())
         .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
         .map_err(|e| {
@@ -128,6 +133,7 @@ pub fn parse(
     AstParser::new(
         tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
         token_arena,
+        pool, // Pass ExprPool to parser
         Module::TOP_LEVEL_MODULE_ID,
     )
     .parse()

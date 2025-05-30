@@ -5,6 +5,7 @@ use crate::MqResult;
 use crate::{
     ModuleLoader, Token, Value,
     arena::Arena,
+    ast::ExprPool, // Added ExprPool
     error::{self, InnerError},
     eval::Evaluator,
     optimizer::Optimizer,
@@ -109,14 +110,19 @@ impl Engine {
     /// ```
     ///
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
-        let program = parse(code, Rc::clone(&self.token_arena))?;
-        let program = if self.options.optimize {
-            Optimizer::new().optimize(&program)
-        } else {
-            program
-        };
+        let mut expr_pool = ExprPool::new(); // Create ExprPool
+        let program_refs = parse(code, Rc::clone(&self.token_arena), &mut expr_pool)?; // Pass pool, get Vec<ExprRef>
+        
+        // TODO: Optimizer needs to be updated to work with Vec<ExprRef> and ExprPool.
+        // For now, we'll use program_refs directly, bypassing optimization.
+        // let program_refs_optimized = if self.options.optimize {
+        //     Optimizer::new().optimize(&program_refs, &expr_pool) // conceptual signature
+        // } else {
+        //     program_refs
+        // };
+
         self.evaluator
-            .eval(&program, input.into_iter().map(|v| v.into()))
+            .eval(&program_refs, &expr_pool, &self.token_arena.borrow(), input.into_iter().map(|v| v.into())) // Pass refs, pool, arena
             .map(|values| {
                 values
                     .into_iter()
