@@ -10,6 +10,7 @@ use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::process::exit;
 use std::rc::Rc;
 use std::{
@@ -1661,15 +1662,29 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("dict"),
-            BuiltinFunction::new(ParamNum::None, |_, _, args| {
-                if !args.is_empty() {
-                    return Err(Error::InvalidNumberOfArguments(
-                        "dict".to_string(),
-                        0,
-                        args.len() as u8,
-                    ));
+            BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
+                if args.is_empty() {
+                    Ok(RuntimeValue::new_dict())
+                } else {
+                    let mut dict = BTreeMap::default();
+
+                    for arg in args {
+                        if let RuntimeValue::Array(arr) = arg {
+                            if arr.len() >= 2 {
+                                dict.insert(arr[0].to_string(), arr[1].clone());
+                            } else {
+                                return Err(Error::InvalidTypes(
+                                    "dict".to_string(),
+                                    vec![arg.clone()],
+                                ));
+                            }
+                        } else {
+                            return Err(Error::InvalidTypes("dict".to_string(), vec![arg.clone()]));
+                        }
+                    }
+
+                    Ok(dict.into())
                 }
-                Ok(RuntimeValue::new_dict())
             }),
         );
         map.insert(
@@ -1696,6 +1711,29 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     let mut new_dict = map_val.clone();
                     new_dict.insert(key_val.clone(), value_val.clone());
                     Ok(RuntimeValue::Dict(new_dict))
+                }
+                [
+                    RuntimeValue::Array(array_val),
+                    RuntimeValue::Number(index_val),
+                    value_val,
+                ] => {
+                    let index = index_val.value() as usize;
+
+                    // Extend array size if necessary
+                    let mut new_array = if index >= array_val.len() {
+                        // If index is out of bounds, extend array and fill with None
+                        let mut resized_array = Vec::with_capacity(index + 1);
+                        resized_array.extend_from_slice(array_val);
+                        resized_array.resize(index + 1, RuntimeValue::None);
+                        resized_array
+                    } else {
+                        // If index is within bounds, clone existing array
+                        array_val.clone()
+                    };
+
+                    // Set value at specified index
+                    new_array[index] = value_val.clone();
+                    Ok(RuntimeValue::Array(new_array))
                 }
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -2680,7 +2718,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
         map.insert(
             CompactString::new("dict"),
             BuiltinFunctionDoc {
-                description: "Creates a new, empty map.",
+                description: "Creates a new, empty dict.",
                 params: &[],
             },
         );
@@ -3285,20 +3323,26 @@ mod tests {
             }
             _ => panic!("Expected Dict, got {:?}", map_val),
         }
-        // Test with incorrect number of arguments
-        let result_err = eval_builtin(
+
+        let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            &smallvec![RuntimeValue::Number(1.into())],
+            &smallvec![RuntimeValue::Array(vec![
+                RuntimeValue::String("key".into()),
+                RuntimeValue::String("value".into())
+            ])],
         );
         assert_eq!(
-            result_err,
-            Err(Error::InvalidNumberOfArguments("dict".to_string(), 0, 1))
+            result,
+            Ok(RuntimeValue::Dict(BTreeMap::from([(
+                "key".into(),
+                RuntimeValue::String("value".into())
+            )])))
         );
     }
 
     #[test]
-    fn test_eval_builtin_set_map() {
+    fn test_eval_builtin_set_dict() {
         let ident_set = ast::Ident {
             name: CompactString::new("set"),
             token: None,
@@ -3460,7 +3504,7 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_builtin_keys_map() {
+    fn test_eval_builtin_keys_dict() {
         let ident_keys = ast::Ident {
             name: CompactString::new("keys"),
             token: None,
@@ -3512,7 +3556,7 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_builtin_values_map() {
+    fn test_eval_builtin_values_dict() {
         let ident_values = ast::Ident {
             name: CompactString::new("values"),
             token: None,

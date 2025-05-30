@@ -164,6 +164,10 @@ impl Repl {
                         let lines = runtime_values
                             .iter()
                             .filter_map(|runtime_value| {
+                                if runtime_value.is_none() {
+                                    return Some("None".to_string());
+                                }
+
                                 let s = runtime_value.to_string();
                                 if s.is_empty() { None } else { Some(s) }
                             })

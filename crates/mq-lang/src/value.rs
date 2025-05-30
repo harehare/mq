@@ -85,16 +85,12 @@ impl Display for Value {
             Value::Number(n) => n.to_string(),
             Value::Bool(b) => b.to_string(),
             Value::String(s) => s.to_string(),
-            Value::Array(a) => a
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<String>>()
-                .join("\n"),
+            Value::Array(_) => self.string(),
             Value::Markdown(m) => m.to_string(),
             Value::None => "".to_string(),
             Value::Function(_, _) => "function".to_string(),
             Value::NativeFunction(_) => "native_function".to_string(),
-            Value::Dict(_) => "[object Dict]".to_string(),
+            Value::Dict(_) => self.string(),
         };
 
         write!(f, "{}", value)
@@ -104,26 +100,8 @@ impl Display for Value {
 impl Debug for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         let v = match self {
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::String(s) => format!("\"{}\"", s),
-            Value::Array(a) => a
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<String>>()
-                .join("\n"),
-            Value::Markdown(m) => m.to_string(),
             Value::None => "None".to_string(),
-            Value::Function(params, _) => format!("function{}", params.len()),
-            Value::NativeFunction(ident) => format!("native_function: {}", ident),
-            Value::Dict(map) => {
-                let s = map
-                    .iter()
-                    .map(|(k, v)| format!("\"{}\": {:?}", k, v))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("{{{}}}", s)
-            }
+            a => a.string(),
         };
         write!(f, "{}", v)
     }
@@ -180,6 +158,33 @@ impl Value {
     pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
         if let Value::Markdown(node) = self {
             node.set_position(position);
+        }
+    }
+
+    fn string(&self) -> String {
+        match self {
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::String(s) => format!(r#""{}""#, s),
+            Value::Array(a) => format!(
+                "[{}]",
+                a.iter()
+                    .map(|v| format!("{:?}", v))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Value::Markdown(m) => m.to_string(),
+            Value::None => "".to_string(),
+            Value::Function(_, _) => "function".to_string(),
+            Value::NativeFunction(_) => "native_function".to_string(),
+            Value::Dict(map) => {
+                let items = map
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\": {}", k, v.string()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("{{{}}}", items)
+            }
         }
     }
 }
@@ -374,11 +379,14 @@ mod tests {
         assert_eq!(Value::String("hello".to_string()).to_string(), "hello");
         assert_eq!(
             Value::Array(vec!["a".to_string().into(), "b".to_string().into()]).to_string(),
-            "a\nb"
+            r#"["a", "b"]"#
         );
         assert_eq!(Value::None.to_string(), "");
-        let map_val = Value::Dict(BTreeMap::new());
-        assert_eq!(map_val.to_string(), "[object Dict]");
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), Value::String("test".to_string()));
+        map.insert("count".to_string(), Value::Number(Number::from(42.0)));
+        let map_val = Value::Dict(map);
+        assert_eq!(map_val.to_string(), r#"{"count": 42, "name": "test"}"#);
     }
 
     #[test]
@@ -390,7 +398,7 @@ mod tests {
                 "{:?}",
                 Value::Array(vec!["a".to_string().into(), "b".to_string().into()])
             ),
-            "a\nb"
+            r#"["a", "b"]"#
         );
         assert_eq!(
             format!("{:?}", Value::String("test".to_string())),
