@@ -13,9 +13,15 @@ def is_number(n): eq(type(n), "number");
 def is_string(s): eq(type(s), "string");
 # Checks if input is None
 def is_none(n): eq(type(n), "None");
+# Checks if input is a dictionary
+def is_dict(d): eq(type(d), "dict");
 
 # Checks if string contains a substring
-def contains(haystack, needle): ne(index(haystack, needle), -1);
+def contains(haystack, needle):
+  if (is_dict(haystack)):
+    not(is_none(get(haystack, needle)))
+  else:
+    ne(index(haystack, needle), -1);
 
 # Removes prefix string from input if it exists
 def ltrimstr(s, left):

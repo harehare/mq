@@ -452,78 +452,90 @@ fn engine() -> Engine {
             vec![Value::Number(0.into())],
             Ok(vec![Value::Number(10.into())].into()))]
 #[case::array_empty("[]",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![])].into()))]
 #[case::array_with_elements("[1, 2, 3]",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
 #[case::array_nested("[[1, 2], [3, 4]]",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![
-                Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())]),
-                Value::Array(vec![Value::Number(3.into()), Value::Number(4.into())])
-              ])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![
+            Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())]),
+            Value::Array(vec![Value::Number(3.into()), Value::Number(4.into())])
+          ])].into()))]
 #[case::array_mixed_types("[1, \"test\", []]",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![
-                Value::Number(1.into()),
-                Value::String("test".to_string()),
-                Value::Array(vec![])
-              ])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::String("test".to_string()),
+            Value::Array(vec![])
+          ])].into()))]
 #[case::array_length("len([])",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Number(0.into())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Number(0.into())].into()))]
 #[case::array_length("len([1, 2, 3, 4])",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Number(4.into())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Number(4.into())].into()))]
 #[case::dict_new_empty("dict()",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::new_dict()].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::new_dict()].into()))]
 #[case::dict_set_get_string("let m = dict() | let m = set(m, \"name\", \"Jules\") | get(m, \"name\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::String("Jules".to_string())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::String("Jules".to_string())].into()))]
 #[case::dict_set_get_number("let m = set(dict(), \"age\", 30) | get(m, \"age\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Number(30.into())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Number(30.into())].into()))]
 #[case::dict_set_get_array("let m = set(dict(), \"data\", [1, 2, 3]) | get(m, \"data\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
 #[case::dict_set_get_bool("let m = set(dict(), \"active\", true) | get(m, \"active\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Bool(true)].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Bool(true)].into()))]
 #[case::dict_set_get_none("let m = set(dict(), \"nothing\", None) | get(m, \"nothing\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::None].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::None].into()))]
 #[case::dict_get_non_existent("let m = dict() | get(m, \"missing\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::None].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::None].into()))]
 #[case::dict_set_overwrite("let m = set(dict(), \"name\", \"Jules\") | let m = set(m, \"name\", \"Vincent\") | get(m, \"name\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::String("Vincent".to_string())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::String("Vincent".to_string())].into()))]
 #[case::dict_nested_set_get("let m1 = dict() | let m2 = set(dict(), \"level\", 2) | let m = set(m1, \"nested\", m2) | get(get(m, \"nested\"), \"level\")",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Number(2.into())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Number(2.into())].into()))]
 #[case::dict_keys_empty("keys(dict())",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Array(vec![])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![])].into()))]
 #[case::dict_keys_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", 2) | keys(m)",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string())])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string())])].into()))]
 #[case::dict_values_empty("values(dict())",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Array(vec![])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![])].into()))]
 #[case::dict_values_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", \"hello\") | values(m)",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::String("hello".to_string())])].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::String("hello".to_string())])].into()))]
 #[case::dict_len_empty("len(dict())",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Number(0.into())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Number(0.into())].into()))]
 #[case::dict_len_non_empty("len(set(set(dict(), \"a\", 1), \"b\", 2))",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::Number(2.into())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Number(2.into())].into()))]
 #[case::dict_type_is_dict("type(dict())",
-            vec![Value::Number(0.into())],
-            Ok(vec![Value::String("dict".to_string())].into()))]
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::String("dict".to_string())].into()))]
+#[case::dict_contains_existing_key(r#"let m = set(dict(), "name", "Jules") | contains(m, "name")"#,
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Bool(true)].into()))]
+#[case::dict_contains_non_existing_key(r#"let m = set(dict(), "name", "Jules") | contains(m, "age")"#,
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Bool(false)].into()))]
+#[case::dict_contains_empty(r#"contains(dict(), "any_key")"#,
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Bool(false)].into()))]
+#[case::dict_contains_multiple_keys(r#"let m = set(set(set(dict(), "a", 1), "b", 2), "c", 3) | contains(m, "b")"#,
+          vec![Value::Number(0.into())],
+          Ok(vec![Value::Bool(true)].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
