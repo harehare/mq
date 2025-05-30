@@ -1,9 +1,9 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{self, Debug, Display, Formatter},
-};
+use std::collections::BTreeMap;
 
-use crate::{AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, number::Number};
+use crate::{
+    AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, impl_value_formatting,
+    number::Number,
+};
 
 use mq_markdown::Node;
 
@@ -79,33 +79,8 @@ impl From<RuntimeValue> for Value {
     }
 }
 
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let value = match self {
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::String(s) => s.to_string(),
-            Value::Array(_) => self.string(),
-            Value::Markdown(m) => m.to_string(),
-            Value::None => "".to_string(),
-            Value::Function(_, _) => "function".to_string(),
-            Value::NativeFunction(_) => "native_function".to_string(),
-            Value::Dict(_) => self.string(),
-        };
-
-        write!(f, "{}", value)
-    }
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let v = match self {
-            Value::None => "None".to_string(),
-            a => a.string(),
-        };
-        write!(f, "{}", v)
-    }
-}
+// Use macro to implement Display and Debug traits
+impl_value_formatting!(Value);
 
 impl Value {
     pub const NONE: Value = Self::None;
@@ -158,33 +133,6 @@ impl Value {
     pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
         if let Value::Markdown(node) = self {
             node.set_position(position);
-        }
-    }
-
-    fn string(&self) -> String {
-        match self {
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::String(s) => format!(r#""{}""#, s),
-            Value::Array(a) => format!(
-                "[{}]",
-                a.iter()
-                    .map(|v| format!("{:?}", v))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            Value::Markdown(m) => m.to_string(),
-            Value::None => "".to_string(),
-            Value::Function(_, _) => "function".to_string(),
-            Value::NativeFunction(_) => "native_function".to_string(),
-            Value::Dict(map) => {
-                let items = map
-                    .iter()
-                    .map(|(k, v)| format!("\"{}\": {}", k, v.string()))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("{{{}}}", items)
-            }
         }
     }
 }

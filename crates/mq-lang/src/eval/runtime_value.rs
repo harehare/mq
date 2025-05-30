@@ -1,12 +1,6 @@
-use std::{
-    cell::RefCell,
-    cmp::Ordering,
-    collections::BTreeMap,
-    fmt::{self, Debug, Display, Formatter},
-    rc::Rc,
-};
+use std::{cell::RefCell, cmp::Ordering, collections::BTreeMap, rc::Rc};
 
-use crate::{AstIdent, AstParams, Program, Value, number::Number};
+use crate::{AstIdent, AstParams, Program, Value, impl_value_formatting, number::Number};
 use mq_markdown::Node;
 
 use super::env::Env;
@@ -121,33 +115,8 @@ impl PartialOrd for RuntimeValue {
     }
 }
 
-impl Display for RuntimeValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let value = match self {
-            RuntimeValue::Number(n) => n.to_string(),
-            RuntimeValue::Bool(b) => b.to_string(),
-            RuntimeValue::String(s) => s.to_string(),
-            RuntimeValue::Array(_) => self.string(),
-            RuntimeValue::Markdown(m, _) => m.to_string(),
-            RuntimeValue::None => "".to_string(),
-            RuntimeValue::Function(_, _, _) => "function".to_string(),
-            RuntimeValue::NativeFunction(_) => "native_function".to_string(),
-            RuntimeValue::Dict(_) => self.string(),
-        };
-
-        write!(f, "{}", value)
-    }
-}
-
-impl Debug for RuntimeValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let v = match self {
-            RuntimeValue::None => "None".to_string(),
-            a => a.string(),
-        };
-        write!(f, "{}", v)
-    }
-}
+// Use macro to implement Display and Debug traits
+impl_value_formatting!(RuntimeValue);
 
 impl RuntimeValue {
     pub const NONE: RuntimeValue = Self::None;
@@ -246,34 +215,8 @@ impl RuntimeValue {
             _ => RuntimeValue::NONE,
         }
     }
-
-    fn string(&self) -> String {
-        match self {
-            RuntimeValue::Number(n) => n.to_string(),
-            RuntimeValue::Bool(b) => b.to_string(),
-            RuntimeValue::String(s) => format!(r#""{}""#, s),
-            RuntimeValue::Array(a) => format!(
-                "[{}]",
-                a.iter()
-                    .map(|v| format!("{:?}", v))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            RuntimeValue::Markdown(m, _) => m.to_string(),
-            RuntimeValue::None => "".to_string(),
-            RuntimeValue::Function(_, _, _) => "function".to_string(),
-            RuntimeValue::NativeFunction(_) => "native_function".to_string(),
-            RuntimeValue::Dict(map) => {
-                let items = map
-                    .iter()
-                    .map(|(k, v)| format!("\"{}\": {}", k, v.string()))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("{{{}}}", items)
-            }
-        }
-    }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::{AstExpr, AstNode, arena::ArenaId};
