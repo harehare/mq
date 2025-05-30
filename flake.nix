@@ -65,17 +65,8 @@
           pname = "mq";
           version = "unstable";
 
-          src = pkgs.fetchFromGitHub {
-            owner = "harehare";
-            repo = "mq";
-            rev = "main";
-            sha256 = "sha256-JWrfHqId/N/tAw46QxE3v5qtjs01Ew1V22mfKytZvxw=";
-          };
-
-          cargoLock = {
-            lockFile = null;
-            lockFileContents = builtins.readFile ./Cargo.lock;
-          };
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
 
           meta = with pkgs.lib; {
             description = "jq-like command-line tool for markdown processing";
