@@ -1,0 +1,17 @@
+:MqCheckHealth	mq.txt	/*:MqCheckHealth*
+:MqFormat	mq.txt	/*:MqFormat*
+:MqNew	mq.txt	/*:MqNew*
+:MqRun	mq.txt	/*:MqRun*
+:MqRunBuffer	mq.txt	/*:MqRunBuffer*
+:MqSnippets	mq.txt	/*:MqSnippets*
+mq-commands	mq.txt	/*mq-commands*
+mq-configuration	mq.txt	/*mq-configuration*
+mq-contents	mq.txt	/*mq-contents*
+mq-installation	mq.txt	/*mq-installation*
+mq-introduction	mq.txt	/*mq-introduction*
+mq-license	mq.txt	/*mq-license*
+mq-mappings	mq.txt	/*mq-mappings*
+mq-requirements	mq.txt	/*mq-requirements*
+mq-snippets	mq.txt	/*mq-snippets*
+mq-usage	mq.txt	/*mq-usage*
+mq.txt	mq.txt	/*mq.txt*
