@@ -69,7 +69,7 @@
             owner = "harehare";
             repo = "mq";
             rev = "main";
-            sha256 = "sha256-4cQjQnPNgPKtnyVR46Hu9G5sn5QbmQqFhHK4DZfHlKo=";
+            sha256 = "sha256-JWrfHqId/N/tAw46QxE3v5qtjs01Ew1V22mfKytZvxw=";
           };
 
           cargoLock = {
