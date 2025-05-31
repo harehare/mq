@@ -37,9 +37,9 @@ def rtrimstr(s, right):
   else:
     s;
 
-# Checks if string or array is empty
+# Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s))):
+  if (or(is_string(s), is_array(s), is_dict(s))):
     eq(len(s), 0)
   else:
     false;
