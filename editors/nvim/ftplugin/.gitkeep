@@ -1,0 +1,18 @@
+# This file is intentionally left empty.
+# It's a common practice to use .gitkeep files to ensure that
+# otherwise empty directories are tracked by Git.
+# This is particularly useful for maintaining a project's
+# directory structure, even if some directories don't yet
+# contain any functional code or files.
+#
+# In a Neovim plugin, the 'ftplugin' directory is used for
+# filetype-specific plugin scripts. When a file of a
+# particular type is opened (e.g., a Python file, a Markdown file),
+# Neovim will automatically source the corresponding script
+# from this directory.
+#
+# For example, if you wanted to define specific settings or mappings
+# for Python files, you would create a 'python.vim' or
+# 'python.lua' file within this 'ftplugin' directory.
+# These settings would then only apply when editing Python files,
+# keeping your plugin's behavior organized and context-aware.
