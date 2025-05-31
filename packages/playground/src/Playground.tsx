@@ -789,7 +789,7 @@ export const Playground = () => {
         <div className="right-panel">
           <div className="editor-header output">
             <h2>Output</h2>
-            {isEmbed && (
+            {!isEmbed && (
               <div className="editor-actions">
                 <label className="label">
                   <div

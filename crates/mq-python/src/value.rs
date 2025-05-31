@@ -1,11 +1,14 @@
 use pyo3::pyclass;
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 #[pyclass]
 #[derive(Debug, Clone)]
 pub enum MQValue {
     Array {
         value: Vec<MQValue>,
+    },
+    Dict {
+        value: HashMap<String, MQValue>,
     },
     Markdown {
         value: String,
@@ -22,6 +25,15 @@ impl fmt::Display for MQValue {
                 value
                     .iter()
                     .map(|val| val.text())
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            ),
+            MQValue::Dict { value } => write!(
+                f,
+                "{}",
+                value
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v.text()))
                     .collect::<Vec<String>>()
                     .join("\n")
             ),
@@ -91,6 +103,9 @@ impl From<mq_lang::Value> for MQValue {
         match value {
             mq_lang::Value::Array(arr) => MQValue::Array {
                 value: arr.into_iter().map(|v| v.into()).collect(),
+            },
+            mq_lang::Value::Dict(map) => MQValue::Dict {
+                value: map.into_iter().map(|(k, v)| (k, v.into())).collect(),
             },
             mq_lang::Value::Markdown(node) => MQValue::Markdown {
                 value: node.to_string(),
@@ -223,6 +238,15 @@ impl MQValue {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            MQValue::Dict { value: map } => {
+                format!(
+                    "MQValue::MAP({})",
+                    map.iter()
+                        .map(|(k, v)| format!("\"{}\": {}", k, v.__repr__()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             MQValue::Markdown {
                 value,
                 markdown_type,
@@ -235,6 +259,7 @@ impl MQValue {
     pub fn __bool__(&self) -> bool {
         match self {
             MQValue::Array { value } => !value.is_empty(),
+            MQValue::Dict { value } => !value.is_empty(),
             MQValue::Markdown { value, .. } => !value.is_empty(),
         }
     }
@@ -242,6 +267,7 @@ impl MQValue {
     pub fn __len__(&self) -> usize {
         match self {
             MQValue::Array { value } => value.len(),
+            MQValue::Dict { value } => value.len(),
             MQValue::Markdown { value, .. } => value.len(),
         }
     }

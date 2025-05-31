@@ -1,6 +1,9 @@
-use std::fmt::{self, Debug, Display, Formatter};
+use std::collections::BTreeMap;
 
-use crate::{AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, number::Number};
+use crate::{
+    AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, impl_value_formatting,
+    number::Number,
+};
 
 use mq_markdown::Node;
 
@@ -13,6 +16,7 @@ pub enum Value {
     Markdown(Node),
     Function(AstParams, Program),
     NativeFunction(AstIdent),
+    Dict(BTreeMap<String, Value>),
     None,
 }
 
@@ -52,6 +56,12 @@ impl From<i32> for Value {
     }
 }
 
+impl From<BTreeMap<String, Value>> for Value {
+    fn from(dict: BTreeMap<String, Value>) -> Self {
+        Value::Dict(dict)
+    }
+}
+
 impl From<RuntimeValue> for Value {
     fn from(value: RuntimeValue) -> Self {
         match value {
@@ -64,56 +74,32 @@ impl From<RuntimeValue> for Value {
             RuntimeValue::Markdown(m, _) => Value::Markdown(m),
             RuntimeValue::Function(params, program, _) => Value::Function(params, program),
             RuntimeValue::NativeFunction(ident) => Value::NativeFunction(ident),
+            RuntimeValue::Dict(rt_map) => Value::Dict(
+                rt_map
+                    .into_iter()
+                    .map(|(k, v)| (k, Value::from(v)))
+                    .collect(),
+            ),
             RuntimeValue::None => Value::None,
         }
     }
 }
 
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let value = match self {
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::String(s) => s.to_string(),
-            Value::Array(a) => a
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<String>>()
-                .join("\n"),
-            Value::Markdown(m) => m.to_string(),
-            Value::None => "".to_string(),
-            Value::Function(_, _) => "function".to_string(),
-            Value::NativeFunction(_) => "native_function".to_string(),
-        };
-
-        write!(f, "{}", value)
-    }
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let v = match self {
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::String(s) => format!("\"{}\"", s),
-            Value::Array(a) => a
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<String>>()
-                .join("\n"),
-            Value::Markdown(m) => m.to_string(),
-            Value::None => "None".to_string(),
-            Value::Function(params, _) => format!("function{}", params.len()),
-            Value::NativeFunction(ident) => format!("native_function: {}", ident),
-        };
-        write!(f, "{}", v)
-    }
-}
+// Use macro to implement Display and Debug traits
+impl_value_formatting!(Value);
 
 impl Value {
     pub const NONE: Value = Self::None;
     pub const TRUE: Value = Self::Bool(true);
     pub const FALSE: Value = Self::Bool(false);
+
+    pub fn new_dict() -> Self {
+        Value::Dict(BTreeMap::new())
+    }
+
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
 
     pub fn is_none(&self) -> bool {
         matches!(self, Value::None)
@@ -134,6 +120,7 @@ impl Value {
             Value::String(s) => s.len(),
             Value::Array(a) => a.len(),
             Value::Markdown(m) => m.value().len(),
+            Value::Dict(m) => m.len(),
             _ => panic!("not supported"),
         }
     }
@@ -242,6 +229,20 @@ impl Values {
                                 })
                                 .collect::<Vec<_>>(),
                         ),
+                        Value::Dict(map) => {
+                            let mut new_dict = BTreeMap::new();
+                            for (k, v) in map {
+                                if !v.is_none() && !v.is_empty() {
+                                    new_dict.insert(
+                                        k.clone(),
+                                        Value::Markdown(
+                                            node.clone().with_value(v.to_string().as_str()),
+                                        ),
+                                    );
+                                }
+                            }
+                            Value::Dict(new_dict)
+                        }
                     }
                 } else {
                     unreachable!()
@@ -307,6 +308,22 @@ mod tests {
         let rt_value = RuntimeValue::Number(Number::from(42.0));
         let value = Value::from(rt_value);
         assert_eq!(value, Value::Number(Number::from(42.0)));
+
+        let mut rt_map = BTreeMap::default();
+        rt_map.insert(
+            "key1".to_string(),
+            RuntimeValue::String("value1".to_string()),
+        );
+        rt_map.insert(
+            "key2".to_string(),
+            RuntimeValue::Number(Number::from(123.0)),
+        );
+        let rt_value_map = RuntimeValue::Dict(rt_map);
+        let value_map = Value::from(rt_value_map);
+        let mut expected_map = BTreeMap::new();
+        expected_map.insert("key1".to_string(), Value::String("value1".to_string()));
+        expected_map.insert("key2".to_string(), Value::Number(Number::from(123.0)));
+        assert_eq!(value_map, Value::Dict(expected_map));
     }
 
     #[test]
@@ -316,9 +333,14 @@ mod tests {
         assert_eq!(Value::String("hello".to_string()).to_string(), "hello");
         assert_eq!(
             Value::Array(vec!["a".to_string().into(), "b".to_string().into()]).to_string(),
-            "a\nb"
+            r#"["a", "b"]"#
         );
         assert_eq!(Value::None.to_string(), "");
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), Value::String("test".to_string()));
+        map.insert("count".to_string(), Value::Number(Number::from(42.0)));
+        let map_val = Value::Dict(map);
+        assert_eq!(map_val.to_string(), r#"{"count": 42, "name": "test"}"#);
     }
 
     #[test]
@@ -330,7 +352,7 @@ mod tests {
                 "{:?}",
                 Value::Array(vec!["a".to_string().into(), "b".to_string().into()])
             ),
-            "a\nb"
+            r#"["a", "b"]"#
         );
         assert_eq!(
             format!("{:?}", Value::String("test".to_string())),
@@ -375,12 +397,24 @@ mod tests {
             .len(),
             2
         );
+        let mut map = BTreeMap::new();
+        map.insert("key1".to_string(), Value::String("value1".to_string()));
+        map.insert("key2".to_string(), Value::Number(Number::from(123.0)));
+        assert_eq!(Value::Dict(map.clone()).len(), 2);
 
         let markdown_node = Node::Text(Text {
             value: "test text".to_string(),
             position: None,
         });
         assert_eq!(Value::Markdown(markdown_node).len(), 9);
+    }
+
+    #[test]
+    fn test_value_map_is_empty() {
+        let mut map = BTreeMap::new();
+        assert!(Value::Dict(map.clone()).is_empty());
+        map.insert("key1".to_string(), Value::String("value1".to_string()));
+        assert!(!Value::Dict(map).is_empty());
     }
 
     #[test]
@@ -478,5 +512,51 @@ mod tests {
         let update_values = Values(vec![update]);
         let result = values.update_with(update_values);
         assert_eq!(result.0[0], expected);
+    }
+
+    #[test]
+    fn test_value_map_creation_and_equality() {
+        let mut map1 = BTreeMap::new();
+        map1.insert("a".to_string(), Value::Number(1.into()));
+        map1.insert("b".to_string(), Value::String("hello".into()));
+        let value_map1 = Value::Dict(map1.clone());
+
+        let mut map2 = BTreeMap::new();
+        map2.insert("a".to_string(), Value::Number(1.into()));
+        map2.insert("b".to_string(), Value::String("hello".into()));
+        let value_map2 = Value::Dict(map2.clone());
+
+        let mut map3 = BTreeMap::new();
+        map3.insert("a".to_string(), Value::Number(1.into()));
+        map3.insert("c".to_string(), Value::String("world".into()));
+        let value_map3 = Value::Dict(map3.clone());
+
+        assert_eq!(value_map1, value_map2);
+        assert_ne!(value_map1, value_map3);
+    }
+
+    #[test]
+    fn test_value_map_debug_formatting() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), Value::String("MQ".to_string()));
+        map.insert("version".to_string(), Value::Number(1.into()));
+        let value_map = Value::Dict(map);
+
+        // The order of items in a HashMap is not guaranteed, so we need to check for both possible orderings
+        let option1 = r#"{"name": "MQ", "version": 1}"#;
+        let option2 = r#"{"version": 1, "name": "MQ"}"#;
+
+        let debug_str = format!("{:?}", value_map);
+        assert!(debug_str == option1 || debug_str == option2);
+
+        let mut nested_map = BTreeMap::new();
+        nested_map.insert("key".to_string(), Value::String("value".to_string()));
+        let mut map_with_nested = BTreeMap::new();
+        map_with_nested.insert("outer_key".to_string(), Value::Dict(nested_map));
+        let value_map_nested = Value::Dict(map_with_nested);
+        assert_eq!(
+            format!("{:?}", value_map_nested),
+            r#"{"outer_key": {"key": "value"}}"#
+        );
     }
 }

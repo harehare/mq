@@ -10,6 +10,7 @@ use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::process::exit;
 use std::rc::Rc;
 use std::{
@@ -817,11 +818,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("nth"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
-                    match array.get(n.value() as usize) {
-                        Some(o) => Ok(o.clone()),
-                        None => Ok(RuntimeValue::None),
-                    }
+                [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+                    let index = index.value() as usize;
+                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
                 }
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                     match s.chars().nth(n.value() as usize) {
@@ -857,6 +856,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(s.into_iter().collect::<String>().into())
                 }
                 [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+                [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
+                    let mut dict = dict.clone();
+                    dict.remove(key);
+                    Ok(RuntimeValue::Dict(dict))
+                }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1656,6 +1660,145 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 .into()),
                 [a, ..] => Ok(a.clone()),
                 _ => Ok(RuntimeValue::None),
+            }),
+        );
+
+        map.insert(
+            CompactString::new("dict"),
+            BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
+                if args.is_empty() {
+                    Ok(RuntimeValue::new_dict())
+                } else {
+                    let mut dict = BTreeMap::default();
+
+                    let entries = match args.as_slice() {
+                        [RuntimeValue::Array(entries)] => match entries.as_slice() {
+                            [RuntimeValue::Array(entries)] => entries.clone(),
+                            [RuntimeValue::String(_), ..] => {
+                                vec![entries.clone().into()]
+                            }
+                            _ => entries.clone(),
+                        },
+                        _ => args.to_vec(),
+                    };
+
+                    for entry in entries {
+                        if let RuntimeValue::Array(arr) = entry {
+                            if arr.len() >= 2 {
+                                dict.insert(arr[0].to_string(), arr[1].clone());
+                            } else {
+                                return Err(Error::InvalidTypes("dict".to_string(), arr.clone()));
+                            }
+                        } else {
+                            return Err(Error::InvalidTypes(
+                                "dict".to_string(),
+                                vec![entry.clone()],
+                            ));
+                        }
+                    }
+
+                    Ok(dict.into())
+                }
+            }),
+        );
+        map.insert(
+            CompactString::new("get"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+                    Ok(map.get(key).cloned().unwrap_or(RuntimeValue::None))
+                }
+                [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+                    let index = index.value() as usize;
+                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
+                }
+                [a, b] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("set"),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
+                [
+                    RuntimeValue::Dict(map_val),
+                    RuntimeValue::String(key_val),
+                    value_val,
+                ] => {
+                    let mut new_dict = map_val.clone();
+                    new_dict.insert(key_val.clone(), value_val.clone());
+                    Ok(RuntimeValue::Dict(new_dict))
+                }
+                [
+                    RuntimeValue::Array(array_val),
+                    RuntimeValue::Number(index_val),
+                    value_val,
+                ] => {
+                    let index = index_val.value() as usize;
+
+                    // Extend array size if necessary
+                    let mut new_array = if index >= array_val.len() {
+                        // If index is out of bounds, extend array and fill with None
+                        let mut resized_array = Vec::with_capacity(index + 1);
+                        resized_array.extend_from_slice(array_val);
+                        resized_array.resize(index + 1, RuntimeValue::None);
+                        resized_array
+                    } else {
+                        // If index is within bounds, clone existing array
+                        array_val.clone()
+                    };
+
+                    // Set value at specified index
+                    new_array[index] = value_val.clone();
+                    Ok(RuntimeValue::Array(new_array))
+                }
+                [a, b, c] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone(), c.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("keys"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Dict(map)] => {
+                    let keys = map
+                        .keys()
+                        .map(|k| RuntimeValue::String(k.clone()))
+                        .collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(keys))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("values"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Dict(map)] => {
+                    let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(values))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("entries"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Dict(map)] => {
+                    let entries = map
+                        .iter()
+                        .map(|(k, v)| {
+                            RuntimeValue::Array(vec![RuntimeValue::String(k.clone()), v.clone()])
+                        })
+                        .collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(entries))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
             }),
         );
 
@@ -2604,6 +2747,51 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             params: &["node", "reference_id"],
             },
         );
+
+        // Dict function docs
+        map.insert(
+            CompactString::new("dict"),
+            BuiltinFunctionDoc {
+                description: "Creates a new, empty dict.",
+                params: &[],
+            },
+        );
+        map.insert(
+            CompactString::new("get"),
+            BuiltinFunctionDoc {
+                description: "Retrieves a value from a dict by its key. Returns None if the key is not found.",
+                params: &["dict", "key"],
+            },
+        );
+        map.insert(
+            CompactString::new("set"),
+            BuiltinFunctionDoc {
+                description: "Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.",
+                params: &["dict", "key", "value"],
+            },
+        );
+        map.insert(
+            CompactString::new("keys"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of keys from the dict.",
+                params: &["dict"],
+            },
+        );
+        map.insert(
+            CompactString::new("values"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of values from the dict.",
+                params: &["dict"],
+            },
+        );
+        map.insert(
+            CompactString::new("entries"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of key-value pairs from the dict as arrays.",
+                params: &["dict"],
+            },
+        );
+
         map
     });
 
@@ -2876,6 +3064,8 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use mq_markdown::Node;
     use rstest::rstest;
 
@@ -3157,5 +3347,299 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(param_num.is_missing_one_params(num_args), expected);
+    }
+
+    // Tests for Dict functions
+    #[test]
+    fn test_eval_builtin_new_dict() {
+        let ident = ast::Ident {
+            name: CompactString::new("dict"),
+            token: None,
+        };
+        let result = eval_builtin(&RuntimeValue::None, &ident, &smallvec![]);
+        assert!(result.is_ok());
+        let map_val = result.unwrap();
+        match map_val {
+            RuntimeValue::Dict(map) => {
+                assert_eq!(map.len(), 0);
+            }
+            _ => panic!("Expected Dict, got {:?}", map_val),
+        }
+
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            &smallvec![RuntimeValue::Array(vec![
+                RuntimeValue::String("key".into()),
+                RuntimeValue::String("value".into())
+            ])],
+        );
+        assert_eq!(
+            result,
+            Ok(RuntimeValue::Dict(BTreeMap::from([(
+                "key".into(),
+                RuntimeValue::String("value".into())
+            )])))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_set_dict() {
+        let ident_set = ast::Ident {
+            name: CompactString::new("set"),
+            token: None,
+        };
+        let initial_map = RuntimeValue::new_dict();
+
+        let args1 = smallvec![
+            initial_map.clone(),
+            RuntimeValue::String("name".into()),
+            RuntimeValue::String("Jules".into())
+        ];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, &args1);
+        assert!(result1.is_ok());
+        let map_val1 = result1.unwrap();
+        match &map_val1 {
+            RuntimeValue::Dict(map) => {
+                assert_eq!(map.len(), 1);
+                assert_eq!(map.get("name"), Some(&RuntimeValue::String("Jules".into())));
+            }
+            _ => panic!("Expected Dict, got {:?}", map_val1),
+        }
+
+        let args2 = smallvec![
+            map_val1.clone(),
+            RuntimeValue::String("age".into()),
+            RuntimeValue::Number(30.into())
+        ];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, &args2);
+        assert!(result2.is_ok());
+        let map_val2 = result2.unwrap();
+        match &map_val2 {
+            RuntimeValue::Dict(map) => {
+                assert_eq!(map.len(), 2);
+                assert_eq!(map.get("name"), Some(&RuntimeValue::String("Jules".into())));
+                assert_eq!(map.get("age"), Some(&RuntimeValue::Number(30.into())));
+            }
+            _ => panic!("Expected Dict, got {:?}", map_val2),
+        }
+
+        let args3 = smallvec![
+            map_val2.clone(),
+            RuntimeValue::String("name".into()),
+            RuntimeValue::String("Vincent".into())
+        ];
+        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, &args3);
+        assert!(result3.is_ok());
+        let map_val3 = result3.unwrap();
+        match &map_val3 {
+            RuntimeValue::Dict(map) => {
+                assert_eq!(map.len(), 2);
+                assert_eq!(
+                    map.get("name"),
+                    Some(&RuntimeValue::String("Vincent".into()))
+                );
+                assert_eq!(map.get("age"), Some(&RuntimeValue::Number(30.into())));
+            }
+            _ => panic!("Expected Dict, got {:?}", map_val3),
+        }
+
+        let mut nested_map_data = BTreeMap::default();
+        nested_map_data.insert("level".into(), RuntimeValue::Number(2.into()));
+        let nested_map: RuntimeValue = nested_map_data.into();
+        let args4 = smallvec![
+            map_val3.clone(),
+            RuntimeValue::String("nested".into()),
+            nested_map.clone()
+        ];
+        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, &args4);
+        assert!(result4.is_ok());
+        match result4.unwrap() {
+            RuntimeValue::Dict(map) => {
+                assert_eq!(map.len(), 3);
+                assert_eq!(map.get("nested"), Some(&nested_map));
+            }
+            _ => panic!("Expected Dict"),
+        }
+
+        let args_err1 = smallvec![
+            RuntimeValue::String("not_a_map".into()),
+            RuntimeValue::String("key".into()),
+            RuntimeValue::String("value".into())
+        ];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "set".to_string(),
+                vec![
+                    RuntimeValue::String("not_a_map".into()),
+                    RuntimeValue::String("key".into()),
+                    RuntimeValue::String("value".into())
+                ]
+            ))
+        );
+
+        let args_err2 = smallvec![
+            initial_map.clone(),
+            RuntimeValue::Number(123.into()),
+            RuntimeValue::String("value".into())
+        ];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidTypes(
+                "set".to_string(),
+                vec![
+                    initial_map.clone(),
+                    RuntimeValue::Number(123.into()),
+                    RuntimeValue::String("value".into())
+                ]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_get_map() {
+        let ident_get = ast::Ident {
+            name: CompactString::new("get"),
+            token: None,
+        };
+        let mut map_data = BTreeMap::default();
+        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        let map_val: RuntimeValue = map_data.into();
+
+        let args1 = smallvec![map_val.clone(), RuntimeValue::String("name".into())];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, &args1);
+        assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
+
+        let args2 = smallvec![map_val.clone(), RuntimeValue::String("location".into())];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, &args2);
+        assert_eq!(result2, Ok(RuntimeValue::None));
+
+        let args_err1 = smallvec![
+            RuntimeValue::String("not_a_map".into()),
+            RuntimeValue::String("key".into())
+        ];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "get".to_string(),
+                vec![
+                    RuntimeValue::String("not_a_map".into()),
+                    RuntimeValue::String("key".into())
+                ]
+            ))
+        );
+
+        let args_err2 = smallvec![map_val.clone(), RuntimeValue::Number(123.into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidTypes(
+                "get".to_string(),
+                vec![map_val.clone(), RuntimeValue::Number(123.into())]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_keys_dict() {
+        let ident_keys = ast::Ident {
+            name: CompactString::new("keys"),
+            token: None,
+        };
+
+        let empty_map = RuntimeValue::new_dict();
+        let args1 = smallvec![empty_map.clone()];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args1);
+        assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
+
+        let mut map_data = BTreeMap::default();
+        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        let map_val: RuntimeValue = map_data.into();
+        let args2 = smallvec![map_val.clone()];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args2);
+        assert!(result2.is_ok());
+        match result2.unwrap() {
+            RuntimeValue::Array(keys_array) => {
+                assert_eq!(keys_array.len(), 2);
+                let keys_str: Vec<String> = keys_array
+                    .into_iter()
+                    .map(|k| match k {
+                        RuntimeValue::String(s) => s,
+                        _ => panic!("Expected string key"),
+                    })
+                    .collect();
+                assert_eq!(keys_str, vec!["age".to_string(), "name".to_string()]);
+            }
+            _ => panic!("Expected Array of keys"),
+        }
+
+        let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "keys".to_string(),
+                vec![RuntimeValue::String("not_a_map".into())]
+            ))
+        );
+
+        let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidNumberOfArguments("keys".to_string(), 1, 2))
+        );
+    }
+
+    #[test]
+    fn test_eval_builtin_values_dict() {
+        let ident_values = ast::Ident {
+            name: CompactString::new("values"),
+            token: None,
+        };
+
+        let empty_map = RuntimeValue::new_dict();
+        let args1 = smallvec![empty_map.clone()];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, &args1);
+        assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
+
+        let mut map_data = BTreeMap::default();
+        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        let map_val: RuntimeValue = map_data.into();
+        let args2 = smallvec![map_val.clone()];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, &args2);
+        assert!(result2.is_ok());
+        match result2.unwrap() {
+            RuntimeValue::Array(values_array) => {
+                assert_eq!(values_array.len(), 2);
+                assert!(values_array.contains(&RuntimeValue::String("Jules".into())));
+                assert!(values_array.contains(&RuntimeValue::Number(30.into())));
+            }
+            _ => panic!("Expected Array of values"),
+        }
+
+        let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err1);
+        assert_eq!(
+            result_err1,
+            Err(Error::InvalidTypes(
+                "values".to_string(),
+                vec![RuntimeValue::String("not_a_map".into())]
+            ))
+        );
+
+        let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err2);
+        assert_eq!(
+            result_err2,
+            Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))
+        );
     }
 }

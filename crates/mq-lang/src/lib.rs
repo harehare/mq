@@ -46,6 +46,7 @@ mod number;
 mod optimizer;
 mod range;
 mod value;
+mod value_macros;
 
 use error::InnerError;
 use lexer::Lexer;

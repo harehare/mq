@@ -13,9 +13,15 @@ def is_number(n): eq(type(n), "number");
 def is_string(s): eq(type(s), "string");
 # Checks if input is None
 def is_none(n): eq(type(n), "None");
+# Checks if input is a dictionary
+def is_dict(d): eq(type(d), "dict");
 
 # Checks if string contains a substring
-def contains(haystack, needle): ne(index(haystack, needle), -1);
+def contains(haystack, needle):
+  if (is_dict(haystack)):
+    not(is_none(get(haystack, needle)))
+  else:
+    ne(index(haystack, needle), -1);
 
 # Removes prefix string from input if it exists
 def ltrimstr(s, left):
@@ -31,9 +37,9 @@ def rtrimstr(s, right):
   else:
     s;
 
-# Checks if string or array is empty
+# Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s))):
+  if (or(is_string(s), is_array(s), is_dict(s))):
     eq(len(s), 0)
   else:
     false;
@@ -62,11 +68,28 @@ def to_array(a):
   else:
     array(a);
 
+def _map_dict(v, f):
+  let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
+
 # Applies a given function to each element of the provided array and returns a new array with the results.
-def map(v, f): foreach (x, v): f(x);;
+def map(v, f):
+  if (is_dict(v)):
+    _map_dict(v, f)
+  else:
+    foreach (x, v): f(x);;
+
+def _filter_dict(v, f):
+  let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
+
+def _filter(v, f):
+  foreach (x, v): select(x, f(x)); | compact();
 
 # Filters the elements of an array based on a provided callback function.
-def filter(v, f): foreach (x, v): select(x, f(x)); | compact();
+def filter(v, f):
+  if (is_dict(v)):
+    _filter_dict(v, f)
+  else:
+    _filter(v, f);
 
 # Returns the first element of an array
 def first(arr):

@@ -1,12 +1,6 @@
-use std::{
-    cell::RefCell,
-    cmp::Ordering,
-    fmt::{self, Debug, Display, Formatter},
-    rc::Rc,
-};
+use std::{cell::RefCell, cmp::Ordering, collections::BTreeMap, rc::Rc};
 
-use crate::{AstIdent, AstParams, Program, Value, number::Number};
-
+use crate::{AstIdent, AstParams, Program, Value, impl_value_formatting, number::Number};
 use mq_markdown::Node;
 
 use super::env::Env;
@@ -25,6 +19,7 @@ pub enum RuntimeValue {
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Rc<RefCell<Env>>),
     NativeFunction(AstIdent),
+    Dict(BTreeMap<String, RuntimeValue>),
     None,
 }
 
@@ -64,6 +59,12 @@ impl From<Vec<RuntimeValue>> for RuntimeValue {
     }
 }
 
+impl From<BTreeMap<String, RuntimeValue>> for RuntimeValue {
+    fn from(map: BTreeMap<String, RuntimeValue>) -> Self {
+        RuntimeValue::Dict(map)
+    }
+}
+
 impl From<Value> for RuntimeValue {
     fn from(value: Value) -> Self {
         match value {
@@ -76,6 +77,12 @@ impl From<Value> for RuntimeValue {
                 RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::default())))
             }
             Value::NativeFunction(ident) => RuntimeValue::NativeFunction(ident),
+            Value::Dict(value_map) => RuntimeValue::Dict(
+                value_map
+                    .into_iter()
+                    .map(|(k, v)| (k, RuntimeValue::from(v)))
+                    .collect(),
+            ),
             Value::None => RuntimeValue::None,
         }
     }
@@ -101,42 +108,25 @@ impl PartialOrd for RuntimeValue {
                     _ => None,
                 }
             }
+            (RuntimeValue::Dict(_), _) => None,
+            (_, RuntimeValue::Dict(_)) => None,
             _ => None,
         }
     }
 }
 
-impl Display for RuntimeValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.string())
-    }
-}
-
-impl Debug for RuntimeValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        let v = match self {
-            RuntimeValue::Number(n) => n.to_string(),
-            RuntimeValue::Bool(b) => b.to_string(),
-            RuntimeValue::String(s) => format!("\"{}\"", s),
-            RuntimeValue::Array(a) => a
-                .iter()
-                .map(|o| o.string())
-                .collect::<Vec<String>>()
-                .join("\n"),
-            RuntimeValue::Markdown(m, _) => m.to_string(),
-            RuntimeValue::None => "None".to_string(),
-            RuntimeValue::Function(params, _, _) => format!("function{}", params.len()),
-            RuntimeValue::NativeFunction(ident) => format!("native_function: {}", ident),
-        };
-        write!(f, "{}", v)
-    }
-}
+// Use macro to implement Display and Debug traits
+impl_value_formatting!(RuntimeValue);
 
 impl RuntimeValue {
     pub const NONE: RuntimeValue = Self::None;
     pub const TRUE: RuntimeValue = Self::Bool(true);
     pub const FALSE: RuntimeValue = Self::Bool(false);
     pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
+
+    pub fn new_dict() -> RuntimeValue {
+        RuntimeValue::Dict(BTreeMap::new())
+    }
 
     pub fn name(&self) -> &str {
         match self {
@@ -148,23 +138,7 @@ impl RuntimeValue {
             RuntimeValue::None => "None",
             RuntimeValue::Function(_, _, _) => "function",
             RuntimeValue::NativeFunction(_) => "native_function",
-        }
-    }
-
-    pub fn text(&self) -> String {
-        match self {
-            RuntimeValue::None => "None".to_string(),
-            RuntimeValue::Number(n) => n.to_string(),
-            RuntimeValue::Bool(b) => b.to_string(),
-            RuntimeValue::String(s) => s.to_string(),
-            RuntimeValue::Array(a) => a
-                .iter()
-                .map(|o| o.text())
-                .collect::<Vec<String>>()
-                .join("\n"),
-            RuntimeValue::Markdown(m, _) => m.value(),
-            RuntimeValue::Function(_, _, _) => "function".to_string(),
-            RuntimeValue::NativeFunction(_) => "native_function".to_string(),
+            RuntimeValue::Dict(_) => "dict",
         }
     }
 
@@ -185,6 +159,7 @@ impl RuntimeValue {
             RuntimeValue::Array(a) => a.is_empty(),
             RuntimeValue::String(s) => s.is_empty(),
             RuntimeValue::Markdown(m, _) => m.value().is_empty(),
+            RuntimeValue::Dict(m) => m.is_empty(),
             RuntimeValue::None => true,
             _ => false,
         }
@@ -202,6 +177,7 @@ impl RuntimeValue {
             },
             RuntimeValue::Function(_, _, _) => true,
             RuntimeValue::NativeFunction(_) => true,
+            RuntimeValue::Dict(_) => true,
             RuntimeValue::None => false,
         }
     }
@@ -213,6 +189,7 @@ impl RuntimeValue {
             RuntimeValue::String(s) => s.len(),
             RuntimeValue::Array(a) => a.len(),
             RuntimeValue::Markdown(m, _) => m.value().len(),
+            RuntimeValue::Dict(m) => m.len(),
             RuntimeValue::None => 0,
             RuntimeValue::Function(..) => 0,
             RuntimeValue::NativeFunction(..) => 0,
@@ -238,24 +215,8 @@ impl RuntimeValue {
             _ => RuntimeValue::NONE,
         }
     }
-
-    fn string(&self) -> String {
-        match self {
-            RuntimeValue::Number(n) => n.to_string(),
-            RuntimeValue::Bool(b) => b.to_string(),
-            RuntimeValue::String(s) => s.to_string(),
-            RuntimeValue::Array(a) => a
-                .iter()
-                .map(|o| o.string())
-                .collect::<Vec<String>>()
-                .join("\n"),
-            RuntimeValue::Markdown(m, _) => m.to_string(),
-            RuntimeValue::None => "None".to_string(),
-            RuntimeValue::Function(_, _, _) => "function".to_string(),
-            RuntimeValue::NativeFunction(_) => "native_function".to_string(),
-        }
-    }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::{AstExpr, AstNode, arena::ArenaId};
@@ -282,12 +243,18 @@ mod tests {
     #[case(RuntimeValue::Number(Number::from(42.0)), "42")]
     #[case(RuntimeValue::Bool(true), "true")]
     #[case(RuntimeValue::Bool(false), "false")]
-    #[case(RuntimeValue::String("hello".to_string()), "hello")]
-    #[case(RuntimeValue::None, "None")]
+    #[case(RuntimeValue::String("hello".to_string()), r#""hello""#)]
+    #[case(RuntimeValue::None, "")]
     #[case(RuntimeValue::Array(vec![
             RuntimeValue::Number(Number::from(1.0)),
             RuntimeValue::String("test".to_string())
-        ]), "1\ntest")]
+        ]), r#"[1, "test"]"#)]
+    #[case(RuntimeValue::Dict({
+            let mut map = BTreeMap::new();
+            map.insert("key1".to_string(), RuntimeValue::String("value1".to_string()));
+            map.insert("key2".to_string(), RuntimeValue::Number(Number::from(42.0)));
+            map
+        }), r#"{"key1": "value1", "key2": 42}"#)]
     fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
         assert_eq!(value.string(), expected);
     }
@@ -303,7 +270,9 @@ mod tests {
             format!("{}", RuntimeValue::String(String::from("test"))),
             "test"
         );
-        assert_eq!(format!("{}", RuntimeValue::None), "None");
+        assert_eq!(format!("{}", RuntimeValue::None), "");
+        let map_val = RuntimeValue::Dict(BTreeMap::default());
+        assert_eq!(format!("{}", map_val), "{}");
     }
 
     #[test]
@@ -318,42 +287,19 @@ mod tests {
             "\"test\""
         );
         assert_eq!(format!("{:?}", RuntimeValue::None), "None");
-    }
 
-    #[test]
-    fn test_runtime_value_string() {
-        #[rstest]
-        #[case(RuntimeValue::Number(Number::from(42.0)), "42")]
-        #[case(RuntimeValue::Bool(true), "true")]
-        #[case(RuntimeValue::Bool(false), "false")]
-        #[case(RuntimeValue::String("hello".to_string()), "hello")]
-        #[case(RuntimeValue::None, "None")]
-        #[case(RuntimeValue::Array(vec![
+        let mut map = BTreeMap::default();
+        map.insert("name".to_string(), RuntimeValue::String("MQ".to_string()));
+        map.insert(
+            "version".to_string(),
             RuntimeValue::Number(Number::from(1.0)),
-            RuntimeValue::String("test".to_string())
-        ]), "1\ntest")]
-        fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
-            assert_eq!(value.string(), expected);
-        }
-
-        let markdown_node = mq_markdown::Node::Text(mq_markdown::Text {
-            value: "test markdown".to_string(),
-            position: None,
-        });
-        assert_eq!(
-            RuntimeValue::Markdown(markdown_node, None).string(),
-            "test markdown"
         );
-
-        let function = RuntimeValue::Function(
-            SmallVec::new(),
-            Vec::new(),
-            Rc::new(RefCell::new(Env::default())),
+        let map_val = RuntimeValue::Dict(map);
+        let debug_str = format!("{:?}", map_val);
+        assert!(
+            debug_str == r#"{"name": "MQ", "version": 1}"#
+                || debug_str == r#"{"version": 1, "name": "MQ"}"#
         );
-        assert_eq!(function.string(), "function");
-
-        let native_fn = RuntimeValue::NativeFunction(AstIdent::new("print"));
-        assert_eq!(native_fn.string(), "native_function");
     }
 
     #[test]
@@ -386,43 +332,7 @@ mod tests {
             .name(),
             "markdown"
         );
-    }
-
-    #[test]
-    fn test_runtime_value_text() {
-        assert_eq!(RuntimeValue::Bool(true).text(), "true");
-        assert_eq!(RuntimeValue::Number(Number::from(42.0)).text(), "42");
-        assert_eq!(RuntimeValue::String(String::from("test")).text(), "test");
-        assert_eq!(
-            RuntimeValue::Array(vec!["test1".to_string().into(), "test2".to_string().into()])
-                .text(),
-            "test1\ntest2"
-        );
-        assert_eq!(RuntimeValue::None.text(), "None");
-        assert_eq!(
-            RuntimeValue::Function(
-                SmallVec::new(),
-                Vec::new(),
-                Rc::new(RefCell::new(Env::default()))
-            )
-            .text(),
-            "function"
-        );
-        assert_eq!(
-            RuntimeValue::NativeFunction(AstIdent::new("name")).text(),
-            "native_function"
-        );
-        assert_eq!(
-            RuntimeValue::Markdown(
-                mq_markdown::Node::Text(mq_markdown::Text {
-                    value: "value".to_string(),
-                    position: None
-                }),
-                None
-            )
-            .text(),
-            "value"
-        );
+        assert_eq!(RuntimeValue::Dict(BTreeMap::default()).name(), "dict");
     }
 
     #[test]
@@ -466,6 +376,7 @@ mod tests {
             )
             .is_true()
         );
+        assert!(RuntimeValue::Dict(BTreeMap::default()).is_true());
     }
 
     #[test]
@@ -524,6 +435,10 @@ mod tests {
             .len(),
             1
         );
+        let mut map = BTreeMap::default();
+        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
+        map.insert("b".to_string(), RuntimeValue::String("beta".to_string()));
+        assert_eq!(RuntimeValue::Dict(map).len(), 2);
     }
 
     #[test]
@@ -532,7 +447,7 @@ mod tests {
             RuntimeValue::Number(Number::from(1.0)),
             RuntimeValue::String("hello".to_string()),
         ]);
-        assert_eq!(format!("{:?}", array), "1\nhello");
+        assert_eq!(format!("{:?}", array), r#"[1, "hello"]"#);
 
         let node = mq_markdown::Node::Text(mq_markdown::Text {
             value: "test markdown".to_string(),
@@ -546,10 +461,15 @@ mod tests {
             Vec::new(),
             Rc::new(RefCell::new(Env::default())),
         );
-        assert_eq!(format!("{:?}", function), "function0");
+        assert_eq!(format!("{:?}", function), "function");
 
         let native_fn = RuntimeValue::NativeFunction(AstIdent::new("debug"));
-        assert_eq!(format!("{:?}", native_fn), "native_function: debug");
+        assert_eq!(format!("{:?}", native_fn), "native_function");
+
+        let mut map = BTreeMap::default();
+        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
+        let map_val = RuntimeValue::Dict(map);
+        assert_eq!(format!("{:?}", map_val), r#"{"a": "alpha"}"#);
     }
 
     #[test]
@@ -594,6 +514,16 @@ mod tests {
         assert_eq!(
             RuntimeValue::from(native_fn_value),
             RuntimeValue::NativeFunction(ident)
+        );
+
+        let mut value_map = BTreeMap::new();
+        value_map.insert("key".to_string(), Value::String("val".to_string()));
+        let map_value = Value::Dict(value_map);
+        let mut expected_rt_map = BTreeMap::default();
+        expected_rt_map.insert("key".to_string(), RuntimeValue::String("val".to_string()));
+        assert_eq!(
+            RuntimeValue::from(map_value),
+            RuntimeValue::Dict(expected_rt_map)
         );
     }
 
@@ -663,5 +593,56 @@ mod tests {
             RuntimeValue::None.update_markdown_value("test"),
             RuntimeValue::NONE
         );
+    }
+
+    #[test]
+    fn test_runtime_value_map_creation_and_equality() {
+        let mut map1_data = BTreeMap::default();
+        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map1_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        let map1 = RuntimeValue::Dict(map1_data);
+
+        let mut map2_data = BTreeMap::default();
+        map2_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map2_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        let map2 = RuntimeValue::Dict(map2_data);
+
+        let mut map3_data = BTreeMap::default();
+        map3_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map3_data.insert("c".to_string(), RuntimeValue::String("world".to_string()));
+        let map3 = RuntimeValue::Dict(map3_data);
+
+        assert_eq!(map1, map2);
+        assert_ne!(map1, map3);
+    }
+
+    #[test]
+    fn test_runtime_value_map_is_empty() {
+        let empty_map = RuntimeValue::Dict(BTreeMap::default());
+        assert!(empty_map.is_empty());
+
+        let mut map_data = BTreeMap::default();
+        map_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        let non_empty_map = RuntimeValue::Dict(map_data);
+        assert!(!non_empty_map.is_empty());
+    }
+
+    #[test]
+    fn test_runtime_value_map_partial_ord() {
+        let mut map1_data = BTreeMap::default();
+        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        let map1 = RuntimeValue::Dict(map1_data);
+
+        let mut map2_data = BTreeMap::default();
+        map2_data.insert("b".to_string(), RuntimeValue::Number(Number::from(2.0)));
+        let map2 = RuntimeValue::Dict(map2_data);
+
+        assert_eq!(map1.partial_cmp(&map2), None);
+        assert_eq!(map2.partial_cmp(&map1), None);
+        assert_eq!(map1.partial_cmp(&map1), None);
+
+        let num_val = RuntimeValue::Number(Number::from(5.0));
+        assert_eq!(map1.partial_cmp(&num_val), None);
+        assert_eq!(num_val.partial_cmp(&map1), None);
     }
 }

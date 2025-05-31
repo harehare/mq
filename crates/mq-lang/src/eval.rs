@@ -159,6 +159,7 @@ impl Evaluator {
                     mq_markdown::Node::Empty
                 }
                 RuntimeValue::Array(_)
+                | RuntimeValue::Dict(_)
                 | RuntimeValue::Bool(_)
                 | RuntimeValue::Number(_)
                 | RuntimeValue::String(_) => value.to_string().into(),
@@ -1625,7 +1626,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test1\ntest2".to_string(), position: None}), None)]))]
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: r#"["test1", "test2"]"#.to_string(), position: None}), None)]))]
     #[case::split(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("split", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))])
@@ -2087,21 +2088,21 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "slice".to_string(),
                                                     args: vec![123.to_string().into(), 0.to_string().into(), 4.to_string().into()]})))]
-    #[case::match_regex(vec![RuntimeValue::String("test123".to_string())],
+    #[case::match_regex1(vec![RuntimeValue::String("test123".to_string())],
        vec![
             ast_call("match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("123".to_string())])]))]
-    #[case::match_regex(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
+    #[case::match_regex2(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
        vec![
             ast_call("match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
-       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "123".to_string(), position: None}), None)]))]
-    #[case::match_regex(vec![RuntimeValue::Number(123.into())],
+       Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: r#"["123"]"#.to_string(), position: None}), None)]))]
+    #[case::match_regex3(vec![RuntimeValue::Number(123.into())],
        vec![
             ast_call("match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
@@ -2146,7 +2147,7 @@ mod tests {
         vec![
              ast_call("explode", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "65\n66\n67".to_string(), position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "[65, 66, 67]".to_string(), position: None}), None)]))]
     #[case::range(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("range", smallvec![
@@ -3308,6 +3309,262 @@ mod tests {
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::NONE]))]
+    #[case::set_array_valid_index(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("updated".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("updated".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::set_array_first_index(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("first".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("first".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::set_array_last_index(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("last".to_string()),
+        ])]))]
+    #[case::set_array_out_of_bounds_positive(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("new".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::NONE,
+        RuntimeValue::NONE,
+        RuntimeValue::NONE,
+        RuntimeValue::String("new".to_string()),
+        ])]))]
+    #[case::set_array_negative_index(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("negative".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("negative".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::set_array_empty(vec![RuntimeValue::Array(Vec::new())],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec!["value".into()])]))]
+    #[case::set_array_mixed_types(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("text".to_string()),
+        RuntimeValue::Number(42.into()),
+        RuntimeValue::Bool(true),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("replaced".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("text".to_string()),
+        RuntimeValue::String("replaced".to_string()),
+        RuntimeValue::Bool(true),
+        ])]))]
+    #[case::set_array_with_none(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::NONE,
+        RuntimeValue::String("item3".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("not_none".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("not_none".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::set_array_replace_with_none(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item3".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::None)),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::NONE,
+        RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::set_array_single_element(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("only".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("changed".to_string()))),
+        ])
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("changed".to_string()),
+        ])]))]
+    #[case::set_non_array(vec![RuntimeValue::String("not_an_array".to_string())],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
+        ])
+        ],
+        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                             name: "set".to_string(),
+                             args: vec!["not_an_array".to_string().into(), 0.to_string().into(), "value".to_string().into()]})))]
+    #[case::set_array_non_number_index(vec![RuntimeValue::Array(vec![
+        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item2".to_string()),
+        ])],
+        vec![
+        ast_call("set", smallvec![
+            ast_node(ast::Expr::Literal(ast::Literal::String("not_a_number".to_string()))),
+            ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
+        ])
+        ],
+        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                             name: "set".to_string(),
+                             args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
+    #[case::del_dict_valid_key(vec![RuntimeValue::Dict(vec![
+            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
+            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            ("key3".to_string(), RuntimeValue::String("value3".to_string())),
+        ].into_iter().collect())],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("key2".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
+            ("key3".to_string(), RuntimeValue::String("value3".to_string())),
+        ].into_iter().collect())]))]
+    #[case::del_dict_nonexistent_key(vec![RuntimeValue::Dict(vec![
+            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
+            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+        ].into_iter().collect())],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("nonexistent".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
+            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+        ].into_iter().collect())]))]
+    #[case::del_dict_empty(vec![RuntimeValue::new_dict()],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("any_key".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::new_dict()]))]
+    #[case::del_dict_single_key(vec![RuntimeValue::Dict(vec![
+            ("only_key".to_string(), RuntimeValue::String("only_value".to_string())),
+        ].into_iter().collect())],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("only_key".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::new_dict()]))]
+    #[case::del_dict_mixed_value_types(vec![RuntimeValue::Dict(vec![
+            ("str_key".to_string(), RuntimeValue::String("string_value".to_string())),
+            ("num_key".to_string(), RuntimeValue::Number(42.into())),
+            ("bool_key".to_string(), RuntimeValue::Bool(true)),
+            ("array_key".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
+        ].into_iter().collect())],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("num_key".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            ("str_key".to_string(), RuntimeValue::String("string_value".to_string())),
+            ("bool_key".to_string(), RuntimeValue::Bool(true)),
+            ("array_key".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
+        ].into_iter().collect())]))]
+    #[case::del_dict_with_number_key_as_string(vec![RuntimeValue::Dict(vec![
+            ("1".to_string(), RuntimeValue::String("value1".to_string())),
+            ("2".to_string(), RuntimeValue::String("value2".to_string())),
+        ].into_iter().collect())],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("1".to_string()))),
+              ]),
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            ("2".to_string(), RuntimeValue::String("value2".to_string())),
+        ].into_iter().collect())]))]
+    #[case::del_dict_with_number_index_error(vec![RuntimeValue::Dict(vec![
+            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
+            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+        ].into_iter().collect())],
+        vec![
+              ast_call("del", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+              ]),
+        ],
+        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                                     name: "del".to_string(),
+                                                     args: vec![r#"{"key1": "value1", "key2": "value2"}"#.to_string().into(), "1".to_string().into()]})))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
