@@ -590,6 +590,22 @@ fn engine() -> Engine {
               dict.insert("num2_transformed".to_string(), Value::Number(102.into()));
               dict.into()
             }].into()))]
+#[case::dict_filter_even_values(r#"
+            def is_even_value(kv):
+              last(kv) | mod(2) | eq(0);
+            | let m = dict(["a", 1], ["b", 2], ["c", 4])
+            | filter(m, is_even_value)
+            "#,
+            vec![Value::Number(0.into())],
+            Ok(vec![{
+              let mut dict = BTreeMap::new();
+              dict.insert("b".to_string(), Value::Number(2.into()));
+              dict.insert("c".to_string(), Value::Number(4.into()));
+              dict.into()
+            }].into()))]
+#[case::dict_filter_empty("filter(dict(), fn(kv): true;)",
+           vec![Value::Number(0.into())],
+           Ok(vec![Value::new_dict()].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

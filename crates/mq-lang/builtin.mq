@@ -69,7 +69,7 @@ def to_array(a):
     array(a);
 
 def _map_dict(v, f):
-  let dict_entries = foreach (x, entries(v)): f(x); | dict(dict_entries);
+  let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
 
 # Applies a given function to each element of the provided array and returns a new array with the results.
 def map(v, f):
@@ -78,9 +78,18 @@ def map(v, f):
   else:
     foreach (x, v): f(x);;
 
+def _filter_dict(v, f):
+  let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
+
+def _filter(v, f):
+  foreach (x, v): select(x, f(x)); | compact();
 
 # Filters the elements of an array based on a provided callback function.
-def filter(v, f): foreach (x, v): select(x, f(x)); | compact();
+def filter(v, f):
+  if (is_dict(v)):
+    _filter_dict(v, f)
+  else:
+    _filter(v, f);
 
 # Returns the first element of an array
 def first(arr):
