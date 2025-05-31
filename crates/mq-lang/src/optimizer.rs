@@ -250,70 +250,58 @@ impl Optimizer {
                         _ => { /* Not a binary add call, or args not literals, do nothing specific here */ }
                     }
                 } else if ident.name == CompactString::new("sub") { // Similar folding for 'sub'
-                    match optimized_args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                return Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a - *b))),
-                                });
-                            }
+                    if let [arg1, arg2] = optimized_args.as_slice() {
+                        if let (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) = (&*arg1.expr, &*arg2.expr)
+                        {
+                            return Rc::new(ast::Node {
+                                token_id: node.token_id,
+                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a - *b))),
+                            });
                         }
-                        _ => {}
                     }
                 } else if ident.name == CompactString::new("div") { // Similar folding for 'div'
-                    match optimized_args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                // Note: Division by zero is not handled here; assumed to be runtime error.
-                                return Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a / *b))),
-                                });
-                            }
+                    if let [arg1, arg2] = optimized_args.as_slice() {
+                        if let (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) = (&*arg1.expr, &*arg2.expr)
+                        {
+                            // Note: Division by zero is not handled here; assumed to be runtime error.
+                            return Rc::new(ast::Node {
+                                token_id: node.token_id,
+                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a / *b))),
+                            });
                         }
-                        _ => {}
                     }
                 } else if ident.name == CompactString::new("mul") { // Similar folding for 'mul'
-                    match optimized_args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                return Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a * *b))),
-                                });
-                            }
+                    if let [arg1, arg2] = optimized_args.as_slice() {
+                        if let (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) = (&*arg1.expr, &*arg2.expr)
+                        {
+                            return Rc::new(ast::Node {
+                                token_id: node.token_id,
+                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a * *b))),
+                            });
                         }
-                        _ => {}
                     }
                 } else if ident.name == CompactString::new("mod") { // Similar folding for 'mod'
-                    match optimized_args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                // Note: Modulo by zero is not handled here.
-                                return Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a % *b))),
-                                });
-                            }
+                    if let [arg1, arg2] = optimized_args.as_slice() {
+                        if let (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) = (&*arg1.expr, &*arg2.expr)
+                        {
+                            // Note: Modulo by zero is not handled here.
+                            return Rc::new(ast::Node {
+                                token_id: node.token_id,
+                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a % *b))),
+                            });
                         }
-                        _ => {}
                     }
                 }
                 // If no constant folding rule applied, return the call with optimized arguments.

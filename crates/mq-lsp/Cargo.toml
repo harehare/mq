@@ -1,5 +1,3 @@
-cargo-features = ["edition2024"]
-
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."

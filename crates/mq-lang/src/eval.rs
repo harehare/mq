@@ -6,7 +6,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    Program, Token, TokenKind,
+    Program,
+    Token,
+    TokenKind,
     arena::Arena,
     ast::node::{self as ast}, // Alias for easier access to AST node types.
     error::InnerError,
@@ -39,7 +41,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            filter_none: true,            // Enable filtering of None by default.
+            filter_none: true,        // Enable filtering of None by default.
             max_call_stack_depth: 32, // Lower call stack depth for debug builds.
         }
     }
@@ -50,7 +52,7 @@ impl Default for Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            filter_none: true,             // Enable filtering of None by default.
+            filter_none: true,         // Enable filtering of None by default.
             max_call_stack_depth: 192, // Higher call stack depth for release builds.
         }
     }
@@ -187,15 +189,15 @@ impl Evaluator {
                     values_after_main_part?.into(), // Convert Vec<RuntimeValue> into a single Array RuntimeValue.
                     Rc::clone(&self.env),
                 )
-                    .map(|value| {
-                        // Ensure the final output is a flat Vec<RuntimeValue>.
-                        if let RuntimeValue::Array(values) = value {
-                            values
-                        } else {
-                            vec![value]
-                        }
-                    })
-                    .map_err(InnerError::Eval)
+                .map(|value| {
+                    // Ensure the final output is a flat Vec<RuntimeValue>.
+                    if let RuntimeValue::Array(values) = value {
+                        values
+                    } else {
+                        vec![value]
+                    }
+                })
+                .map_err(InnerError::Eval)
             }
         } else {
             // No `nodes` expression found, evaluate the entire (modified) program for each input item.
@@ -233,7 +235,7 @@ impl Evaluator {
                 .eval_program(
                     program,
                     RuntimeValue::Markdown(child_node.clone(), None), // Wrap child_node as RuntimeValue.
-                    Rc::clone(&self.env),                             // Use the current environment.
+                    Rc::clone(&self.env), // Use the current environment.
                 )
                 .map_err(InnerError::Eval)?;
 
@@ -321,9 +323,9 @@ impl Evaluator {
     /// Each expression's output becomes the input for the next, forming a pipeline.
     fn eval_program(
         &mut self,
-        program: &Program,          // The sequence of AST nodes to evaluate.
+        program: &Program,           // The sequence of AST nodes to evaluate.
         runtime_value: RuntimeValue, // The initial input value for the first expression.
-        env: Rc<RefCell<Env>>,      // The environment to use for this evaluation.
+        env: Rc<RefCell<Env>>,       // The environment to use for this evaluation.
     ) -> Result<RuntimeValue, EvalError> {
         // Fold over the program, passing the result of one expression to the next.
         program
@@ -343,7 +345,7 @@ impl Evaluator {
     fn eval_ident(
         &self,
         ident: &ast::Ident,    // The identifier to resolve.
-        node: Rc<ast::Node>,   // The AST node corresponding to this identifier (for error location).
+        node: Rc<ast::Node>, // The AST node corresponding to this identifier (for error location).
         env: Rc<RefCell<Env>>, // The environment in which to resolve the identifier.
     ) -> Result<RuntimeValue, EvalError> {
         env.borrow()
@@ -462,7 +464,7 @@ impl Evaluator {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()), // '.' or 'nodes' evaluates to the current input value.
-            ast::Expr::If(_) => self.eval_if(runtime_value, node, env),    // Evaluate an if/else if/else conditional expression.
+            ast::Expr::If(_) => self.eval_if(runtime_value, node, env), // Evaluate an if/else if/else conditional expression.
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)), // Resolve an identifier (variable).
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)), // Evaluate a literal value (string, number, bool, none).
             ast::Expr::Def(ident, params, program_body) => {
@@ -482,7 +484,8 @@ impl Evaluator {
             }
             ast::Expr::Let(ident, value_node) => {
                 // Evaluate the expression on the right-hand side of 'let'.
-                let let_value = self.eval_expr(runtime_value, Rc::clone(value_node), Rc::clone(&env))?;
+                let let_value =
+                    self.eval_expr(runtime_value, Rc::clone(value_node), Rc::clone(&env))?;
                 // Define the identifier in the current environment with the evaluated value.
                 env.borrow_mut().define(ident, let_value);
                 // A 'let' expression evaluates to the original `runtime_value` (input to 'let').
@@ -525,10 +528,12 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Foreach(loop_var_ident, collection_node, body_program) = &*node.expr {
             // 1. Evaluate the expression that should result in the collection to iterate over.
-            let collection_val = self.eval_expr(runtime_value, Rc::clone(collection_node), Rc::clone(&env))?;
+            let collection_val =
+                self.eval_expr(runtime_value, Rc::clone(collection_node), Rc::clone(&env))?;
 
             if let RuntimeValue::Array(items_to_iterate) = collection_val {
-                let mut iteration_results: Vec<RuntimeValue> = Vec::with_capacity(items_to_iterate.len());
+                let mut iteration_results: Vec<RuntimeValue> =
+                    Vec::with_capacity(items_to_iterate.len());
                 // 2. Create a new environment for the loop body. This environment is a child of `env`.
                 let loop_body_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
 
@@ -537,8 +542,11 @@ impl Evaluator {
                     loop_body_env.borrow_mut().define(loop_var_ident, item);
                     // 4. Evaluate the loop body program with the `runtime_value` (original input to foreach)
                     //    and the new loop environment.
-                    let result =
-                        self.eval_program(body_program, runtime_value.clone(), Rc::clone(&loop_body_env))?;
+                    let result = self.eval_program(
+                        body_program,
+                        runtime_value.clone(),
+                        Rc::clone(&loop_body_env),
+                    )?;
                     iteration_results.push(result);
                 }
                 Ok(RuntimeValue::Array(iteration_results)) // `foreach` evaluates to an array of results.
@@ -570,8 +578,11 @@ impl Evaluator {
             let loop_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
 
             // Evaluate the condition for the first time.
-            let mut cond_result =
-                self.eval_expr(&current_loop_value, Rc::clone(cond_node), Rc::clone(&loop_env))?;
+            let mut cond_result = self.eval_expr(
+                &current_loop_value,
+                Rc::clone(cond_node),
+                Rc::clone(&loop_env),
+            )?;
 
             // For an `until` loop, if the condition is initially false, the body is never executed.
             if !cond_result.is_true() {
@@ -582,9 +593,14 @@ impl Evaluator {
             while cond_result.is_true() {
                 // Evaluate the loop body. The result of the body becomes the new `current_loop_value`
                 // for the next condition evaluation.
-                current_loop_value = self.eval_program(body_program, current_loop_value, Rc::clone(&loop_env))?;
+                current_loop_value =
+                    self.eval_program(body_program, current_loop_value, Rc::clone(&loop_env))?;
                 // Re-evaluate the condition with the (potentially updated) `current_loop_value`.
-                cond_result = self.eval_expr(&current_loop_value, Rc::clone(cond_node), Rc::clone(&loop_env))?;
+                cond_result = self.eval_expr(
+                    &current_loop_value,
+                    Rc::clone(cond_node),
+                    Rc::clone(&loop_env),
+                )?;
             }
             // The result of the `until` loop is the `current_loop_value` after the last body execution
             // (or the initial value if the loop condition was false from the start and it returned current_loop_value).
@@ -608,8 +624,11 @@ impl Evaluator {
             // Create a new child environment for the loop's scope.
             let loop_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             // Evaluate the condition for the first time.
-            let mut cond_result =
-                self.eval_expr(&current_loop_value, Rc::clone(cond_node), Rc::clone(&loop_env))?;
+            let mut cond_result = self.eval_expr(
+                &current_loop_value,
+                Rc::clone(cond_node),
+                Rc::clone(&loop_env),
+            )?;
             let mut iteration_results = Vec::with_capacity(100);
 
             // If the condition is initially false, the loop body is never executed.
@@ -620,9 +639,14 @@ impl Evaluator {
             // Loop as long as the condition is true.
             while cond_result.is_true() {
                 // Evaluate the loop body. The result of the body becomes the new `current_loop_value`.
-                current_loop_value = self.eval_program(body_program, current_loop_value, Rc::clone(&loop_env))?;
+                current_loop_value =
+                    self.eval_program(body_program, current_loop_value, Rc::clone(&loop_env))?;
                 // Re-evaluate the condition with the (potentially updated) `current_loop_value`.
-                cond_result = self.eval_expr(&current_loop_value, Rc::clone(cond_node), Rc::clone(&loop_env))?;
+                cond_result = self.eval_expr(
+                    &current_loop_value,
+                    Rc::clone(cond_node),
+                    Rc::clone(&loop_env),
+                )?;
                 iteration_results.push(current_loop_value.clone());
             }
             // `while` loop evaluates to an array of the results from each iteration's body.
@@ -646,8 +670,11 @@ impl Evaluator {
                 match condition_expr_opt {
                     Some(actual_condition_expr) => {
                         // This is an 'if' or 'else if' branch. Evaluate its condition.
-                        let condition_value =
-                            self.eval_expr(runtime_value, Rc::clone(actual_condition_expr), Rc::clone(&env))?;
+                        let condition_value = self.eval_expr(
+                            runtime_value,
+                            Rc::clone(actual_condition_expr),
+                            Rc::clone(&env),
+                        )?;
                         // If the condition is true, evaluate this branch's body and return the result.
                         if condition_value.is_true() {
                             return self.eval_expr(runtime_value, Rc::clone(body_expr), env);
@@ -676,7 +703,7 @@ impl Evaluator {
         ident: &ast::Ident,           // The identifier (name) of the function being called.
         args: &ast::Args,             // The arguments provided in the function call (AST nodes).
         optional: bool,               // True if this is an optional call (e.g., `foo?()`).
-        env: Rc<RefCell<Env>>,        // The environment in which the function call occurs (caller's environment).
+        env: Rc<RefCell<Env>>, // The environment in which the function call occurs (caller's environment).
     ) -> Result<RuntimeValue, EvalError> {
         // Handle optional chaining: if input is None and call is optional, return None immediately.
         if runtime_value.is_none() && optional {
@@ -687,7 +714,11 @@ impl Evaluator {
         if let Ok(fn_value_from_env) = Rc::clone(&env).borrow().resolve(ident) {
             // A binding for `ident` was found. Check if it's a function.
             match &fn_value_from_env {
-                RuntimeValue::Function(param_names_nodes, function_body_program, definition_env) => {
+                RuntimeValue::Function(
+                    param_names_nodes,
+                    function_body_program,
+                    definition_env,
+                ) => {
                     // It's a user-defined function.
                     self.enter_scope()?; // Increment call stack depth and check for recursion limits.
 
@@ -725,7 +756,9 @@ impl Evaluator {
                     // Create a new environment for the function's execution.
                     // This new environment's parent is `definition_env` (the environment where the function was defined),
                     // enabling lexical scoping (closures).
-                    let function_execution_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(definition_env))));
+                    let function_execution_env = Rc::new(RefCell::new(Env::with_parent(
+                        Rc::downgrade(definition_env),
+                    )));
 
                     // --- Evaluate Arguments and Define Parameters ---
                     // The provided argument *expressions* (from `final_arg_nodes`) are evaluated in the *caller's environment* (`env`).
@@ -738,10 +771,15 @@ impl Evaluator {
                             if let ast::Expr::Ident(param_name_ident) = &*param_name_node.expr {
                                 // Evaluate the argument expression in the caller's scope (`env`).
                                 // The `runtime_value` for argument evaluation is the `.` from the call site.
-                                let arg_value =
-                                    self.eval_expr(runtime_value, Rc::clone(arg_expr_node), Rc::clone(&env))?;
+                                let arg_value = self.eval_expr(
+                                    runtime_value,
+                                    Rc::clone(arg_expr_node),
+                                    Rc::clone(&env),
+                                )?;
                                 // Define the parameter in the function's new scope.
-                                function_execution_env.borrow_mut().define(param_name_ident, arg_value);
+                                function_execution_env
+                                    .borrow_mut()
+                                    .define(param_name_ident, arg_value);
                                 Ok(())
                             } else {
                                 // This should not happen with a valid AST where params are Idents.
@@ -755,7 +793,11 @@ impl Evaluator {
                     // --- Evaluate Function Body ---
                     // Evaluate the function's program (body) using the new `function_execution_env`.
                     // The `runtime_value` (value of `.` inside the function) is the one passed to `eval_fn` (the caller's context).
-                    let result = self.eval_program(function_body_program, runtime_value.clone(), function_execution_env);
+                    let result = self.eval_program(
+                        function_body_program,
+                        runtime_value.clone(),
+                        function_execution_env,
+                    );
 
                     self.exit_scope(); // Decrement call stack depth.
                     result
@@ -767,7 +809,8 @@ impl Evaluator {
                 }
                 _ => {
                     // The resolved identifier is not a callable function type.
-                    Err(EvalError::InvalidDefinition( // TODO: Better error, e.g., "NotAFunction"
+                    Err(EvalError::InvalidDefinition(
+                        // TODO: Better error, e.g., "NotAFunction"
                         (*self.token_arena.borrow()[node.token_id]).clone(),
                         ident.to_string(),
                     ))
@@ -791,7 +834,9 @@ impl Evaluator {
         // 1. Evaluate each argument expression in the current (caller's) environment.
         let evaluated_args: Result<builtin::Args, EvalError> = arg_expr_nodes
             .iter()
-            .map(|arg_expr_node| self.eval_expr(runtime_value, Rc::clone(arg_expr_node), Rc::clone(&env)))
+            .map(|arg_expr_node| {
+                self.eval_expr(runtime_value, Rc::clone(arg_expr_node), Rc::clone(&env))
+            })
             .collect(); // Collects into Result<Vec<RuntimeValue>, EvalError>, then `?` handles error.
 
         // 2. Call the appropriate built-in function handler with the evaluated arguments.

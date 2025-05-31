@@ -1,5 +1,3 @@
-cargo-features = ["edition2024"]
-
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 description = "TUI for mq, a jq-like Markdown processing tool"
