@@ -818,11 +818,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("nth"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
-                    match array.get(n.value() as usize) {
-                        Some(o) => Ok(o.clone()),
-                        None => Ok(RuntimeValue::None),
-                    }
+                [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+                    let index = index.value() as usize;
+                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
                 }
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                     match s.chars().nth(n.value() as usize) {
@@ -1708,6 +1706,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
                     Ok(map.get(key).cloned().unwrap_or(RuntimeValue::None))
+                }
+                [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+                    let index = index.value() as usize;
+                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
