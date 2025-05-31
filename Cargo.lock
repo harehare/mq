@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "mq-cli"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1456,7 +1456,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "mq-lang",
  "rstest",
@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "compact_str 0.9.0",
  "itertools 0.14.0",
@@ -1480,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1503,7 +1503,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang-fuzz"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "arbitrary",
  "itertools 0.14.0",
@@ -1513,7 +1513,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lsp"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "bimap",
  "dashmap 6.1.0",
@@ -1531,7 +1531,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "compact_str 0.9.0",
  "itertools 0.14.0",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "mq-mcp"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "miette",
  "mq-lang",
@@ -1558,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "mq-python"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "mq-lang",
  "mq-markdown",
@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "colored 3.0.0",
@@ -1585,14 +1585,14 @@ dependencies = [
 
 [[package]]
 name = "mq-test"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "scopeguard",
 ]
 
 [[package]]
 name = "mq-tui"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "crossterm 0.29.0",
  "itertools 0.14.0",
@@ -1606,7 +1606,7 @@ dependencies = [
 
 [[package]]
 name = "mq-wasm"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "itertools 0.14.0",
  "js-sys",

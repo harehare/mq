@@ -6,7 +6,7 @@ edition = "2024"
 name = "mq-tui"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.1.6"
+version = "0.2.0"
 
 [dependencies]
 crossterm = "0.29.0"

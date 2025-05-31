@@ -8,7 +8,7 @@ license-file = "LICENSE"
 name = "mq-formatter"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.1.6"
+version = "0.2.0"
 
 [dependencies]
 mq-lang = {workspace = true, features = ["cst"]}
