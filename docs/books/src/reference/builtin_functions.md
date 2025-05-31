@@ -18,9 +18,11 @@
 |`csv2table_row`| Convert csv string to markdown table row|`row`|csv2table_row(row)|
 |`debug`| Prints the debug information of the given value.|`msg`|debug(msg)|
 |`del`|Deletes the element at the specified index in the array or string.|`array_or_string`, `index`|del(array_or_string, index)|
+|`dict`|Creates a new, empty dict.||dict()|
 |`div`|Divides the first value by the second value.|`value1`, `value2`|div(value1, value2)|
 |`downcase`|Converts the given string to lowercase.|`input`|downcase(input)|
 |`ends_with`|Checks if the given string ends with the specified substring.|`string`, `substring`|ends_with(string, substring)|
+|`entries`|Returns an array of key-value pairs from the dict as arrays.|`dict`|entries(dict)|
 |`eq`|Checks if two values are equal.|`value1`, `value2`|eq(value1, value2)|
 |`error`|Raises a user-defined error with the specified message.|`message`|error(message)|
 |`explode`|Splits the given string into an array of characters.|`string`|explode(string)|
@@ -30,6 +32,7 @@
 |`flatten`|Flattens a nested array into a single level array.|`array`|flatten(array)|
 |`floor`|Rounds the given number down to the nearest integer.|`number`|floor(number)|
 |`from_date`|Converts a date string to a timestamp.|`date_str`|from_date(date_str)|
+|`get`|Retrieves a value from a dict by its key. Returns None if the key is not found.|`dict`, `key`|get(dict, key)|
 |`get_md_list_level`|Returns the indent level of a markdown list node.|`list`|get_md_list_level(list)|
 |`get_title`|Returns the title of a markdown node.|`node`|get_title(node)|
 |`get_url`|Returns the url of a markdown node.|`node`|get_url(node)|
@@ -43,8 +46,9 @@
 |`is_array`| Checks if input is an array|`a`|is_array(a)|
 |`is_bool`| Checks if input is a boolean|`b`|is_bool(b)|
 |`is_code`| Checks if markdown is code block|`md`|is_code(md)|
+|`is_dict`| Checks if input is a dictionary|`d`|is_dict(d)|
 |`is_em`| Checks if markdown is emphasis|`md`|is_em(md)|
-|`is_empty`| Checks if string or array is empty|`s`|is_empty(s)|
+|`is_empty`| Checks if string, array or dict is empty|`s`|is_empty(s)|
 |`is_h`| Checks if markdown is heading|`md`|is_h(md)|
 |`is_h1`| Checks if markdown is h1 heading|`md`|is_h1(md)|
 |`is_h2`| Checks if markdown is h2 heading|`md`|is_h2(md)|
@@ -77,6 +81,7 @@
 |`is_toml`| Checks if markdown is toml|`md`|is_toml(md)|
 |`is_yaml`| Checks if markdown is yaml|`md`|is_yaml(md)|
 |`join`|Joins the elements of an array into a string with the given separator.|`array`, `separator`|join(array, separator)|
+|`keys`|Returns an array of keys from the dict.|`dict`|keys(dict)|
 |`last`| Returns the last element of an array|`arr`|last(arr)|
 |`len`|Returns the length of the given string or array.|`value`|len(value)|
 |`lt`|Checks if the first value is less than the second value.|`value1`, `value2`|lt(value1, value2)|
@@ -106,6 +111,7 @@
 |`rtrimstr`| Removes suffix string from input if it exists|`s`, `right`|rtrimstr(s, right)|
 |`second`| Returns the second element of an array|`arr`|second(arr)|
 |`select`| Returns value if condition is true, None otherwise|`v`, `f`|select(v, f)|
+|`set`|Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.|`dict`, `key`, `value`|set(dict, key, value)|
 |`set_check`|Creates a markdown list node with the given checked state.|`list`, `checked`|set_check(list, checked)|
 |`set_ref`|Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).|`node`, `reference_id`|set_ref(node, reference_id)|
 |`skip`| Skips the first n elements of an array and returns the rest|`arr`, `n`|skip(arr, n)|
@@ -152,3 +158,4 @@
 |`upcase`|Converts the given string to uppercase.|`input`|upcase(input)|
 |`update`|Update the value with specified value.|`target_value`, `source_value`|update(target_value, source_value)|
 |`url_encode`|URL-encodes the given string.|`input`|url_encode(input)|
+|`values`|Returns an array of values from the dict.|`dict`|values(dict)|
