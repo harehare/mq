@@ -13,22 +13,22 @@
     "@monaco-editor/react": "^4.7.0",
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.52.2",
-    "mq-web": "^0.1.1",
-    "react": "^19.0.0",
+    "mq-web": "^0.2.0",
+    "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-icons": "^5.5.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.27.0",
-    "@types/react": "^19.1.5",
+    "@eslint/js": "^9.28.0",
+    "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "@vitejs/plugin-react": "^4.5.0",
-    "eslint": "^9.27.0",
-    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint": "^9.28.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.2.0",
     "typescript": "~5.8.3",
-    "typescript-eslint": "^8.32.1",
+    "typescript-eslint": "^8.33.0",
     "vite": "^6.3.5"
   }
 }
