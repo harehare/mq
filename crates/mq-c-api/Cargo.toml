@@ -1,0 +1,11 @@
+[package]
+name = "mq-c-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mq-lang = { path = "../mq-lang" }
+libc = "0.2"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
