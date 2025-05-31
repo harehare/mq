@@ -68,8 +68,16 @@ def to_array(a):
   else:
     array(a);
 
+def _map_dict(v, f):
+  let dict_entries = foreach (x, entries(v)): f(x); | dict(dict_entries);
+
 # Applies a given function to each element of the provided array and returns a new array with the results.
-def map(v, f): foreach (x, v): f(x);;
+def map(v, f):
+  if (is_dict(v)):
+    _map_dict(v, f)
+  else:
+    foreach (x, v): f(x);;
+
 
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f): foreach (x, v): select(x, f(x)); | compact();

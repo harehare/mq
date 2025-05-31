@@ -56,6 +56,12 @@ impl From<i32> for Value {
     }
 }
 
+impl From<BTreeMap<String, Value>> for Value {
+    fn from(dict: BTreeMap<String, Value>) -> Self {
+        Value::Dict(dict)
+    }
+}
+
 impl From<RuntimeValue> for Value {
     fn from(value: RuntimeValue) -> Self {
         match value {

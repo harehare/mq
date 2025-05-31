@@ -858,6 +858,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(s.into_iter().collect::<String>().into())
                 }
                 [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+                [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
+                    let mut dict = dict.clone();
+                    dict.remove(key);
+                    Ok(RuntimeValue::Dict(dict))
+                }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1668,18 +1673,29 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 } else {
                     let mut dict = BTreeMap::default();
 
-                    for arg in args {
-                        if let RuntimeValue::Array(arr) = arg {
+                    let entries = match args.as_slice() {
+                        [RuntimeValue::Array(entries)] => match entries.as_slice() {
+                            [RuntimeValue::Array(entries)] => entries.clone(),
+                            [RuntimeValue::String(_), ..] => {
+                                vec![entries.clone().into()]
+                            }
+                            _ => entries.clone(),
+                        },
+                        _ => args.to_vec(),
+                    };
+
+                    for entry in entries {
+                        if let RuntimeValue::Array(arr) = entry {
                             if arr.len() >= 2 {
                                 dict.insert(arr[0].to_string(), arr[1].clone());
                             } else {
-                                return Err(Error::InvalidTypes(
-                                    "dict".to_string(),
-                                    vec![arg.clone()],
-                                ));
+                                return Err(Error::InvalidTypes("dict".to_string(), arr.clone()));
                             }
                         } else {
-                            return Err(Error::InvalidTypes("dict".to_string(), vec![arg.clone()]));
+                            return Err(Error::InvalidTypes(
+                                "dict".to_string(),
+                                vec![entry.clone()],
+                            ));
                         }
                     }
 
@@ -1762,6 +1778,22 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Dict(map)] => {
                     let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
                     Ok(RuntimeValue::Array(values))
+                }
+                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("entries"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Dict(map)] => {
+                    let entries = map
+                        .iter()
+                        .map(|(k, v)| {
+                            RuntimeValue::Array(vec![RuntimeValue::String(k.clone()), v.clone()])
+                        })
+                        .collect::<Vec<RuntimeValue>>();
+                    Ok(RuntimeValue::Array(entries))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -2750,6 +2782,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
                 params: &["dict"],
             },
         );
+        map.insert(
+            CompactString::new("entries"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of key-value pairs from the dict as arrays.",
+                params: &["dict"],
+            },
+        );
+
         map
     });
 

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use mq_lang::{Engine, MqResult, Value};
 use rstest::{fixture, rstest};
 
@@ -536,6 +538,58 @@ fn engine() -> Engine {
 #[case::dict_contains_multiple_keys(r#"let m = set(set(set(dict(), "a", 1), "b", 2), "c", 3) | contains(m, "b")"#,
           vec![Value::Number(0.into())],
           Ok(vec![Value::Bool(true)].into()))]
+#[case::dict_map_identity(r#"let m = dict(["a", 1], ["b", 2]) | map(m, fn(kv): kv;)"#,
+        vec![Value::Number(0.into())],
+        Ok(vec![{
+          let mut dict = BTreeMap::new();
+          dict.insert("a".to_string(), Value::Number(1.into()));
+          dict.insert("b".to_string(), Value::Number(2.into()));
+          dict.into()
+        }].into()))]
+#[case::dict_map_transform_values("
+        def double_value(kv):
+          array(first(kv), mul(last(kv), 2));
+        | let m = set(set(dict(), \"x\", 5), \"y\", 10)
+        | map(m, double_value)
+        ",
+          vec![Value::Number(0.into())],
+          Ok(vec![{
+            let mut dict = BTreeMap::new();
+            dict.insert("x".to_string(), Value::Number(10.into()));
+            dict.insert("y".to_string(), Value::Number(20.into()));
+            dict.into()
+          }].into()))]
+#[case::dict_map_transform_keys(r#"
+          def prefix_key(kv):
+            array(add("prefix_", first(kv)), last(kv));
+          | let m = set(set(dict(), "a", 1), "b", 2)
+          | map(m, prefix_key)
+          "#,
+            vec![Value::Number(0.into())],
+            Ok(vec![{
+              let mut dict = BTreeMap::new();
+              dict.insert("prefix_a".to_string(), Value::Number(1.into()));
+              dict.insert("prefix_b".to_string(), Value::Number(2.into()));
+              dict.into()
+            }].into()))]
+#[case::dict_map_empty("map(dict(), fn(kv): kv;)",
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::new_dict()].into()))]
+#[case::dict_map_complex_transform(r#"
+          def transform_entry(kv):
+            let key = first(kv)
+            | let value = last(kv)
+            | array(add(key, "_transformed"), add(value, 100));
+          | let m = set(set(dict(), "num1", 1), "num2", 2)
+          | map(m, transform_entry)
+          "#,
+            vec![Value::Number(0.into())],
+            Ok(vec![{
+              let mut dict = BTreeMap::new();
+              dict.insert("num1_transformed".to_string(), Value::Number(101.into()));
+              dict.insert("num2_transformed".to_string(), Value::Number(102.into()));
+              dict.into()
+            }].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
