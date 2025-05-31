@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [package]
 edition = "2024"
 name = "mq-test"
