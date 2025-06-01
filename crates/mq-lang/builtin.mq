@@ -298,3 +298,21 @@ else:
     array()
   else:
     slice(arr, 0, ti);
+
+# Groups elements of an array by the result of applying a function to each element
+def group_by(arr, f):
+  let i = 0
+  | let groups = dict()
+  | if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    dict()
+  else:
+    until (not(is_none(get(arr, i)))):
+      let v = get(arr, i)
+      | let i = add(i, 1)
+      | let key = to_string(f(v))
+      | let existing = get(groups, key)
+      | let new_group = if (is_none(existing)): array(v) else: add(existing, v)
+      | let groups = set(groups, key, new_group)
+      | groups;;

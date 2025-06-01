@@ -2774,12 +2774,12 @@ mod tests {
         vec![
             ast_call("to_string", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Array(vec!["test".to_string().into(), "1".to_string().into(), "2".to_string().into(), "false".to_string().into()])]))]
+        Ok(vec![RuntimeValue::String(r#"["test", 1, 2, false]"#.to_string())]))]
     #[case::to_string_empty_array(vec![RuntimeValue::Array(Vec::new())],
         vec![
             ast_call("to_string", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Array(Vec::new())]))]
+        Ok(vec![RuntimeValue::String("[]".to_string())]))]
     #[case::to_text(vec![RuntimeValue::String("test".to_string())],
         vec![
              ast_call("to_text", SmallVec::new())
