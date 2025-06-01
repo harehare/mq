@@ -561,6 +561,11 @@ impl<'a> Parser<'a> {
                 range: _,
                 kind: TokenKind::Fn,
                 ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Exclamation,
+                ..
             } => self.parse_expr(leading_trivia, false),
             _ => Err(ParseError::UnexpectedToken(Arc::clone(&token))),
         }

@@ -758,6 +758,13 @@ impl<'a> Parser<'a> {
                 }
                 Token {
                     range: _,
+                    kind: TokenKind::Exclamation,
+                    module_id: _,
+                } => {
+                    args.push(self.parse_not(Rc::clone(token))?);
+                }
+                Token {
+                    range: _,
                     kind: TokenKind::RParen,
                     module_id: _,
                 } => match prev_token {
@@ -888,11 +895,6 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Nodes,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Exclamation,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
