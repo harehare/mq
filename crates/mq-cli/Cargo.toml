@@ -1,0 +1,49 @@
+[package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
+documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
+edition = "2024"
+exclude = [
+  ".github",
+  "editors/*",
+  "playground/*",
+  ".goreleaser.yaml",
+  "justfile",
+  "tests",
+  "examples",
+  "docs",
+  "Dockerfile",
+]
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license-file = "LICENSE"
+name = "mq-cli"
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.2.0"
+
+[dependencies]
+clap = {version = "4.5.39", features = ["derive"]}
+itertools = {workspace = true}
+miette = {workspace = true, features = ["fancy"]}
+mq-formatter = {workspace = true}
+mq-hir = {workspace = true}
+mq-lang = {workspace = true}
+mq-lsp = {workspace = true}
+mq-markdown = {workspace = true, features = ["json"]}
+mq-mcp = {workspace = true}
+mq-repl = {workspace = true}
+mq-tui = {workspace = true}
+rayon = "1.10.0"
+tokio = {version = "1.45.1", features = ["io-util", "io-std", "rt"]}
+url = {workspace = true}
+
+[dev-dependencies]
+assert_cmd = "2.0.17"
+mq-test = {workspace = true}
+rstest = "0.25.0"
+
+[[bin]]
+doc = false
+name = "mq"
+path = "src/main.rs"

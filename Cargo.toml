@@ -1,30 +1,6 @@
-[package]
-authors = ["Takahiro Sato <harehare1110@gmail.com>"]
-default-run = "mq"
-description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
-documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
-edition = "2024"
-exclude = [
-  ".github",
-  "editors/*",
-  "playground/*",
-  ".goreleaser.yaml",
-  "justfile",
-  "tests",
-  "examples",
-  "docs",
-  "Dockerfile",
-]
-homepage = "https://mqlang.org/"
-keywords = ["markdown", "jq", "query"]
-license-file = "LICENSE"
-name = "mq-cli"
-readme = "README.md"
-repository = "https://github.com/harehare/mq"
-version = "0.2.0"
-
 [workspace]
 members = [
+  "crates/mq-cli",
   "crates/mq-lang",
   "crates/mq-repl",
   "crates/mq-markdown",
@@ -38,27 +14,7 @@ members = [
   "crates/mq-mcp",
   "crates/mq-python",
 ]
-
-[dependencies]
-clap = {version = "4.5.39", features = ["derive"]}
-itertools = {workspace = true}
-miette = {workspace = true, features = ["fancy"]}
-mq-formatter = {workspace = true}
-mq-hir = {workspace = true}
-mq-lang = {workspace = true}
-mq-lsp = {path = "./crates/mq-lsp", version = "0.2.0"}
-mq-markdown = {workspace = true, features = ["json"]}
-mq-mcp = {path = "./crates/mq-mcp", version = "0.2.0"}
-mq-repl = {path = "./crates/mq-repl", version = "0.2.0"}
-mq-tui = {path = "./crates/mq-tui", version = "0.2.0"}
-rayon = "1.10.0"
-tokio = {version = "1.45.1", features = ["io-util", "io-std", "rt"]}
-url = {workspace = true}
-
-[dev-dependencies]
-assert_cmd = "2.0.17"
-mq-test = {workspace = true}
-rstest = "0.25.0"
+resolver = "3"
 
 [workspace.dependencies]
 compact_str = "0.9.0"
@@ -68,16 +24,15 @@ miette = {version = "7.6.0"}
 mq-formatter = {path = "./crates/mq-formatter", version = "0.2.0"}
 mq-hir = {path = "./crates/mq-hir", version = "0.2.0"}
 mq-lang = {path = "./crates/mq-lang", version = "0.2.0"}
+mq-lsp = {path = "./crates/mq-lsp", version = "0.2.0"}
 mq-markdown = {path = "./crates/mq-markdown", version = "0.2.0"}
+mq-mcp = {path = "./crates/mq-mcp", version = "0.2.0"}
+mq-repl = {path = "./crates/mq-repl", version = "0.2.0"}
 mq-test = {path = "./crates/mq-test", version = "0.2.0"}
+mq-tui = {path = "./crates/mq-tui", version = "0.2.0"}
 rustc-hash = "2.1.1"
 thiserror = "2.0.12"
 url = "2.5.4"
-
-[[bin]]
-doc = false
-name = "mq"
-path = "src/main.rs"
 
 [profile.release]
 codegen-units = 1
