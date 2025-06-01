@@ -17,38 +17,60 @@ A C API for the mq Markdown processing library, providing a C-compatible interfa
 
 Include the header file and link against the library:
 
-```c
+````c
+#include <stdio.h>
+#include <string.h>
 #include "mq.h"
 
-int main() {
-    // Initialize mq context
-    MqContext* ctx = mq_create();
-
-    // Process Markdown with mq query
-    const char* markdown = "# Hello World\n\nThis is a test.";
-    const char* query = ".";
-
-    MqResult* result = mq_exec(ctx, markdown, query);
-    if (result) {
-        printf("%s\n", result);
-        mq_free_string(result);
+int main()
+{
+    mq_context_t *ctx = mq_create();
+    if (ctx == NULL)
+    {
+        fprintf(stderr, "Failed to create mq context\n");
+        return 1;
     }
 
+    // Sample markdown content
+    const char *markdown_content =
+        "# My Document\n\n"
+        "This is an introduction paragraph.\n\n"
+        "## Features\n\n"
+        "- Easy to use\n"
+        "- Fast processing\n"
+        "- Cross-platform\n\n"
+        "## Installation\n\n"
+        "Run the following command:\n\n"
+        "```bash\n"
+        "cargo install mq\n"
+        "```\n\n"
+        "That's it!\n";
+
+    mq_result_t result = mq_eval(ctx, ".h | to_text()", markdown_content, "markdown");
+
+    if (result.error_msg != NULL)
+    {
+        printf("Error: %s\n", result.error_msg);
+    }
+    else
+    {
+        for (size_t i = 0; i < result.values_len; i++)
+        {
+            if (strlen(result.values[i]) > 0)
+            {
+                printf("  - %s\n", result.values[i]);
+            }
+        }
+    }
+    printf("\n");
+
     // Clean up
-    mq_context_free(ctx);
+    mq_free_result(result);
+    mq_destroy(ctx);
+
     return 0;
 }
-```
-
-## Building
-
-The C API is built as part of the main mq project:
-
-```bash
-cargo build --release
-```
-
-This generates both static and dynamic libraries that can be linked with C/C++ projects.
+````
 
 ## Memory Management
 
