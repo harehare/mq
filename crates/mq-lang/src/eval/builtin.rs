@@ -281,22 +281,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_string"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.to_string().into()),
-                [RuntimeValue::Array(array)] => {
-                    let result_value: Result<Vec<RuntimeValue>, Error> = array
-                        .clone()
-                        .into_iter()
-                        .map(|o| match o {
-                            RuntimeValue::Markdown(node_value, _) => {
-                                Ok(node_value.to_string().into())
-                            }
-                            _ => Ok(o.to_string().into()),
-                        })
-                        .collect();
-
-                    result_value.map(RuntimeValue::Array)
-                }
                 [o] => Ok(o.to_string().into()),
                 _ => unreachable!(),
             }),

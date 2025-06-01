@@ -606,6 +606,73 @@ fn engine() -> Engine {
 #[case::dict_filter_empty("filter(dict(), fn(kv): true;)",
            vec![Value::Number(0.into())],
            Ok(vec![Value::new_dict()].into()))]
+#[case::group_by_numbers("
+            def get_remainder(x):
+              mod(x, 3);
+            | group_by(array(1, 2, 3, 4, 5, 6, 7, 8, 9), get_remainder)
+            ",
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into()), Value::Number(8.into()), Value::Number(9.into())])],
+              Ok(vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("0".to_string(), Value::Array(vec![Value::Number(3.into()), Value::Number(6.into()), Value::Number(9.into())]));
+                dict.insert("1".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(4.into()), Value::Number(7.into())]));
+                dict.insert("2".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(5.into()), Value::Number(8.into())]));
+                dict.into()
+              }].into()))]
+#[case::group_by_strings(r#"
+            def get_length(s):
+              len(s);
+            | group_by(array("cat", "dog", "bird", "fish", "elephant"), get_length)
+            "#,
+              vec![Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string()), Value::String("bird".to_string()), Value::String("fish".to_string()), Value::String("elephant".to_string())])],
+              Ok(vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("3".to_string(), Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string())]));
+                dict.insert("4".to_string(), Value::Array(vec![Value::String("bird".to_string()), Value::String("fish".to_string())]));
+                dict.insert("8".to_string(), Value::Array(vec![Value::String("elephant".to_string())]));
+                dict.into()
+              }].into()))]
+#[case::group_by_empty_array("
+            def identity(x):
+              x;
+            | group_by(array(), identity)
+            ",
+              vec![Value::Array(vec![])],
+              Ok(vec![Value::new_dict()].into()))]
+#[case::group_by_single_element("
+            def identity(x):
+              x;
+            | group_by(array(42), identity)
+            ",
+              vec![Value::Array(vec![Value::Number(42.into())])],
+              Ok(vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("42".to_string(), Value::Array(vec![Value::Number(42.into())]));
+                dict.into()
+              }].into()))]
+#[case::group_by_all_same_key(r#"
+            def always_same(x):
+              "same";
+            | group_by(array(1, 2, 3, 4), always_same)
+            "#,
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
+              Ok(vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("same".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())]));
+                dict.into()
+              }].into()))]
+#[case::group_by_boolean_result("
+            def is_even(x):
+              eq(mod(x, 2), 0);
+            | group_by(array(1, 2, 3, 4, 5, 6), is_even)
+            ",
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
+              Ok(vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("false".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())]));
+                dict.insert("true".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(4.into()), Value::Number(6.into())]));
+                dict.into()
+              }].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
