@@ -1432,6 +1432,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-c-api"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "mq-lang",
+ "mq-markdown",
+]
+
+[[package]]
 name = "mq-cli"
 version = "0.2.0"
 dependencies = [
