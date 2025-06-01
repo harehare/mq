@@ -6,11 +6,10 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::str::FromStr;
 
-// Opaque pointer type for the engine
-pub type MQEngine = c_void;
+pub type MqContext = c_void;
 
 #[repr(C)]
-pub struct MQResult {
+pub struct MqResult {
     pub values: *mut *mut c_char,
     pub values_len: usize,
     pub error_msg: *mut c_char,
@@ -33,18 +32,18 @@ unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::
 }
 
 /// Creates a new mq_lang engine.
-/// The caller is responsible for destroying the engine using `mq_engine_destroy`.
+/// The caller is responsible for destroying the engine using `mq_destroy`.
 #[no_mangle]
-pub extern "C" fn mq_engine_create() -> *mut MQEngine {
+pub extern "C" fn mq_create() -> *mut MqContext {
     let mut engine = Engine::default();
     engine.load_builtin_module();
     let boxed_engine = Box::new(engine);
-    Box::into_raw(boxed_engine) as *mut MQEngine
+    Box::into_raw(boxed_engine) as *mut MqContext
 }
 
 /// Destroys an mq_lang engine.
 #[no_mangle]
-pub extern "C" fn mq_engine_destroy(engine_ptr: *mut MQEngine) {
+pub extern "C" fn mq_destroy(engine_ptr: *mut MqContext) {
     if engine_ptr.is_null() {
         return;
     }
@@ -59,21 +58,21 @@ pub extern "C" fn mq_engine_destroy(engine_ptr: *mut MQEngine) {
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw pointers. The caller must ensure:
-/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_engine_create`
+/// - `engine_ptr` must be a valid pointer to an `Engine` created by `mq_create`
 /// - `code_c` must be a valid pointer to a null-terminated C string
 /// - `input_c` must be a valid pointer to a null-terminated C string
 /// - `input_format_c` must be a valid pointer to a null-terminated C string
 /// - All string pointers must remain valid for the duration of this function call
-/// - The returned `MQResult` must be freed using `mq_free_result` to avoid memory leaks
+/// - The returned `MqResult` must be freed using `mq_free_result` to avoid memory leaks
 #[no_mangle]
 pub unsafe extern "C" fn mq_eval(
-    engine_ptr: *mut MQEngine,
+    engine_ptr: *mut MqContext,
     code_c: *const c_char,
     input_c: *const c_char,
     input_format_c: *const c_char, // "markdown" or "mdx" or "text"
-) -> MQResult {
+) -> MqResult {
     if engine_ptr.is_null() {
-        return MQResult {
+        return MqResult {
             values: ptr::null_mut(),
             values_len: 0,
             error_msg: to_c_string("Engine pointer is null".to_string()),
@@ -84,7 +83,7 @@ pub unsafe extern "C" fn mq_eval(
     let code = match unsafe { c_str_to_rust_str_slice(code_c) } {
         Ok(s) => s,
         Err(_) => {
-            return MQResult {
+            return MqResult {
                 values: ptr::null_mut(),
                 values_len: 0,
                 error_msg: to_c_string("Invalid UTF-8 sequence in code".to_string()),
@@ -95,7 +94,7 @@ pub unsafe extern "C" fn mq_eval(
     let input_str = match unsafe { c_str_to_rust_str_slice(input_c) } {
         Ok(s) => s,
         Err(_) => {
-            return MQResult {
+            return MqResult {
                 values: ptr::null_mut(),
                 values_len: 0,
                 error_msg: to_c_string("Invalid UTF-8 sequence in input".to_string()),
@@ -106,7 +105,7 @@ pub unsafe extern "C" fn mq_eval(
     let input_format_str = match unsafe { c_str_to_rust_str_slice(input_format_c) } {
         Ok(s) => s.to_lowercase(),
         Err(_) => {
-            return MQResult {
+            return MqResult {
                 values: ptr::null_mut(),
                 values_len: 0,
                 error_msg: to_c_string("Invalid UTF-8 sequence in input_format".to_string()),
@@ -119,7 +118,7 @@ pub unsafe extern "C" fn mq_eval(
         "markdown" => match mq_markdown::Markdown::from_str(input_str) {
             Ok(md) => md.nodes.into_iter().map(Value::from).collect::<Vec<_>>(),
             Err(e) => {
-                return MQResult {
+                return MqResult {
                     values: ptr::null_mut(),
                     values_len: 0,
                     error_msg: to_c_string(format!("Markdown parsing error: {}", e)),
@@ -129,7 +128,7 @@ pub unsafe extern "C" fn mq_eval(
         "mdx" => match mq_markdown::Markdown::from_mdx_str(input_str) {
             Ok(md) => md.nodes.into_iter().map(Value::from).collect::<Vec<_>>(),
             Err(e) => {
-                return MQResult {
+                return MqResult {
                     values: ptr::null_mut(),
                     values_len: 0,
                     error_msg: to_c_string(format!("Markdown parsing error: {}", e)),
@@ -137,7 +136,7 @@ pub unsafe extern "C" fn mq_eval(
             }
         },
         _ => {
-            return MQResult {
+            return MqResult {
                 values: ptr::null_mut(),
                 values_len: 0,
                 error_msg: to_c_string(format!("Unsupported input format: {}", input_format_str)),
@@ -158,13 +157,13 @@ pub unsafe extern "C" fn mq_eval(
             let ptr = c_values.as_mut_ptr();
             std::mem::forget(c_values); // Prevent Rust from freeing the Vec's memory
 
-            MQResult {
+            MqResult {
                 values: ptr,
                 values_len,
                 error_msg: ptr::null_mut(),
             }
         }
-        Err(e) => MQResult {
+        Err(e) => MqResult {
             values: ptr::null_mut(),
             values_len: 0,
             error_msg: to_c_string(format!("Error evaluating query: {}", e)),
@@ -192,9 +191,9 @@ pub unsafe extern "C" fn mq_free_string(s: *mut c_char) {
     }
 }
 
-/// Frees the MQResult structure including its contents.
+/// Frees the MqResult structure including its contents.
 #[no_mangle]
-pub extern "C" fn mq_free_result(result: MQResult) {
+pub extern "C" fn mq_free_result(result: MqResult) {
     if !result.error_msg.is_null() {
         unsafe {
             mq_free_string(result.error_msg);
@@ -238,14 +237,14 @@ mod tests {
     #[test]
     fn test_engine_create_and_destroy() {
         // Test engine creation
-        let engine = mq_engine_create();
+        let engine = mq_create();
         assert!(!engine.is_null());
 
         // Test engine destruction
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         // Test destroying null engine (should not crash)
-        mq_engine_destroy(ptr::null_mut());
+        mq_destroy(ptr::null_mut());
     }
 
     #[test]
@@ -274,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_eval_with_text_input() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string(r#"select(contains("line"))"#);
         let input = make_c_string("# line1\n## line2\n### line3");
         let format = make_c_string("text");
@@ -298,7 +297,7 @@ mod tests {
         }
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
@@ -309,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_eval_with_markdown_input() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string(".h");
         let input = make_c_string("# Header\n\nSome text\n\n## Subheader");
         let format = make_c_string("markdown");
@@ -321,7 +320,7 @@ mod tests {
         assert!(result.values_len > 0);
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
@@ -332,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_eval_with_invalid_code() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string("invalid_function()");
         let input = make_c_string("test");
         let format = make_c_string("text");
@@ -347,7 +346,7 @@ mod tests {
         assert!(error_msg.contains("Error evaluating query"));
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
@@ -358,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_eval_with_unsupported_format() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string(".h");
         let input = make_c_string("test");
         let format = make_c_string("json");
@@ -373,7 +372,7 @@ mod tests {
         assert!(error_msg.contains("Unsupported input format: json"));
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
@@ -384,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_eval_with_null_parameters() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
 
         // Test with null code
         let result = unsafe {
@@ -422,12 +421,12 @@ mod tests {
         assert!(!result.error_msg.is_null());
         mq_free_result(result);
 
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
     }
 
     #[test]
     fn test_format_case_insensitive() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string(".h");
         let input = make_c_string("test");
 
@@ -444,7 +443,7 @@ mod tests {
         assert!(result.error_msg.is_null());
         mq_free_result(result);
 
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
         unsafe {
             mq_free_string(code as *mut c_char);
             mq_free_string(input as *mut c_char);
@@ -466,7 +465,7 @@ mod tests {
         }
 
         // Test freeing empty result
-        let empty_result = MQResult {
+        let empty_result = MqResult {
             values: ptr::null_mut(),
             values_len: 0,
             error_msg: ptr::null_mut(),
@@ -476,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_empty_input() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string(".h");
         let input = make_c_string("");
         let format = make_c_string("text");
@@ -488,7 +487,7 @@ mod tests {
         assert_eq!(result.values_len, 0);
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
@@ -499,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_filter_query() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string("select(gt(len(), 5))");
         let input = make_c_string("short\nthis is a longer line\ntest\nanother long line here");
         let format = make_c_string("text");
@@ -511,7 +510,7 @@ mod tests {
         assert_eq!(result.values_len, 4); // Only lines longer than 5 characters
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
@@ -522,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_map_query() {
-        let engine = mq_engine_create();
+        let engine = mq_create();
         let code = make_c_string("len()");
         let input = make_c_string("a\nbb\nccc");
         let format = make_c_string("text");
@@ -545,7 +544,7 @@ mod tests {
         }
 
         mq_free_result(result);
-        mq_engine_destroy(engine);
+        mq_destroy(engine);
 
         unsafe {
             mq_free_string(code as *mut c_char);
