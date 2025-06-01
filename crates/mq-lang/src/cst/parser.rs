@@ -235,9 +235,14 @@ impl<'a> Parser<'a> {
 
         if nodes.is_empty() {
             match self.tokens.peek() {
-                Some(token) => self
-                    .errors
-                    .report(ParseError::UnexpectedToken(Arc::clone(token))),
+                Some(token) => {
+                    if matches!(token.kind, TokenKind::Eof) {
+                        self.errors.report(ParseError::UnexpectedEOFDetected)
+                    } else {
+                        self.errors
+                            .report(ParseError::UnexpectedToken(Arc::clone(token)))
+                    }
+                }
                 None => self.errors.report(ParseError::UnexpectedEOFDetected),
             };
         }
@@ -344,6 +349,11 @@ impl<'a> Parser<'a> {
                 } if root => self.parse_nodes(leading_trivia),
                 Token {
                     range: _,
+                    kind: TokenKind::Exclamation,
+                    ..
+                } => self.parse_not(leading_trivia),
+                Token {
+                    range: _,
                     kind: TokenKind::Eof,
                     ..
                 } => Err(ParseError::UnexpectedEOFDetected),
@@ -352,6 +362,40 @@ impl<'a> Parser<'a> {
         } else {
             Err(ParseError::UnexpectedEOFDetected)
         }
+    }
+
+    fn parse_not(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+        let token = self.tokens.next().unwrap();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Arc<Node>> = Vec::with_capacity(2);
+
+        let mut node = Node {
+            kind: NodeKind::Token,
+            token: Some(Arc::clone(token)),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        let leading_trivia = self.parse_leading_trivia();
+
+        if let Some(token) = &self.tokens.peek() {
+            match token.kind {
+                TokenKind::Ident(_) => {
+                    children.push(self.parse_ident(leading_trivia)?);
+                }
+                TokenKind::Eof => {
+                    let _ = self.tokens.next().unwrap();
+                    return Err(ParseError::UnexpectedEOFDetected);
+                }
+                _ => return Err(ParseError::UnexpectedToken(Arc::clone(token))),
+            }
+        } else {
+            return Err(ParseError::InsufficientTokens(token.clone()));
+        }
+
+        node.children = children;
+        Ok(Arc::new(node))
     }
 
     fn parse_ident(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
@@ -3100,6 +3144,55 @@ mod tests {
                 }),
             ],
             ErrorReporter::default()
+        )
+    )]
+    #[case::not_operator(
+        vec![
+            Arc::new(token(TokenKind::Exclamation)),
+            Arc::new(token(TokenKind::Whitespace(1))),
+            Arc::new(token(TokenKind::Ident("condition".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Token,
+                    token: Some(Arc::new(token(TokenKind::Exclamation))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(1))))],
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("condition".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::not_operator_invalid_token(
+        vec![
+            Arc::new(token(TokenKind::Exclamation)),
+            Arc::new(token(TokenKind::StringLiteral("invalid".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            Vec::new(),
+            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Arc::new(token(TokenKind::StringLiteral("invalid".into())))), ParseError::UnexpectedEOFDetected], 100)
+        )
+    )]
+    #[case::not_unexpected_eof_detected_tokens(
+        vec![
+            Arc::new(token(TokenKind::Exclamation)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            Vec::new(),
+            ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected], 100)
         )
     )]
     fn test_parse(

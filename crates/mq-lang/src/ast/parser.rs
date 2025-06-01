@@ -6,7 +6,7 @@ use crate::arena::Arena;
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
 use compact_str::CompactString;
-use smallvec::SmallVec;
+use smallvec::{SmallVec, smallvec};
 
 use super::error::ParseError;
 use super::node::{Args, Branches, Expr, Ident, Literal, Node, Selector};
@@ -130,8 +130,35 @@ impl<'a> Parser<'a> {
             TokenKind::LBracket => self.parse_array(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
+            TokenKind::Exclamation => self.parse_not(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
+        }
+    }
+
+    fn parse_not(&mut self, not_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        match self.tokens.peek() {
+            Some(token) => {
+                if let TokenKind::Ident(ident_name) = &token.kind {
+                    let ident_token = Rc::clone(token);
+                    let ident_name = ident_name.clone();
+                    self.tokens.next(); // Consume the identifier token
+
+                    let ident_node = self.parse_ident(&ident_name, ident_token)?;
+
+                    Ok(Rc::new(Node {
+                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&not_token)),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("not", Some(Rc::clone(&not_token))),
+                            smallvec![ident_node],
+                            false,
+                        )),
+                    }))
+                } else {
+                    Err(ParseError::UnexpectedToken((***token).clone()))
+                }
+            }
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         }
     }
 
@@ -861,6 +888,11 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Nodes,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Exclamation,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
@@ -2670,6 +2702,80 @@ mod tests {
                         token(TokenKind::Eof)
                     ],
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::not_with_ident(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test_var"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("test_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test_var")))))))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_function_call(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("contains"))),
+                token(TokenKind::LParen),
+                token(TokenKind::StringLiteral("test".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("test".to_owned()))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_without_ident_error(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::StringLiteral("literal".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::StringLiteral("literal".to_owned())))))]
+    #[case::not_eof_error(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::Eof))))]
+    #[case::not_with_invalid_token_error(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Pipe),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::Pipe))))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

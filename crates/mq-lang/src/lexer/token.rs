@@ -29,6 +29,7 @@ pub struct Token {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum TokenKind {
+    Exclamation,
     Nodes,
     Def,
     Colon,
@@ -75,6 +76,7 @@ impl Display for Token {
 impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
+            TokenKind::Exclamation => write!(f, "!"),
             TokenKind::Nodes => write!(f, "nodes"),
             TokenKind::Def => write!(f, "def"),
             TokenKind::Colon => write!(f, ":"),
