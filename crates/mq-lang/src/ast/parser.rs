@@ -137,32 +137,50 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_not(&mut self, not_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        let node = match self.tokens.peek() {
-            Some(token) => {
-                if let TokenKind::Ident(ident_name) = &token.kind {
-                    let ident_token = Rc::clone(token);
-                    let ident_name = ident_name.clone();
-                    self.tokens.next();
-                    self.parse_ident(&ident_name, ident_token)?
-                } else if let TokenKind::Selector(_) = &token.kind {
-                    let selector_token = Rc::clone(token);
-                    self.tokens.next();
-                    self.parse_selector(selector_token)?
-                } else {
-                    return Err(ParseError::UnexpectedToken((***token).clone()));
-                }
+        let mut exclamation_count = 1;
+        while let Some(token) = self.tokens.peek() {
+            if matches!(token.kind, TokenKind::Exclamation) {
+                exclamation_count += 1;
+                self.tokens.next();
+            } else {
+                break;
             }
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-        };
+        }
 
-        Ok(Rc::new(Node {
-            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&not_token)),
-            expr: Rc::new(Expr::Call(
-                Ident::new_with_token("not", Some(Rc::clone(&not_token))),
-                smallvec![node],
-                false,
-            )),
-        }))
+        if exclamation_count % 2 == 1 {
+            let node = match self.tokens.peek() {
+                Some(token) => {
+                    if let TokenKind::Ident(ident_name) = &token.kind {
+                        let ident_token = Rc::clone(token);
+                        let ident_name = ident_name.clone();
+                        self.tokens.next();
+                        self.parse_ident(&ident_name, ident_token)
+                    } else if let TokenKind::Selector(_) = &token.kind {
+                        let selector_token = Rc::clone(token);
+                        self.tokens.next();
+                        self.parse_selector(selector_token)
+                    } else {
+                        Err(ParseError::UnexpectedToken((***token).clone()))
+                    }
+                }
+                None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            }?;
+
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&not_token)),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("not", Some(Rc::clone(&not_token))),
+                    smallvec![node],
+                    false,
+                )),
+            }))
+        } else {
+            let token = match self.tokens.next() {
+                Some(token) => token,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+            self.parse_expr(Rc::clone(token))
+        }
     }
 
     fn parse_env(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -2709,6 +2727,42 @@ mod tests {
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::not_with_ident(
             vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test_var"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("test_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test_var")))))))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_multiple_exclamation(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test_var"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(Expr::Ident(Ident::new_with_token("test_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test_var")))))))),
+                })
+            ]))]
+    #[case::not_multiple_exclamation(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Exclamation),
                 token(TokenKind::Exclamation),
                 token(TokenKind::Ident(CompactString::new("test_var"))),
                 token(TokenKind::Eof)
