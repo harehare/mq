@@ -276,6 +276,9 @@ impl Hir {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.add_interpolated_string(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Not => {
+                self.add_not_expr(node, source_id, scope_id, parent);
+            }
             _ => {}
         }
     }
@@ -482,6 +485,24 @@ impl Hir {
 
             children.iter().skip(1).for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            });
+        }
+    }
+
+    fn add_not_expr(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Not,
+            ..
+        } = &**node
+        {
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, parent);
             });
         }
     }

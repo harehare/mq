@@ -88,8 +88,12 @@ impl Formatter {
                 &node,
                 indent_level_consider_new_line,
                 indent_level,
-                !matches!(node.kind, mq_lang::CstNodeKind::Fn),
+                !matches!(
+                    node.kind,
+                    mq_lang::CstNodeKind::Fn | mq_lang::CstNodeKind::Not
+                ),
             ),
+            mq_lang::CstNodeKind::Not => self.format_not(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Include => {
@@ -199,6 +203,15 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
+
+        node.children.iter().for_each(|child| {
+            self.format_node(Arc::clone(child), indent_level);
+        });
+    }
+
+    fn format_not(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
 
         node.children.iter().for_each(|child| {
             self.format_node(Arc::clone(child), indent_level);
@@ -694,6 +707,7 @@ s"test${val1}"
     #[case::array_mixed_types("[1,\"test\",true]", "[1, \"test\", true]")]
     #[case::array_nested("[[1,2],[3,4]]", "[[1, 2], [3, 4]]")]
     #[case::array_with_spaces("[ 1 , 2 , 3 ]", "[1, 2, 3]")]
+    #[case::not_basic("!test", "!test")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

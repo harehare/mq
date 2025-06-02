@@ -137,29 +137,32 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_not(&mut self, not_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        match self.tokens.peek() {
+        let node = match self.tokens.peek() {
             Some(token) => {
                 if let TokenKind::Ident(ident_name) = &token.kind {
                     let ident_token = Rc::clone(token);
                     let ident_name = ident_name.clone();
-                    self.tokens.next(); // Consume the identifier token
-
-                    let ident_node = self.parse_ident(&ident_name, ident_token)?;
-
-                    Ok(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&not_token)),
-                        expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("not", Some(Rc::clone(&not_token))),
-                            smallvec![ident_node],
-                            false,
-                        )),
-                    }))
+                    self.tokens.next();
+                    self.parse_ident(&ident_name, ident_token)?
+                } else if let TokenKind::Selector(_) = &token.kind {
+                    let selector_token = Rc::clone(token);
+                    self.tokens.next();
+                    self.parse_selector(selector_token)?
                 } else {
-                    Err(ParseError::UnexpectedToken((***token).clone()))
+                    return Err(ParseError::UnexpectedToken((***token).clone()));
                 }
             }
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-        }
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        Ok(Rc::new(Node {
+            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&not_token)),
+            expr: Rc::new(Expr::Call(
+                Ident::new_with_token("not", Some(Rc::clone(&not_token))),
+                smallvec![node],
+                false,
+            )),
+        }))
     }
 
     fn parse_env(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -2778,6 +2781,582 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedToken(token(TokenKind::Pipe))))]
+    #[case::not_in_function_args(
+            vec![
+                token(TokenKind::Ident(CompactString::new("filter"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("contains"))),
+                token(TokenKind::LParen),
+                token(TokenKind::StringLiteral("test".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("filter", Some(Rc::new(token(TokenKind::Ident(CompactString::new("filter")))))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Rc::new(Expr::Call(
+                                                Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                                                smallvec![
+                                                    Rc::new(Node {
+                                                        token_id: 0.into(),
+                                                        expr: Rc::new(Expr::Literal(Literal::String("test".to_owned()))),
+                                                    })
+                                                ],
+                                                false,
+                                            ))
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_ident_in_args(
+            vec![
+                token(TokenKind::Ident(CompactString::new("apply"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test_var"))),
+                token(TokenKind::Comma),
+                token(TokenKind::StringLiteral("other_arg".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("apply", Some(Rc::new(token(TokenKind::Ident(CompactString::new("apply")))))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("test_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test_var")))))))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            }),
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Literal(Literal::String("other_arg".to_owned()))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::multiple_not_in_args(
+            vec![
+                token(TokenKind::Ident(CompactString::new("and"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test1"))),
+                token(TokenKind::Comma),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test2"))),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 4.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("test1", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test1")))))))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            }),
+                            Rc::new(Node {
+                                token_id: 3.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("test2", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test2")))))))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_in_args_error_not_followed_by_ident(
+            vec![
+                token(TokenKind::Ident(CompactString::new("filter"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::StringLiteral("literal".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::StringLiteral("literal".to_owned())))))]
+    #[case::not_in_args_error_eof_after_not(
+            vec![
+                token(TokenKind::Ident(CompactString::new("filter"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::RParen))))]
+    #[case::not_in_args_error_not_followed_by_ident(
+            vec![
+                token(TokenKind::Ident(CompactString::new("filter"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::StringLiteral("literal".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::StringLiteral("literal".to_owned())))))]
+    #[case::not_in_args_error_eof_after_not(
+            vec![
+                token(TokenKind::Ident(CompactString::new("filter"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::RParen))))]
+    #[case::not_in_if_condition(
+            vec![
+                token(TokenKind::If),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("condition"))),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("true_branch".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 5.into(),
+                    expr: Rc::new(Expr::If(smallvec![
+                        (
+                            Some(Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("condition", Some(Rc::new(token(TokenKind::Ident(CompactString::new("condition")))))))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            })),
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Literal(Literal::String("true_branch".to_owned()))),
+                            })
+                        ),
+                    ])),
+                })
+            ]))]
+    #[case::not_in_while_condition(
+            vec![
+                token(TokenKind::While),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("loop_condition"))),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("loop_body".to_owned())),
+                token(TokenKind::SemiColon)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(Expr::While(
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("loop_condition", Some(Rc::new(token(TokenKind::Ident(CompactString::new("loop_condition")))))))),
+                                    })
+                                ],
+                                false,
+                            ))
+                        }),
+                        vec![Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("loop_body".to_owned()))),
+                        })],
+                    )),
+                })
+            ]))]
+    #[case::not_in_until_condition(
+            vec![
+                token(TokenKind::Until),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("exit_condition"))),
+                token(TokenKind::RParen),
+                token(TokenKind::Colon),
+                token(TokenKind::StringLiteral("loop_body".to_owned())),
+                token(TokenKind::SemiColon)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(Expr::Until(
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("exit_condition", Some(Rc::new(token(TokenKind::Ident(CompactString::new("exit_condition")))))))),
+                                    })
+                                ],
+                                false,
+                            ))
+                        }),
+                        vec![Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("loop_body".to_owned()))),
+                        })],
+                    )),
+                })
+            ]))]
+    #[case::not_in_array(
+            vec![
+                token(TokenKind::LBracket),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test_var"))),
+                token(TokenKind::Comma),
+                token(TokenKind::StringLiteral("value".to_owned())),
+                token(TokenKind::RBracket),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("test_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test_var")))))))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            }),
+                            Rc::new(Node {
+                                token_id: 3.into(),
+                                expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
+                            })
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::not_in_let_assignment(
+            vec![
+                token(TokenKind::Let),
+                token(TokenKind::Ident(CompactString::new("x"))),
+                token(TokenKind::Equal),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("test_var"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 0.into(),
+                    expr: Rc::new(Expr::Let(
+                        Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))),
+                        Rc::new(Node {
+                            token_id: 3.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("test_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("test_var")))))))),
+                                    })
+                                ],
+                                false,
+                            ))
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::not_chained_with_function_calls(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Ident(CompactString::new("contains"))),
+                token(TokenKind::LParen),
+                token(TokenKind::StringLiteral("search".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::Pipe),
+                token(TokenKind::Ident(CompactString::new("length"))),
+                token(TokenKind::LParen),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("search".to_owned()))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            })
+                        ],
+                        false,
+                    ))
+                }),
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("length", Some(Rc::new(token(TokenKind::Ident(CompactString::new("length")))))),
+                        SmallVec::new(),
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::not_with_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".h1"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_text_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".text"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Selector(Selector::Text)),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_code_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".code"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Selector(Selector::Code(None))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_blockquote_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".>"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Selector(Selector::Blockquote)),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_list_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".list"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Selector(Selector::List(None, None))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_with_table_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new("."))),
+                token(TokenKind::LBracket),
+                token(TokenKind::NumberLiteral(0.into())),
+                token(TokenKind::RBracket),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 5.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Selector(Selector::List(Some(0), None))),
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_operator_multiple_in_expression(
+            vec![
+                token(TokenKind::Ident(CompactString::new("and"))),
+                token(TokenKind::LParen),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".h1"))),
+                token(TokenKind::Comma),
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".text"))),
+                token(TokenKind::RParen),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 4.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            }),
+                            Rc::new(Node {
+                                token_id: 3.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Exclamation)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Selector(Selector::Text)),
+                                        })
+                                    ],
+                                    false,
+                                ))
+                            })
+                        ],
+                        false,
+                    ))
+                })
+            ]))]
+    #[case::not_error_with_invalid_selector(
+            vec![
+                token(TokenKind::Exclamation),
+                token(TokenKind::Selector(CompactString::new(".invalid_selector"))),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedToken(token(TokenKind::Selector(CompactString::new(".invalid_selector"))))))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
