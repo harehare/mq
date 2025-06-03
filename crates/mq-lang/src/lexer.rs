@@ -178,6 +178,7 @@ define_token_parser!(include, "include", TokenKind::Include);
 define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(let_, "let ", TokenKind::Let);
+define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(none, "None", TokenKind::None);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
@@ -191,8 +192,8 @@ define_token_parser!(while_, "while", TokenKind::While);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, equal, pipe,
-        question,
+        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, ne_eq, equal,
+        pipe, question,
     ))
     .parse(input)
 }
@@ -671,6 +672,30 @@ mod tests {
               Options{include_spaces: false, ignore_errors: false}, // Default options ignore spaces between tokens
               Ok(vec![
                   Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::EqEq, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::Equal, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::ne_eq1("!=",
+              Options::default(),
+              Ok(vec![
+                  Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::NeEq, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 3} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::ne_eq2("!==",
+              Options::default(),
+              Ok(vec![
+                  Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::NeEq, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::Equal, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 4} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::ne_eq3("!= =",
+              Options{include_spaces: true, ignore_errors: false},
+              Ok(vec![
+                  Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::NeEq, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::Whitespace(1), module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::Equal, module_id: 1.into()},
+                  Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::ne_eq4("!= =",
+              Options{include_spaces: false, ignore_errors: false}, // Default options ignore spaces between tokens
+              Ok(vec![
+                  Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::NeEq, module_id: 1.into()},
                   Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::Equal, module_id: 1.into()},
                   Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     fn test_parse(
