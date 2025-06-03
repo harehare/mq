@@ -6,7 +6,7 @@ use crate::arena::Arena;
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
 use compact_str::CompactString;
-use smallvec::SmallVec;
+use smallvec::{SmallVec, smallvec};
 
 use super::error::ParseError;
 use super::node::{Args, Branches, Expr, Ident, Literal, Node, Selector};
@@ -108,6 +108,40 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        self.parse_equality_expr(token)
+    }
+
+    fn parse_equality_expr(&mut self, initial_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let mut lhs = self.parse_primary_expr(initial_token)?;
+
+        if let Some(peeked_token_rc) = self.tokens.peek() {
+            let peeked_token = &**peeked_token_rc;
+            if let TokenKind::EqEq = peeked_token.kind {
+                let operator_token = self.tokens.next().unwrap();
+                let operator_token_id = self
+                    .token_arena
+                    .borrow_mut()
+                    .alloc(Rc::clone(operator_token));
+
+                let next_expr_token = match self.tokens.next() {
+                    Some(t) => t,
+                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                };
+                let rhs = self.parse_primary_expr(Rc::clone(next_expr_token))?;
+                lhs = Rc::new(Node {
+                    token_id: operator_token_id, // Use the operator's token_id
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("eq", Some(Rc::clone(operator_token))),
+                        smallvec![lhs, rhs],
+                        false,
+                    )),
+                });
+            }
+        }
+        Ok(lhs)
+    }
+
+    fn parse_primary_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         match &token.kind {
             TokenKind::Selector(_) => self.parse_selector(token),
             // Delegate parsing of 'let' expressions.
@@ -230,6 +264,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::SemiColon)
             | Some(TokenKind::Eof)
             | Some(TokenKind::RBracket)
+            | Some(TokenKind::EqEq)
             | None => Ok(literal_node),
             Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
         }
@@ -258,6 +293,7 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::Elif)
                     | Some(TokenKind::SemiColon)
                     | Some(TokenKind::Eof)
+                    | Some(TokenKind::EqEq)
                     | Some(TokenKind::Comment(_))
                     | None => Ok(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -279,6 +315,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Elif)
             | Some(TokenKind::SemiColon)
             | Some(TokenKind::Eof)
+            | Some(TokenKind::EqEq)
             | Some(TokenKind::Comment(_))
             | None => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -861,6 +898,11 @@ impl<'a> Parser<'a> {
                 | Token {
                     range: _,
                     kind: TokenKind::Nodes,
+                    module_id: _,
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::EqEq,
                     module_id: _,
                 } => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
@@ -2670,6 +2712,249 @@ mod tests {
                         token(TokenKind::Eof)
                     ],
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::equality_simple(
+                    vec![
+                        token(TokenKind::StringLiteral("hello".to_owned())),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::StringLiteral("world".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::String("hello".to_owned()))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::String("world".to_owned()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_numbers(
+                    vec![
+                        token(TokenKind::NumberLiteral(42.into())),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::NumberLiteral(42.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(42.into()))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(42.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_booleans(
+                    vec![
+                        token(TokenKind::BoolLiteral(true)),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::BoolLiteral(false)),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_with_identifiers(
+                    vec![
+                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::Ident(CompactString::new("y"))),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_with_function_call(
+                    vec![
+                        token(TokenKind::Ident(CompactString::new("foo"))),
+                        token(TokenKind::LParen),
+                        token(TokenKind::StringLiteral("arg".to_owned())),
+                        token(TokenKind::RParen),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::StringLiteral("result".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Call(
+                                            Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                                            smallvec![
+                                                Rc::new(Node {
+                                                    token_id: 0.into(),
+                                                    expr: Rc::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                                }),
+                                            ],
+                                            false,
+                                        )),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 3.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::String("result".to_owned()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_with_selectors(
+                    vec![
+                        token(TokenKind::Selector(CompactString::new(".h1"))),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::Selector(CompactString::new(".text"))),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Selector(Selector::Heading(Some(1)))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Selector(Selector::Text)),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_with_none(
+                    vec![
+                        token(TokenKind::None),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::None),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::None)),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::None)),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::equality_error_missing_rhs(
+                    vec![
+                        token(TokenKind::StringLiteral("hello".to_owned())),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::Eof)
+                    ],
+                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::equality_in_if_condition(
+                    vec![
+                        token(TokenKind::If),
+                        token(TokenKind::LParen),
+                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::EqEq),
+                        token(TokenKind::NumberLiteral(5.into())),
+                        token(TokenKind::RParen),
+                        token(TokenKind::Colon),
+                        token(TokenKind::StringLiteral("equal".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 6.into(),
+                            expr: Rc::new(Expr::If(smallvec![
+                                (
+                                    Some(Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Call(
+                                            Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                            smallvec![
+                                                Rc::new(Node {
+                                                    token_id: 1.into(),
+                                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                                }),
+                                                Rc::new(Node {
+                                                    token_id: 3.into(),
+                                                    expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
+                                                }),
+                                            ],
+                                            false,
+                                        )),
+                                    })),
+                                    Rc::new(Node {
+                                        token_id: 5.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::String("equal".to_owned()))),
+                                    })
+                                ),
+                            ])),
+                        })
+                    ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
