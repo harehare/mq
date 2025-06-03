@@ -1,0 +1,15 @@
+# This file is intentionally left empty.
+# It's a common practice to use .gitkeep files to ensure that
+# otherwise empty directories are tracked by Git.
+# This is particularly useful for maintaining a project's
+# directory structure, even if some directories don't yet
+# contain any functional code or files.
+#
+# In the context of a Neovim plugin, this 'plugin' directory
+# is typically used for Vimscript files that are loaded
+# automatically when Neovim starts. These files often contain
+# global plugin settings, commands, and mappings that are
+# not specific to any particular filetype.
+#
+# As the plugin develops, you might add .vim or .lua files
+# here to define the core functionality of your plugin.

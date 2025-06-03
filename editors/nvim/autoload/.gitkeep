@@ -1,0 +1,23 @@
+# This file is intentionally left empty.
+# It's a common practice to use .gitkeep files to ensure that
+# otherwise empty directories are tracked by Git.
+# This is particularly useful for maintaining a project's
+# directory structure, even if some directories don't yet
+# contain any functional code or files.
+#
+# The 'autoload' directory in a Neovim plugin plays a crucial role
+# in optimizing plugin loading times. Scripts placed in this
+# directory are not loaded when Neovim starts. Instead, functions
+# defined within these scripts are loaded on demand, i.e.,
+# only when they are explicitly called for the first time.
+#
+# This is achieved by following a specific naming convention.
+# For example, a function `myplugin#myfunction()` would be
+# defined in a file named 'autoload/myplugin.vim' or
+# 'autoload/myplugin.lua'. When `myplugin#myfunction()` is called,
+# Neovim automatically searches for and loads the corresponding file.
+#
+# This mechanism helps keep Neovim's startup fast, as it avoids
+# loading potentially large amounts of plugin code that might not
+# be immediately needed. It's a best practice for functions that
+# are not essential for the initial setup of the plugin.
