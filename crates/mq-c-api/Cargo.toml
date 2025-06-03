@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "mq-c-api"
+version = "0.1.0"
+
+[dependencies]
+libc = "0.2"
+mq-lang = {workspace = true}
+mq-markdown = {workspace = true}
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[build-dependencies]
+cbindgen = "0.29.0"
