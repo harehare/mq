@@ -1,4 +1,12 @@
-# mq support for Visual Studio Code
+<div align="center">
+  <a href="https://mqlang.org">Visit the site 🌐</a>
+  &mdash;
+  <a href="https://mqlang.org/book">Read the book 📖</a>
+  &mdash;
+  <a href="https://mqlang.org/playground">Playground 🎮</a>
+</div>
+
+# mq for Visual Studio Code
 
 This extension adds support for the mq to Visual Studio Code.
 [mq](https://github.com/harehare/mq) is a jq like tool for markdown processing.
@@ -19,8 +27,7 @@ This extension provides essential coding assistance for `.mq` files, helping you
 
 - `mq: Install LSP Server`: Installs the mq Language Server Protocol server
 - `mq: Start LSP Server`: Starts the mq Language Server Protocol server
-- `mq: Set selected text as input`: Sets the currently selected text as input for mq queries
-- `mq: Show input text`: Show the currently input for mq queries
+- `mq: Run selected text`: Executes the currently selected text in the editor as an mq
 - `mq: Execute mq file`: Executes the selected mq file to the text in active editor
 
 ## Configuration
@@ -32,10 +39,6 @@ The extension can be configured through Visual Studio Code settings:
 - `editor.semanticHighlighting.enabled`: Set to `true` to enable semantic token highlighting for improved code visualization
 
 You can customize these settings in your VS Code settings.json file or through the Settings UI.
-
-## Playground
-
-An [Online Playground](https://mqlang.org/playground) is available, powered by WebAssembly.
 
 ## Example
 
@@ -59,18 +62,11 @@ select(contains("important"))
 ```
 
 ```python
-# List all links with their text
-.links[] | {text, url}
-```
-
-```python
 # Define and use a custom function
 def important_headings():
     .h | select(contains("Important"));
 | important_headings()
 ```
-
-For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
 
 ## License
 

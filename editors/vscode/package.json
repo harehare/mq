@@ -75,16 +75,8 @@
         "title": "mq: Start LSP Server"
       },
       {
-        "command": "mq.setSelectedTextAsInput",
-        "title": "mq: Set selected text as input"
-      },
-      {
         "command": "mq.runSelectedText",
         "title": "mq: Run selected text"
-      },
-      {
-        "command": "mq.showInput",
-        "title": "mq: Show input text"
       },
       {
         "command": "mq.executeMqFile",
@@ -126,7 +118,7 @@
     "@types/vscode": "^1.100.0",
     "@types/which": "^3.0.4",
     "@typescript-eslint/eslint-plugin": "^8.33.1",
-    "@typescript-eslint/parser": "^8.32.1",
+    "@typescript-eslint/parser": "^8.33.1",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.25.5",
