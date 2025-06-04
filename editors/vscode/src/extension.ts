@@ -14,6 +14,15 @@ select(or(.[], .code, .h)) | upcase() | hello_world();
 # Extract js code
 .code("js")
 
+# Extract list
+.[]
+
+# Extract table
+.[][]
+
+# Extract MDX
+select(is_mdx())
+
 # Custom function
 def snake_to_camel(x):
   let words = split(x, "_")
@@ -42,7 +51,6 @@ else:
 `;
 
 let client: lc.LanguageClient | null = null;
-let input = "";
 
 export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
@@ -86,28 +94,42 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      await executeCommand("mq/run", command, input);
-    })
-  );
+      const editor = vscode.window.activeTextEditor;
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "mq-lsp.setSelectedTextAsInput",
-      async () => {
-        input = selectedText() ?? "";
+      if (!editor) {
+        vscode.window.showErrorMessage("No active editor");
+        return null;
       }
-    )
-  );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("mq.showInput", async () => {
-      const outputChannel = vscode.window.createOutputChannel(
-        "mq LSP Output",
-        "markdown"
-      );
-      outputChannel.clear();
-      outputChannel.appendLine(input);
-      outputChannel.show();
+      const mdFiles = await vscode.workspace.findFiles("**/*.md");
+
+      if (mdFiles.length === 0) {
+        vscode.window.showInformationMessage("No .md files found in workspace");
+        return;
+      }
+
+      const items = mdFiles.map((uri) => {
+        const relativePath = vscode.workspace.asRelativePath(uri);
+        const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
+        return {
+          label: fileName,
+          description: relativePath,
+          uri,
+        };
+      });
+
+      const selectedItem = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select a .md file as input",
+      });
+
+      if (selectedItem) {
+        const document = await vscode.workspace.openTextDocument(
+          selectedItem.uri
+        );
+        return await executeCommand("mq/run", command, document.getText());
+      } else {
+        return await vscode.window.showInformationMessage("No file selected");
+      }
     })
   );
 
