@@ -79,6 +79,12 @@ impl Formatter {
         }
 
         match &node.kind {
+            mq_lang::CstNodeKind::Array => {
+                self.format_array(&node, indent_level_consider_new_line);
+            }
+            mq_lang::CstNodeKind::BinaryOp(_) => {
+                self.format_binary_op(&node, indent_level_consider_new_line, indent_level);
+            }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
@@ -90,30 +96,27 @@ impl Formatter {
                 indent_level,
                 !matches!(node.kind, mq_lang::CstNodeKind::Fn),
             ),
+            mq_lang::CstNodeKind::Eof => {}
+            mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Include => {
                 self.format_include(&node, indent_level_consider_new_line)
             }
+            mq_lang::CstNodeKind::InterpolatedString => {
+                self.append_interpolated_string(&node, indent_level_consider_new_line);
+            }
             mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Literal => {
+                self.append_literal(&node, indent_level_consider_new_line)
+            }
+            mq_lang::CstNodeKind::Nodes => self.format_nodes(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Selector => {
                 self.format_selector(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::Self_ => self.format_self(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Nodes => self.format_nodes(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Literal => {
-                self.append_literal(&node, indent_level_consider_new_line)
-            }
-            mq_lang::CstNodeKind::Array => {
-                self.format_array(&node, indent_level_consider_new_line);
-            }
-            mq_lang::CstNodeKind::InterpolatedString => {
-                self.append_interpolated_string(&node, indent_level_consider_new_line);
-            }
-            mq_lang::CstNodeKind::Eof => {}
+            mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
         }
     }
 
@@ -132,6 +135,39 @@ impl Formatter {
 
         for child in &node.children {
             self.format_node(Arc::clone(child), 0);
+        }
+    }
+
+    fn format_binary_op(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
+        self.append_indent(indent_level);
+        match node.binary_op() {
+            Some((left, right)) => {
+                self.format_node(left, block_indent_level);
+
+                match &**node {
+                    mq_lang::CstNode {
+                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::Equal),
+                        token: Some(token),
+                        ..
+                    }
+                    | mq_lang::CstNode {
+                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::NotEqual),
+                        token: Some(token),
+                        ..
+                    } => {
+                        self.output.push_str(format!(" {} ", token).as_str());
+                    }
+                    _ => unreachable!(),
+                }
+
+                self.format_node(right, block_indent_level);
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -694,6 +730,8 @@ s"test${val1}"
     #[case::array_mixed_types("[1,\"test\",true]", "[1, \"test\", true]")]
     #[case::array_nested("[[1,2],[3,4]]", "[[1, 2], [3, 4]]")]
     #[case::array_with_spaces("[ 1 , 2 , 3 ]", "[1, 2, 3]")]
+    #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
+    #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

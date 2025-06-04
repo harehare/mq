@@ -99,7 +99,7 @@ impl Display for TokenKind {
             TokenKind::LBracket => write!(f, "["),
             TokenKind::LParen => write!(f, "("),
             TokenKind::Let => write!(f, "let"),
-            TokenKind::NeEq => writeln!(f, "!="),
+            TokenKind::NeEq => write!(f, "!="),
             TokenKind::NewLine => writeln!(f),
             TokenKind::Nodes => write!(f, "nodes"),
             TokenKind::None => write!(f, "None"),
