@@ -11,7 +11,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.0"
 
 [dependencies]
-arboard = "3.5.0"
+arboard = {workspace = true}
 colored = "3.0.0"
 dirs = {workspace = true}
 itertools = {workspace = true}

@@ -1629,6 +1629,7 @@ dependencies = [
 name = "mq-tui"
 version = "0.2.0"
 dependencies = [
+ "arboard",
  "crossterm 0.29.0",
  "itertools 0.14.0",
  "log",

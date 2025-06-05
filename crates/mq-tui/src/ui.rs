@@ -278,6 +278,10 @@ fn draw_help_screen(frame: &mut Frame) {
             Span::raw(" - Toggle detail view"),
         ]),
         Line::from(vec![
+            Span::styled("y", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Copy result to clipboard"),
+        ]),
+        Line::from(vec![
             Span::styled("q/Esc", Style::default().fg(Color::Yellow)),
             Span::raw(" - Quit application"),
         ]),

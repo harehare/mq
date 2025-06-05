@@ -1,3 +1,4 @@
+use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use miette::IntoDiagnostic;
 use mq_lang::Engine;
@@ -188,7 +189,21 @@ impl App {
                     self.cursor_position = 0;
                     self.exec_query();
                 }
-
+                (KeyCode::Char('y'), _) => {
+                    if !self.results.is_empty() {
+                        let result_text =
+                            mq_markdown::Markdown::new(self.results.clone()).to_string();
+                        if let Ok(mut clipboard) = Clipboard::new() {
+                            if clipboard.set_text(result_text).is_ok() {
+                            } else {
+                                self.error_msg =
+                                    Some("Error: Could not copy to clipboard".to_string());
+                            }
+                        } else {
+                            self.error_msg = Some("Error: Could not access clipboard".to_string());
+                        }
+                    }
+                }
                 _ => {}
             }
         }
