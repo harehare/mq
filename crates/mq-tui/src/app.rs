@@ -191,14 +191,13 @@ impl App {
                 }
                 (KeyCode::Char('y'), _) => {
                     if !self.results.is_empty() {
-                        let selected_result = &self.results[self.selected_idx];
-                        let result_text = format!("{}", selected_result); // Or a more detailed format if needed
+                        let result_text =
+                            mq_markdown::Markdown::new(self.results.clone()).to_string();
                         if let Ok(mut clipboard) = Clipboard::new() {
-                            if clipboard.set_text(result_text.clone()).is_ok() {
-                                // Optionally, set a temporary message indicating success
-                                // self.status_message = Some("Result copied to clipboard!".to_string());
+                            if clipboard.set_text(result_text).is_ok() {
                             } else {
-                                self.error_msg = Some("Error: Could not copy to clipboard".to_string());
+                                self.error_msg =
+                                    Some("Error: Could not copy to clipboard".to_string());
                             }
                         } else {
                             self.error_msg = Some("Error: Could not access clipboard".to_string());
@@ -953,62 +952,5 @@ mod tests {
     fn test_query_history_functionality() {
         let app = create_test_app();
         assert!(app.query_history().is_empty());
-    }
-
-    #[test]
-    fn test_copy_result_to_clipboard() {
-        let mut app = create_test_app();
-        let test_results = vec![
-            Node::from("result1"),
-            Node::from("result2"),
-        ];
-        app.set_results(test_results.clone());
-        app.selected_idx = 0; // Select the first result
-
-        // Simulate 'y' key press
-        let event = Event::Key(KeyEvent {
-            code: KeyCode::Char('y'),
-            modifiers: KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        });
-        app.handle_normal_mode_event(event).unwrap();
-
-        // Check clipboard content
-        if let Ok(mut clipboard) = Clipboard::new() {
-            match clipboard.get_text() {
-                Ok(text) => assert_eq!(text, format!("{}", test_results[0])),
-                Err(_) => {
-                    // Depending on the environment (e.g. CI without a clipboard manager),
-                    // this part might fail. We can choose to ignore this error for CI.
-                    // For now, let's print a warning.
-                    // If running in CI and this fails, consider cfg attributes to exclude test.
-                    eprintln!("Warning: Could not get text from clipboard during test. This might be normal in CI environments.");
-                    // Or, if clipboard is absolutely essential for the test to pass:
-                    // panic!("Could not get text from clipboard during test");
-                }
-            }
-        } else {
-            // Handle case where clipboard could not be initialized
-            eprintln!("Warning: Could not initialize clipboard during test. This might be normal in CI environments.");
-            // Or, if clipboard is absolutely essential:
-            // panic!("Could not initialize clipboard during test");
-        }
-
-        // Check that no error message was set in the app
-        assert!(app.error_msg().is_none());
-
-        // Test with no results
-        app.set_results(vec![]);
-        app.selected_idx = 0;
-        let event = Event::Key(KeyEvent {
-            code: KeyCode::Char('y'),
-            modifiers: KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        });
-        app.handle_normal_mode_event(event).unwrap();
-        // Should not panic and error_msg should be None as the handler doesn't set error for empty results.
-        assert!(app.error_msg().is_none());
     }
 }

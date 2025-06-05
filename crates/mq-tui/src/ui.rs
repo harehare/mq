@@ -279,7 +279,7 @@ fn draw_help_screen(frame: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("y", Style::default().fg(Color::Yellow)),
-            Span::raw(" - Copy selected result to clipboard"),
+            Span::raw(" - Copy result to clipboard"),
         ]),
         Line::from(vec![
             Span::styled("q/Esc", Style::default().fg(Color::Yellow)),
