@@ -237,35 +237,35 @@ impl Hir {
         let mq_lang::CstNode { kind, .. } = &**node;
 
         match kind {
-            mq_lang::CstNodeKind::Def => {
-                self.add_def_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Fn => {
-                self.add_fn_expr(node, source_id, scope_id, parent);
+            mq_lang::CstNodeKind::BinaryOp(_) => {
+                self.add_binary_op_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Call => {
                 self.add_call_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Let => {
-                self.add_let_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::If => {
-                self.add_if_expr(node, source_id, scope_id, parent);
+            mq_lang::CstNodeKind::Def => {
+                self.add_def_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Foreach => {
                 self.add_foreach_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::While => {
-                self.add_while_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Until => {
-                self.add_until_expr(node, source_id, scope_id, parent);
+            mq_lang::CstNodeKind::Fn => {
+                self.add_fn_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Ident => {
                 self.add_ident_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::If => {
+                self.add_if_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Include => {
                 self.add_include_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::InterpolatedString => {
+                self.add_interpolated_string(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Let => {
+                self.add_let_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Literal => {
                 self.add_literal_expr(node, source_id, scope_id, parent);
@@ -273,10 +273,40 @@ impl Hir {
             mq_lang::CstNodeKind::Selector => {
                 self.add_selector_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::InterpolatedString => {
-                self.add_interpolated_string(node, source_id, scope_id, parent);
+            mq_lang::CstNodeKind::Until => {
+                self.add_until_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::While => {
+                self.add_while_expr(node, source_id, scope_id, parent);
             }
             _ => {}
+        }
+    }
+
+    fn add_binary_op_expr(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::BinaryOp(_),
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::BinaryOp,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
         }
     }
 
@@ -936,6 +966,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::fn_with_params("fn(x, y): add(x, y);", "x", SymbolKind::Variable)]
     #[case::fn_with_body("fn(): let x = 1 | x;", "x", SymbolKind::Variable)]
     #[case::fn_anonymous("let f = fn(): 42;", "fn", SymbolKind::Keyword)]
+    #[case::eq("1 == 2", "==", SymbolKind::BinaryOp)]
+    #[case::neq("1 != 2", "!=", SymbolKind::BinaryOp)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

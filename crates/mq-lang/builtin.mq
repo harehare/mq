@@ -2,19 +2,19 @@
 def halt_error(): halt(5);
 
 # Checks if input is an array
-def is_array(a): eq(type(a), "array");
+def is_array(a): type(a) == "array";
 # Checks if input is markdown
-def is_markdown(m): eq(type(m), "markdown");
+def is_markdown(m): type(m) == "markdown";
 # Checks if input is a boolean
-def is_bool(b): eq(type(b), "bool");
+def is_bool(b): type(b) == "bool";
 # Checks if input is a number
-def is_number(n): eq(type(n), "number");
+def is_number(n): type(n) == "number";
 # Checks if input is a string
-def is_string(s): eq(type(s), "string");
+def is_string(s): type(s) == "string";
 # Checks if input is None
-def is_none(n): eq(type(n), "None");
+def is_none(n): type(n) == "None";
 # Checks if input is a dictionary
-def is_dict(d): eq(type(d), "dict");
+def is_dict(d): type(d) == "dict";
 
 # Checks if string contains a substring
 def contains(haystack, needle):
@@ -39,8 +39,8 @@ def rtrimstr(s, right):
 
 # Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s), is_dict(s))):
-    eq(len(s), 0)
+  if (or(is_string(s), is_array(s), is_dict(s))): 
+    len(s) == 0
   else:
     false;
 
@@ -112,26 +112,26 @@ def second(arr):
   else:
     nth(arr, 1);
 
-# Checks if markdown is heading
-def is_h(md): eq(to_md_name(md), "h");
-
 # Checks if markdown is h1 heading
-def is_h1(md): eq(to_md_name(md), "h1");
+def is_h1(md): to_md_name(md) == "h1";
 
 # Checks if markdown is h2 heading
-def is_h2(md): eq(to_md_name(md), "h2");
+def is_h2(md): to_md_name(md) == "h2";
 
 # Checks if markdown is h3 heading
-def is_h3(md): eq(to_md_name(md), "h3");
+def is_h3(md): to_md_name(md) == "h3";
 
 # Checks if markdown is h4 heading
-def is_h4(md): eq(to_md_name(md), "h4");
+def is_h4(md): to_md_name(md) == "h4";
 
 # Checks if markdown is h5 heading
-def is_h5(md): eq(to_md_name(md), "h5");
+def is_h5(md): to_md_name(md) == "h5";
 
 # Checks if markdown is h6 heading
-def is_h6(md): eq(to_md_name(md), "h6");
+def is_h6(md): to_md_name(md) == "h6";
+
+# Checks if markdown is heading
+def is_h(md): or(is_h1(md), is_h2(md), is_h3(md), is_h4(md), is_h5(md), is_h6(md));
 
 # Checks if markdown is not an h1 heading
 def is_not_h1(md): is_h1(md) | not();
@@ -152,60 +152,60 @@ def is_not_h5(md): is_h5(md) | not();
 def is_not_h6(md): is_h6(md) | not();
 
 # Checks if markdown is emphasis
-def is_em(md): eq(to_md_name(md), "emphasis");
+def is_em(md): to_md_name(md) == "emphasis";
 
 # Checks if markdown is html
-def is_html(md): eq(to_md_name(md), "html");
+def is_html(md): to_md_name(md) == "html";
 
 # Checks if markdown is yaml
-def is_yaml(md): eq(to_md_name(md), "yaml");
+def is_yaml(md): to_md_name(md) == "yaml";
 
 # Checks if markdown is toml
-def is_toml(md): eq(to_md_name(md), "toml");
+def is_toml(md): to_md_name(md) == "toml";
 
 # Checks if markdown is code block
-def is_code(md): eq(to_md_name(md), "code");
+def is_code(md): to_md_name(md) == "code";
 
 # Checks if markdown is text
-def is_text(text): eq(to_md_name(text), "text");
+def is_text(text): to_md_name(text) == "text";
 
 # Checks if markdown is list
-def is_list(list): eq(to_md_name(list), "list");
+def is_list(list): to_md_name(list) == "list";
 
 # Checks if markdown node's URL matches a specified URL
-def matches_url(node, url): eq(get_url(node), url);
+def matches_url(node, url): get_url(node) == url;
+
+# Checks if markdown is MDX Flow Expression
+def is_mdx_flow_expression(mdx): to_md_name(mdx) == "mdx_flow_expression";
+
+# Checks if markdown is MDX Jsx Flow Element
+def is_mdx_jsx_flow_element(mdx): to_md_name(mdx) == "mdx_jsx_flow_element";
+
+# Checks if markdown is MDX Jsx Text Element
+def is_mdx_jsx_text_element(mdx): to_md_name(mdx) == "mdx_jsx_text_element";
+
+# Checks if markdown is MDX Text Expression
+def is_mdx_text_expression(mdx): to_md_name(mdx) == "mdx_text_expression";
+
+# Checks if markdown is MDX Js Esm
+def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 
 # Checks if markdown is MDX
 def is_mdx(mdx): or(
-  eq(to_md_name(mdx), "mdx_flow_expression"), 
-  eq(to_md_name(mdx), "mdx_jsx_flow_element"), 
-  eq(to_md_name(mdx), "mdx_jsx_text_element"), 
-  eq(to_md_name(mdx), "mdx_text_expression"), 
-  eq(to_md_name(mdx), "mdx_js_esm"));
-
-# Checks if markdown is MDX Flow Expression
-def is_mdx_flow_expression(mdx): eq(to_md_name(mdx), "mdx_flow_expression");
-
-# Checks if markdown is MDX Jsx Flow Element
-def is_mdx_jsx_flow_element(mdx): eq(to_md_name(mdx), "mdx_jsx_flow_element");
-
-# Checks if markdown is MDX Jsx Text Element
-def is_mdx_jsx_text_element(mdx): eq(to_md_name(mdx), "mdx_jsx_text_element");
-
-# Checks if markdown is MDX Text Expression
-def is_mdx_text_expression(mdx): eq(to_md_name(mdx), "mdx_text_expression");
-
-# Checks if markdown is MDX Js Esm
-def is_mdx_js_esm(mdx): eq(to_md_name(mdx), "mdx_js_esm");
+  is_mdx_flow_expression(mdx), 
+  is_mdx_jsx_flow_element(mdx), 
+  is_mdx_jsx_text_element(mdx), 
+  is_mdx_text_expression(mdx), 
+  is_mdx_js_esm(mdx));
 
 # Checks if markdown is list with indentation level 1
-def is_list1(list): and(is_list(list), eq(get_md_list_level(list), 0));
+def is_list1(list): and(is_list(list), get_md_list_level(list) == 0);
 
 # Checks if markdown is list with indentation level 2
-def is_list2(list): and(is_list(list), eq(get_md_list_level(list), 1));
+def is_list2(list): and(is_list(list), get_md_list_level(list) == 1);
 
 # Checks if markdown is list with indentation level 3
-def is_list3(list): and(is_list(list), eq(get_md_list_level(list), 2));
+def is_list3(list): and(is_list(list), get_md_list_level(list) == 2);
 
 # Convert csv string to markdown table row
 def csv2table_row(row): split(row, ",") | to_md_table_row();
@@ -255,7 +255,7 @@ def take(arr, n):
     slice(arr, 0, n);
 
 def _find_index_impl(arr, f, idx):
-  if (eq(idx, len(arr))):
+  if (idx == len(arr)):
     -1
   elif (f(nth(arr, idx))):
     idx

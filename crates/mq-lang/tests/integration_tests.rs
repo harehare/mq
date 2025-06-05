@@ -126,6 +126,27 @@ fn engine() -> Engine {
 #[case::is_array("is_string(array(\"test\"))",
       vec![Value::Array(Vec::new())],
       Ok(vec![Value::FALSE].into()))]
+#[case::is_dict_true("is_dict()",
+      vec![Value::new_dict()],
+      Ok(vec![Value::TRUE].into()))]
+#[case::is_dict_false("is_dict()",
+      vec![Value::Array(Vec::new())],
+      Ok(vec![Value::FALSE].into()))]
+#[case::is_none_true("is_none(None)",
+      vec!["text".into()],
+      Ok(vec![Value::TRUE].into()))]
+#[case::is_none_false("is_none()",
+      vec![Value::Number(1.into())],
+      Ok(vec![Value::FALSE].into()))]
+#[case::is_bool_true("is_bool(true)",
+        vec![Value::Bool(true)],
+        Ok(vec![Value::TRUE].into()))]
+#[case::is_bool_false("is_bool(false)",
+        vec![Value::Bool(false)],
+        Ok(vec![Value::TRUE].into()))]
+#[case::is_bool_non_bool("is_bool(1)",
+        vec![Value::Number(1.into())],
+        Ok(vec![Value::FALSE].into()))]
 #[case::ltrimstr("ltrimstr(\"test\")",
       vec![Value::String("testString".to_string())],
       Ok(vec![Value::String("String".to_string())].into()))]
@@ -673,6 +694,543 @@ fn engine() -> Engine {
                 dict.insert("true".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(4.into()), Value::Number(6.into())]));
                 dict.into()
               }].into()))]
+#[case::is_h_true("is_h()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 1,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h_false("is_h()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h1_true("is_h1()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 1,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h1_false("is_h1()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 2,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h1_false("is_h1()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h2_true("is_h2()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 2,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h2_false("is_h2()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 3,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h2_false("is_h2()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h3_true("is_h3()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 3,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h3_false("is_h3()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 4,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h3_false("is_h3()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h4_true("is_h4()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 4,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h4_false("is_h4()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 5,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h4_false("is_h4()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h5_true("is_h5()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 5,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h5_false("is_h5()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 4,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h5_false("is_h5()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h6_true("is_h6()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 6,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+        }))].into()))]
+#[case::is_h6_false("is_h6()",
+        vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+          values: vec![],
+          position: None,
+          depth: 5,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_h6_false("is_h6()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_em_true("is_em()",
+        vec![Value::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
+          values: vec![],
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "true".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_em_false("is_em()",
+        vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))],
+        Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+          value: "false".to_string(),
+          position: None,
+        }))].into()))]
+#[case::is_html_true("is_html()",
+          vec![Value::Markdown(mq_markdown::Node::Html(mq_markdown::Html {
+              value: "<b>bold</b>".to_string(),
+              position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+          }))].into()))]
+#[case::is_html_false("is_html()",
+          vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not html".to_string(),
+              position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+          }))].into()))]
+#[case::is_yaml_true("is_yaml()",
+          vec![Value::Markdown(mq_markdown::Node::Yaml(mq_markdown::Yaml {
+            value: "---\nkey: value\n".to_string(),
+            position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_yaml_false("is_yaml()",
+          vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "not yaml".to_string(),
+            position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "false".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_toml_true("is_toml()",
+          vec![Value::Markdown(mq_markdown::Node::Toml(mq_markdown::Toml {
+            value: "[section]\nkey = \"value\"\n".to_string(),
+            position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_toml_false("is_toml()",
+          vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "not toml".to_string(),
+            position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "false".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_code_true("is_code()",
+          vec![Value::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
+            value: "let x = 1;".to_string(),
+            position: None,
+            fence: true,
+            meta: None,
+            lang: Some("rust".to_string()),
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_code_false("is_code()",
+          vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "not code".to_string(),
+            position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "false".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_text_true("is_text()",
+          vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "sample".to_string(),
+            position: None,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "true".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_text_false("is_text()",
+          vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![],
+            position: None,
+            depth: 1,
+          }))],
+          Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "false".to_string(),
+            position: None,
+          }))].into()))]
+#[case::is_list_true("is_list()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 1,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list_false("is_list()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not a list".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_flow_expression_true("is_mdx_flow_expression()",
+            vec![Value::Markdown(mq_markdown::Node::MdxFlowExpression(mq_markdown::MdxFlowExpression {
+              value: "1 + 2".into(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_flow_expression_false("is_mdx_flow_expression()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not mdx".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_jsx_flow_element_true("is_mdx_jsx_flow_element()",
+            vec![Value::Markdown(mq_markdown::Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement {
+              name: Some("Component".to_string()),
+              attributes: vec![],
+              children: vec![],
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_jsx_flow_element_false("is_mdx_jsx_flow_element()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not jsx".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_jsx_text_element_true("is_mdx_jsx_text_element()",
+            vec![Value::Markdown(mq_markdown::Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement {
+              name: Some("InlineComponent".into()),
+              attributes: vec![],
+              children: vec![],
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_jsx_text_element_false("is_mdx_jsx_text_element()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not jsx text".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_text_expression_true("is_mdx_text_expression()",
+            vec![Value::Markdown(mq_markdown::Node::MdxTextExpression(mq_markdown::MdxTextExpression {
+              value: "foo + bar".into(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_text_expression_false("is_mdx_text_expression()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not mdx text expr".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_js_esm_true("is_mdx_js_esm()",
+            vec![Value::Markdown(mq_markdown::Node::MdxJsEsm(mq_markdown::MdxJsEsm {
+              value: "export const foo = 1;".into(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_js_esm_false("is_mdx_js_esm()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not esm".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_true("is_mdx()",
+            vec![Value::Markdown(mq_markdown::Node::MdxFlowExpression(mq_markdown::MdxFlowExpression {
+              value: "1 + 2".into(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_mdx_false("is_mdx()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not mdx".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list1_true("is_list1()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 0,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list1_false("is_list1()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 2,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list1_false("is_list1()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not a list".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list2_true("is_list2()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 1,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list2_false("is_list2()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 0,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list2_false("is_list2()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not a list".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list3_true("is_list3()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 2,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "true".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list3_false("is_list3()",
+            vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
+              values: vec![],
+              position: None,
+              level: 1,
+              index: 1,
+              checked: Some(false),
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
+#[case::is_list3_false("is_list3()",
+            vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "not a list".to_string(),
+              position: None,
+            }))],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "false".to_string(),
+              position: None,
+            }))].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

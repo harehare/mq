@@ -78,6 +78,8 @@ pub use range::{Position, Range};
 pub use value::{Value, Values};
 
 #[cfg(feature = "cst")]
+pub use cst::node::BinaryOp as CstBinaryOp;
+#[cfg(feature = "cst")]
 pub use cst::node::Node as CstNode;
 #[cfg(feature = "cst")]
 pub use cst::node::NodeKind as CstNodeKind;

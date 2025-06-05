@@ -77,26 +77,33 @@ pub struct Node {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NodeKind {
-    Call,
-    Fn,
-    Def,
-    Let,
-    Literal,
     Array,
-    InterpolatedString,
-    Ident,
-    Include,
-    If,
+    Call,
+    Def,
+    Eof,
     Elif,
     Else,
+    Fn,
+    Foreach,
+    Ident,
+    If,
+    Include,
+    InterpolatedString,
+    Let,
+    Literal,
+    Nodes,
     Selector,
     Self_,
-    Nodes,
-    While,
-    Until,
-    Foreach,
-    Eof,
     Token,
+    Until,
+    While,
+    BinaryOp(BinaryOp),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BinaryOp {
+    Equal,
+    NotEqual,
 }
 
 impl Display for Node {
@@ -179,6 +186,17 @@ impl Node {
                 .cloned()
                 .collect::<Vec<_>>(),
         )
+    }
+
+    pub fn binary_op(&self) -> Option<(Arc<Node>, Arc<Node>)> {
+        if let NodeKind::BinaryOp(_) = self.kind {
+            let mut non_token_children = self.children.iter().filter(|child| !child.is_token());
+            let left = non_token_children.next()?;
+            let right = non_token_children.next()?;
+            Some((Arc::clone(left), Arc::clone(right)))
+        } else {
+            None
+        }
     }
 }
 

@@ -63,29 +63,37 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                     .unwrap_or_default() as u32
             };
             let token_type = match symbol.kind {
-                mq_hir::SymbolKind::Function(_) => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::FUNCTION)
+                mq_hir::SymbolKind::Argument => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::PARAMETER)
                 }
-                mq_hir::SymbolKind::Call => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::METHOD)
-                }
-                mq_hir::SymbolKind::Variable => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::VARIABLE)
+                mq_hir::SymbolKind::BinaryOp => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::OPERATOR)
                 }
                 mq_hir::SymbolKind::Boolean => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::TYPE)
                 }
-                mq_hir::SymbolKind::Parameter => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::PARAMETER)
+                mq_hir::SymbolKind::Call => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::METHOD)
                 }
-                mq_hir::SymbolKind::Argument => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::PARAMETER)
+                mq_hir::SymbolKind::Else
+                | mq_hir::SymbolKind::Elif
+                | mq_hir::SymbolKind::Foreach
+                | mq_hir::SymbolKind::If
+                | mq_hir::SymbolKind::Include(_)
+                | mq_hir::SymbolKind::Keyword
+                | mq_hir::SymbolKind::None
+                | mq_hir::SymbolKind::Until
+                | mq_hir::SymbolKind::While => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::KEYWORD)
                 }
-                mq_hir::SymbolKind::String => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::STRING)
+                mq_hir::SymbolKind::Function(_) => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::FUNCTION)
                 }
                 mq_hir::SymbolKind::Number => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::NUMBER)
+                }
+                mq_hir::SymbolKind::Parameter => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::PARAMETER)
                 }
                 mq_hir::SymbolKind::Ref => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::VARIABLE)
@@ -93,16 +101,11 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 mq_hir::SymbolKind::Selector => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::METHOD)
                 }
-                mq_hir::SymbolKind::If
-                | mq_hir::SymbolKind::Else
-                | mq_hir::SymbolKind::Elif
-                | mq_hir::SymbolKind::Foreach
-                | mq_hir::SymbolKind::Include(_)
-                | mq_hir::SymbolKind::Keyword
-                | mq_hir::SymbolKind::None
-                | mq_hir::SymbolKind::Until
-                | mq_hir::SymbolKind::While => {
-                    token_type(tower_lsp::lsp_types::SemanticTokenType::KEYWORD)
+                mq_hir::SymbolKind::String => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::STRING)
+                }
+                mq_hir::SymbolKind::Variable => {
+                    token_type(tower_lsp::lsp_types::SemanticTokenType::VARIABLE)
                 }
             };
 
@@ -147,19 +150,18 @@ fn token_modifier(token_modifier: tower_lsp::lsp_types::SemanticTokenModifier) -
 }
 
 pub const TOKEN_TYPE: &[tower_lsp::lsp_types::SemanticTokenType] = &[
-    SemanticTokenType::KEYWORD,
-    SemanticTokenType::STRING,
-    SemanticTokenType::NUMBER,
     SemanticTokenType::COMMENT,
     SemanticTokenType::FUNCTION,
-    SemanticTokenType::PARAMETER,
-    SemanticTokenType::VARIABLE,
-    SemanticTokenType::OPERATOR,
+    SemanticTokenType::KEYWORD,
     SemanticTokenType::METHOD,
     SemanticTokenType::MODIFIER,
+    SemanticTokenType::NUMBER,
+    SemanticTokenType::OPERATOR,
+    SemanticTokenType::PARAMETER,
     SemanticTokenType::PROPERTY,
-    SemanticTokenType::MODIFIER,
+    SemanticTokenType::STRING,
     SemanticTokenType::TYPE,
+    SemanticTokenType::VARIABLE,
 ];
 
 pub const TOKEN_MODIFIER: &[tower_lsp::lsp_types::SemanticTokenModifier] = &[
@@ -173,9 +175,9 @@ mod tests {
 
     #[test]
     fn test_token_type() {
-        assert_eq!(token_type(SemanticTokenType::KEYWORD), 0);
-        assert_eq!(token_type(SemanticTokenType::STRING), 1);
-        assert_eq!(token_type(SemanticTokenType::FUNCTION), 4);
+        assert_eq!(token_type(SemanticTokenType::KEYWORD), 2);
+        assert_eq!(token_type(SemanticTokenType::STRING), 9);
+        assert_eq!(token_type(SemanticTokenType::FUNCTION), 1);
     }
 
     #[test]
