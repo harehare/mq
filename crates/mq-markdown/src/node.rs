@@ -1113,6 +1113,7 @@ impl Node {
                 3 => "h3".into(),
                 4 => "h4".into(),
                 5 => "h5".into(),
+                6 => "h6".into(),
                 _ => "h".into(),
             },
             Self::Emphasis(_) => "emphasis".into(),
@@ -2978,7 +2979,8 @@ mod tests {
     #[case(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "h3")]
     #[case(Node::Heading(Heading{depth: 4, values: Vec::new(), position: None}), "h4")]
     #[case(Node::Heading(Heading{depth: 5, values: Vec::new(), position: None}), "h5")]
-    #[case(Node::Heading(Heading{depth: 6, values: Vec::new(), position: None}), "h")]
+    #[case(Node::Heading(Heading{depth: 6, values: Vec::new(), position: None}), "h6")]
+    #[case(Node::Heading(Heading{depth: 7, values: Vec::new(), position: None}), "h")]
     #[case(Node::Emphasis(Emphasis{values: Vec::new(), position: None}), "emphasis")]
     #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: None}), "footnote")]
     #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: None}), "footnoteref")]
