@@ -36,6 +36,7 @@
 |`get_md_list_level`|Returns the indent level of a markdown list node.|`list`|get_md_list_level(list)|
 |`get_title`|Returns the title of a markdown node.|`node`|get_title(node)|
 |`get_url`|Returns the url of a markdown node.|`node`|get_url(node)|
+|`group_by`| Groups elements of an array by the result of applying a function to each element|`arr`, `f`|group_by(arr, f)|
 |`gsub`|Replaces all occurrences matching a regular expression pattern with the replacement string.|`from`, `pattern`, `to`|gsub(from, pattern, to)|
 |`gt`|Checks if the first value is greater than the second value.|`value1`, `value2`|gt(value1, value2)|
 |`gte`|Checks if the first value is greater than or equal to the second value.|`value1`, `value2`|gte(value1, value2)|
