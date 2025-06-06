@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -364,7 +364,7 @@ impl Cli {
         content: &str,
     ) -> miette::Result<()> {
         if let Some(file) = file {
-            unsafe { env::set_var("__FILE__", file.to_string_lossy().to_string()) };
+            engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
         }
 
         let input = match self.input.input_format {
