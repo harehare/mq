@@ -6,8 +6,8 @@ mq provides comparison functionality through built-in functions.
 
 Standard comparison operators are supported:
 
-- `eq(a, b)` - Returns true if `a` equals `b`
-- `ne(a, b)` - Returns true if `a` does not equal `b`
+- `eq(a, b), a == b` - Returns true if `a` equals `b`
+- `ne(a, b), a != b` - Returns true if `a` does not equal `b`
 - `gt(a, b)` - Returns true if `a` is greater than `b`
 - `gte(a, b)` - Returns true if `a` is greater than or equal to `b`
 - `lt(a, b)` - Returns true if `a` is less than `b`
