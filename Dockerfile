@@ -3,7 +3,7 @@ FROM rust:1.85-slim AS builder
 WORKDIR /usr/src/app
 COPY . /usr/src/app
 
-RUN cargo build --release
+RUN cargo build -p mq-cli --release
 
 FROM gcr.io/distroless/cc:nonroot
 
