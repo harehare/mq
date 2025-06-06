@@ -594,7 +594,7 @@ export const Playground = () => {
           [/(([a-zA-Z_]\w*)\s*\()/, "function"],
           [/\(|\)|\[|\]/, "delimiter.parenthesis"],
           [/[a-zA-Z_]\w*/, "variable"],
-          [/ *#.*/, "comment"],
+          [/ *#[^|]*/, "comment"],
         ],
         comment: [],
         multilineString: [
