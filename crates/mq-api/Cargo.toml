@@ -1,0 +1,26 @@
+[package]
+name = "mq-api"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+worker = "0.0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+utoipa = { version = "3.0", features = ["preserve_order"] }
+utoipa-swagger-ui = { version = "3.0", features = ["axum"] } # Using axum for now, will adjust if needed for worker
+url = "2.4"
+
+[dependencies.getrandom]
+version = "0.2"
+features = ["js"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Request", "RequestInit", "Response", "Headers"] }
