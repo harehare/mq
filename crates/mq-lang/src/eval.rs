@@ -3565,6 +3565,64 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "del".to_string(),
                                                      args: vec![r#"{"key1": "value1", "key2": "value2"}"#.to_string().into(), "1".to_string().into()]})))]
+    #[case::set_code_block_lang_string(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
+            value: "let x = 1;".to_string(),
+            lang: None,
+            fence: true,
+            meta: None,
+            position: None,
+        }), None)],
+        vec![
+            ast_call("set_code_block_lang", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("rust".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
+            value: "let x = 1;".to_string(),
+            lang: Some("rust".to_string()),
+            fence: true,
+            meta: None,
+            position: None,
+        }), None)]))]
+    #[case::set_code_block_lang_empty(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
+            value: "let x = 1;".to_string(),
+            lang: Some("js".to_string()),
+            fence: true,
+            meta: None,
+            position: None,
+        }), None)],
+        vec![
+            ast_call("set_code_block_lang", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
+            value: "let x = 1;".to_string(),
+            lang: None,
+            fence: true,
+            meta: None,
+            position: None,
+        }), None)]))]
+    #[case::set_code_block_lang_non_code(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "not code".to_string(),
+            position: None,
+        }), None)],
+        vec![
+            ast_call("set_code_block_lang", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("rust".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+            value: "not code".to_string(),
+            position: None,
+        }), None)]))]
+    #[case::set_code_block_lang_none(vec![RuntimeValue::NONE],
+        vec![
+            ast_call("set_code_block_lang", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("rust".to_string())))
+            ])
+        ],
+        Ok(vec![RuntimeValue::NONE]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

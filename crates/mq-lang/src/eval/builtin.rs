@@ -1648,6 +1648,25 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
 
         map.insert(
+            CompactString::new("set_code_block_lang"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::Code(code), _),
+                    RuntimeValue::String(lang),
+                ] => {
+                    let mut new_code = code.clone();
+                    new_code.lang = if lang.is_empty() {
+                        None
+                    } else {
+                        Some(lang.clone())
+                    };
+                    Ok(mq_markdown::Node::Code(new_code).into())
+                }
+                _ => Ok(args[0].clone()),
+            }),
+        );
+
+        map.insert(
             CompactString::new("dict"),
             BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
                 if args.is_empty() {
@@ -2729,6 +2748,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
             description: "Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).",
             params: &["node", "reference_id"],
+            },
+        );
+        map.insert(
+            CompactString::new("set_code_block_lang"),
+            BuiltinFunctionDoc {
+                description: "Sets the language of a markdown code block node.",
+                params: &["code_block", "language"],
             },
         );
 
