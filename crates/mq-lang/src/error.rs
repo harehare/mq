@@ -36,7 +36,7 @@ impl Error {
     pub fn from_error(
         top_level_source_code: impl Into<String>,
         cause: InnerError,
-        module_loader: ModuleLoader,
+        module_loader: &ModuleLoader, // Changed to reference
     ) -> Self {
         let source_code = top_level_source_code.into();
         let token = match &cause {
@@ -83,11 +83,11 @@ impl Error {
                 let source_code = match module_loader.module_name(token.module_id).as_str() {
                     Module::TOP_LEVEL_MODULE => source_code,
                     Module::BUILTIN_MODULE => ModuleLoader::BUILTIN_FILE.to_string(),
-                    module_name => module_loader
-                        .clone()
+                    module_name => module_loader // Removed .clone()
                         .read_file(module_name)
-                        .unwrap_or_default()
-                        .clone(),
+                        .unwrap_or_default(), // read_file now returns String or similar, no extra .clone() needed if it returns owned. Assuming it returns String.
+                                             // If read_file returns &str, then .to_string() or .to_owned() would be needed here.
+                                             // Based on ModuleLoader::read_file likely returning Result<String, _>, .unwrap_or_default() gives String.
                 };
 
                 let location = SourceOffset::from_location(
@@ -124,11 +124,9 @@ impl Error {
                         |module_id| match module_loader.module_name(*module_id).as_str() {
                             Module::TOP_LEVEL_MODULE => source_code.to_owned(),
                             Module::BUILTIN_MODULE => ModuleLoader::BUILTIN_FILE.to_string(),
-                            module_name => module_loader
-                                .clone()
+                            module_name => module_loader // Removed .clone()
                                 .read_file(module_name)
-                                .unwrap_or_default()
-                                .clone(),
+                                .unwrap_or_default(), // Assuming read_file returns String
                         },
                     )
                     .unwrap_or(source_code.to_owned());

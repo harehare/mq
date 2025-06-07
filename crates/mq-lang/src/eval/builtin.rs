@@ -9,6 +9,7 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::{SmallVec, smallvec};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::process::exit;
@@ -33,7 +34,11 @@ pub type Args = SmallVec<[RuntimeValue; 4]>;
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
     pub num_params: ParamNum,
-    pub func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
+    pub func: for<'f_rt> fn(
+        &ast::Ident,
+        &'f_rt RuntimeValue,
+        &Args,
+    ) -> Result<Cow<'f_rt, RuntimeValue>, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -75,7 +80,11 @@ impl ParamNum {
 impl BuiltinFunction {
     pub fn new(
         num_params: ParamNum,
-        func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
+        func: for<'f_rt> fn(
+            &ast::Ident,
+            &'f_rt RuntimeValue,
+            &Args,
+        ) -> Result<Cow<'f_rt, RuntimeValue>, Error>,
     ) -> Self {
         BuiltinFunction { num_params, func }
     }
@@ -107,7 +116,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 match args.as_slice() {
                     [a] => {
                         eprintln!("{}", a);
-                        Ok(current_value.clone())
+                        Ok(Cow::Borrowed(current_value))
                     }
                     _ => unreachable!(),
                 }
@@ -116,13 +125,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("type"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| {
-                Ok(args.first().unwrap().name().to_string().into())
+                Ok(Cow::Owned(args.first().unwrap().name().to_string().into()))
             }),
         );
         map.insert(
             CompactString::new("array"),
             BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
-                Ok(RuntimeValue::Array(args.to_vec()))
+                Ok(Cow::Owned(RuntimeValue::Array(args.to_vec())))
             }),
         );
         map.insert(
@@ -142,17 +151,17 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         flattened
                     }
 
-                    Ok(_flatten(arrays).into())
+                    Ok(Cow::Owned(_flatten(arrays).into()))
                 }
-                [a] => Ok(a.clone()),
+                [a] => Ok(Cow::Owned(a.clone())),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("from_date"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(date_str)] => from_date(date_str),
-                [RuntimeValue::Markdown(node_value, _)] => from_date(node_value.value().as_str()),
+                [RuntimeValue::String(date_str)] => from_date(date_str).map(Cow::Owned),
+                [RuntimeValue::Markdown(node_value, _)] => from_date(node_value.value().as_ref()).map(Cow::Owned), // .as_ref()
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -161,7 +170,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_date"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
-                    to_date(*ms, Some(format.as_str()))
+                    to_date(*ms, Some(format.as_str())).map(Cow::Owned)
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -173,13 +182,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("now"),
             BuiltinFunction::new(ParamNum::None, |_, _, _| {
-                Ok(RuntimeValue::Number(
+                Ok(Cow::Owned(RuntimeValue::Number(
                     (std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map_err(|e| Error::Runtime(format!("{}", e)))?
                         .as_millis() as i64)
                         .into(),
-                ))
+                )))
             }),
         );
         map.insert(
@@ -187,14 +196,18 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => base64(s),
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        base64(md.value().as_str()).and_then(|b| match b {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                    .markdown_node_ref() // Changed to markdown_node_ref
+                    .map(|md_ref| { // md_ref is &Node
+                        base64(md_ref.value().as_ref()).and_then(|b_cow| { // md_ref.value().as_ref()
+                            let s_val = match b_cow {
+                                Cow::Owned(RuntimeValue::String(s_o)) => s_o,
+                                Cow::Borrowed(RuntimeValue::String(s_b)) => s_b.to_string(),
+                                _ => return Err(Error::InvalidTypes(ident.to_string(), vec![b_cow.into_owned()])),
+                            };
+                            Ok(Cow::Owned(node.update_markdown_value(&s_val)))
                         })
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -204,14 +217,18 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => base64d(s),
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        base64d(md.value().as_str()).and_then(|o| match o {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                    .markdown_node_ref() // Changed to markdown_node_ref
+                    .map(|md_ref| { // md_ref is &Node
+                        base64d(md_ref.value().as_ref()).and_then(|o_cow| { // md_ref.value().as_ref()
+                            let s_val = match o_cow {
+                                Cow::Owned(RuntimeValue::String(s_o)) => s_o,
+                                Cow::Borrowed(RuntimeValue::String(s_b)) => s_b.to_string(),
+                                _ => return Err(Error::InvalidTypes(ident.to_string(), vec![o_cow.into_owned()])),
+                            };
+                            Ok(Cow::Owned(node.update_markdown_value(&s_val)))
                         })
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -220,10 +237,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("min"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
-                    Ok(std::cmp::min(*n1, *n2).into())
+                    Ok(Cow::Owned(std::cmp::min(*n1, *n2).into()))
                 }
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::min(s1.to_string(), s2.to_string()).into())
+                    Ok(Cow::Owned(std::cmp::min(s1.to_string(), s2.to_string()).into()))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -236,10 +253,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("max"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
-                    Ok(std::cmp::max(*n1, *n2).into())
+                    Ok(Cow::Owned(std::cmp::max(*n1, *n2).into()))
                 }
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::max(s1.to_string(), s2.to_string()).into())
+                    Ok(Cow::Owned(std::cmp::max(s1.to_string(), s2.to_string()).into()))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -251,10 +268,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_html"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
-                [RuntimeValue::Markdown(node_value, _)] => {
-                    Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
+                [RuntimeValue::None] => Ok(Cow::Owned(RuntimeValue::NONE)),
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(mq_markdown::to_html(s).into())),
+                [RuntimeValue::Markdown(node_value, _)] => { // node_value is &Node
+                    Ok(Cow::Owned(mq_markdown::to_html(&node_value.to_string()).into())) // node_value.to_string() calls Display
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -263,25 +280,25 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_csv"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::Array(array)] => Ok(array.iter().join(",").into()),
-                [a] => Ok(a.to_string().into()),
+                [RuntimeValue::None] => Ok(Cow::Owned(RuntimeValue::NONE)),
+                [RuntimeValue::Array(array)] => Ok(Cow::Owned(array.iter().join(",").into())),
+                [a] => Ok(Cow::Owned(a.to_string().into())),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("to_tsv"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::Array(array)] => Ok(array.iter().join("\t").into()),
-                [a] => Ok(a.to_string().into()),
+                [RuntimeValue::None] => Ok(Cow::Owned(RuntimeValue::NONE)),
+                [RuntimeValue::Array(array)] => Ok(Cow::Owned(array.iter().join("\t").into())),
+                [a] => Ok(Cow::Owned(a.to_string().into())),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("to_string"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [o] => Ok(o.to_string().into()),
+                [o] => Ok(Cow::Owned(o.to_string().into())),
                 _ => unreachable!(),
             }),
         );
@@ -289,45 +306,43 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("to_number"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        md.to_string()
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        md_ref.value().as_ref() // Use value().as_ref() for parsing
                             .parse::<f64>()
-                            .map(|n| RuntimeValue::Number(n.into()))
+                            .map(|n| Cow::Owned(RuntimeValue::Number(n.into())))
                             .map_err(|e| Error::Runtime(format!("{}", e)))
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [RuntimeValue::String(s)] => s
                     .parse::<f64>()
-                    .map(|n| RuntimeValue::Number(n.into()))
+                    .map(|n| Cow::Owned(RuntimeValue::Number(n.into())))
                     .map_err(|e| Error::Runtime(format!("{}", e))),
                 [RuntimeValue::Array(array)] => {
                     let result_value: Result<Vec<RuntimeValue>, Error> = array
-                        .clone()
-                        .into_iter()
+                        .iter()
                         .map(|o| match o {
                             node @ RuntimeValue::Markdown(_, _) => node
-                                .markdown_node()
-                                .map(|md| {
-                                    md.to_string()
+                                .markdown_node_ref() // Changed
+                                .map(|md_ref| { // md_ref is &Node
+                                    md_ref.value().as_ref() // Use value().as_ref() for parsing
                                         .parse::<f64>()
-                                        .map(|n| RuntimeValue::Number(n.into()))
+                                        .map(RuntimeValue::Number)
                                         .map_err(|e| Error::Runtime(format!("{}", e)))
                                 })
                                 .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
                             RuntimeValue::String(s) => s
                                 .parse::<f64>()
-                                .map(|n| RuntimeValue::Number(n.into()))
+                                .map(RuntimeValue::Number)
                                 .map_err(|e| Error::Runtime(format!("{}", e))),
                             RuntimeValue::Bool(b) => {
-                                Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into()))
+                                Ok(RuntimeValue::Number(if *b { 1 } else { 0 }.into()))
                             }
-                            n @ RuntimeValue::Number(_) => Ok(n),
+                            n @ RuntimeValue::Number(_) => Ok(n.clone()),
                             a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                         })
                         .collect();
-
-                    result_value.map(RuntimeValue::Array)
+                    result_value.map(|v| Cow::Owned(RuntimeValue::Array(v)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -338,14 +353,18 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => url_encode(s),
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        url_encode(md.value().as_str()).and_then(|o| match o {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                    .markdown_node_ref() // Changed to markdown_node_ref
+                    .map(|md_ref| { // md_ref is &Node
+                        url_encode(md_ref.value().as_ref()).and_then(|o_cow| { // md_ref.value().as_ref()
+                            let s_val = match o_cow {
+                                Cow::Owned(RuntimeValue::String(s_o)) => s_o,
+                                Cow::Borrowed(RuntimeValue::String(s_b)) => s_b.to_string(),
+                                _ => return Err(Error::InvalidTypes(ident.to_string(), vec![o_cow.into_owned()])),
+                            };
+                            Ok(Cow::Owned(node.update_markdown_value(&s_val))) // node is &RuntimeValue
                         })
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -353,9 +372,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_text"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.value().into()),
-                [RuntimeValue::Array(array)] => Ok(array
+                [RuntimeValue::None] => Ok(Cow::Owned(RuntimeValue::NONE)),
+                [RuntimeValue::Markdown(node_value, _)] => Ok(Cow::Owned(node_value.value().into())),
+                [RuntimeValue::Array(array)] => Ok(Cow::Owned(array
                     .iter()
                     .map(|a| {
                         if a.is_none() {
@@ -365,8 +384,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         }
                     })
                     .join(",")
-                    .into()),
-                [value] => Ok(value.to_string().into()),
+                    .into())),
+                [value] => Ok(Cow::Owned(value.to_string().into())),
                 _ => unreachable!(),
             }),
         );
@@ -374,17 +393,17 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("ends_with"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| Ok(md.value().ends_with(s).into()))
-                    .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.ends_with(s2).into()),
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(md_ref.value().as_ref().ends_with(s).into()))) // md_ref.value().as_ref()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::FALSE))),
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned(s1.ends_with(s2).into())),
+                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(Cow::Owned(array
                     .last()
-                    .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
+                    .map_or(Ok(Cow::Owned(RuntimeValue::FALSE)), |o| {
+                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())]).map(|cow| cow.into_owned())
                     })
-                    .unwrap_or(RuntimeValue::FALSE)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
+                    .unwrap_or(RuntimeValue::FALSE))),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(Cow::Owned(RuntimeValue::FALSE)),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -396,19 +415,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("starts_with"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| Ok(md.value().starts_with(s).into()))
-                    .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(md_ref.value().as_ref().starts_with(s).into()))) // md_ref.value().as_ref()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::FALSE))),
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(s1.starts_with(s2).into())
+                    Ok(Cow::Owned(s1.starts_with(s2).into()))
                 }
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(Cow::Owned(array
                     .first()
-                    .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
+                    .map_or(Ok(Cow::Owned(RuntimeValue::FALSE)), |o| {
+                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())]).map(|cow| cow.into_owned())
                     })
-                    .unwrap_or(RuntimeValue::FALSE)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
+                    .unwrap_or(RuntimeValue::FALSE))),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(Cow::Owned(RuntimeValue::FALSE)),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -419,15 +438,15 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("match"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_re(s, pattern),
+                [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_re(s, pattern).map(Cow::Owned),
                 [
                     node @ RuntimeValue::Markdown(_, _),
                     RuntimeValue::String(pattern),
                 ] => node
-                    .markdown_node()
-                    .map(|md| match_re(&md.value(), pattern))
-                    .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| match_re(md_ref.value().as_ref(), pattern).map(Cow::Owned)) // md_ref.value().as_ref()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::EMPTY_ARRAY))),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(Cow::Owned(RuntimeValue::EMPTY_ARRAY)),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -439,11 +458,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("downcase"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(node.update_markdown_value(md.value().to_lowercase().as_str())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::String(s)] => Ok(s.to_lowercase().into()),
-                [_] => Ok(RuntimeValue::NONE),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(node.update_markdown_value(md_ref.value().to_lowercase().as_str())))) // md_ref.value()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(s.to_lowercase().into())),
+                [_] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 _ => unreachable!(),
             }),
         );
@@ -454,24 +473,24 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::String(s1),
                     RuntimeValue::String(s2),
                     RuntimeValue::String(s3),
-                ] => Ok(replace_re(s1, s2, s3)?),
+                ] => Ok(Cow::Owned(replace_re(s1, s2, s3)?)),
                 [
                     node @ RuntimeValue::Markdown(_, _),
                     RuntimeValue::String(s1),
                     RuntimeValue::String(s2),
                 ] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(
-                            &replace_re(md.value().as_str(), s1.as_str(), s2.as_str())?.to_string(),
-                        ))
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(node.update_markdown_value(
+                            &replace_re(md_ref.value().as_ref(), s1.as_str(), s2.as_str())?.to_string(), // md_ref.value().as_ref()
+                        )))
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [
                     RuntimeValue::None,
                     RuntimeValue::String(_),
                     RuntimeValue::String(_),
-                ] => Ok(RuntimeValue::NONE),
+                ] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone(), c.clone()],
@@ -486,24 +505,24 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::String(s1),
                     RuntimeValue::String(s2),
                     RuntimeValue::String(s3),
-                ] => Ok(s1.replace(s2, s3).into()),
+                ] => Ok(Cow::Owned(s1.replace(s2, s3).into())),
                 [
                     node @ RuntimeValue::Markdown(_, _),
                     RuntimeValue::String(s1),
                     RuntimeValue::String(s2),
                 ] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(
-                            md.value().replace(s1.as_str(), s2.as_str()).as_str(),
-                        ))
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(node.update_markdown_value(
+                            md_ref.value().as_ref().replace(s1.as_str(), s2.as_str()).as_str(), // md_ref.value().as_ref()
+                        )))
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [
                     RuntimeValue::None,
                     RuntimeValue::String(_),
                     RuntimeValue::String(_),
-                ] => Ok(RuntimeValue::NONE),
+                ] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone(), c.clone()],
@@ -515,28 +534,28 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("repeat"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-                    Ok(s.repeat(n.value() as usize).into())
+                    Ok(Cow::Owned(s.repeat(n.value() as usize).into()))
                 }
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(n)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node
-                            .update_markdown_value(md.value().repeat(n.value() as usize).as_str()))
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(node // node is &RuntimeValue
+                            .update_markdown_value(md_ref.value().as_ref().repeat(n.value() as usize).as_str()))) // md_ref.value().as_ref()
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
                     let n = n.value() as usize;
                     if n == 0 {
-                        return Ok(RuntimeValue::EMPTY_ARRAY);
+                        return Ok(Cow::Owned(RuntimeValue::EMPTY_ARRAY));
                     }
 
                     let mut repeated_array = Vec::with_capacity(array.len() * n);
                     for _ in 0..n {
                         repeated_array.extend_from_slice(array);
                     }
-                    Ok(RuntimeValue::Array(repeated_array))
+                    Ok(Cow::Owned(RuntimeValue::Array(repeated_array)))
                 }
-                [RuntimeValue::None, _] => Ok(RuntimeValue::None),
+                [RuntimeValue::None, _] => Ok(Cow::Owned(RuntimeValue::None)),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -547,21 +566,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("explode"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(RuntimeValue::Array(
                     s.chars()
                         .map(|c| RuntimeValue::Number((c as u32).into()))
                         .collect::<Vec<_>>(),
-                )),
-                [node @ RuntimeValue::Markdown(_, _)] => Ok(RuntimeValue::Array(
-                    node.markdown_node()
-                        .map(|md| {
-                            md.value()
+                ))),
+                [node @ RuntimeValue::Markdown(_, _)] => Ok(Cow::Owned(RuntimeValue::Array(
+                    node.markdown_node_ref() // Changed
+                        .map(|md_ref| { // md_ref is &Node
+                            md_ref.value().as_ref() // md_ref.value().as_ref()
                                 .chars()
                                 .map(|c| RuntimeValue::Number((c as u32).into()))
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default(),
-                )),
+                ))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -579,7 +598,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             _ => "".to_string(),
                         })
                         .collect();
-                    Ok(result.into())
+                    Ok(Cow::Owned(result.into()))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -588,12 +607,12 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("trim"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(s.trim().to_string().into()),
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(s.trim().to_string().into())),
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(node.update_markdown_value(md.to_string().trim())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::None] => Ok(RuntimeValue::None),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(node.update_markdown_value(md_ref.to_string().trim())))) // md_ref.to_string()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
+                [RuntimeValue::None] => Ok(Cow::Owned(RuntimeValue::None)),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -602,11 +621,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("upcase"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(node.update_markdown_value(md.value().to_uppercase().as_str())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::String(s)] => Ok(s.to_uppercase().into()),
-                [RuntimeValue::None] => Ok(RuntimeValue::None),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(node.update_markdown_value(md_ref.value().to_uppercase().as_str())))) // md_ref.value()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(s.to_uppercase().into())),
+                [RuntimeValue::None] => Ok(Cow::Owned(RuntimeValue::None)),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -617,16 +636,16 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [
                     node1 @ RuntimeValue::Markdown(_, _),
                     node2 @ RuntimeValue::Markdown(_, _),
-                ] => node2
-                    .markdown_node()
-                    .map(|md| Ok(node1.update_markdown_value(&md.value())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                ] => node2 // node2 is &RuntimeValue
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(node1.update_markdown_value(md_ref.value().as_ref())))) // md_ref.value().as_ref(), node1 is &RuntimeValue
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [
-                    RuntimeValue::Markdown(node_value, _),
+                    RuntimeValue::Markdown(node_value, _), // node_value is Node (owned)
                     RuntimeValue::String(s),
-                ] => Ok(node_value.with_value(s).into()),
-                [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
-                [_, a] => Ok(a.clone()),
+                ] => Ok(Cow::Owned((&node_value).with_value(s).into())), // Call with_value on &node_value
+                [RuntimeValue::None, _] => Ok(Cow::Owned(RuntimeValue::NONE)),
+                [_, a] => Ok(Cow::Owned(a.clone())),
                 _ => unreachable!(),
             }),
         );
@@ -647,7 +666,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         .filter(|&(i, _)| i >= start && i < end)
                         .fold("".to_string(), |s, (_, c)| format!("{}{}", s, c));
 
-                    Ok(sub.into())
+                    Ok(Cow::Owned(sub.into()))
                 }
                 [
                     RuntimeValue::Array(arrays),
@@ -658,37 +677,37 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     let end = end.value() as usize;
 
                     if start >= arrays.len() {
-                        return Ok(RuntimeValue::EMPTY_ARRAY);
+                        return Ok(Cow::Owned(RuntimeValue::EMPTY_ARRAY));
                     }
 
                     let actual_end = std::cmp::min(end, arrays.len());
 
-                    Ok(RuntimeValue::Array(arrays[start..actual_end].to_vec()))
+                    Ok(Cow::Owned(RuntimeValue::Array(arrays[start..actual_end].to_vec())))
                 }
                 [
                     node @ RuntimeValue::Markdown(_, _),
                     RuntimeValue::Number(start),
                     RuntimeValue::Number(end),
                 ] => node
-                    .markdown_node()
-                    .map(|md| {
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
                         let start = start.value() as usize;
                         let end = end.value() as usize;
-                        let sub: String = md
-                            .value()
+                        let sub: String = md_ref
+                            .value().as_ref() // md_ref.value().as_ref()
                             .chars()
                             .enumerate()
                             .filter(|&(i, _)| i >= start && i < end)
                             .fold("".to_string(), |s, (_, c)| format!("{}{}", s, c));
 
-                        Ok(node.update_markdown_value(&sub))
+                        Ok(Cow::Owned(node.update_markdown_value(&sub)))
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [
                     RuntimeValue::None,
                     RuntimeValue::Number(_),
                     RuntimeValue::Number(_),
-                ] => Ok(RuntimeValue::NONE),
+                ] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone(), c.clone()],
@@ -700,7 +719,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("pow"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => Ok(
-                    RuntimeValue::Number((base.value() as i64).pow(exp.value() as u32).into()),
+                    Cow::Owned(RuntimeValue::Number((base.value() as i64).pow(exp.value() as u32).into())),
                 ),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -712,27 +731,27 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("index"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned(RuntimeValue::Number(
                     (s1.find(s2).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
-                )),
+                ))),
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(RuntimeValue::Number(
-                            (md.value().find(s).map(|v| v as isize).unwrap_or_else(|| -1) as i64)
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(RuntimeValue::Number(
+                            (md_ref.value().as_ref().find(s).map(|v| v as isize).unwrap_or_else(|| -1) as i64) // md_ref.value().as_ref()
                                 .into(),
-                        ))
+                        )))
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::Number((-1_i64).into())))),
+                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(Cow::Owned(array
                     .iter()
                     .position(|o| match o {
                         RuntimeValue::String(s1) => s1 == s,
                         _ => false,
                     })
                     .map(|i| RuntimeValue::Number((i as i64).into()))
-                    .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::None, _] => Ok(RuntimeValue::Number((-1_i64).into())),
+                    .unwrap_or(RuntimeValue::Number((-1_i64).into())))),
+                [RuntimeValue::None, _] => Ok(Cow::Owned(RuntimeValue::Number((-1_i64).into()))),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -743,19 +762,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("len"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.chars().count().into())),
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(RuntimeValue::Number(s.chars().count().into()))),
                 [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(RuntimeValue::Number(md.value().chars().count().into())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::Number(0.into()))),
-                [a] => Ok(RuntimeValue::Number(a.len().into())),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| Ok(Cow::Owned(RuntimeValue::Number(md_ref.value().as_ref().chars().count().into())))) // md_ref.value().as_ref()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::Number(0.into())))),
+                [a] => Ok(Cow::Owned(RuntimeValue::Number(a.len().into()))),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("utf8bytelen"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] => Ok(RuntimeValue::Number(a.len().into())),
+                [a] => Ok(Cow::Owned(RuntimeValue::Number(a.len().into()))),
                 _ => unreachable!(),
             }),
         );
@@ -763,34 +782,34 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("rindex"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned(RuntimeValue::Number(
                     s1.rfind(s2)
                         .map(|v| v as isize)
                         .unwrap_or_else(|| -1)
                         .into(),
-                )),
+                ))),
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(RuntimeValue::Number(
-                            md.value()
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(RuntimeValue::Number(
+                            md_ref.value().as_ref() // md_ref.value().as_ref()
                                 .rfind(s)
                                 .map(|v| v as isize)
                                 .unwrap_or_else(|| -1)
                                 .into(),
-                        ))
+                        )))
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::Number((-1_i64).into())))),
+                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(Cow::Owned(array
                     .iter()
                     .rposition(|o| match o {
                         RuntimeValue::String(s1) => s1 == s,
                         _ => false,
                     })
                     .map(|i| RuntimeValue::Number(i.into()))
-                    .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
+                    .unwrap_or(RuntimeValue::Number((-1_i64).into())))),
                 [RuntimeValue::None, RuntimeValue::String(_)] => {
-                    Ok(RuntimeValue::Number((-1_i64).into()))
+                    Ok(Cow::Owned(RuntimeValue::Number((-1_i64).into())))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -804,21 +823,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
                     let index = index.value() as usize;
-                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
+                    Ok(Cow::Owned(array.get(index).cloned().unwrap_or(RuntimeValue::None)))
                 }
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                     match s.chars().nth(n.value() as usize) {
-                        Some(o) => Ok(o.to_string().into()),
-                        None => Ok(RuntimeValue::None),
+                        Some(o) => Ok(Cow::Owned(o.to_string().into())),
+                        None => Ok(Cow::Owned(RuntimeValue::None)),
                     }
                 }
                 [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-                    Ok(RuntimeValue::Markdown(
+                    Ok(Cow::Owned(RuntimeValue::Markdown(
                         node.clone(),
                         Some(runtime_value::Selector::Index(i.value() as usize)),
-                    ))
+                    )))
                 }
-                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -832,18 +851,18 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
                     let mut array = array.clone();
                     array.remove(n.value() as usize);
-                    Ok(RuntimeValue::Array(array))
+                    Ok(Cow::Owned(RuntimeValue::Array(array)))
                 }
                 [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                     let mut s = s.clone().chars().collect::<Vec<_>>();
                     s.remove(n.value() as usize);
-                    Ok(s.into_iter().collect::<String>().into())
+                    Ok(Cow::Owned(s.into_iter().collect::<String>().into()))
                 }
-                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
                     let mut dict = dict.clone();
                     dict.remove(key);
-                    Ok(RuntimeValue::Dict(dict))
+                    Ok(Cow::Owned(RuntimeValue::Dict(dict)))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -856,7 +875,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("join"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array), RuntimeValue::String(s)] => {
-                    Ok(array.iter().join(s).into())
+                    Ok(Cow::Owned(array.iter().join(s).into()))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -871,9 +890,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
                     vec.reverse();
-                    Ok(RuntimeValue::Array(vec))
+                    Ok(Cow::Owned(RuntimeValue::Array(vec)))
                 }
-                [RuntimeValue::String(s)] => Ok(s.chars().rev().collect::<String>().into()),
+                [RuntimeValue::String(s)] => Ok(Cow::Owned(s.chars().rev().collect::<String>().into())),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -895,7 +914,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             _ => v,
                         })
                         .collect();
-                    Ok(RuntimeValue::Array(vec))
+                    Ok(Cow::Owned(RuntimeValue::Array(vec)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -932,7 +951,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         })
                         .collect();
 
-                    Ok(RuntimeValue::Array(vec))
+                    Ok(Cow::Owned(RuntimeValue::Array(vec)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -941,13 +960,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("compact"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
+                [RuntimeValue::Array(array)] => Ok(Cow::Owned(RuntimeValue::Array(
                     array
                         .iter()
                         .filter(|v| !v.is_none())
-                        .cloned()
+                        .map(|v_ref| v_ref.clone())
                         .collect::<Vec<_>>(),
-                )),
+                ))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -959,7 +978,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     let range: Vec<RuntimeValue> = ((start.value() as u64)..(end.value() as u64))
                         .map(|n| RuntimeValue::Number(n.into()))
                         .collect();
-                    Ok(RuntimeValue::Array(range))
+                    Ok(Cow::Owned(RuntimeValue::Array(range)))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -971,14 +990,14 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("split"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => split_re(s1, s2).map(Cow::Owned),
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| split_re(md.value().as_str(), s))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| split_re(md_ref.value().as_ref(), s).map(Cow::Owned)) // md_ref.value().as_ref()
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [RuntimeValue::Array(array), v] => {
                     if array.is_empty() {
-                        return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())]));
+                        return Ok(Cow::Owned(RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())])));
                     }
 
                     let mut positions = Vec::new();
@@ -989,9 +1008,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     }
 
                     if positions.is_empty() {
-                        return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(
+                        return Ok(Cow::Owned(RuntimeValue::Array(vec![RuntimeValue::Array(
                             array.clone(),
-                        )]));
+                        )])));
                     }
 
                     let mut result = Vec::with_capacity(positions.len() + 1);
@@ -1006,9 +1025,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         result.push(RuntimeValue::Array(array[start..].to_vec()));
                     }
 
-                    Ok(RuntimeValue::Array(result))
+                    Ok(Cow::Owned(RuntimeValue::Array(result)))
                 }
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(Cow::Owned(RuntimeValue::EMPTY_ARRAY)),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1023,7 +1042,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     let mut vec = array.to_vec();
                     let mut unique = FxHashMap::default();
                     vec.retain(|item| unique.insert(item.to_string(), item.clone()).is_none());
-                    Ok(RuntimeValue::Array(vec))
+                    Ok(Cow::Owned(RuntimeValue::Array(vec)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1032,7 +1051,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("ceil"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ceil().into())),
+                [RuntimeValue::Number(n)] => Ok(Cow::Owned(RuntimeValue::Number(n.value().ceil().into()))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -1040,7 +1059,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("floor"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().floor().into())),
+                [RuntimeValue::Number(n)] => Ok(Cow::Owned(RuntimeValue::Number(n.value().floor().into()))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -1048,7 +1067,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("round"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().round().into())),
+                [RuntimeValue::Number(n)] => Ok(Cow::Owned(RuntimeValue::Number(n.value().round().into()))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -1056,7 +1075,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("trunc"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().trunc().into())),
+                [RuntimeValue::Number(n)] => Ok(Cow::Owned(RuntimeValue::Number(n.value().trunc().into()))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -1064,7 +1083,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("abs"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().abs().into())),
+                [RuntimeValue::Number(n)] => Ok(Cow::Owned(RuntimeValue::Number(n.value().abs().into()))),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
             }),
@@ -1072,66 +1091,66 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("eq"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [a, b] => Ok((a == b).into()),
+                [a, b] => Ok(Cow::Owned((a == b).into())),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("ne"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [a, b] => Ok((a != b).into()),
+                [a, b] => Ok(Cow::Owned((a != b).into())),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("gt"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
-                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 > b2).into()),
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned((s1 > s2).into())),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((n1 > n2).into())),
+                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok(Cow::Owned((b1 > b2).into())),
                 [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
-                    Ok((n1 > n2).into())
+                    Ok(Cow::Owned((n1 > n2).into()))
                 }
-                [_, _] => Ok(RuntimeValue::FALSE),
+                [_, _] => Ok(Cow::Owned(RuntimeValue::FALSE)),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("gte"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
-                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 >= b2).into()),
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned((s1 >= s2).into())),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((n1 >= n2).into())),
+                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok(Cow::Owned((b1 >= b2).into())),
                 [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
-                    Ok((n1 >= n2).into())
+                    Ok(Cow::Owned((n1 >= n2).into()))
                 }
-                [_, _] => Ok(RuntimeValue::FALSE),
+                [_, _] => Ok(Cow::Owned(RuntimeValue::FALSE)),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("lt"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
-                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 < b2).into()),
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned((s1 < s2).into())),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((n1 < n2).into())),
+                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok(Cow::Owned((b1 < b2).into())),
                 [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
-                    Ok((n1 < n2).into())
+                    Ok(Cow::Owned((n1 < n2).into()))
                 }
-                [_, _] => Ok(RuntimeValue::FALSE),
+                [_, _] => Ok(Cow::Owned(RuntimeValue::FALSE)),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("lte"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
-                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 <= b2).into()),
+                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(Cow::Owned((s1 <= s2).into())),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((n1 <= n2).into())),
+                [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok(Cow::Owned((b1 <= b2).into())),
                 [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
-                    Ok((n1 <= n2).into())
+                    Ok(Cow::Owned((n1 <= n2).into()))
                 }
-                [_, _] => Ok(RuntimeValue::FALSE),
+                [_, _] => Ok(Cow::Owned(RuntimeValue::FALSE)),
                 _ => unreachable!(),
             }),
         );
@@ -1139,45 +1158,45 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("add"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(format!("{}{}", s1, s2).into())
+                    Ok(Cow::Owned(format!("{}{}", s1, s2).into()))
                 }
                 [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(format!("{}{}", md.value(), s).as_str()))
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(node.update_markdown_value(format!("{}{}", md_ref.value().as_ref(), s).as_str()))) // md_ref.value().as_ref()
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [RuntimeValue::String(s), node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(format!("{}{}", s, md.value()).as_str()))
+                    .markdown_node_ref() // Changed
+                    .map(|md_ref| { // md_ref is &Node
+                        Ok(Cow::Owned(node.update_markdown_value(format!("{}{}", s, md_ref.value().as_ref()).as_str()))) // md_ref.value().as_ref()
                     })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [
                     node1 @ RuntimeValue::Markdown(_, _),
                     node2 @ RuntimeValue::Markdown(_, _),
-                ] => Ok(node2
-                    .markdown_node()
-                    .and_then(|md2| {
-                        node1.markdown_node().map(|md1| {
-                            node1.update_markdown_value(
-                                format!("{}{}", md1.value(), md2.value()).as_str(),
+                ] => Ok(Cow::Owned(node2 // node2 is &RuntimeValue
+                    .markdown_node_ref() // Changed
+                    .and_then(|md2_ref| { // md2_ref is &Node
+                        node1.markdown_node_ref().map(|md1_ref| { // node1 is &RuntimeValue, md1_ref is &Node
+                            node1.update_markdown_value( // node1 is &RuntimeValue
+                                format!("{}{}", md1_ref.value().as_ref(), md2_ref.value().as_ref()).as_str(), // .as_ref() for both
                             )
                         })
                     })
-                    .unwrap_or(RuntimeValue::NONE)),
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
+                    .unwrap_or_else(|| RuntimeValue::NONE))), // unwrap_or_else to ensure owned if needed, though NONE is Copy.
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((*n1 + *n2).into())),
                 [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
                     let a1: Vec<RuntimeValue> = a1.to_vec();
                     let a2: Vec<RuntimeValue> = a2.to_vec();
-                    Ok(RuntimeValue::Array(itertools::concat(vec![a1, a2])))
+                    Ok(Cow::Owned(RuntimeValue::Array(itertools::concat(vec![a1, a2]))))
                 }
-                [RuntimeValue::Array(a1), a2] => {
-                    let mut a1: Vec<RuntimeValue> = a1.to_vec();
-                    a1.push(a2.clone());
-                    Ok(RuntimeValue::Array(a1))
+                [RuntimeValue::Array(inner_vec), a2] => {
+                    let mut new_array = inner_vec.clone();
+                    new_array.push(a2.clone());
+                    Ok(Cow::Owned(RuntimeValue::Array(new_array)))
                 }
-                [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(a.clone()),
+                [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(Cow::Owned(a.clone())),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1188,7 +1207,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("sub"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((*n1 - *n2).into())),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1203,7 +1222,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     if n2.is_zero() {
                         Err(Error::ZeroDivision)
                     } else {
-                        Ok((*n1 / *n2).into())
+                        Ok(Cow::Owned((*n1 / *n2).into()))
                     }
                 }
                 [a, b] => Err(Error::InvalidTypes(
@@ -1216,7 +1235,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("mul"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((*n1 * *n2).into())),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1227,7 +1246,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("mod"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
+                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok(Cow::Owned((*n1 % *n2).into())),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -1238,19 +1257,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("and"),
             BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
-                Ok(args.iter().all(|arg| arg.is_true()).into())
+                Ok(Cow::Owned(args.iter().all(|arg| arg.is_true()).into()))
             }),
         );
         map.insert(
             CompactString::new("or"),
             BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
-                Ok(args.iter().any(|arg| arg.is_true()).into())
+                Ok(Cow::Owned(args.iter().any(|arg| arg.is_true()).into()))
             }),
         );
         map.insert(
             CompactString::new("not"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] => Ok((!a.is_true()).into()),
+                [a] => Ok(Cow::Owned((!a.is_true()).into())),
                 _ => unreachable!(),
             }),
         );
@@ -1259,68 +1278,68 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("to_code"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
+                [a, RuntimeValue::String(lang)] => Ok(Cow::Owned(mq_markdown::Node::Code(mq_markdown::Code {
                     value: a.to_string(),
                     lang: Some(lang.to_string()),
                     position: None,
                     meta: None,
                     fence: true,
                 })
-                .into()),
+                .into())),
                 [a, RuntimeValue::None] if !a.is_none() => {
-                    Ok(mq_markdown::Node::Code(mq_markdown::Code {
+                    Ok(Cow::Owned(mq_markdown::Node::Code(mq_markdown::Code {
                         value: a.to_string(),
                         lang: None,
                         position: None,
                         meta: None,
                         fence: true,
                     })
-                    .into())
+                    .into()))
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_code_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] if !a.is_none() => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
+                [a] if !a.is_none() => Ok(Cow::Owned(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
                     value: a.to_string().into(),
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_h"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _), RuntimeValue::Number(depth)] => {
-                    Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
+                    Ok(Cow::Owned(mq_markdown::Node::Heading(mq_markdown::Heading {
                         depth: (*depth).value() as u8,
-                        values: node.node_values(),
+                        values: node.node_values_ref().iter().map(|&n| n.clone()).collect(), // Changed
                         position: None,
                     })
-                    .into())
+                    .into()))
                 }
                 [a, RuntimeValue::Number(depth)] => {
-                    Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
+                    Ok(Cow::Owned(mq_markdown::Node::Heading(mq_markdown::Heading {
                         depth: (*depth).value() as u8,
                         values: vec![a.to_string().into()],
                         position: None,
                     })
-                    .into())
+                    .into()))
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_hr"),
             BuiltinFunction::new(ParamNum::Fixed(0), |_, _, _| {
                 Ok(
-                    mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+                    Cow::Owned(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
                         position: None,
                     })
-                    .into(),
+                    .into()),
                 )
             }),
         );
@@ -1331,7 +1350,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::String(url),
                     RuntimeValue::String(value),
                     RuntimeValue::String(title),
-                ] => Ok(mq_markdown::Node::Link(mq_markdown::Link {
+                ] => Ok(Cow::Owned(mq_markdown::Node::Link(mq_markdown::Link {
                     url: mq_markdown::Url::new(url.to_string()),
                     values: vec![value.to_string().into()],
                     title: if title.is_empty() {
@@ -1341,8 +1360,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     },
                     position: None,
                 })
-                .into()),
-                [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
+                .into())),
+                [RuntimeValue::None, _, _] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone(), c.clone()],
@@ -1357,116 +1376,116 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::String(url),
                     RuntimeValue::String(alt),
                     RuntimeValue::String(title),
-                ] => Ok(mq_markdown::Node::Image(mq_markdown::Image {
+                ] => Ok(Cow::Owned(mq_markdown::Node::Image(mq_markdown::Image {
                     alt: alt.to_string(),
                     url: url.to_string(),
                     title: Some(title.to_string()),
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_math"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] => Ok(mq_markdown::Node::Math(mq_markdown::Math {
+                [a] => Ok(Cow::Owned(mq_markdown::Node::Math(mq_markdown::Math {
                     value: a.to_string(),
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_math_inline"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
+                [a] => Ok(Cow::Owned(mq_markdown::Node::MathInline(mq_markdown::MathInline {
                     value: a.to_string().into(),
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_md_name"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::Markdown(node, _)] => Ok(node.name().to_string().into()),
-                _ => Ok(RuntimeValue::None),
+                [RuntimeValue::Markdown(node, _)] => Ok(Cow::Owned(node.name().to_string().into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_strong"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
-                    Ok(mq_markdown::Node::Strong(mq_markdown::Strong {
-                        values: node.node_values(),
+                    Ok(Cow::Owned(mq_markdown::Node::Strong(mq_markdown::Strong {
+                        values: node.node_values_ref().iter().map(|&n| n.clone()).collect(), // Changed
                         position: None,
                     })
-                    .into())
+                    .into()))
                 }
-                [a] if !a.is_none() => Ok(mq_markdown::Node::Strong(mq_markdown::Strong {
+                [a] if !a.is_none() => Ok(Cow::Owned(mq_markdown::Node::Strong(mq_markdown::Strong {
                     values: vec![a.to_string().into()],
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_em"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
-                    Ok(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
-                        values: node.node_values(),
+                    Ok(Cow::Owned(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
+                        values: node.node_values_ref().iter().map(|&n| n.clone()).collect(), // Changed
                         position: None,
                     })
-                    .into())
+                    .into()))
                 }
-                [a] if !a.is_none() => Ok(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
+                [a] if !a.is_none() => Ok(Cow::Owned(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
                     values: vec![a.to_string().into()],
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_md_text"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] if !a.is_none() => Ok(mq_markdown::Node::Text(mq_markdown::Text {
+                [a] if !a.is_none() => Ok(Cow::Owned(mq_markdown::Node::Text(mq_markdown::Text {
                     value: a.to_string(),
                     position: None,
                 })
-                .into()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
             CompactString::new("to_md_list"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _), RuntimeValue::Number(level)] => {
-                    Ok(mq_markdown::Node::List(mq_markdown::List {
-                        values: node.node_values(),
+                    Ok(Cow::Owned(mq_markdown::Node::List(mq_markdown::List {
+                        values: node.node_values_ref().iter().map(|&n| n.clone()).collect(), // Changed
                         index: 0,
                         level: level.value() as u8,
                         checked: None,
                         position: None,
                     })
-                    .into())
+                    .into()))
                 }
                 [a, RuntimeValue::Number(level)] if !a.is_none() => {
-                    Ok(mq_markdown::Node::List(mq_markdown::List {
+                    Ok(Cow::Owned(mq_markdown::Node::List(mq_markdown::List {
                         values: vec![a.to_string().into()],
                         index: 0,
                         level: level.value() as u8,
                         checked: None,
                         position: None,
                     })
-                    .into())
+                    .into()))
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
@@ -1510,13 +1529,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .collect::<Vec<_>>();
 
-                Ok(RuntimeValue::Markdown(
+                Ok(Cow::Owned(RuntimeValue::Markdown(
                     mq_markdown::Node::TableRow(mq_markdown::TableRow {
                         values,
                         position: None,
                     }),
                     None,
-                ))
+                )))
             }),
         );
         map.insert(
@@ -1527,8 +1546,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         mq_markdown::Node::List(mq_markdown::List { level, .. }),
                         _,
                     ),
-                ] => Ok(RuntimeValue::Number((*level).into())),
-                [_] => Ok(RuntimeValue::Number(0.into())),
+                ] => Ok(Cow::Owned(RuntimeValue::Number((*level).into()))),
+                [_] => Ok(Cow::Owned(RuntimeValue::Number(0.into()))),
                 _ => unreachable!(),
             }),
         );
@@ -1546,8 +1565,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     ),
                 ] => title
                     .as_ref()
-                    .map(|t| Ok(RuntimeValue::String(t.to_value())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    .map(|t| Ok(Cow::Owned(RuntimeValue::String(t.to_value()))))
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
                 [
                     RuntimeValue::Markdown(
                         mq_markdown::Node::Image(mq_markdown::Image { title, .. }),
@@ -1555,9 +1574,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     ),
                 ] => title
                     .as_ref()
-                    .map(|t| Ok(RuntimeValue::String(t.clone())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [_] => Ok(RuntimeValue::NONE),
+                    .map(|t| Ok(Cow::Owned(RuntimeValue::String(t.clone()))))
+                    .unwrap_or_else(|| Ok(Cow::Owned(RuntimeValue::NONE))),
+                [_] => Ok(Cow::Owned(RuntimeValue::NONE)),
                 _ => unreachable!(),
             }),
         );
@@ -1565,15 +1584,15 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("get_url"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _)] => {
-                    Ok(def.url.as_str().into())
+                    Ok(Cow::Owned(def.url.as_str().into()))
                 }
                 [RuntimeValue::Markdown(mq_markdown::Node::Link(link), _)] => {
-                    Ok(link.url.as_str().into())
+                    Ok(Cow::Owned(link.url.as_str().into()))
                 }
                 [RuntimeValue::Markdown(mq_markdown::Node::Image(image), _)] => {
-                    Ok(image.url.to_owned().into())
+                    Ok(Cow::Owned(image.url.to_owned().into()))
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
@@ -1582,13 +1601,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
                     RuntimeValue::Bool(checked),
-                ] => Ok(mq_markdown::Node::List(mq_markdown::List {
+                ] => Ok(Cow::Owned(mq_markdown::Node::List(mq_markdown::List {
                     checked: Some(*checked),
                     ..list.clone()
                 })
-                .into()),
-                [a, ..] => Ok(a.clone()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                [a, ..] => Ok(Cow::Owned(a.clone())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
         map.insert(
@@ -1597,15 +1616,15 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
                     RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
+                ] => Ok(Cow::Owned(mq_markdown::Node::Definition(mq_markdown::Definition {
                     label: Some(s.to_owned()),
                     ..def.clone()
                 })
-                .into()),
+                .into())),
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::ImageRef(image_ref), _),
                     RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
+                ] => Ok(Cow::Owned(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
                     label: if s == &image_ref.ident {
                         None
                     } else {
@@ -1613,11 +1632,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     },
                     ..image_ref.clone()
                 })
-                .into()),
+                .into())),
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::LinkRef(link_ref), _),
                     RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
+                ] => Ok(Cow::Owned(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
                     label: if s == &link_ref.ident {
                         None
                     } else {
@@ -1625,25 +1644,25 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     },
                     ..link_ref.clone()
                 })
-                .into()),
+                .into())),
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::Footnote(footnote), _),
                     RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
+                ] => Ok(Cow::Owned(mq_markdown::Node::Footnote(mq_markdown::Footnote {
                     ident: s.to_owned(),
                     ..footnote.clone()
                 })
-                .into()),
+                .into())),
                 [
                     RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
                     RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
+                ] => Ok(Cow::Owned(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
                     label: Some(s.to_owned()),
                     ..footnote_ref.clone()
                 })
-                .into()),
-                [a, ..] => Ok(a.clone()),
-                _ => Ok(RuntimeValue::None),
+                .into())),
+                [a, ..] => Ok(Cow::Owned(a.clone())),
+                _ => Ok(Cow::Owned(RuntimeValue::None)),
             }),
         );
 
@@ -1651,7 +1670,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("dict"),
             BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
                 if args.is_empty() {
-                    Ok(RuntimeValue::new_dict())
+                    Ok(Cow::Owned(RuntimeValue::new_dict()))
                 } else {
                     let mut dict = BTreeMap::default();
 
@@ -1681,7 +1700,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         }
                     }
 
-                    Ok(dict.into())
+                    Ok(Cow::Owned(dict.into()))
                 }
             }),
         );
@@ -1689,11 +1708,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("get"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
-                    Ok(map.get(key).cloned().unwrap_or(RuntimeValue::None))
+                    Ok(Cow::Owned(map.get(key).cloned().unwrap_or(RuntimeValue::None)))
                 }
                 [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
                     let index = index.value() as usize;
-                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
+                    Ok(Cow::Owned(array.get(index).cloned().unwrap_or(RuntimeValue::None)))
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -1712,7 +1731,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 ] => {
                     let mut new_dict = map_val.clone();
                     new_dict.insert(key_val.clone(), value_val.clone());
-                    Ok(RuntimeValue::Dict(new_dict))
+                    Ok(Cow::Owned(RuntimeValue::Dict(new_dict)))
                 }
                 [
                     RuntimeValue::Array(array_val),
@@ -1735,7 +1754,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                     // Set value at specified index
                     new_array[index] = value_val.clone();
-                    Ok(RuntimeValue::Array(new_array))
+                    Ok(Cow::Owned(RuntimeValue::Array(new_array)))
                 }
                 [a, b, c] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -1752,7 +1771,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         .keys()
                         .map(|k| RuntimeValue::String(k.clone()))
                         .collect::<Vec<RuntimeValue>>();
-                    Ok(RuntimeValue::Array(keys))
+                    Ok(Cow::Owned(RuntimeValue::Array(keys)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1763,7 +1782,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Dict(map)] => {
                     let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
-                    Ok(RuntimeValue::Array(values))
+                    Ok(Cow::Owned(RuntimeValue::Array(values)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1779,7 +1798,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             RuntimeValue::Array(vec![RuntimeValue::String(k.clone()), v.clone()])
                         })
                         .collect::<Vec<RuntimeValue>>();
-                    Ok(RuntimeValue::Array(entries))
+                    Ok(Cow::Owned(RuntimeValue::Array(entries)))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -2854,20 +2873,20 @@ impl Error {
 }
 
 #[inline(always)]
-pub fn eval_builtin(
-    runtime_value: &RuntimeValue,
+pub fn eval_builtin<'f_rt>(
+    runtime_value: &'f_rt RuntimeValue,
     ident: &ast::Ident,
     args: &Args,
-) -> Result<RuntimeValue, Error> {
+) -> Result<Cow<'f_rt, RuntimeValue>, Error> {
     BUILTIN_FUNCTIONS.get(&ident.name).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
         |f| {
             if f.num_params.is_valid(args.len() as u8) {
                 (f.func)(ident, runtime_value, args)
             } else if f.num_params.is_missing_one_params(args.len() as u8) {
-                let mut new_args = smallvec![runtime_value.clone()];
-                new_args.extend(args.clone());
-                (f.func)(ident, runtime_value, &new_args)
+                let mut new_args = smallvec![runtime_value.clone()]; // Clones runtime_value for the new SmallVec
+                new_args.extend(args.iter().cloned()); // Clones elements from args
+                (f.func)(ident, runtime_value, &new_args) // runtime_value is still &'f_rt RuntimeValue
             } else {
                 Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
@@ -2893,45 +2912,43 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool
         ast::Selector::Heading(depth) if node.is_heading(*depth) => true,
         ast::Selector::HorizontalRule if node.is_horizontal_rule() => true,
         ast::Selector::Blockquote if node.is_blockquote() => true,
-        ast::Selector::Table(row, column) => match (row, column, node.clone()) {
+        ast::Selector::Table(row, column) => match (row, column, node) { // Removed node.clone()
             (
                 Some(row1),
                 Some(column1),
                 mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                    column: column2,
-                    row: row2,
-                    last_cell_in_row: _,
-                    last_cell_of_in_table: _,
+                    column: column2, // These are &usize due to pattern matching on &Node
+                    row: row2,       // These are &usize
                     ..
                 }),
-            ) => *row1 == row2 && *column1 == column2,
+            ) => row1 == row2 && column1 == column2, // row1, col1 are &usize. row2, col2 are &usize.
             (
                 Some(row1),
                 None,
                 mq_markdown::Node::TableCell(mq_markdown::TableCell { row: row2, .. }),
-            ) => *row1 == row2,
+            ) => row1 == row2,
             (
                 None,
                 Some(column1),
                 mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     column: column2, ..
                 }),
-            ) => *column1 == column2,
+            ) => column1 == column2,
             (None, None, mq_markdown::Node::TableCell(_)) => true,
             _ => false,
         },
         ast::Selector::Html if node.is_html() => true,
         ast::Selector::Footnote if node.is_footnote() => true,
         ast::Selector::MdxJsxFlowElement if node.is_mdx_jsx_flow_element() => true,
-        ast::Selector::List(index, checked) => match (index, node.clone()) {
+        ast::Selector::List(index, checked) => match (index, node) { // Removed node.clone()
             (
-                Some(index),
+                Some(idx_selector), // Renamed to avoid conflict with struct field name
                 mq_markdown::Node::List(mq_markdown::List {
-                    index: list_index,
+                    index: list_idx, // Renamed to avoid conflict
                     checked: list_checked,
                     ..
                 }),
-            ) => *index == list_index && *checked == list_checked,
+            ) => idx_selector == list_idx && checked == list_checked, // idx_selector, list_idx are &usize. checked, list_checked are &Option<bool>
             (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
             _ => false,
         },
@@ -2972,27 +2989,27 @@ fn to_date(ms: Number, format: Option<&str>) -> Result<RuntimeValue, Error> {
 }
 
 #[inline(always)]
-fn base64(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
+fn base64(input: &str) -> Result<Cow<'static, RuntimeValue>, Error> {
+    Ok(Cow::Owned(RuntimeValue::String(BASE64_STANDARD.encode(input))))
 }
 
 #[inline(always)]
-fn base64d(input: &str) -> Result<RuntimeValue, Error> {
+fn base64d(input: &str) -> Result<Cow<'static, RuntimeValue>, Error> {
     BASE64_STANDARD
         .decode(input)
         .map_err(Error::InvalidBase64String)
-        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
+        .map(|v| Cow::Owned(RuntimeValue::String(String::from_utf8_lossy(&v).to_string())))
 }
 
 #[inline(always)]
-fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(
+fn url_encode(input: &str) -> Result<Cow<'static, RuntimeValue>, Error> {
+    Ok(Cow::Owned(RuntimeValue::String(
         utf8_percent_encode(input, NON_ALPHANUMERIC).to_string(),
-    ))
+    )))
 }
 
 #[inline(always)]
-fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> { // Returns owned, so Cow::Owned wrapper by caller
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
         let matches: Vec<RuntimeValue> = re
@@ -3026,7 +3043,7 @@ fn replace_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeVa
 }
 
 #[inline(always)]
-fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> { // Returns owned, so Cow::Owned wrapper by caller
     let mut cache = REGEX_CACHE.lock().unwrap();
     if let Some(re) = cache.get(pattern) {
         Ok(RuntimeValue::Array(
@@ -3344,7 +3361,7 @@ mod tests {
         assert!(result.is_ok());
         let map_val = result.unwrap();
         match map_val {
-            RuntimeValue::Dict(map) => {
+            Cow::Owned(RuntimeValue::Dict(map)) => { // Adjusted for Cow
                 assert_eq!(map.len(), 0);
             }
             _ => panic!("Expected Dict, got {:?}", map_val),
@@ -3359,7 +3376,7 @@ mod tests {
             ])],
         );
         assert_eq!(
-            result,
+            result.map(|c| c.into_owned()), // Adjusted for Cow
             Ok(RuntimeValue::Dict(BTreeMap::from([(
                 "key".into(),
                 RuntimeValue::String("value".into())
@@ -3382,7 +3399,7 @@ mod tests {
         ];
         let result1 = eval_builtin(&RuntimeValue::None, &ident_set, &args1);
         assert!(result1.is_ok());
-        let map_val1 = result1.unwrap();
+        let map_val1 = result1.unwrap().into_owned(); // Adjusted for Cow
         match &map_val1 {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 1);
@@ -3398,7 +3415,7 @@ mod tests {
         ];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_set, &args2);
         assert!(result2.is_ok());
-        let map_val2 = result2.unwrap();
+        let map_val2 = result2.unwrap().into_owned(); // Adjusted for Cow
         match &map_val2 {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 2);
@@ -3415,7 +3432,7 @@ mod tests {
         ];
         let result3 = eval_builtin(&RuntimeValue::None, &ident_set, &args3);
         assert!(result3.is_ok());
-        let map_val3 = result3.unwrap();
+        let map_val3 = result3.unwrap().into_owned(); // Adjusted for Cow
         match &map_val3 {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 2);
@@ -3438,7 +3455,7 @@ mod tests {
         ];
         let result4 = eval_builtin(&RuntimeValue::None, &ident_set, &args4);
         assert!(result4.is_ok());
-        match result4.unwrap() {
+        match result4.unwrap().into_owned() { // Adjusted for Cow
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 3);
                 assert_eq!(map.get("nested"), Some(&nested_map));
@@ -3496,11 +3513,11 @@ mod tests {
 
         let args1 = smallvec![map_val.clone(), RuntimeValue::String("name".into())];
         let result1 = eval_builtin(&RuntimeValue::None, &ident_get, &args1);
-        assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
+        assert_eq!(result1.map(|c| c.into_owned()), Ok(RuntimeValue::String("Jules".into()))); // Adjusted
 
         let args2 = smallvec![map_val.clone(), RuntimeValue::String("location".into())];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_get, &args2);
-        assert_eq!(result2, Ok(RuntimeValue::None));
+        assert_eq!(result2.map(|c| c.into_owned()), Ok(RuntimeValue::None)); // Adjusted
 
         let args_err1 = smallvec![
             RuntimeValue::String("not_a_map".into()),
@@ -3539,7 +3556,7 @@ mod tests {
         let empty_map = RuntimeValue::new_dict();
         let args1 = smallvec![empty_map.clone()];
         let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args1);
-        assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
+        assert_eq!(result1.map(|c| c.into_owned()), Ok(RuntimeValue::Array(vec![]))); // Adjusted
 
         let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
@@ -3548,7 +3565,7 @@ mod tests {
         let args2 = smallvec![map_val.clone()];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args2);
         assert!(result2.is_ok());
-        match result2.unwrap() {
+        match result2.unwrap().into_owned() { // Adjusted
             RuntimeValue::Array(keys_array) => {
                 assert_eq!(keys_array.len(), 2);
                 let keys_str: Vec<String> = keys_array
@@ -3591,7 +3608,7 @@ mod tests {
         let empty_map = RuntimeValue::new_dict();
         let args1 = smallvec![empty_map.clone()];
         let result1 = eval_builtin(&RuntimeValue::None, &ident_values, &args1);
-        assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
+        assert_eq!(result1.map(|c| c.into_owned()), Ok(RuntimeValue::Array(vec![]))); // Adjusted
 
         let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
@@ -3600,7 +3617,7 @@ mod tests {
         let args2 = smallvec![map_val.clone()];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_values, &args2);
         assert!(result2.is_ok());
-        match result2.unwrap() {
+        match result2.unwrap().into_owned() { // Adjusted
             RuntimeValue::Array(values_array) => {
                 assert_eq!(values_array.len(), 2);
                 assert!(values_array.contains(&RuntimeValue::String("Jules".into())));

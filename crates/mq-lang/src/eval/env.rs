@@ -6,6 +6,7 @@ use super::runtime_value::RuntimeValue;
 use crate::arena::Arena;
 use crate::{AstIdent, AstNode, Token, ast};
 use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::{Debug, Display};
 use std::rc::{Rc, Weak};
@@ -64,16 +65,21 @@ impl Env {
     }
 
     #[inline(always)]
-    pub fn resolve(&self, ident: &AstIdent) -> Result<RuntimeValue, EnvError> {
+    pub fn resolve<'s>(&'s self, ident: &AstIdent) -> Result<Cow<'s, RuntimeValue>, EnvError> {
         match self.context.get(&ident.name) {
-            Some(o) => Ok(o.clone()),
+            Some(o) => Ok(Cow::Borrowed(o)),
             None if builtin::BUILTIN_FUNCTIONS.contains_key(&ident.name) => {
-                Ok(RuntimeValue::NativeFunction(ident.clone()))
+                Ok(Cow::Owned(RuntimeValue::NativeFunction(ident.clone())))
             }
             None => match self.parent.as_ref().and_then(|parent| parent.upgrade()) {
                 Some(ref parent_env) => {
                     let env = parent_env.borrow();
-                    env.resolve(ident)
+                    // When recursing, if the value is owned, we must return an owned value.
+                    // Otherwise, we can return a borrowed value.
+                    match env.resolve(ident)? {
+                        Cow::Borrowed(val) => Ok(Cow::Borrowed(val)),
+                        Cow::Owned(val) => Ok(Cow::Owned(val)),
+                    }
                 }
                 None => Err(EnvError::InvalidDefinition(ident.to_string())),
             },

@@ -196,15 +196,19 @@ impl RuntimeValue {
         }
     }
 
-    pub fn markdown_node(&self) -> Option<Node> {
+    pub fn markdown_node_ref(&self) -> Option<&Node> { // Renamed and signature updated
         match self {
-            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_at_index(*i),
-            RuntimeValue::Markdown(n, _) => Some(n.clone()),
+            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_at_index(*i), // find_at_index returns Option<&Node>
+            RuntimeValue::Markdown(n, _) => Some(n), // Return &Node
             _ => None,
         }
     }
 
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
+        // No changes needed here directly due to markdown_node_ref, as this method
+        // reconstructs RuntimeValue::Markdown with new Node values.
+        // The methods n.with_children_value and n.with_value are called on 'n' which is &Node here.
+        // These `with_` methods on Node return new owned Nodes, which is what RuntimeValue::Markdown expects.
         match self {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {
                 RuntimeValue::Markdown(n.with_children_value(value, *i), Some(Selector::Index(*i)))
@@ -529,8 +533,10 @@ mod tests {
 
     #[test]
     fn test_runtime_value_markdown() {
-        let markdown = RuntimeValue::Markdown("test markdown".to_string().into(), None);
-        assert_eq!(markdown.markdown_node().unwrap().value(), "test markdown");
+        let markdown_node_content = "test markdown".to_string();
+        let markdown_node: Node = markdown_node_content.clone().into();
+        let markdown = RuntimeValue::Markdown(markdown_node, None);
+        assert_eq!(markdown.markdown_node_ref().unwrap().value(), markdown_node_content);
 
         let updated = markdown.update_markdown_value("updated markdown");
         match &updated {

@@ -103,7 +103,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
         Box::new(error::Error::from_error(
             code,
             InnerError::Lexer(e),
-            ModuleLoader::new(None),
+            &ModuleLoader::new(None), // Pass as reference
         ))
     })
     .unwrap();
@@ -124,7 +124,7 @@ pub fn parse(
             Box::new(error::Error::from_error(
                 code,
                 InnerError::Lexer(e),
-                ModuleLoader::new(None),
+            &ModuleLoader::new(None), // Pass as reference
             ))
         })?;
 
@@ -138,7 +138,7 @@ pub fn parse(
         Box::new(error::Error::from_error(
             code,
             InnerError::Parse(e),
-            ModuleLoader::new(None),
+            &ModuleLoader::new(None), // Pass as reference
         ))
     })
 }

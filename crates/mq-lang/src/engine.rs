@@ -77,7 +77,7 @@ impl Engine {
                 error::Error::from_error(
                     "",
                     InnerError::Module(e),
-                    self.evaluator.module_loader.clone(),
+                    &self.evaluator.module_loader, // Changed to reference
                 )
             })?;
 
@@ -85,7 +85,7 @@ impl Engine {
             Box::new(error::Error::from_error(
                 "",
                 InnerError::Eval(e),
-                self.evaluator.module_loader.clone(),
+                &self.evaluator.module_loader, // Changed to reference
             ))
         })
     }
@@ -128,7 +128,7 @@ impl Engine {
                 Box::new(error::Error::from_error(
                     code,
                     e,
-                    self.evaluator.module_loader.clone(),
+                    &self.evaluator.module_loader, // Changed to reference
                 ))
             })
     }
