@@ -1,0 +1,6 @@
+name = "mq-web-api"
+main = "build/worker/shim.mjs"
+compatibility_date = "2025-06-07"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
