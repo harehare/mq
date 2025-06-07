@@ -13,9 +13,9 @@ members = [
   "crates/mq-wasm",
   "crates/mq-test",
   "crates/mq-mcp",
-  "crates/mq-python",
+  "crates/mq-python", "crates/mq-api",
 ]
-resolver = "3"
+resolver = "2"
 
 [workspace.dependencies]
 arboard = "3.5.0"
