@@ -21,21 +21,27 @@ applyTo: "**"
 
 The mq project follows this main directory structure:
 
-- `/src` - Main CLI tool source code
 - `/crates` - Contains multiple Rust crates
-  - `mq-lang` - Implementation of the mq language
-  - `mq-hir` - High-level Internal Representation (HIR)
+  - `mq-c-api` - C API for integrating mq functionality into C applications
+  - `mq-cli` - Implementation of the mq command-line interface
   - `mq-formatter` - Code formatter
+  - `mq-hir` - High-level Internal Representation (HIR)
+  - `mq-lang` - Implementation of the mq
   - `mq-lsp` - Language Server Protocol implementation
   - `mq-markdown` - Markdown parser and manipulation utilities
-  - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
   - `mq-mcp` - MCP implementation for mq
   - `mq-python` - Python bindings for integrating mq functionality into Python applications
+  - `mq-tui` - Terminal User Interface (TUI) for interacting with mq
+  - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
 - `/docs` - Documentation and user guides
 - `/editors` - Editor integrations and plugins for popular code editors
 - `/assets` - Static assets such as images, icons, and other resources
 - `/examples` - Usage examples
 - `/tests` - Integration tests
+- `/scripts` - Scripts for automation tasks
+- `/packages` - Contains various packages for different functionalities
+  - `mq-web` - npm package for using mq in web applications and JavaScript environments
+  - `playground` - A playground for developing and testing for mq
 
 ## Feature Requests
 
