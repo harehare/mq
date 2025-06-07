@@ -319,6 +319,7 @@ export const Playground = () => {
     if (!code || !markdown) {
       return;
     }
+    setResult("Running...");
 
     try {
       setResult(
