@@ -1397,6 +1397,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("set_list_ordered"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
+                    RuntimeValue::Bool(ordered),
+                ] => Ok(mq_markdown::Node::List(mq_markdown::List {
+                    ordered: *ordered,
+                    ..list.clone()
+                })
+                .into()),
+                [a, ..] => Ok(a.clone()),
+                _ => Ok(RuntimeValue::None),
+            }),
+        );
+        map.insert(
             CompactString::new("to_strong"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
@@ -1450,6 +1465,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(mq_markdown::Node::List(mq_markdown::List {
                         values: node.node_values(),
                         index: 0,
+                        ordered: false,
                         level: level.value() as u8,
                         checked: None,
                         position: None,
@@ -1460,6 +1476,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(mq_markdown::Node::List(mq_markdown::List {
                         values: vec![a.to_string().into()],
                         index: 0,
+                        ordered: false,
                         level: level.value() as u8,
                         checked: None,
                         position: None,
@@ -2624,6 +2641,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
+            CompactString::new("set_list_ordered"),
+            BuiltinFunctionDoc {
+                description: "Sets the ordered property of a markdown list node.",
+                params: &["list", "ordered"],
+            },
+        );
+        map.insert(
             CompactString::new("to_md_text"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown text node with the given value.",
@@ -3211,17 +3235,17 @@ mod tests {
         true
     )]
     #[case::list_with_matching_index_checked(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         ast::Selector::List(Some(1), Some(true)),
         true
     )]
     #[case::list_with_wrong_index(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         ast::Selector::List(Some(2), Some(true)),
         false
     )]
     #[case::list_without_index(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         ast::Selector::List(None, None),
         true
     )]

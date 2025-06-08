@@ -318,6 +318,18 @@ mod tests {
         assert!(formatted.contains("* Item 1"));
         assert!(formatted.contains("* Item 2"));
     }
+
+    #[test]
+    fn test_display_with_ordered_list() {
+        let md = "1. Item 1\n2. Item 2\n\n3. Item 2"
+            .parse::<Markdown>()
+            .unwrap();
+        let formatted = md.to_string();
+
+        assert!(formatted.contains("1. Item 1"));
+        assert!(formatted.contains("2. Item 2"));
+        assert!(formatted.contains("3. Item 2"));
+    }
 }
 
 #[cfg(test)]
