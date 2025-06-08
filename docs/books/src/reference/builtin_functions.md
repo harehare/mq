@@ -114,6 +114,8 @@
 |`select`| Returns value if condition is true, None otherwise|`v`, `f`|select(v, f)|
 |`set`|Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.|`dict`, `key`, `value`|set(dict, key, value)|
 |`set_check`|Creates a markdown list node with the given checked state.|`list`, `checked`|set_check(list, checked)|
+|`set_code_block_lang`|Sets the language of a markdown code block node.|`code_block`, `language`|set_code_block_lang(code_block, language)|
+|`set_list_ordered`|Sets the ordered property of a markdown list node.|`list`, `ordered`|set_list_ordered(list, ordered)|
 |`set_ref`|Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).|`node`, `reference_id`|set_ref(node, reference_id)|
 |`skip`| Skips the first n elements of an array and returns the rest|`arr`, `n`|skip(arr, n)|
 |`skip_while`| Skips elements from the beginning of an array while the provided function returns true|`arr`, `f`|skip_while(arr, f)|
