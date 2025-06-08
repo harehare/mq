@@ -2477,7 +2477,7 @@ mod tests {
                        ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
-            mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
+            mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}), None)]))]
     #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
         vec![
               ast_call("to_md_list",
@@ -2486,21 +2486,21 @@ mod tests {
                        ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
-            mq_markdown::List{values: vec!["list".to_string().into()], index: 0, level: 1_u8, checked: None, position: None}), None)]))]
-    #[case::set_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
+            mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}), None)]))]
+    #[case::set_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}), None)],
         vec![
               ast_call("set_check", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
               ]),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], level: 0, index: 0, checked: Some(true), position: None}), None)]))]
-    #[case::set_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: None, position: None}), None)],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Checked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(true), position: None}), None)]))]
+    #[case::set_check(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: None, position: None}), None)],
         vec![
               ast_call("set_check", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
               ]),
         ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], level: 0, index: 0, checked: Some(false), position: None}), None)]))]
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(false), position: None}), None)]))]
     #[case::compact(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("test1".to_string()),
             RuntimeValue::NONE,
@@ -2613,7 +2613,7 @@ mod tests {
             ast_call("to_tsv", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::String("test1\t42\ttrue".to_string())]))]
-    #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["List Item".to_string().into()], level: 1, index: 0, checked: None, position: None}), None)],
+    #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["List Item".to_string().into()], ordered: false, level: 1, index: 0, checked: None, position: None}), None)],
         vec![
             ast_call("get_md_list_level", SmallVec::new()),
         ],

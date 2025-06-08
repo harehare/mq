@@ -1003,6 +1003,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 1,
               index: 1,
               checked: Some(false),
@@ -1136,6 +1137,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 0,
               index: 1,
               checked: Some(false),
@@ -1148,6 +1150,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 2,
               index: 1,
               checked: Some(false),
@@ -1169,6 +1172,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 1,
               index: 1,
               checked: Some(false),
@@ -1181,6 +1185,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 0,
               index: 1,
               checked: Some(false),
@@ -1202,6 +1207,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 2,
               index: 1,
               checked: Some(false),
@@ -1214,6 +1220,7 @@ fn engine() -> Engine {
             vec![Value::Markdown(mq_markdown::Node::List(mq_markdown::List {
               values: vec![],
               position: None,
+              ordered: false,
               level: 1,
               index: 1,
               checked: Some(false),

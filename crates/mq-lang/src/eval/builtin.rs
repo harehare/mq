@@ -1450,6 +1450,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(mq_markdown::Node::List(mq_markdown::List {
                         values: node.node_values(),
                         index: 0,
+                        ordered: false,
                         level: level.value() as u8,
                         checked: None,
                         position: None,
@@ -1460,6 +1461,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(mq_markdown::Node::List(mq_markdown::List {
                         values: vec![a.to_string().into()],
                         index: 0,
+                        ordered: false,
                         level: level.value() as u8,
                         checked: None,
                         position: None,
@@ -3211,17 +3213,17 @@ mod tests {
         true
     )]
     #[case::list_with_matching_index_checked(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         ast::Selector::List(Some(1), Some(true)),
         true
     )]
     #[case::list_with_wrong_index(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         ast::Selector::List(Some(2), Some(true)),
         false
     )]
     #[case::list_without_index(
-        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         ast::Selector::List(None, None),
         true
     )]

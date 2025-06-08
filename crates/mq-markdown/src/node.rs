@@ -154,6 +154,7 @@ pub struct List {
     pub values: Vec<Node>,
     pub index: usize,
     pub level: Level,
+    pub ordered: bool,
     pub checked: Option<bool>,
     pub position: Option<Position>,
 }
@@ -814,12 +815,18 @@ impl Node {
                 level,
                 checked,
                 values,
+                ordered,
+                index,
                 ..
             }) => {
                 format!(
                     "{}{} {}{}",
                     "  ".repeat(level as usize),
-                    options.list_style,
+                    if ordered {
+                        format!("{}.", index + 1)
+                    } else {
+                        options.list_style.to_string()
+                    },
                     checked
                         .map(|it| if it { "[x] " } else { "[ ] " })
                         .unwrap_or_else(|| ""),
@@ -2059,7 +2066,7 @@ impl Node {
         list.children
             .iter()
             .flat_map(|n| {
-                if let mdast::Node::ListItem(list) = n {
+                if let mdast::Node::ListItem(list_item) = n {
                     let values = Self::from_mdast_node(n.clone())
                         .into_iter()
                         .filter(|value| !matches!(value, Self::List(_)))
@@ -2082,16 +2089,18 @@ impl Node {
                         vec![Self::List(List {
                             level,
                             index: 0,
-                            checked: list.checked,
+                            ordered: list.ordered,
+                            checked: list_item.checked,
                             values,
                             position,
                         })],
-                        list.children
+                        list_item
+                            .children
                             .iter()
                             .flat_map(|node| {
                                 if let mdast::Node::List(sub_list) = node {
                                     Self::mdast_list_items(sub_list, level + 1)
-                                } else if let mdast::Node::ListItem(list) = node {
+                                } else if let mdast::Node::ListItem(list_item) = node {
                                     let values = Self::from_mdast_node(n.clone())
                                         .into_iter()
                                         .filter(|value| !matches!(value, Self::List(_)))
@@ -2112,7 +2121,8 @@ impl Node {
                                     vec![Self::List(List {
                                         level: level + 1,
                                         index: 0,
-                                        checked: list.checked,
+                                        ordered: list.ordered,
+                                        checked: list_item.checked,
                                         values,
                                         position,
                                     })]
@@ -2133,12 +2143,14 @@ impl Node {
                 Self::List(List {
                     level,
                     index: _,
+                    ordered,
                     checked,
                     values,
                     position,
                 }) => Some(Self::List(List {
                     level,
                     index: i,
+                    ordered,
                     checked,
                     values,
                     position,
@@ -2260,15 +2272,15 @@ mod tests {
     #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), values: Vec::new(), position: None }),
            "test".to_string(),
            Node::Footnote(Footnote{ident: "test".to_string(), values: Vec::new(), position: None }))]
-    #[case::list(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None }),
+    #[case::list(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None }))]
-    #[case::list(Node::List(List{index: 1, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None }),
+           Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None }))]
+    #[case::list(Node::List(List{index: 1, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::List(List{index: 1, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None }))]
-    #[case::list(Node::List(List{index: 2, level: 2, checked: Some(false), values: vec!["test".to_string().into()], position: None }),
+           Node::List(List{index: 1, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None }))]
+    #[case::list(Node::List(List{index: 2, level: 2, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::List(List{index: 2, level: 2, checked: Some(false), values: vec!["test".to_string().into()], position: None }))]
+           Node::List(List{index: 2, level: 2, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None }))]
     #[case::code_inline(Node::CodeInline(CodeInline{ value: "t".into(), position: None }),
            "test".to_string(),
            Node::CodeInline(CodeInline{ value: "test".into(), position: None }))]
@@ -2416,13 +2428,13 @@ mod tests {
             Node::Text(Text{value: "first".to_string(), position: None}),
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false,  values: vec![
             Node::Text(Text{value: "new".to_string(), position: None}),
             Node::Text(Text{value: "second".to_string(), position: None})
         ], position: None}))]
@@ -2444,20 +2456,20 @@ mod tests {
         "new",
         0,
         Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}))]
-    #[case(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec![
+    #[case(Node::List(List{index: 0, level: 1, checked: Some(true), ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::List(List{index: 0, level: 1, checked: Some(true), values: vec![
+        Node::List(List{index: 0, level: 1, checked: Some(true), ordered: false, values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::List(List{index: 0, level: 1, checked: None, values: vec![
+    #[case(Node::List(List{index: 0, level: 1, checked: None, ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}),
         "new",
         2,
-        Node::List(List{index: 0, level: 1, checked: None, values: vec![
+        Node::List(List{index: 0, level: 1, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "first".to_string(), position: None})
         ], position: None}))]
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![
@@ -2559,7 +2571,7 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None }),
            "test".to_string())]
-    #[case(Node::List(List{index: 0, level: 2, checked: None, values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::List(List{index: 0, level: 2, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}),
            "    - test".to_string())]
     fn test_display(#[case] node: Node, #[case] expected: String) {
         assert_eq!(node.to_string_with(&RenderOptions::default()), expected);
@@ -2693,7 +2705,7 @@ mod tests {
            &Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
-           &Node::List(List{values: vec!["test".to_string().into()], level: 1, checked: Some(false), index: 0, position: None})),
+           &Node::List(List{values: vec!["test".to_string().into()], ordered: false, level: 1, checked: Some(false), index: 0, position: None})),
            vec!["test".to_string().into()])]
     fn test_node_value(#[case] actual: Vec<Node>, #[case] expected: Vec<Node>) {
         assert_eq!(actual, expected);
@@ -2792,10 +2804,12 @@ mod tests {
 
     #[rstest]
     #[case::text(Node::Text(Text{value: "test".to_string(), position: None }), RenderOptions::default(), "test")]
-    #[case::list(Node::List(List{index: 0, level: 2, checked: None, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "    - test")]
-    #[case::list(Node::List(List{index: 0, level: 1, checked: None, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Plus, ..Default::default() }, "  + test")]
-    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(true), values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Star, ..Default::default() }, "  * [x] test")]
-    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [ ] test")]
+    #[case::list(Node::List(List{index: 0, level: 2, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "    - test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Plus, ..Default::default() }, "  + test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Star, ..Default::default() }, "  * [x] test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [ ] test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: None, ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. test")]
+    #[case::list(Node::List(List{index: 0, level: 1, checked: Some(false), ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. [ ] test")]
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test")]
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "|test")]
@@ -2994,7 +3008,7 @@ mod tests {
     #[case(Node::Link(Link{url: Url::new("".to_string()), title: None, values: Vec::new(), position: None}), "link")]
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: Vec::new(), position: None}), "list")]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: None}), "list")]
     #[case(Node::TableHeader(TableHeader{align: Vec::new(), position: None}), "table_header")]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: None}), "table_row")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: Vec::new(), position: None}), "table_cell")]
@@ -3013,7 +3027,7 @@ mod tests {
 
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), "test")]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Blockquote(Blockquote{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Delete(Delete{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
@@ -3050,7 +3064,7 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), None)]
     #[case(Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Blockquote(Blockquote{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Delete(Delete{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -3133,7 +3147,7 @@ mod tests {
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec![
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
@@ -3164,7 +3178,7 @@ mod tests {
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
@@ -3237,13 +3251,13 @@ mod tests {
         ], position: None})
     )]
     #[case(
-        &mut Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        &mut Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
@@ -3355,7 +3369,7 @@ mod tests {
         ], position: None})
     )]
     #[case(
-        &mut Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        &mut Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "text1".to_string(), position: None}),
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None}),
@@ -3363,7 +3377,7 @@ mod tests {
             Node::Text(Text{value: "new1".to_string(), position: None}),
             Node::Fragment(Fragment{values: Vec::new()})
         ]}),
-        Node::List(List{index: 0, level: 0, checked: None, values: vec![
+        Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "new1".to_string(), position: None}),
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None})
@@ -3384,9 +3398,9 @@ mod tests {
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 3, column: 3}},
        Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 3, column: 3}})}))]
-    #[case(Node::List(List{index: 0, level: 1, checked: None, values: vec![], position: None}),
+    #[case(Node::List(List{index: 0, level: 1, checked: None, ordered: false, values: vec![], position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-       Node::List(List{index: 0, level: 1, checked: None, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
+       Node::List(List{index: 0, level: 1, checked: None, ordered: false, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
     #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}},
        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})}))]
@@ -3517,8 +3531,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::List(List{index: 0, level: 0, checked: None, values: vec!["test".to_string().into()], position: None}), true)]
-    #[case(Node::List(List{index: 1, level: 2, checked: Some(true), values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::List(List{index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::List(List{index: 1, level: 2, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_list(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_list(), expected);
