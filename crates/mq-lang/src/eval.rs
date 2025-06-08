@@ -3623,6 +3623,58 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::set_list_ordered_true(
+        vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+            values: vec!["Item 1".to_string().into(), "Item 2".to_string().into()],
+            ordered: false,
+            level: 1,
+            index: 0,
+            checked: None,
+            position: None,
+        }), None)],
+        vec![
+            ast_call("set_list_ordered", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+            values: vec!["Item 1".to_string().into(), "Item 2".to_string().into()],
+            ordered: true,
+            level: 1,
+            index: 0,
+            checked: None,
+            position: None,
+        }), None)]))]
+    #[case::set_list_ordered_false(
+        vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+            values: vec!["Item 1".to_string().into(), "Item 2".to_string().into()],
+            ordered: true,
+            level: 1,
+            index: 0,
+            checked: None,
+            position: None,
+        }), None)],
+        vec![
+            ast_call("set_list_ordered", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List {
+            values: vec!["Item 1".to_string().into(), "Item 2".to_string().into()],
+            ordered: false,
+            level: 1,
+            index: 0,
+            checked: None,
+            position: None,
+        }), None)]))]
+    #[case::set_list_ordered_non_list(
+        vec![RuntimeValue::String("not a list".to_string())],
+        vec![
+            ast_call("set_list_ordered", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("not a list".to_string())]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

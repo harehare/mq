@@ -1397,6 +1397,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("set_list_ordered"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
+                    RuntimeValue::Bool(ordered),
+                ] => Ok(mq_markdown::Node::List(mq_markdown::List {
+                    ordered: *ordered,
+                    ..list.clone()
+                })
+                .into()),
+                [a, ..] => Ok(a.clone()),
+                _ => Ok(RuntimeValue::None),
+            }),
+        );
+        map.insert(
             CompactString::new("to_strong"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => {
@@ -2623,6 +2638,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Returns the name of the given markdown node.",
                 params: &["markdown"],
+            },
+        );
+        map.insert(
+            CompactString::new("set_list_ordered"),
+            BuiltinFunctionDoc {
+                description: "Sets the ordered property of a markdown list node.",
+                params: &["list", "ordered"],
             },
         );
         map.insert(
