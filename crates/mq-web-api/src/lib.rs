@@ -13,6 +13,18 @@ pub struct ApiRequest {
 
 This is an example markdown string.")]
     pub input: String,
+    pub input_format: Option<InputFormat>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub enum InputFormat {
+    #[serde(rename = "markdown")]
+    Markdown,
+    #[serde(rename = "mdx")]
+    Mdx,
+    #[serde(rename = "text")]
+    Text,
 }
 
 #[derive(OpenApi)]
@@ -22,7 +34,8 @@ This is an example markdown string.")]
         post_query_api,
     ),
     components(
-        schemas(ApiRequest)
+        schemas(ApiRequest),
+        schemas(InputFormat)
     ),
     tags(
         (name = "mq-api", description = "Markdown Query API")
@@ -32,7 +45,7 @@ struct ApiDoc;
 
 #[utoipa::path(
     get,
-    path = "/query",
+    path = "/mq",
     responses(
         (status = 200, description = "Query executed successfully", body = ApiRequest),
         (status = 400, description = "Invalid request parameters"),
@@ -40,7 +53,8 @@ struct ApiDoc;
     ),
     params(
         ("query" = String, Query, description = "mq query string to execute"),
-        ("markdown" = String, Query, description = "Markdown content to process")
+        ("markdown" = String, Query, description = "Markdown content to process"),
+        ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, or text (optional)")
     )
 )]
 #[worker::send]
@@ -50,15 +64,16 @@ async fn get_query_api(req: Request, ctx: RouteContext<()>) -> worker::Result<Re
 
 #[utoipa::path(
     post,
-    path = "/query",
+    path = "/mq",
     responses(
         (status = 200, description = "Query executed successfully", body = ApiRequest),
         (status = 400, description = "Invalid request parameters"),
         (status = 405, description = "Unsupported HTTP method")
     ),
-    params(
-        ("query" = String, Query, description = "mq query string to execute"),
-        ("markdown" = String, Query, description = "Markdown content to process")
+    request_body(
+        content = ApiRequest,
+        description = "JSON body containing the mq query, markdown content, and optional input format",
+        content_type = "application/json"
     )
 )]
 #[worker::send]
@@ -81,19 +96,19 @@ async fn handle_request_logic(
             Ok(u) => u,
             Err(e) => return Response::error(format!("Failed to parse URL: {}", e), 400),
         };
-        let mut query_param = None;
-        let mut markdown_param = None;
+        let params: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        let query_param = params.get("query").cloned();
+        let markdown_param = params.get("markdown").cloned();
+        let input_format = params
+            .get("input_format")
+            .and_then(|v| InputFormat::deserialize(serde_json::Value::String(v.clone())).ok());
 
-        for (key, value) in url.query_pairs() {
-            if key == "query" {
-                query_param = Some(value.into_owned());
-            } else if key == "markdown" {
-                markdown_param = Some(value.into_owned());
-            }
-        }
-
-        match (query_param, markdown_param) {
-            (Some(query), Some(input)) => ApiRequest { query, input },
+        match (query_param, markdown_param, input_format) {
+            (Some(query), Some(input), input_format) => ApiRequest {
+                query,
+                input,
+                input_format,
+            },
             _ => {
                 return Response::error(
                     "Missing 'query' or 'markdown' query parameters for GET request",
@@ -105,7 +120,6 @@ async fn handle_request_logic(
         return Response::error(format!("Unsupported method: {:?}", method), 405);
     };
 
-    dbg!(&request_data);
     match execute(request_data) {
         Ok(values) => {
             let response = values
@@ -122,12 +136,25 @@ fn execute(request: ApiRequest) -> miette::Result<mq_lang::Values> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
 
-    let md = mq_markdown::Markdown::from_str(&request.input)?;
-    let input = md
-        .nodes
-        .into_iter()
-        .map(mq_lang::Value::from)
-        .collect::<Vec<_>>();
+    let input = match request.input_format.unwrap_or(InputFormat::Markdown) {
+        format @ (InputFormat::Markdown | InputFormat::Mdx) => {
+            let md = if matches!(format, InputFormat::Mdx) {
+                mq_markdown::Markdown::from_mdx_str(&request.input)
+            } else {
+                mq_markdown::Markdown::from_str(&request.input)
+            }?;
+
+            md.nodes
+                .into_iter()
+                .map(mq_lang::Value::from)
+                .collect::<Vec<_>>()
+        }
+        InputFormat::Text => request
+            .input
+            .lines()
+            .map(mq_lang::Value::from)
+            .collect::<Vec<_>>(),
+    };
 
     engine
         .eval(&request.query, input.into_iter())
@@ -137,8 +164,8 @@ fn execute(request: ApiRequest) -> miette::Result<mq_lang::Values> {
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Result<Response> {
     Router::new()
-        .get_async("/query", get_query_api)
-        .post_async("/query", post_query_api)
+        .get_async("/mq", get_query_api)
+        .post_async("/mq", post_query_api)
         .get_async("/openapi.json", |_req, _ctx| async move {
             Response::from_json(&ApiDoc::openapi())
         })

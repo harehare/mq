@@ -76,8 +76,6 @@ struct Options {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum InputFormat {
-    #[serde(rename = "html")]
-    Html,
     #[serde(rename = "markdown")]
     Markdown,
     #[serde(rename = "mdx")]
@@ -91,8 +89,9 @@ impl FromStr for InputFormat {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "html" => Ok(Self::Html),
             "markdown" => Ok(Self::Markdown),
+            "mdx" => Ok(Self::Mdx),
+            "text" => Ok(Self::Text),
             _ => Err(format!("Unknown input format: {}", s)),
         }
     }
