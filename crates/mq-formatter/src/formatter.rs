@@ -374,9 +374,9 @@ impl Formatter {
                 mq_lang::TokenKind::StringLiteral(s) => self.output.push_str(&format!(
                     "\"{}\"",
                     &s.replace("\"", "\\\"")
-                        .replace("\\n", "\\\\n")
-                        .replace("\\t", "\\\\t")
-                        .replace("\\r", "\\\\r")
+                        .replace("\n", "\\n")
+                        .replace("\t", "\\t")
+                        .replace("\r", "\\r")
                 )),
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
@@ -399,9 +399,9 @@ impl Formatter {
                 token
                     .to_string()
                     .replace("\"", "\\\"")
-                    .replace("\\n", "\\\\n")
-                    .replace("\\t", "\\\\t")
-                    .replace("\\r", "\\\\r")
+                    .replace("\n", "\\n")
+                    .replace("\t", "\\t")
+                    .replace("\r", "\\r")
             ))
         }
     }
@@ -732,6 +732,7 @@ s"test${val1}"
     #[case::array_with_spaces("[ 1 , 2 , 3 ]", "[1, 2, 3]")]
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
+    #[case::string_with_newline(r#""line1\\nline2""#, r#""line1\nline2""#)]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
