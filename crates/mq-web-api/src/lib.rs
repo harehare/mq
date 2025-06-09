@@ -1,18 +1,11 @@
 pub mod api;
 
-pub use api::{ApiRequest, InputFormat, execute};
-use serde::{Deserialize, Serialize};
+pub use api::{ApiRequest, InputFormat, query};
 use url::Url;
-use utoipa::{OpenApi, ToSchema};
+use utoipa::OpenApi;
 use worker::*;
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ApiResponse {
-    /// The results of the query execution as strings.
-    pub results: Vec<String>,
-    /// The total number of results returned.
-    pub total_count: usize,
-}
+use crate::api::{DiagnosticsApiResponse, QueryApiResponse};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -23,7 +16,8 @@ pub struct ApiResponse {
     components(
         schemas(ApiRequest),
         schemas(InputFormat),
-        schemas(ApiResponse)
+        schemas(QueryApiResponse),
+        schemas(DiagnosticsApiResponse)
     ),
     tags(
         (name = "mq-api", description = "Markdown Query API")
@@ -33,9 +27,9 @@ struct ApiDoc;
 
 #[utoipa::path(
     get,
-    path = "/mq",
+    path = "/query",
     responses(
-        (status = 200, description = "Query executed successfully", body = ApiResponse, content_type = "application/json",),
+        (status = 200, description = "Query executed successfully", body = QueryApiResponse, content_type = "application/json",),
         (status = 400, description = "Invalid request parameters"),
         (status = 405, description = "Unsupported HTTP method")
     ),
@@ -47,14 +41,30 @@ struct ApiDoc;
 )]
 #[worker::send]
 async fn get_query_api(req: Request, ctx: RouteContext<()>) -> worker::Result<Response> {
-    handle_request_logic(req, ctx, Method::Get).await
+    handle_query_request(req, ctx, Method::Get).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/query/diagnostics",
+    responses(
+        (status = 200, description = "Diagnostics executed successfully", body = DiagnosticsApiResponse, content_type = "application/json"),
+        (status = 400, description = "Invalid request parameters"),
+    ),
+    params(
+        ("query" = String, Query, description = "mq query string to analyze"),
+    )
+)]
+#[worker::send]
+async fn get_diagnostics_api(req: Request, _ctx: RouteContext<()>) -> worker::Result<Response> {
+    handle_diagnostics_request(req).await
 }
 
 #[utoipa::path(
     post,
-    path = "/mq",
+    path = "/query",
     responses(
-        (status = 200, description = "Query executed successfully", body = ApiResponse, content_type = "application/json"),
+        (status = 200, description = "Query executed successfully", body = QueryApiResponse, content_type = "application/json"),
         (status = 400, description = "Invalid request parameters"),
         (status = 405, description = "Unsupported HTTP method")
     ),
@@ -66,10 +76,10 @@ async fn get_query_api(req: Request, ctx: RouteContext<()>) -> worker::Result<Re
 )]
 #[worker::send]
 async fn post_query_api(req: Request, ctx: RouteContext<()>) -> worker::Result<Response> {
-    handle_request_logic(req, ctx, Method::Post).await
+    handle_query_request(req, ctx, Method::Post).await
 }
 
-async fn handle_request_logic(
+async fn handle_query_request(
     mut req: Request,
     _ctx: RouteContext<()>,
     method: Method,
@@ -94,7 +104,7 @@ async fn handle_request_logic(
         match (query_param, input_param, input_format) {
             (Some(query), Some(input), input_format) => ApiRequest {
                 query,
-                input,
+                input: Some(input),
                 input_format,
             },
             _ => {
@@ -108,28 +118,45 @@ async fn handle_request_logic(
         return Response::error(format!("Unsupported method: {:?}", method), 405);
     };
 
-    match api::execute(request_data) {
-        Ok(values) => {
-            let response = values
-                .into_iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>();
-            let total_count = response.len();
-
-            Response::from_json(&ApiResponse {
-                results: response,
-                total_count,
-            })
-        }
+    match api::query(request_data) {
+        Ok(response) => Response::from_json(&response),
         Err(e) => Response::error(format!("Execution error: {}", e), 400),
     }
+}
+
+async fn handle_diagnostics_request(req: Request) -> worker::Result<Response> {
+    let request_data: ApiRequest = {
+        let url = match Url::parse(req.url()?.as_str()) {
+            Ok(u) => u,
+            Err(e) => return Response::error(format!("Failed to parse URL: {}", e), 400),
+        };
+        let params: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        let query_param = params.get("query").cloned();
+
+        match query_param {
+            Some(query) => ApiRequest {
+                query,
+                input: None,
+                input_format: None,
+            },
+            _ => {
+                return Response::error(
+                    "Missing 'query' or 'input' query parameters for GET request",
+                    400,
+                );
+            }
+        }
+    };
+
+    Response::from_json(&api::diagnostics(request_data))
 }
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Result<Response> {
     Router::new()
-        .get_async("/mq", get_query_api)
-        .post_async("/mq", post_query_api)
+        .get_async("/query", get_query_api)
+        .get_async("/query/diagnostics", get_diagnostics_api)
+        .post_async("/query", post_query_api)
         .get_async("/openapi.json", |_req, _ctx| async move {
             Response::from_json(&ApiDoc::openapi())
         })
