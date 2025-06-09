@@ -953,22 +953,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("range"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(start), RuntimeValue::Number(end)] => {
-                    let range: Vec<RuntimeValue> = ((start.value() as u64)..(end.value() as u64))
-                        .map(|n| RuntimeValue::Number(n.into()))
-                        .collect();
-                    Ok(RuntimeValue::Array(range))
-                }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
-            }),
-        );
-        map.insert(
             CompactString::new("split"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
@@ -2467,13 +2451,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Removes None values from the given array.",
                 params: &["array"],
-            },
-        );
-        map.insert(
-            CompactString::new("range"),
-            BuiltinFunctionDoc {
-                description: "Creates an array of numbers within the specified range.",
-                params: &["start", "end"],
             },
         );
         map.insert(

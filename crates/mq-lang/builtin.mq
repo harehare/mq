@@ -316,3 +316,13 @@ def group_by(arr, f):
       | let new_group = if (is_none(existing)): array(v) else: add(existing, v)
       | let groups = set(groups, key, new_group)
       | groups;;
+
+
+# Creates an array of numbers within the specified range.
+def range(start, end, step):
+  let current = start
+  | let results = []
+  | until (lte(current, end)):
+      let results = add(results, current)
+      | let current = add(current, step)
+      | results;;
