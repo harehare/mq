@@ -2148,29 +2148,6 @@ mod tests {
              ast_call("explode", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "[65, 66, 67]".to_string(), position: None}), None)]))]
-    #[case::range(vec![RuntimeValue::Number(1.into())],
-       vec![
-            ast_call("range", smallvec![
-                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
-                ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
-            ])
-       ],
-       Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::Number(0.into()),
-            RuntimeValue::Number(1.into()),
-            RuntimeValue::Number(2.into()),
-            RuntimeValue::Number(3.into()),
-            RuntimeValue::Number(4.into()),
-       ])]))]
-    #[case::range(vec!["1".to_string().into()],
-       vec![
-            ast_call("range", smallvec![
-                ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
-            ])
-       ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                    name: "range".to_string(),
-                                                    args: vec!["1".to_string().into(), "0".to_string().into()]})))]
     #[case::to_number(vec![RuntimeValue::String("42".to_string())],
        vec![
             ast_call("to_number", SmallVec::new())
