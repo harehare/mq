@@ -365,3 +365,13 @@ def all(v, f):
     any_dict(v, f)
   else:
     error("First argument must be an array or a dictionary");
+
+# Returns true if the element is in the array
+def in(v, elem):
+  if (is_array(v)):
+    if (is_array(elem)):
+      all(elem, fn(x): in(v, x);)
+    else:
+      any(v, fn(x): x == elem;)
+  else:
+    contains(v, elem);

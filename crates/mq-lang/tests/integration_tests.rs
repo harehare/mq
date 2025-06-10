@@ -1317,6 +1317,24 @@ fn engine() -> Engine {
               dict.into()
               }],
               Ok(vec![Value::Bool(false)].into()))]
+#[case::in_array_true("in([1, 2, 3], 2)",
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::Bool(true)].into()))]
+#[case::in_array_false("in([1, 2, 3], 4)",
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::Bool(false)].into()))]
+#[case::in_string_true(r#"in("hello", "ell")"#,
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::Bool(true)].into()))]
+#[case::in_string_false(r#"in("hello", "xyz")"#,
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::Bool(false)].into()))]
+#[case::in_array_true(r#"in(["a", "b", "c"], ["a", "b"])"#,
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::Bool(true)].into()))]
+#[case::in_array_false(r#"in(["a", "c"], ["a", "b"])"#,
+            vec![Value::Number(0.into())],
+            Ok(vec![Value::Bool(false)].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
