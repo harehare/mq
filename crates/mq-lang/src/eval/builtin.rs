@@ -1677,7 +1677,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                     let entries = match args.as_slice() {
                         [RuntimeValue::Array(entries)] => match entries.as_slice() {
-                            [RuntimeValue::Array(entries)] => entries.clone(),
+                            [RuntimeValue::Array(_)] if args.len() == 1 => entries.clone(),
+                            [RuntimeValue::Array(inner)] => inner.clone(),
                             [RuntimeValue::String(_), ..] => {
                                 vec![entries.clone().into()]
                             }

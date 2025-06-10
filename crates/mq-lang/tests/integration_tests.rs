@@ -1261,6 +1261,62 @@ fn engine() -> Engine {
               Ok(vec![Value::Array(vec![
                 Value::Number(3.into()),
               ])].into()))]
+#[case::any_true("
+              any([1, 2, 3], fn(x): x == 2;)",
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+              Ok(vec![Value::Bool(true)].into()))]
+#[case::any_false("
+              any([1, 2, 3], fn(x): x == 4;)",
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+              Ok(vec![Value::Bool(false)].into()))]
+#[case::any_empty_array("
+              any([], fn(x): x == 1;)",
+              vec![Value::Array(vec![])],
+              Ok(vec![Value::Bool(false)].into()))]
+#[case::any_dict_true(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 2;)"#,
+              vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("a".to_string(), Value::Number(1.into()));
+                dict.insert("b".to_string(), Value::Number(2.into()));
+                dict.into()
+              }],
+              Ok(vec![Value::Bool(true)].into()))]
+#[case::any_dict_false(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 3;)"#,
+              vec![{
+                let mut dict = BTreeMap::new();
+                dict.insert("a".to_string(), Value::Number(1.into()));
+                dict.insert("b".to_string(), Value::Number(2.into()));
+                dict.into()
+              }],
+              Ok(vec![Value::Bool(false)].into()))]
+#[case::all_true("
+              all([2, 4, 6], fn(x): mod(x, 2) == 0;)",
+              vec![Value::Array(vec![Value::Number(2.into()), Value::Number(4.into()), Value::Number(6.into())])],
+              Ok(vec![Value::Bool(true)].into()))]
+#[case::all_false("
+              all([2, 3, 6], fn(x): mod(x, 2) == 0;)",
+              vec![Value::Array(vec![Value::Number(2.into()), Value::Number(3.into()), Value::Number(6.into())])],
+              Ok(vec![Value::Bool(false)].into()))]
+#[case::all_empty_array("
+              all([], fn(x): x == 1;)",
+              vec![Value::Array(vec![])],
+              Ok(vec![Value::Bool(true)].into()))]
+#[case::all_dict_true(r#"all(dict(["a", 2], ["b", 4]), fn(kv): mod(last(kv), 2) == 0;)"#,
+              vec![{
+              let mut dict = BTreeMap::new();
+              dict.insert("a".to_string(), Value::Number(2.into()));
+              dict.insert("b".to_string(), Value::Number(4.into()));
+              dict.into()
+              }],
+              Ok(vec![Value::Bool(true)].into()))]
+#[case::all_dict_false(r#"all(dict(["a", 2], ["b", 3]), fn(kv): mod(last(kv), 2) == 0;)"#,
+              vec![{
+              let mut dict = BTreeMap::new();
+              dict.insert("a".to_string(), Value::Number(2.into()));
+              dict.insert("b".to_string(), Value::Number(3.into()));
+              dict.into()
+              }],
+              Ok(vec![Value::Bool(false)].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
