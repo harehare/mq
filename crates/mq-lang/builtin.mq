@@ -317,7 +317,6 @@ def group_by(arr, f):
       | let groups = set(groups, key, new_group)
       | groups;;
 
-
 # Creates an array of numbers within the specified range.
 def range(start, end, step):
   let current = start
@@ -329,42 +328,17 @@ def range(start, end, step):
 
 # Returns true if any element in the array satisfies the provided function.
 def any(v, f):
-  let any_array = fn(arr, f):
-    let i = 0 | 
-    len(filter(arr, f)) != 0; | 
-
-  let any_dict = fn(dict, f):
-    let i = 0 | 
-    len(filter(dict, f)) != 0;
-
-  | if (is_empty(v)):
+  if (is_empty(v)):
     false
-  elif (is_array(v)):
-    any_array(v, f)
-  elif (is_dict(v)):
-    any_dict(v, f)
   else:
-    error("First argument must be an array or a dictionary");
-
+    len(filter(v, f)) != 0;
 
 # Returns true if all element in the array satisfies the provided function.
 def all(v, f):
-  let any_array = fn(arr, f):
-    let i = 0 | 
-    len(filter(arr, f)) == len(arr); | 
-
-  let any_dict = fn(dict, f):
-    let i = 0 | let kv = entries(dict) | 
-    len(filter(dict, f)) == len(dict);
-
-  | if (is_empty(v)):
+  if (is_empty(v)):
     true
-  elif (is_array(v)):
-    any_array(v, f)
-  elif (is_dict(v)):
-    any_dict(v, f)
   else:
-    error("First argument must be an array or a dictionary");
+    len(filter(v, f)) == len(v);
 
 # Returns true if the element is in the array
 def in(v, elem):
