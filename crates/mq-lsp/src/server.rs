@@ -327,7 +327,12 @@ mod tests {
                 .read()
                 .unwrap()
                 .symbols()
-                .map(|(_, s)| s.value.clone().unwrap().to_owned())
+                .map(|(_, s)| {
+                    s.value
+                        .as_ref()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "".into())
+                })
                 .collect::<Vec<_>>()
                 .contains(&"main".into()),
         );

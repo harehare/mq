@@ -261,15 +261,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("to_csv"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::Array(array)] => Ok(array.iter().join(",").into()),
-                [a] => Ok(a.to_string().into()),
-                _ => unreachable!(),
-            }),
-        );
-        map.insert(
             CompactString::new("to_tsv"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::None] => Ok(RuntimeValue::NONE),
@@ -1677,7 +1668,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                     let entries = match args.as_slice() {
                         [RuntimeValue::Array(entries)] => match entries.as_slice() {
-                            [RuntimeValue::Array(entries)] => entries.clone(),
+                            [RuntimeValue::Array(_)] if args.len() == 1 => entries.clone(),
+                            [RuntimeValue::Array(inner)] => inner.clone(),
                             [RuntimeValue::String(_), ..] => {
                                 vec![entries.clone().into()]
                             }
@@ -2254,20 +2246,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Converts the given markdown string to HTML.",
                 params: &["markdown"],
-            },
-        );
-        map.insert(
-            CompactString::new("to_csv"),
-            BuiltinFunctionDoc {
-                description: "Converts the given value to a CSV.",
-                params: &["value"],
-            },
-        );
-        map.insert(
-            CompactString::new("to_tsv"),
-            BuiltinFunctionDoc {
-                description: "Converts the given value to a TSV.",
-                params: &["value"],
             },
         );
         map.insert(

@@ -2534,62 +2534,6 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "compact".to_string(),
                                                      args: vec!["test".to_string().into()]})))]
-    #[case::to_csv(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::String("test2".to_string()),
-            RuntimeValue::String("test3".to_string()),
-        ])],
-        vec![
-            ast_call("to_csv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("test1,test2,test3".to_string())]))]
-    #[case::to_csv(vec![RuntimeValue::String("test1".to_string())],
-        vec![
-            ast_call("to_csv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("test1".to_string())]))]
-    #[case::to_csv_empty(vec![RuntimeValue::Array(Vec::new())],
-        vec![
-            ast_call("to_csv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("".to_string())]))]
-    #[case::to_csv_mixed(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::Number(42.into()),
-            RuntimeValue::Bool(true),
-        ])],
-        vec![
-            ast_call("to_csv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("test1,42,true".to_string())]))]
-    #[case::to_tsv(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::String("test2".to_string()),
-            RuntimeValue::String("test3".to_string()),
-        ])],
-        vec![
-            ast_call("to_tsv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("test1\ttest2\ttest3".to_string())]))]
-    #[case::to_tsv(vec![RuntimeValue::String("test1".to_string())],
-        vec![
-            ast_call("to_tsv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("test1".to_string())]))]
-    #[case::to_tsv_empty(vec![RuntimeValue::Array(Vec::new())],
-        vec![
-            ast_call("to_tsv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("".to_string())]))]
-    #[case::to_tsv_mixed(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::Number(42.into()),
-            RuntimeValue::Bool(true),
-        ])],
-        vec![
-            ast_call("to_tsv", SmallVec::new())
-        ],
-        Ok(vec![RuntimeValue::String("test1\t42\ttrue".to_string())]))]
     #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["List Item".to_string().into()], ordered: false, level: 1, index: 0, checked: None, position: None}), None)],
         vec![
             ast_call("get_md_list_level", SmallVec::new()),

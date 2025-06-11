@@ -214,7 +214,7 @@ def csv2table_row(row): split(row, ",") | to_md_table_row();
 def csv2table(csv): map(csv, csv2table_row);
 
 # Convert tsv string to markdown table row
-def tsv2table_row(row): split(row, "	") | to_md_table_row();
+def tsv2table_row(row): split(row, "\t") | to_md_table_row();
 
 # Convert tsv string to markdown table
 def tsv2table(tsv): map(tsv, tsv2table_row);
@@ -317,7 +317,6 @@ def group_by(arr, f):
       | let groups = set(groups, key, new_group)
       | groups;;
 
-
 # Creates an array of numbers within the specified range.
 def range(start, end, step):
   let current = start
@@ -326,3 +325,41 @@ def range(start, end, step):
       let results = add(results, current)
       | let current = add(current, step)
       | results;;
+
+# Returns true if any element in the array satisfies the provided function.
+def any(v, f):
+  if (is_empty(v)):
+    false
+  else: 
+    len(filter(v, f)) != 0;
+
+# Returns true if all element in the array satisfies the provided function.
+def all(v, f):
+  if (is_empty(v)):
+    true
+  else: 
+    len(filter(v, f)) == len(v);
+
+# Returns true if the element is in the array.
+def in(v, elem):
+  if (is_array(v)):
+    if (is_array(elem)):
+      all(elem, fn(x): in(v, x);)
+    else:
+      any(v, fn(x): x == elem;)
+  else:
+    contains(v, elem);
+
+# Converts the given value to a CSV.
+def to_csv(v):
+  if (is_array(v)):
+    join(v, ",")
+  else:
+    to_string(v);
+
+# Converts the given value to a TSV.
+def to_tsv(v):
+  if (is_array(v)):
+    join(v, "\t")
+  else:
+    to_string(v);
