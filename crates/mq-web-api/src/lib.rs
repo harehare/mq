@@ -153,6 +153,39 @@ async fn handle_diagnostics_request(req: Request) -> worker::Result<Response> {
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Result<Response> {
+    // Rate limit constants
+    const RATE_LIMIT: u32 = 10; // 10 requests
+    const WINDOW_SECS: u64 = 60; // per 60 seconds
+    let kv = match env.kv("RATE_LIMIT_KV") {
+        Ok(kv) => kv,
+        Err(_) => return Response::error("KV not configured", 500),
+    };
+
+    let ip = req
+        .headers()
+        .get("CF-Connecting-IP")?
+        .unwrap_or_else(|| "unknown".to_string());
+    let now = worker::Date::now().as_millis();
+    let window = now / (WINDOW_SECS * 1000);
+    let key = format!("rate:{}:{}", ip, window);
+    let count = kv
+        .get(&key)
+        .text()
+        .await?
+        .unwrap_or("0".to_string())
+        .parse::<u32>()
+        .unwrap_or(0);
+    if count >= RATE_LIMIT {
+        let mut resp = Response::error("Too Many Requests", 429)?;
+        resp.headers_mut()
+            .set("Retry-After", &WINDOW_SECS.to_string())?;
+        return Ok(resp);
+    }
+    kv.put(&key, (count + 1).to_string())?
+        .expiration_ttl(WINDOW_SECS as u64)
+        .execute()
+        .await?;
+
     Router::new()
         .get_async("/query", get_query_api)
         .get_async("/query/diagnostics", get_diagnostics_api)
