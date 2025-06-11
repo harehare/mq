@@ -963,7 +963,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]
-    #[case::fn_with_params("fn(x, y): add(x, y);", "x", SymbolKind::Variable)]
+    #[case::fn_with_params("fn(x, y): add(x, y);", "x", SymbolKind::Argument)]
     #[case::fn_with_body("fn(): let x = 1 | x;", "x", SymbolKind::Variable)]
     #[case::fn_anonymous("let f = fn(): 42;", "fn", SymbolKind::Keyword)]
     #[case::eq("1 == 2", "==", SymbolKind::BinaryOp)]
@@ -974,6 +974,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_kind: SymbolKind,
     ) {
         let mut hir = Hir::new();
+        hir.builtin.loaded = true;
         hir.add_code(None, code);
 
         let symbol = hir
