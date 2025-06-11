@@ -1335,6 +1335,24 @@ fn engine() -> Engine {
 #[case::in_array_false(r#"in(["a", "c"], ["a", "b"])"#,
             vec![Value::Number(0.into())],
             Ok(vec![Value::Bool(false)].into()))]
+#[case::to_csv_single_row(
+            "to_csv()",
+            vec![Value::Array(vec![
+                Value::String("a".to_string()),
+                Value::String("b".to_string()),
+                Value::String("c".to_string()),
+            ])],
+            Ok(vec![Value::String("a,b,c".to_string())].into())
+          )]
+#[case::to_tsv_single_row(
+            "to_tsv()",
+            vec![Value::Array(vec![
+              Value::String("a".to_string()),
+              Value::String("b".to_string()),
+              Value::String("c".to_string()),
+            ])],
+            Ok(vec![Value::String("a\tb\tc".to_string())].into())
+          )]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

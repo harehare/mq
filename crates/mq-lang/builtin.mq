@@ -330,17 +330,17 @@ def range(start, end, step):
 def any(v, f):
   if (is_empty(v)):
     false
-  else:
+  else: 
     len(filter(v, f)) != 0;
 
 # Returns true if all element in the array satisfies the provided function.
 def all(v, f):
   if (is_empty(v)):
     true
-  else:
+  else: 
     len(filter(v, f)) == len(v);
 
-# Returns true if the element is in the array
+# Returns true if the element is in the array.
 def in(v, elem):
   if (is_array(v)):
     if (is_array(elem)):
@@ -349,3 +349,17 @@ def in(v, elem):
       any(v, fn(x): x == elem;)
   else:
     contains(v, elem);
+
+# Converts the given value to a CSV.
+def to_csv(v):
+  if (is_array(v)):
+    join(v, ",")
+  else:
+    to_string(v);
+
+# Converts the given value to a TSV.
+def to_tsv(v):
+  if (is_array(v)):
+    join(v, "\t")
+  else:
+    to_string(v);
