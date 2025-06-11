@@ -158,7 +158,13 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Resu
     const WINDOW_SECS: u64 = 60; // per 60 seconds
     let kv = match env.kv("RATE_LIMIT_KV") {
         Ok(kv) => kv,
-        Err(_) => return Response::error("KV not configured", 500),
+        Err(_) => {
+            let resp = Response::from_json(&serde_json::json!({
+            "error": "Internal Server Error",
+            "message": "KV not configured"
+            }))?;
+            return Ok(resp.with_status(500));
+        }
     };
 
     let ip = req
@@ -176,13 +182,16 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Resu
         .parse::<u32>()
         .unwrap_or(0);
     if count >= RATE_LIMIT {
-        let mut resp = Response::error("Too Many Requests", 429)?;
+        let mut resp = Response::from_json(&serde_json::json!({
+            "error": "Too Many Requests",
+            "message": "You have exceeded the rate limit. Please try again later."
+        }))?;
         resp.headers_mut()
             .set("Retry-After", &WINDOW_SECS.to_string())?;
-        return Ok(resp);
+        return Ok(resp.with_status(429));
     }
     kv.put(&key, (count + 1).to_string())?
-        .expiration_ttl(WINDOW_SECS as u64)
+        .expiration_ttl(WINDOW_SECS)
         .execute()
         .await?;
 
