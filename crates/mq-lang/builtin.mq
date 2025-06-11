@@ -3,16 +3,22 @@ def halt_error(): halt(5);
 
 # Checks if input is an array
 def is_array(a): type(a) == "array";
+
 # Checks if input is markdown
 def is_markdown(m): type(m) == "markdown";
+
 # Checks if input is a boolean
 def is_bool(b): type(b) == "bool";
+
 # Checks if input is a number
 def is_number(n): type(n) == "number";
+
 # Checks if input is a string
 def is_string(s): type(s) == "string";
+
 # Checks if input is None
 def is_none(n): type(n) == "None";
+
 # Checks if input is a dictionary
 def is_dict(d): type(d) == "dict";
 
@@ -49,12 +55,16 @@ def test(s, pattern): match(s, pattern) | is_empty() | not();
 
 # Returns value if condition is true, None otherwise
 def select(v, f): if (f): v;
+
 # Returns array if input is array, None otherwise
 def arrays(a): select(a, is_array(a));
+
 # Returns markdown if input is markdown, None otherwise
 def markdowns(m): select(m, is_markdown(m));
+
 # Returns boolean if input is boolean, None otherwise
 def booleans(b): select(b, is_bool(b));
+
 # Returns number if input is number, None otherwise
 def numbers(n): select(n, is_number(n));
 
@@ -62,32 +72,28 @@ def numbers(n): select(n, is_number(n));
 def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 
 # Converts input to an array
-def to_array(a):
-  if (is_array(a)):
-    a
-  else:
-    array(a);
-
-def _map_dict(v, f):
-  let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
+def to_array(a): if (is_array(a)): a else: array(a);
 
 # Applies a given function to each element of the provided array and returns a new array with the results.
 def map(v, f):
+  let map_dict = fn(v, f):
+    let mapped = foreach (x, entries(v)): f(x); | dict(mapped); | 
+
   if (is_dict(v)):
-    _map_dict(v, f)
+    map_dict(v, f)
   else:
     foreach (x, v): f(x);;
 
-def _filter_dict(v, f):
-  let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
-
-def _filter(v, f):
-  foreach (x, v): select(x, f(x)); | compact();
-
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f):
+  let filter_dict = fn(v, f):
+    let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted)); | 
+
+  let _filter = fn(v, f):
+    foreach (x, v): select(x, f(x)); | compact(); | 
+
   if (is_dict(v)):
-    _filter_dict(v, f)
+    filter_dict(v, f)
   else:
     _filter(v, f);
 
@@ -232,8 +238,7 @@ def debug(msg):
 
 # Sorts an array using a key function that extracts a comparable value for each element.
 def sort_by(arr, f):
-  let decorate_arr = foreach (x, arr): array(f(x), x);
-  | _sort_by_impl(decorate_arr) | map(second);
+  let decorate_arr = foreach (x, arr): array(f(x), x); | _sort_by_impl(decorate_arr) | map(second);
 
 
 # Skips the first n elements of an array and returns the rest
@@ -254,16 +259,16 @@ def take(arr, n):
   else:
     slice(arr, 0, n);
 
-def _find_index_impl(arr, f, idx):
-  if (idx == len(arr)):
-    -1
-  elif (f(nth(arr, idx))):
-    idx
-  else:
-    _find_index_impl(arr, f, add(idx, 1));
-
 # Returns the index of the first element in an array that satisfies the provided function.
 def find_index(arr, f):
+  let _find_index_impl = fn(arr, f, idx):
+    if (idx == len(arr)):
+      -1
+    elif (f(nth(arr, idx))):
+      idx
+    else:
+      _find_index_impl(arr, f, add(idx, 1)); | 
+
   if (not(is_array(arr))):
     error("first argument must be an array")
   else:
@@ -271,14 +276,15 @@ def find_index(arr, f):
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
-  let i = 0
-  | let si = if (not(is_array(arr))):
-  error("first argument must be an array")
-elif (is_empty(arr)):
-  0
-else:
-  until (and(lt(i, len(arr)), f(nth(arr, i)))):
-    let i = add(i, 1) | i;
+  let i = 0 | 
+  let si = 
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    0
+  else:
+    until (and(lt(i, len(arr)), f(nth(arr, i)))):
+      let i = add(i, 1) | i;
   | if (is_none(si)):
     array()
   else:
@@ -286,14 +292,15 @@ else:
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
-  let i = 0
-  | let ti = if (not(is_array(arr))):
-  error("first argument must be an array")
-elif (is_empty(arr)):
-  0
-else:
-  until (and(lt(i, len(arr)), f(nth(arr, i)))):
-    let i = add(i, 1) | i;
+  let i = 0 | 
+  let ti = 
+  if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    0
+  else:
+    until (and(lt(i, len(arr)), f(nth(arr, i)))):
+      let i = add(i, 1) | i;
   | if (is_none(ti)):
     array()
   else:
@@ -327,18 +334,10 @@ def range(start, end, step):
       | results;;
 
 # Returns true if any element in the array satisfies the provided function.
-def any(v, f):
-  if (is_empty(v)):
-    false
-  else: 
-    len(filter(v, f)) != 0;
+def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;
 
 # Returns true if all element in the array satisfies the provided function.
-def all(v, f):
-  if (is_empty(v)):
-    true
-  else: 
-    len(filter(v, f)) == len(v);
+def all(v, f): if (is_empty(v)): true else: len(filter(v, f)) == len(v);
 
 # Returns true if the element is in the array.
 def in(v, elem):
@@ -351,15 +350,7 @@ def in(v, elem):
     contains(v, elem);
 
 # Converts the given value to a CSV.
-def to_csv(v):
-  if (is_array(v)):
-    join(v, ",")
-  else:
-    to_string(v);
+def to_csv(v): if (is_array(v)): join(v, ",") else: to_string(v);
 
 # Converts the given value to a TSV.
-def to_tsv(v):
-  if (is_array(v)):
-    join(v, "\t")
-  else:
-    to_string(v);
+def to_tsv(v): if (is_array(v)): join(v, "\t") else: to_string(v);
