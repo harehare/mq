@@ -104,6 +104,7 @@ pub enum NodeKind {
 pub enum BinaryOp {
     Equal,
     NotEqual,
+    Plus,
 }
 
 impl Display for Node {
