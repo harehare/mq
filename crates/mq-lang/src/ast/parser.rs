@@ -716,11 +716,8 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Fn,
                     module_id: _,
-                } => {
-                    // Arguments that are complex expressions (idents, selectors, if, fn)
-                    args.push(self.parse_arg_expr(Rc::clone(token))?);
                 }
-                Token {
+                | Token {
                     range: _,
                     kind: TokenKind::BoolLiteral(_),
                     module_id: _,
@@ -739,24 +736,19 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::None,
                     module_id: _,
-                } => {
-                    // Arguments that are simple literals
-                    args.push(self.parse_arg_literal(Rc::clone(token))?);
                 }
-                Token {
+                | Token {
                     range: _,
                     kind: TokenKind::InterpolatedString(_),
                     module_id: _,
-                } => {
-                    let expr = self.parse_interpolated_string(Rc::clone(token))?;
-                    args.push(expr);
                 }
-                Token {
+                | Token {
                     range: _,
                     kind: TokenKind::Env(_),
                     module_id: _,
                 } => {
-                    args.push(self.parse_env(Rc::clone(token))?);
+                    // Arguments that are complex expressions (idents, selectors, if, fn)
+                    args.push(self.parse_arg_expr(Rc::clone(token))?);
                 }
                 Token {
                     range: _,
@@ -954,12 +946,6 @@ impl<'a> Parser<'a> {
     // This typically involves a recursive call to `parse_expr`.
     fn parse_arg_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         self.parse_expr(Rc::clone(&token))
-    }
-
-    // Helper to parse an argument that is expected to be a literal.
-    // This typically involves a call to `parse_literal`.
-    fn parse_arg_literal(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        self.parse_literal(Rc::clone(&token))
     }
 
     fn parse_head(&mut self, token: Rc<Token>, depth: u8) -> Result<Rc<Node>, ParseError> {
