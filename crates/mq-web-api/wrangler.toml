@@ -1,0 +1,10 @@
+compatibility_date = "2025-06-07"
+main = "build/worker/shim.mjs"
+name = "mq-web-api"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "__RATE_LIMIT_KV_NAMESPACE_ID__"
