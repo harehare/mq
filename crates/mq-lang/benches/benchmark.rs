@@ -11,12 +11,12 @@ fn eval_fibonacci(n: u64) -> mq_lang::Values {
         .eval(
             "
      def fibonacci(x):
-      if(eq(x, 0)):
+      if(x == 0):
         0
-      elif(eq(x, 1)):
+      elif(x == 1):
           1
       else:
-        add(fibonacci(sub(x, 1)), fibonacci(sub(x, 2))); | fibonacci(20)",
+        fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
             vec![mq_lang::Value::Number(n.into())].into_iter(),
         )
         .unwrap()
@@ -145,13 +145,13 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     mq_lang::parse(
         "
      def fibonacci(x):
-      if(eq(x, 0)):
+      if(x == 0):
         0
       else:
-        if(eq(x, 1)):
+        if(x == 1):
           1
         else:
-          add(fibonacci(sub(x, 1)), fibonacci(sub(x, 2))); | fibonacci(20)",
+          fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
         Rc::clone(&token_arena),
     )
     .unwrap()
