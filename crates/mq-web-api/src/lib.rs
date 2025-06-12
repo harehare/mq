@@ -153,9 +153,16 @@ async fn handle_diagnostics_request(req: Request) -> worker::Result<Response> {
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Result<Response> {
-    // Rate limit constants
-    const RATE_LIMIT: u32 = 10; // 10 requests
-    const WINDOW_SECS: u64 = 60; // per 60 seconds
+    let rate_limit = env
+        .var("RATE_LIMIT")
+        .ok()
+        .and_then(|v| v.to_string().parse::<u32>().ok())
+        .unwrap_or(10); // default to 10 requests if not set
+    let window_secs = env
+        .var("RATE_LIMIT_WINDOW_SECS")
+        .ok()
+        .and_then(|v| v.to_string().parse::<u64>().ok())
+        .unwrap_or(60); // default to 60 seconds if not set
     let kv = match env.kv("RATE_LIMIT_KV") {
         Ok(kv) => kv,
         Err(_) => {
@@ -172,7 +179,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Resu
         .get("CF-Connecting-IP")?
         .unwrap_or_else(|| "unknown".to_string());
     let now = worker::Date::now().as_millis();
-    let window = now / (WINDOW_SECS * 1000);
+    let window = now / (window_secs * 1000);
     let key = format!("rate:{}:{}", ip, window);
     let count = kv
         .get(&key)
@@ -181,17 +188,17 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> worker::Resu
         .unwrap_or("0".to_string())
         .parse::<u32>()
         .unwrap_or(0);
-    if count >= RATE_LIMIT {
+    if count >= rate_limit {
         let mut resp = Response::from_json(&serde_json::json!({
             "error": "Too Many Requests",
             "message": "You have exceeded the rate limit. Please try again later."
         }))?;
         resp.headers_mut()
-            .set("Retry-After", &WINDOW_SECS.to_string())?;
+            .set("Retry-After", &window_secs.to_string())?;
         return Ok(resp.with_status(429));
     }
     kv.put(&key, (count + 1).to_string())?
-        .expiration_ttl(WINDOW_SECS)
+        .expiration_ttl(window_secs)
         .execute()
         .await?;
 
