@@ -159,6 +159,11 @@ impl Formatter {
                         kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::NotEqual),
                         token: Some(token),
                         ..
+                    }
+                    | mq_lang::CstNode {
+                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::Plus),
+                        token: Some(token),
+                        ..
                     } => {
                         self.output.push_str(format!(" {} ", token).as_str());
                     }
@@ -733,6 +738,7 @@ s"test${val1}"
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
     #[case::string_with_newline(r#""line1\\nline2""#, r#""line1\nline2""#)]
+    #[case::plus_operator("let x = 1 + 2", "let x = 1 + 2")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

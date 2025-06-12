@@ -181,6 +181,7 @@ define_token_parser!(let_, "let ", TokenKind::Let);
 define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(none, "None", TokenKind::None);
+define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(question, "?", TokenKind::Question);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
@@ -193,7 +194,7 @@ define_token_parser!(while_, "while", TokenKind::While);
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
         l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, ne_eq, equal,
-        pipe, question,
+        plus, pipe, question,
     ))
     .parse(input)
 }

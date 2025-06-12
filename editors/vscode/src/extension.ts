@@ -35,7 +35,7 @@ def snake_to_camel(x):
 
 # Markdown Toc
 .h
-| let link = to_link(add("#", to_text(self)), to_text(self), "")
+| let link = to_link("#" + to_text(self), to_text(self), "")
 | if (is_h1()):
   to_md_list(link, 1)
 elif (is_h2()):

@@ -135,8 +135,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -210,7 +210,7 @@ You can chain multiple operations to perform complex transformations:
 
 ```sh
 # Markdown TOC
-$ mq 'select(or(.h1, .h2, .h3)) | let link = to_link(add(__FILE__, add("#", to_text(self))), to_text(self), "") | if (is_h1()): to_md_list(link, 1)  elif (is_h2()): to_md_list(link, 2) elif (is_h3()): to_md_list(link, 3) else: None' docs/book/*.md
+$ mq 'select(or(.h1, .h2, .h3)) | let link = to_link(add(__FILE__, "#" + to_text(self)), to_text(self), "") | if (is_h1()): to_md_list(link, 1)  elif (is_h2()): to_md_list(link, 2) elif (is_h3()): to_md_list(link, 3) else: None' docs/books/**/*.md
 # String Interpolation
 $ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
 ```

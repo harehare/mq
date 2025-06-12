@@ -53,7 +53,7 @@ code
   {
     name: "Markdown Toc",
     code: `.h
-| let link = to_link(add("#", to_text(self)), to_text(self), "")
+| let link = to_link("#" + to_text(self), to_text(self), "")
 | if (eq(to_md_name(), "h1")):
   to_md_list(link, 1)
 elif (eq(to_md_name(), "h2")):
@@ -160,7 +160,7 @@ In {year}, the snowfall was above average.
     name: "Generate sitemap",
     code: `def sitemap(item, base_url):
   let path = replace(to_text(item), ".md", ".html")
-  | let loc = add(base_url, path)
+  | let loc = base_url + path
   | s"<url>
   <loc>\${loc}</loc>
   <priority>1.0</priority>
