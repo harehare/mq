@@ -51,7 +51,19 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.format_with_cst(nodes)
+        self.format_with_cst(nodes).map(|output| {
+            let mut result = String::with_capacity(output.len());
+            for line in output.lines() {
+                result.push_str(line.trim_end());
+                result.push('\n');
+            }
+
+            if result.ends_with('\n') && !output.ends_with('\n') {
+                result.pop();
+            }
+
+            result
+        })
     }
 
     pub fn format_with_cst(
@@ -184,6 +196,8 @@ impl Formatter {
         append_space_after_keyword: bool,
     ) {
         let is_prev_pipe = self.is_prev_pipe();
+        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
+        dbg!(&indent_adjustment);
 
         if node.has_new_line() {
             self.append_indent(indent_level);
@@ -212,7 +226,7 @@ impl Formatter {
                     block_indent_level + 1
                 } else {
                     block_indent_level
-                },
+                } + indent_adjustment,
             );
         });
 
@@ -229,7 +243,7 @@ impl Formatter {
             block_indent_level + 2
         } else {
             block_indent_level + 1
-        };
+        } + indent_adjustment;
 
         expr_nodes.for_each(|child| {
             self.format_node(Arc::clone(child), block_indent_level);
@@ -242,6 +256,12 @@ impl Formatter {
         self.append_space();
 
         node.children.iter().for_each(|child| {
+            let indent_level = if child.has_new_line() {
+                indent_level + 1
+            } else {
+                indent_level
+            };
+
             self.format_node(Arc::clone(child), indent_level);
         });
     }
@@ -267,6 +287,7 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
+        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
 
         if let [l_param, cond, r_param, then_colon, then_expr, rest @ ..] = node.children.as_slice()
         {
@@ -283,7 +304,7 @@ impl Formatter {
                 indent_level + 2
             } else {
                 indent_level + 1
-            };
+            } + indent_adjustment;
 
             self.format_node(Arc::clone(then_expr), block_indent_level);
 
@@ -291,7 +312,7 @@ impl Formatter {
                 indent_level + 1
             } else {
                 indent_level
-            };
+            } + indent_adjustment;
 
             for child in rest {
                 self.format_node(Arc::clone(child), node_indent_level);
@@ -501,6 +522,14 @@ impl Formatter {
 
     fn is_prev_pipe(&self) -> bool {
         self.output.ends_with("| ")
+    }
+
+    fn is_let_line(&self) -> bool {
+        if let Some(last_line) = self.output.lines().last() {
+            last_line.trim().starts_with("let ")
+        } else {
+            false
+        }
     }
 }
 #[cfg(test)]
@@ -739,6 +768,28 @@ s"test${val1}"
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
     #[case::string_with_newline(r#""line1\\nline2""#, r#""line1\nline2""#)]
     #[case::plus_operator("let x = 1 + 2", "let x = 1 + 2")]
+    #[case::let_newline_after_equal(
+        r#"let x =
+"test""#,
+        r#"let x =
+  "test""#
+    )]
+    #[case::let_with_if_multiline(
+        r#"let x = if(test):
+test
+else:
+test2"#,
+        r#"let x = if (test):
+    test
+  else:
+    test2"#
+    )]
+    #[case::let_with_while_multiline(
+        r#"let x = while(condition()):
+process();"#,
+        r#"let x = while (condition()):
+    process();"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
