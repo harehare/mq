@@ -45,7 +45,7 @@ def rtrimstr(s, right):
 
 # Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s), is_dict(s))):
+  if (or(is_string(s), is_array(s), is_dict(s))): 
     len(s) == 0
   else:
     false;
@@ -77,9 +77,9 @@ def to_array(a): if (is_array(a)): a else: array(a);
 # Applies a given function to each element of the provided array and returns a new array with the results.
 def map(v, f):
   let map_dict = fn(v, f):
-    let mapped = foreach (x, entries(v)): f(x); | dict(mapped); |
+      let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
 
-  if (is_dict(v)):
+  | if (is_dict(v)):
     map_dict(v, f)
   else:
     foreach (x, v): f(x);;
@@ -87,12 +87,12 @@ def map(v, f):
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f):
   let filter_dict = fn(v, f):
-    let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted)); |
+      let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
 
-  let _filter = fn(v, f):
-    foreach (x, v): select(x, f(x)); | compact(); |
+  | let _filter = fn(v, f):
+  foreach (x, v): select(x, f(x)); | compact();
 
-  if (is_dict(v)):
+  | if (is_dict(v)):
     filter_dict(v, f)
   else:
     _filter(v, f);
@@ -198,10 +198,10 @@ def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 
 # Checks if markdown is MDX
 def is_mdx(mdx): or(
-  is_mdx_flow_expression(mdx),
-  is_mdx_jsx_flow_element(mdx),
-  is_mdx_jsx_text_element(mdx),
-  is_mdx_text_expression(mdx),
+  is_mdx_flow_expression(mdx), 
+  is_mdx_jsx_flow_element(mdx), 
+  is_mdx_jsx_text_element(mdx), 
+  is_mdx_text_expression(mdx), 
   is_mdx_js_esm(mdx));
 
 # Checks if markdown is list with indentation level 1
@@ -262,22 +262,22 @@ def take(arr, n):
 # Returns the index of the first element in an array that satisfies the provided function.
 def find_index(arr, f):
   let _find_index_impl = fn(arr, f, idx):
-    if (idx == len(arr)):
-      -1
-    elif (f(nth(arr, idx))):
-      idx
-    else:
-      _find_index_impl(arr, f, idx + 1); |
+      if (idx == len(arr)):
+        -1
+      elif (f(nth(arr, idx))):
+        idx
+      else:
+        _find_index_impl(arr, f, idx + 1);
 
-  if (not(is_array(arr))):
+  | if (not(is_array(arr))):
     error("first argument must be an array")
   else:
     _find_index_impl(arr, f, 0);
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
-  let i = 0 |
-  let si =
+  let i = 0
+  | let si = 
   if (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
@@ -292,8 +292,8 @@ def skip_while(arr, f):
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
-  let i = 0 |
-  let ti =
+  let i = 0
+  | let ti = 
   if (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
