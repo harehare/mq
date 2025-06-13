@@ -51,7 +51,19 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.format_with_cst(nodes)
+        self.format_with_cst(nodes).map(|output| {
+            let mut result = String::with_capacity(output.len());
+            for line in output.lines() {
+                result.push_str(line.trim_end());
+                result.push('\n');
+            }
+
+            if result.ends_with('\n') && !output.ends_with('\n') {
+                result.pop();
+            }
+
+            result
+        })
     }
 
     pub fn format_with_cst(
