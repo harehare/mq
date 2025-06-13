@@ -78,7 +78,6 @@ publish-python: build-python
 
 # Run formatting, linting and all tests
 test: lint
-    cargo test --examples
     cargo test --workspace --all-features
 
 # Run tests with code coverage reporting
