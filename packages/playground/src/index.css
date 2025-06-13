@@ -105,9 +105,7 @@ body {
   overflow: hidden;
 }
 
-.share-button,
-.format-button,
-.run-button {
+.button {
   background-color: transparent;
   color: #3182ce;
   border: none;
@@ -122,9 +120,7 @@ body {
   padding: 4px 16px;
 }
 
-.share-button:hover,
-.format-button:hover,
-.run-button:hover {
+.button:hover {
   color: #88acd2;
   font-weight: 600;
 }

@@ -396,6 +396,25 @@ export const Playground = () => {
     linkTitleStyle,
   ]);
 
+  const handleCopy = useCallback(() => {
+    if (code) {
+      const options = [
+        isUpdate ? "-U" : "",
+        inputFormat ? `-I ${inputFormat}` : "",
+        listStyle ? `--list-style ${listStyle}` : "",
+        linkUrlStyle ? `--link-url-style ${linkUrlStyle}` : "",
+        linkTitleStyle ? `--link-title-style ${linkTitleStyle}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const script = `mq ${options} '${code}'`;
+
+      navigator.clipboard.writeText(script).then(() => {
+        alert("Script copied to clipboard!");
+      });
+    }
+  }, [code, inputFormat, isUpdate, listStyle, linkUrlStyle, linkTitleStyle]);
+
   const handleChangeListStyle = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
@@ -719,13 +738,16 @@ export const Playground = () => {
                     ))}
                   </select>
                 </div>
-                <button className="share-button" onClick={handleShare}>
+                <button className="button" onClick={handleCopy}>
+                  Copy Command
+                </button>
+                <button className="button" onClick={handleShare}>
                   Share
                 </button>
-                <button className="format-button" onClick={handleFormat}>
+                <button className="button format-button" onClick={handleFormat}>
                   Format
                 </button>
-                <button className="run-button" onClick={handleRun}>
+                <button className="button run-button" onClick={handleRun}>
                   ▶ Run
                 </button>
               </div>
