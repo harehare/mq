@@ -1,0 +1,23 @@
+# This file is intentionally left empty.
+# It's a common practice to use .gitkeep files to ensure that
+# otherwise empty directories are tracked by Git.
+# This is particularly useful for maintaining a project's
+# directory structure, even if some directories don't yet
+# contain any functional code or files.
+#
+# The 'lua' directory is the standard place to store Lua modules
+# for a Neovim plugin. With Neovim's increasing emphasis on Lua
+# for configuration and plugin development, this directory is
+# essential for organizing Lua code.
+#
+# Modules placed here can be loaded using Lua's `require` function.
+# For example, a file 'lua/myplugin/utils.lua' can be loaded
+# by calling `require('myplugin.utils')` from any other Lua
+# script in your plugin (or even from Vimscript using `luaeval()`).
+#
+# This allows for a modular and well-structured codebase,
+# making it easier to manage and maintain your plugin, especially
+# as it grows in complexity. You can create subdirectories within
+# 'lua' to further organize your modules. For instance,
+# 'lua/myplugin/ui/' for UI-related modules and
+# 'lua/myplugin/core/' for core logic.
