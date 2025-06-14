@@ -45,7 +45,7 @@ def rtrimstr(s, right):
 
 # Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s), is_dict(s))): 
+  if (or(is_string(s), is_array(s), is_dict(s))):
     len(s) == 0
   else:
     false;
@@ -198,10 +198,10 @@ def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 
 # Checks if markdown is MDX
 def is_mdx(mdx): or(
-  is_mdx_flow_expression(mdx), 
-  is_mdx_jsx_flow_element(mdx), 
-  is_mdx_jsx_text_element(mdx), 
-  is_mdx_text_expression(mdx), 
+  is_mdx_flow_expression(mdx),
+  is_mdx_jsx_flow_element(mdx),
+  is_mdx_jsx_text_element(mdx),
+  is_mdx_text_expression(mdx),
   is_mdx_js_esm(mdx));
 
 # Checks if markdown is list with indentation level 1
@@ -277,7 +277,7 @@ def find_index(arr, f):
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
   let i = 0
-  | let si = 
+  | let si =
   if (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
@@ -293,7 +293,7 @@ def skip_while(arr, f):
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
   let i = 0
-  | let ti = 
+  | let ti =
   if (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
@@ -354,3 +354,36 @@ def to_csv(v): if (is_array(v)): join(v, ",") else: to_string(v);
 
 # Converts the given value to a TSV.
 def to_tsv(v): if (is_array(v)): join(v, "\t") else: to_string(v);
+
+# Reduces an array to a single value by applying a function, starting from an initial value.
+def fold(arr, init, f):
+  let acc = init
+  | let i = 0
+  | if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    init
+  else:
+    until (i != len(arr)):
+      let acc = f(acc, nth(arr, i))
+      | debug()
+      | let i = i + 1
+      | acc;;
+
+# Returns a new array with duplicate elements removed, comparing by the result of the provided function.
+def unique_by(arr, f):
+  let seen = dict()
+  | let result = []
+  | let i = 0
+  | if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)): []
+  else:
+    until (i != len(arr)):
+      let item = nth(arr, i)
+      | let key = to_string(f(item))
+      | let already_seen = get(seen, key)
+      | let result = if (is_none(already_seen)): result + item else: result
+      | let seen = if (is_none(already_seen)): set(seen, key, true) else: seen
+      | let i = i + 1
+      | result;;

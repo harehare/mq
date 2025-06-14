@@ -746,17 +746,14 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Env(_),
                     module_id: _,
-                } => {
-                    // Arguments that are complex expressions (idents, selectors, if, fn)
-                    args.push(self.parse_arg_expr(Rc::clone(token))?);
                 }
-                Token {
+                | Token {
                     range: _,
                     kind: TokenKind::LBracket,
                     module_id: _,
                 } => {
-                    let expr = self.parse_array(Rc::clone(token))?;
-                    args.push(expr);
+                    // Arguments that are complex expressions (idents, selectors, if, fn)
+                    args.push(self.parse_arg_expr(Rc::clone(token))?);
                 }
                 Token {
                     range: _,
@@ -829,101 +826,7 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::SemiColon,
                     module_id: _,
                 } => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                Token {
-                    range: _,
-                    kind: TokenKind::Def,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Include,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Equal,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::RBracket,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Pipe,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Colon,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Let,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::While,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Until,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Foreach,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Comment(_),
-                    module_id: _,
-                } => return Err(ParseError::UnexpectedToken((**token).clone())),
-                Token {
-                    range: _,
-                    kind: TokenKind::NewLine,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Whitespace(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Question,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Tab(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Nodes,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::EqEq,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::NeEq,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Plus,
-                    module_id: _,
-                } => {
+                _ => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
                 }
             }

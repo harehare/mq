@@ -1353,6 +1353,63 @@ fn engine() -> Engine {
             ])],
             Ok(vec![Value::String("a\tb\tc".to_string())].into())
           )]
+#[case::fold_sum("
+            def sum(acc, x):
+              add(acc, x);
+            | fold([1, 2, 3, 4], 0, sum)
+            ",
+            vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
+            Ok(vec![Value::Number(10.into())].into()))]
+#[case::fold_concat(r#"
+            def concat(acc, x):
+              add(acc, x);
+            | fold(["a", "b", "c"], "", concat)
+            "#,
+            vec![Value::Array(vec![Value::String("a".into()), Value::String("b".into()), Value::String("c".into())])],
+            Ok(vec![Value::String("abc".into())].into()))]
+#[case::fold_empty("
+            def sum(acc, x):
+              add(acc, x);
+            | fold([], 0, sum)
+            ",
+            vec![Value::Array(vec![])],
+            Ok(vec![Value::Number(0.into())].into()))]
+#[case::unique_by_numbers("
+            def get_remainder(x):
+              mod(x, 3);
+            | unique_by([1, 2, 3, 4, 5, 6, 7, 8, 9], get_remainder)
+            ",
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into()), Value::Number(8.into()), Value::Number(9.into())])],
+              Ok(vec![Value::Array(vec![
+              Value::Number(1.into()),
+              Value::Number(2.into()),
+              Value::Number(3.into()),
+              ])].into()))]
+#[case::unique_by_strings(r#"
+            def get_length(s):
+              len(s);
+            | unique_by(["cat", "dog", "bird", "fish", "elephant"], get_length)
+            "#,
+              vec![Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string()), Value::String("bird".to_string()), Value::String("fish".to_string()), Value::String("elephant".to_string())])],
+              Ok(vec![Value::Array(vec![
+              Value::String("cat".to_string()),
+              Value::String("bird".to_string()),
+              Value::String("elephant".to_string()),
+              ])].into()))]
+#[case::unique_by_empty_array("
+            def identity(x):
+              x;
+            | unique_by([], identity)
+            ",
+              vec![Value::Array(vec![])],
+              Ok(vec![Value::Array(vec![])].into()))]
+#[case::unique_by_all_same_key(r#"
+            def always_same(x):
+              "same";
+            | unique_by([1, 2, 3, 4], always_same)
+            "#,
+              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
+              Ok(vec![Value::Array(vec![Value::Number(1.into())])].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
