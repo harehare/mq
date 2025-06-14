@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "MQ Query Extension",
+  "version": "0.1.0",
+  "description": "Run mq queries on the current page's content.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
