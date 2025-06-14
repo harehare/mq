@@ -354,3 +354,17 @@ def to_csv(v): if (is_array(v)): join(v, ",") else: to_string(v);
 
 # Converts the given value to a TSV.
 def to_tsv(v): if (is_array(v)): join(v, "\t") else: to_string(v);
+
+# Reduces an array to a single value by applying a function, starting from an initial value.
+def fold(arr, init, f):
+  let acc = init
+  | let i = 0
+  | if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    init
+  else:
+    until (i != len(arr)):
+      let acc = f(acc, nth(arr, i))
+      | let i = i + 1
+      | acc;

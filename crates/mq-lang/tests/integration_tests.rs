@@ -1353,6 +1353,27 @@ fn engine() -> Engine {
             ])],
             Ok(vec![Value::String("a\tb\tc".to_string())].into())
           )]
+#[case::fold_sum("
+            def sum(acc, x):
+              add(acc, x);
+            | fold(array(1, 2, 3, 4), 0, sum)
+            ",
+            vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
+            Ok(vec![Value::Number(10.into())].into()))]
+#[case::fold_concat(r#"
+            def concat(acc, x):
+              add(acc, x);
+            | fold(array("a", "b", "c"), "", concat)
+            "#,
+            vec![Value::Array(vec![Value::String("a".into()), Value::String("b".into()), Value::String("c".into())])],
+            Ok(vec![Value::String("abc".into())].into()))]
+#[case::fold_empty("
+            def sum(acc, x):
+              add(acc, x);
+            | fold(array(), 0, sum)
+            ",
+            vec![Value::Array(vec![])],
+            Ok(vec![Value::Number(0.into())].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
