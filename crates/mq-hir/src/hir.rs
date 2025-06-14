@@ -969,6 +969,10 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::eq("1 == 2", "==", SymbolKind::BinaryOp)]
     #[case::neq("1 != 2", "!=", SymbolKind::BinaryOp)]
     #[case::plus("1 + 2", "+", SymbolKind::BinaryOp)]
+    #[case::lt("1 < 2", "<", SymbolKind::BinaryOp)]
+    #[case::lte("1 <= 2", "<=", SymbolKind::BinaryOp)]
+    #[case::gt("1 > 2", ">", SymbolKind::BinaryOp)]
+    #[case::gte("1 >= 2", ">=", SymbolKind::BinaryOp)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

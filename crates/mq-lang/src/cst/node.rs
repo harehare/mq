@@ -105,6 +105,10 @@ pub enum BinaryOp {
     Equal,
     NotEqual,
     Plus,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
 }
 
 impl Display for Node {

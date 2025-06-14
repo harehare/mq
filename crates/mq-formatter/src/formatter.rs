@@ -162,17 +162,7 @@ impl Formatter {
 
                 match &**node {
                     mq_lang::CstNode {
-                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::Equal),
-                        token: Some(token),
-                        ..
-                    }
-                    | mq_lang::CstNode {
-                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::NotEqual),
-                        token: Some(token),
-                        ..
-                    }
-                    | mq_lang::CstNode {
-                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::Plus),
+                        kind: mq_lang::CstNodeKind::BinaryOp(_),
                         token: Some(token),
                         ..
                     } => {
@@ -789,6 +779,10 @@ process();"#,
         r#"let x = while (condition()):
     process();"#
     )]
+    #[case::less_than_operator("let x = 1 < 2", "let x = 1 < 2")]
+    #[case::less_than_equal_operator("let x = 1 <= 2", "let x = 1 <= 2")]
+    #[case::greater_than_operator("let x = 2 > 1", "let x = 2 > 1")]
+    #[case::greater_than_equal_operator("let x = 2 >= 1", "let x = 2 >= 1")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

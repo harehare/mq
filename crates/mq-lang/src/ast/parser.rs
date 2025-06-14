@@ -118,7 +118,13 @@ impl<'a> Parser<'a> {
             let peeked_token = &**peeked_token_rc;
             if matches!(
                 peeked_token.kind,
-                TokenKind::EqEq | TokenKind::NeEq | TokenKind::Plus
+                TokenKind::EqEq
+                    | TokenKind::NeEq
+                    | TokenKind::Plus
+                    | TokenKind::Lt
+                    | TokenKind::Lte
+                    | TokenKind::Gt
+                    | TokenKind::Gte
             ) {
                 let operator_token = self.tokens.next().unwrap();
                 let operator_token_id = self
@@ -136,6 +142,10 @@ impl<'a> Parser<'a> {
                     TokenKind::EqEq => "eq",
                     TokenKind::NeEq => "ne",
                     TokenKind::Plus => "add",
+                    TokenKind::Lt => "lt",
+                    TokenKind::Lte => "lte",
+                    TokenKind::Gt => "gt",
+                    TokenKind::Gte => "gte",
                     _ => unreachable!(),
                 };
 
@@ -278,6 +288,10 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Lt)
+            | Some(TokenKind::Lte)
+            | Some(TokenKind::Gt)
+            | Some(TokenKind::Gte)
             | None => Ok(literal_node),
             Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
         }
@@ -309,6 +323,10 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::EqEq)
                     | Some(TokenKind::NeEq)
                     | Some(TokenKind::Plus)
+                    | Some(TokenKind::Lt)
+                    | Some(TokenKind::Lte)
+                    | Some(TokenKind::Gt)
+                    | Some(TokenKind::Gte)
                     | Some(TokenKind::Comment(_))
                     | None => Ok(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -333,6 +351,10 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Lt)
+            | Some(TokenKind::Lte)
+            | Some(TokenKind::Gt)
+            | Some(TokenKind::Gte)
             | Some(TokenKind::Comment(_))
             | None => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -3173,6 +3195,110 @@ mod tests {
                         token(TokenKind::Eof)
                     ],
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::lt_simple(
+                    vec![
+                        token(TokenKind::NumberLiteral(1.into())),
+                        token(TokenKind::Lt),
+                        token(TokenKind::NumberLiteral(2.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("lt", Some(Rc::new(token(TokenKind::Lt)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::lte_simple(
+                    vec![
+                        token(TokenKind::NumberLiteral(1.into())),
+                        token(TokenKind::Lte),
+                        token(TokenKind::NumberLiteral(2.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("lte", Some(Rc::new(token(TokenKind::Lte)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::gt_simple(
+                    vec![
+                        token(TokenKind::NumberLiteral(3.into())),
+                        token(TokenKind::Gt),
+                        token(TokenKind::NumberLiteral(2.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("gt", Some(Rc::new(token(TokenKind::Gt)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
+    #[case::gte_simple(
+                    vec![
+                        token(TokenKind::NumberLiteral(3.into())),
+                        token(TokenKind::Gte),
+                        token(TokenKind::NumberLiteral(2.into())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("gte", Some(Rc::new(token(TokenKind::Gte)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

@@ -42,20 +42,23 @@ pub enum TokenKind {
     EqEq,
     Fn,
     Foreach,
+    Gt,
+    Gte,
     Ident(CompactString),
     If,
     Include,
     InterpolatedString(Vec<StringSegment>),
     LBracket,
-    LParen,
     Let,
+    Lt,
+    Lte,
     NeEq,
     NewLine,
     Nodes,
     None,
     NumberLiteral(Number),
-    Plus,
     Pipe,
+    Plus,
     Question,
     RBracket,
     RParen,
@@ -67,6 +70,7 @@ pub enum TokenKind {
     Until,
     Whitespace(usize),
     While,
+    LParen,
 }
 
 impl Display for Token {
@@ -97,6 +101,10 @@ impl Display for TokenKind {
             TokenKind::InterpolatedString(segments) => {
                 write!(f, "{}", segments.iter().join(""))
             }
+            TokenKind::Lt => write!(f, "<"),
+            TokenKind::Lte => write!(f, "<="),
+            TokenKind::Gt => write!(f, ">"),
+            TokenKind::Gte => write!(f, ">="),
             TokenKind::LBracket => write!(f, "["),
             TokenKind::LParen => write!(f, "("),
             TokenKind::Let => write!(f, "let"),

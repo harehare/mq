@@ -8,32 +8,32 @@ Standard comparison operators are supported:
 
 - `eq(a, b), a == b` - Returns true if `a` equals `b`
 - `ne(a, b), a != b` - Returns true if `a` does not equal `b`
-- `gt(a, b)` - Returns true if `a` is greater than `b`
-- `gte(a, b)` - Returns true if `a` is greater than or equal to `b`
-- `lt(a, b)` - Returns true if `a` is less than `b`
-- `lte(a, b)` - Returns true if `a` is less than or equal to `b`
+- `gt(a, b), a > b` - Returns true if `a` is greater than `b`
+- `gte(a, b), a >= b` - Returns true if `a` is greater than or equal to `b`
+- `lt(a, b), a < b` - Returns true if `a` is less than `b`
+- `lte(a, b), a <= b` - Returns true if `a` is less than or equal to `b`
 
 ### Examples
 
 ```python
 # Basic comparisons
-eq(1, 1)
+1 == 1
 # => true
-gt(2, 1)
+2 > 1
 # => true
-lte("a", "b")
+"a" <= "b"
 # => true
 
 # String comparisons
-eq("hello", "hello")
+"hello" == "hello"
 # => true
-gt("xyz", "abc")
+"xyz" > "abc"
 # => true
 
 # Numeric comparisons
-gte(5.5, 5.0)
+5.5 >= 5.0
 # => true
-lt(-1, 0)
+-1 < 0
 # => true
 
 # Logical operations
@@ -45,6 +45,6 @@ not(false)
 # => true
 
 # Complex conditions
-and(gt(x, 0), lt(x, 10))
+and(x > 0, x < 10)
 # =>  true if 0 < x < 10
 ```

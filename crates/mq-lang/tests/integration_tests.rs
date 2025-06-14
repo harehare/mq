@@ -404,6 +404,57 @@ fn engine() -> Engine {
       ",
         vec![Value::Array(vec![])],
         Ok(vec![Value::Number((-1).into())].into()))]
+#[case::skip("
+          skip([1, 2, 3, 4, 5], 2)
+          ",
+          vec![Value::Array(vec![
+              Value::Number(1.into()),
+              Value::Number(2.into()),
+              Value::Number(3.into()),
+              Value::Number(4.into()),
+              Value::Number(5.into()),
+          ])],
+          Ok(vec![Value::Array(vec![
+              Value::Number(3.into()),
+              Value::Number(4.into()),
+              Value::Number(5.into()),
+          ])].into()))]
+#[case::skip_zero("
+          skip([1, 2, 3], 0)
+          ",
+          vec![Value::Array(vec![
+              Value::Number(1.into()),
+              Value::Number(2.into()),
+              Value::Number(3.into()),
+          ])],
+          Ok(vec![Value::Array(vec![
+              Value::Number(1.into()),
+              Value::Number(2.into()),
+              Value::Number(3.into()),
+          ])].into()))]
+#[case::skip_all("
+          skip([1, 2, 3], 3)
+          ",
+          vec![Value::Array(vec![
+              Value::Number(1.into()),
+              Value::Number(2.into()),
+              Value::Number(3.into()),
+          ])],
+          Ok(vec![Value::Array(vec![])].into()))]
+#[case::skip_more_than_length("
+          skip([1, 2, 3], 5)
+          ",
+          vec![Value::Array(vec![
+              Value::Number(1.into()),
+              Value::Number(2.into()),
+              Value::Number(3.into()),
+          ])],
+          Ok(vec![Value::Array(vec![])].into()))]
+#[case::skip_empty("
+          skip([], 2)
+          ",
+          vec![Value::Array(vec![])],
+          Ok(vec![Value::Array(vec![])].into()))]
 #[case::skip_while("
       def is_less_than_four(x):
         lt(x, 4);
@@ -423,6 +474,61 @@ fn engine() -> Engine {
         gt(x, 0);
       | skip_while(array(), is_positive)
       ",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::take("
+        take([1, 2, 3, 4, 5], 3)
+        ",
+        vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+            Value::Number(4.into()),
+            Value::Number(5.into()),
+        ])],
+        Ok(vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+        ])].into()))]
+#[case::take_zero("
+        take([1, 2, 3], 0)
+        ",
+        vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+        ])],
+        Ok(vec![Value::Array(vec![])].into()))]
+#[case::take_all("
+        take([1, 2, 3], 3)
+        ",
+        vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+        ])],
+        Ok(vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+        ])].into()))]
+#[case::take_more_than_length("
+        take([1, 2, 3], 5)
+        ",
+        vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+        ])],
+        Ok(vec![Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::Number(3.into()),
+        ])].into()))]
+#[case::take_empty("
+        take([], 2)
+        ",
         vec![Value::Array(vec![])],
         Ok(vec![Value::Array(vec![])].into()))]
 #[case::take_while("
