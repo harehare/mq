@@ -190,11 +190,15 @@ define_token_parser!(self_, "self", TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_token_parser!(until, "until", TokenKind::Until);
 define_token_parser!(while_, "while", TokenKind::While);
+define_token_parser!(lt, "<", TokenKind::Lt);
+define_token_parser!(lte, "<=", TokenKind::Lte);
+define_token_parser!(gt, ">", TokenKind::Gt);
+define_token_parser!(gte, ">=", TokenKind::Gte);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, ne_eq, equal,
-        plus, pipe, question,
+        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, ne_eq, lte, gte,
+        lt, gt, equal, plus, pipe, question,
     ))
     .parse(input)
 }

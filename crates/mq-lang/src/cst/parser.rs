@@ -264,7 +264,13 @@ impl<'a> Parser<'a> {
             let peeked_token = &**peeked_token_rc;
             if matches!(
                 peeked_token.kind,
-                TokenKind::EqEq | TokenKind::NeEq | TokenKind::Plus
+                TokenKind::EqEq
+                    | TokenKind::NeEq
+                    | TokenKind::Plus
+                    | TokenKind::Lt
+                    | TokenKind::Lte
+                    | TokenKind::Gt
+                    | TokenKind::Gte
             ) {
                 let leading_trivia = self.parse_leading_trivia();
                 let operator_token = self.tokens.next().unwrap();
@@ -285,6 +291,27 @@ impl<'a> Parser<'a> {
                             kind: TokenKind::Plus,
                             ..
                         } => NodeKind::BinaryOp(BinaryOp::Plus),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Lt,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Lt),
+
+                        Token {
+                            range: _,
+                            kind: TokenKind::Lte,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Lte),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Gt,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Gt),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Gte,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Gte),
                         _ => unreachable!(),
                     },
                     token: Some(Arc::clone(operator_token)),
@@ -3245,6 +3272,146 @@ mod tests {
                 Arc::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::Plus),
                     token: Some(Arc::new(token(TokenKind::Plus))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::lt(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Lt)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Lt),
+                    token: Some(Arc::new(token(TokenKind::Lt))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::lte(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Lte)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Lte),
+                    token: Some(Arc::new(token(TokenKind::Lte))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::gt(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Gt)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Gt),
+                    token: Some(Arc::new(token(TokenKind::Gt))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::gte(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Gte)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Gte),
+                    token: Some(Arc::new(token(TokenKind::Gte))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
