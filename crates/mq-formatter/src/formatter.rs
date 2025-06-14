@@ -51,19 +51,7 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.format_with_cst(nodes).map(|output| {
-            let mut result = String::with_capacity(output.len());
-            for line in output.lines() {
-                result.push_str(line.trim_end());
-                result.push('\n');
-            }
-
-            if result.ends_with('\n') && !output.ends_with('\n') {
-                result.pop();
-            }
-
-            result
-        })
+        self.format_with_cst(nodes)
     }
 
     pub fn format_with_cst(
@@ -74,7 +62,18 @@ impl Formatter {
             self.format_node(Arc::clone(node), 0);
         }
 
-        Ok(self.output.clone())
+        let mut result = String::with_capacity(self.output.len());
+
+        for line in self.output.lines() {
+            result.push_str(line.trim_end());
+            result.push('\n');
+        }
+
+        if result.ends_with('\n') && !self.output.ends_with('\n') {
+            result.pop();
+        }
+
+        Ok(result)
     }
 
     fn format_node(&mut self, node: Arc<mq_lang::CstNode>, indent_level: usize) {
