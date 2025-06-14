@@ -19,4 +19,4 @@ export type {
   Diagnostic,
   DefinedValue,
   DefinedValueType,
-} from "../mq-wasm/mq_wasm.js";
+} from "./mq_wasm.js";
