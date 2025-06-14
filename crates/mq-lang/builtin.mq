@@ -45,7 +45,7 @@ def rtrimstr(s, right):
 
 # Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s), is_dict(s))): 
+  if (or(is_string(s), is_array(s), is_dict(s))):
     len(s) == 0
   else:
     false;
@@ -198,10 +198,10 @@ def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 
 # Checks if markdown is MDX
 def is_mdx(mdx): or(
-  is_mdx_flow_expression(mdx), 
-  is_mdx_jsx_flow_element(mdx), 
-  is_mdx_jsx_text_element(mdx), 
-  is_mdx_text_expression(mdx), 
+  is_mdx_flow_expression(mdx),
+  is_mdx_jsx_flow_element(mdx),
+  is_mdx_jsx_text_element(mdx),
+  is_mdx_text_expression(mdx),
   is_mdx_js_esm(mdx));
 
 # Checks if markdown is list with indentation level 1
@@ -277,7 +277,7 @@ def find_index(arr, f):
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
   let i = 0
-  | let si = 
+  | let si =
   if (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
@@ -293,7 +293,7 @@ def skip_while(arr, f):
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
   let i = 0
-  | let ti = 
+  | let ti =
   if (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
