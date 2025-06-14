@@ -410,7 +410,7 @@ export const Playground = () => {
       const script = `mq ${options} '${code}'`;
 
       navigator.clipboard.writeText(script).then(() => {
-        alert("Script copied to clipboard!");
+        alert("Command copied to clipboard!");
       });
     }
   }, [code, inputFormat, isUpdate, listStyle, linkUrlStyle, linkTitleStyle]);
@@ -739,7 +739,7 @@ export const Playground = () => {
                   </select>
                 </div>
                 <button className="button" onClick={handleCopy}>
-                  Copy Command
+                  Copy
                 </button>
                 <button className="button" onClick={handleShare}>
                   Share
