@@ -268,6 +268,21 @@ const executeCommand = async (
       outputChannel.clear();
       outputChannel.appendLine(result);
       outputChannel.show();
+
+      const copyAction = "Copy result to clipboard";
+      const selection = await vscode.window.showInformationMessage(
+        "mq executed.",
+        copyAction
+      );
+
+      if (selection === copyAction) {
+        try {
+          await vscode.env.clipboard.writeText(result);
+          vscode.window.showInformationMessage("Result copied to clipboard.");
+        } catch {
+          vscode.window.showErrorMessage("Failed to copy result to clipboard.");
+        }
+      }
     } else {
       await vscode.window.showErrorMessage("No result from LSP server");
     }
