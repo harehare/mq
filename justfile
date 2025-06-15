@@ -6,16 +6,6 @@ export RUST_BACKTRACE := "1"
 run *args:
     cargo run -- {{args}}
 
-# Start the Language Server in watch mode
-[working-directory: 'crates/mq-lsp']
-start-lsp:
-    cargo watch -x run
-
-# Start the MCP server in watch mode
-[working-directory: 'crates/mq-mcp']
-start-mcp:
-    cargo watch -x run
-
 # Start the web playground development server
 [working-directory: 'packages/playground']
 playground:
