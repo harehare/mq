@@ -82,7 +82,7 @@ test: lint
 
 # Run tests with code coverage reporting
 test-cov:
-    cargo llvm-cov --open --html --workspace --all-features
+    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(wasm|web-api|tui|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
 # Run fuzzing tests
 test-fuzz:

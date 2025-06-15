@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use compact_str::CompactString;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 
@@ -161,122 +160,92 @@ impl Optimizer {
                     .map(|arg| self.optimize_node(Rc::clone(arg)))
                     .collect::<SmallVec<_>>();
 
-                if ident.name == CompactString::new("add") {
-                    match args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(
-                                        *a + *b,
-                                    ))),
-                                })
-                            } else if let (
-                                ast::Expr::Literal(ast::Literal::String(a)),
-                                ast::Expr::Literal(ast::Literal::String(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::String(
-                                        format!("{}{}", a, b),
-                                    ))),
-                                })
-                            } else {
-                                Rc::clone(&node)
-                            }
-                        }
+                match (ident.name.as_str(), args.as_slice()) {
+                    ("add", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a + *b))),
+                        }),
+                        (
+                            ast::Expr::Literal(ast::Literal::String(a)),
+                            ast::Expr::Literal(ast::Literal::String(b)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::String(format!(
+                                "{}{}",
+                                a, b
+                            )))),
+                        }),
                         _ => Rc::clone(&node),
-                    }
-                } else if ident.name == CompactString::new("sub") {
-                    match args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(
-                                        *a - *b,
-                                    ))),
-                                })
-                            } else {
-                                Rc::clone(&node)
-                            }
-                        }
+                    },
+                    ("sub", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a - *b))),
+                        }),
                         _ => Rc::clone(&node),
-                    }
-                } else if ident.name == CompactString::new("div") {
-                    match args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(
-                                        *a / *b,
-                                    ))),
-                                })
-                            } else {
-                                Rc::clone(&node)
-                            }
-                        }
+                    },
+                    ("div", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a / *b))),
+                        }),
                         _ => Rc::clone(&node),
-                    }
-                } else if ident.name == CompactString::new("mul") {
-                    match args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(
-                                        *a * *b,
-                                    ))),
-                                })
-                            } else {
-                                Rc::clone(&node)
-                            }
-                        }
+                    },
+                    ("mul", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a * *b))),
+                        }),
                         _ => Rc::clone(&node),
-                    }
-                } else if ident.name == CompactString::new("mod") {
-                    match args.as_slice() {
-                        [arg1, arg2] => {
-                            if let (
-                                ast::Expr::Literal(ast::Literal::Number(a)),
-                                ast::Expr::Literal(ast::Literal::Number(b)),
-                            ) = (&*arg1.expr, &*arg2.expr)
-                            {
-                                Rc::new(ast::Node {
-                                    token_id: node.token_id,
-                                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(
-                                        *a % *b,
-                                    ))),
-                                })
-                            } else {
-                                Rc::clone(&node)
-                            }
-                        }
+                    },
+                    ("mod", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (
+                            ast::Expr::Literal(ast::Literal::Number(a)),
+                            ast::Expr::Literal(ast::Literal::Number(b)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(*a % *b))),
+                        }),
                         _ => Rc::clone(&node),
-                    }
-                } else {
-                    Rc::new(ast::Node {
+                    },
+                    ("repeat", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (
+                            ast::Expr::Literal(ast::Literal::String(s)),
+                            ast::Expr::Literal(ast::Literal::Number(n)),
+                        ) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::String(
+                                s.repeat(n.value() as usize),
+                            ))),
+                        }),
+                        _ => Rc::clone(&node),
+                    },
+                    ("reverse", [arg1]) => match &*arg1.expr {
+                        ast::Expr::Literal(ast::Literal::String(s)) => Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Literal(ast::Literal::String(
+                                s.chars().rev().collect::<String>(),
+                            ))),
+                        }),
+                        _ => Rc::clone(&node),
+                    },
+                    _ => Rc::new(ast::Node {
                         token_id: node.token_id,
                         expr: Rc::new(ast::Expr::Call(ident.clone(), args, *optional)),
-                    })
+                    }),
                 }
             }
             ast::Expr::Ident(ident) => {
@@ -776,6 +745,56 @@ mod tests {
             Rc::new(Node {
                 token_id: 4.into(),
                 expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+            }),
+        ]
+    )]
+    #[case::constant_folding_repeat(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("repeat"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::String("ab".to_string()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::String("ababab".to_string()))),
+            }),
+        ]
+    )]
+    #[case::constant_folding_reverse(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("reverse"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::String("abc".to_string()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::String("cba".to_string()))),
             }),
         ]
     )]
