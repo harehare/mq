@@ -3,7 +3,9 @@
 |---|---|---|---|
 |`abs`|Returns the absolute value of the given number.|`number`|abs(number)|
 |`add`|Adds two values.|`value1`, `value2`|add(value1, value2)|
+|`all`| Returns true if all element in the array satisfies the provided function.|`v`, `f`|all(v, f)|
 |`and`|Performs a logical AND operation on two boolean values.|`value1`, `value2`|and(value1, value2)|
+|`any`| Returns true if any element in the array satisfies the provided function.|`v`, `f`|any(v, f)|
 |`array`|Creates an array from the given values.|`values`|array(values)|
 |`arrays`| Returns array if input is array, None otherwise|`a`|arrays(a)|
 |`assert`| Verifies that a condition is true and raises an error if it's false.|`cond`|assert(cond)|
@@ -31,6 +33,7 @@
 |`first`| Returns the first element of an array|`arr`|first(arr)|
 |`flatten`|Flattens a nested array into a single level array.|`array`|flatten(array)|
 |`floor`|Rounds the given number down to the nearest integer.|`number`|floor(number)|
+|`fold`| Reduces an array to a single value by applying a function, starting from an initial value.|`arr`, `init`, `f`|fold(arr, init, f)|
 |`from_date`|Converts a date string to a timestamp.|`date_str`|from_date(date_str)|
 |`get`|Retrieves a value from a dict by its key. Returns None if the key is not found.|`dict`, `key`|get(dict, key)|
 |`get_md_list_level`|Returns the indent level of a markdown list node.|`list`|get_md_list_level(list)|
@@ -43,6 +46,7 @@
 |`halt`|Terminates the program with the given exit code.|`exit_code`|halt(exit_code)|
 |`halt_error`| Halts execution with error code 5||halt_error()|
 |`implode`|Joins an array of characters into a string.|`array`|implode(array)|
+|`in`| Returns true if the element is in the array.|`v`, `elem`|in(v, elem)|
 |`index`|Finds the first occurrence of a substring in the given string.|`string`, `substring`|index(string, substring)|
 |`is_array`| Checks if input is an array|`a`|is_array(a)|
 |`is_bool`| Checks if input is a boolean|`b`|is_bool(b)|
@@ -103,7 +107,7 @@
 |`numbers`| Returns number if input is number, None otherwise|`n`|numbers(n)|
 |`or`|Performs a logical OR operation on two boolean values.|`value1`, `value2`|or(value1, value2)|
 |`pow`|Raises the base to the power of the exponent.|`base`, `exponent`|pow(base, exponent)|
-|`range`|Creates an array of numbers within the specified range.|`start`, `end`|range(start, end)|
+|`range`| Creates an array of numbers within the specified range.|`start`, `end`, `step`|range(start, end, step)|
 |`repeat`|Repeats the given string a specified number of times.|`string`, `count`|repeat(string, count)|
 |`replace`|Replaces all occurrences of a substring with another substring.|`from`, `pattern`, `to`|replace(from, pattern, to)|
 |`reverse`|Reverses the given string or array.|`value`|reverse(value)|
@@ -132,7 +136,7 @@
 |`to_array`| Converts input to an array|`a`|to_array(a)|
 |`to_code`|Creates a markdown code block with the given value and language.|`value`, `language`|to_code(value, language)|
 |`to_code_inline`|Creates an inline markdown code node with the given value.|`value`|to_code_inline(value)|
-|`to_csv`|Converts the given value to a CSV.|`value`|to_csv(value)|
+|`to_csv`| Converts the given value to a CSV.|`v`|to_csv(v)|
 |`to_date`|Converts a timestamp to a date string with the given format.|`timestamp`, `format`|to_date(timestamp, format)|
 |`to_date_iso8601`| Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)|`d`|to_date_iso8601(d)|
 |`to_em`|Creates a markdown emphasis (italic) node with the given value.|`value`|to_em(value)|
@@ -151,13 +155,14 @@
 |`to_string`|Converts the given value to a string.|`value`|to_string(value)|
 |`to_strong`|Creates a markdown strong (bold) node with the given value.|`value`|to_strong(value)|
 |`to_text`|Converts the given markdown node to plain text.|`markdown`|to_text(markdown)|
-|`to_tsv`|Converts the given value to a TSV.|`value`|to_tsv(value)|
+|`to_tsv`| Converts the given value to a TSV.|`v`|to_tsv(v)|
 |`trim`|Trims whitespace from both ends of the given string.|`input`|trim(input)|
 |`trunc`|Truncates the given number to an integer by removing the fractional part.|`number`|trunc(number)|
 |`tsv2table`| Convert tsv string to markdown table|`tsv`|tsv2table(tsv)|
 |`tsv2table_row`| Convert tsv string to markdown table row|`row`|tsv2table_row(row)|
 |`type`|Returns the type of the given value.|`value`|type(value)|
 |`uniq`|Removes duplicate elements from the given array.|`array`|uniq(array)|
+|`unique_by`| Returns a new array with duplicate elements removed, comparing by the result of the provided function.|`arr`, `f`|unique_by(arr, f)|
 |`upcase`|Converts the given string to uppercase.|`input`|upcase(input)|
 |`update`|Update the value with specified value.|`target_value`, `source_value`|update(target_value, source_value)|
 |`url_encode`|URL-encodes the given string.|`input`|url_encode(input)|

@@ -18,7 +18,7 @@
 //! use std::rc::Rc;
 //! use std::cell::RefCell;
 //!
-//! let code = "add(1, 2)";
+//! let code = "1 + 2";
 //! let token_arena = Rc::new(RefCell::new(Arena::new()));
 //! let parser = mq_lang::parse(code, token_arena).unwrap();
 //!
@@ -28,7 +28,7 @@
 //! use mq_lang::{tokenize, LexerOptions, CstParser};
 //! use std::sync::Arc;
 //!
-//! let code = "add(1, 2)";
+//! let code = "1 + 2";
 //! let (cst_nodes, errors) = mq_lang::parse_recovery(code);
 //!
 //! assert!(errors.errors().is_empty());
