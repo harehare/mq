@@ -2,12 +2,10 @@
   "compilerOptions": {
     "module": "Node16",
     "target": "ES2022",
-    "lib": ["ES2022"],
-    "sourceMap": true,
+    "lib": ["ES2022", "esnext.disposable"],
+    "sourceMap": false,
     "rootDir": "src",
     "strict": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedParameters": true
+    "skipLibCheck": true
   }
 }

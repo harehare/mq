@@ -271,7 +271,7 @@ const executeCommand = async (
 
       const copyAction = "Copy result to clipboard";
       const selection = await vscode.window.showInformationMessage(
-        "MQ command executed.",
+        "mq executed.",
         copyAction
       );
 
@@ -279,7 +279,7 @@ const executeCommand = async (
         try {
           await vscode.env.clipboard.writeText(result);
           vscode.window.showInformationMessage("Result copied to clipboard.");
-        } catch (e) {
+        } catch {
           vscode.window.showErrorMessage("Failed to copy result to clipboard.");
         }
       }
