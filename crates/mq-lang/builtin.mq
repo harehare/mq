@@ -387,3 +387,6 @@ def unique_by(arr, f):
       | let seen = if (is_none(already_seen)): set(seen, key, true) else: seen
       | let i = i + 1
       | result;;
+
+# Returns the input value unchanged.
+def identity(x): x;
