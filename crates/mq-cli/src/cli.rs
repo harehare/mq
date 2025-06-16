@@ -411,7 +411,7 @@ impl Cli {
         if let Some(file_separator_query) = &self.output.file_separator_query {
             let separator = engine
                 .eval(
-                    &file_separator_query,
+                    file_separator_query,
                     vec![mq_lang::Value::String("".to_string())].into_iter(),
                 )
                 .map_err(|e| *e)?;
