@@ -406,8 +406,6 @@ impl Cli {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?
         };
 
-        self.print(runtime_values)?;
-
         if let Some(file_separator_query) = &self.output.file_separator_query {
             let separator = engine
                 .eval(
@@ -418,7 +416,7 @@ impl Cli {
             self.print(separator)?;
         }
 
-        Ok(())
+        self.print(runtime_values)
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
