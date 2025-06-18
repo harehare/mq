@@ -141,8 +141,8 @@ struct OutputArgs {
     link_url_style: LinkUrlStyle,
 
     /// Specify a query to insert between files as a separator
-    #[clap(short = 'S', value_name = "QUERY")]
-    file_separator_query: Option<String>,
+    #[clap(short = 'S', long, value_name = "QUERY")]
+    separator_query: Option<String>,
 
     /// Output to the specified file
     #[clap(short = 'o', long = "output", value_name = "FILE")]
@@ -406,10 +406,10 @@ impl Cli {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?
         };
 
-        if let Some(file_separator_query) = &self.output.file_separator_query {
+        if let Some(separator_query) = &self.output.separator_query {
             let separator = engine
                 .eval(
-                    file_separator_query,
+                    separator_query,
                     vec![mq_lang::Value::String("".to_string())].into_iter(),
                 )
                 .map_err(|e| *e)?;
