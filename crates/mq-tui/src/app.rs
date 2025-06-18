@@ -4,7 +4,6 @@ use miette::IntoDiagnostic;
 use mq_lang::Engine;
 use mq_markdown::Markdown;
 use ratatui::prelude::*;
-use std::str::FromStr;
 use std::{
     io::Stdout,
     time::{Duration, Instant},

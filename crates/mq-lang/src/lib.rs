@@ -52,7 +52,6 @@ use error::InnerError;
 use lexer::Lexer;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::str::FromStr;
 #[cfg(feature = "cst")]
 use std::sync::Arc;
 
@@ -163,8 +162,6 @@ pub fn parse_text_input(input: &str) -> miette::Result<impl Iterator<Item = Valu
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
 
     #[test]

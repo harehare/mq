@@ -1,6 +1,5 @@
 pub mod result;
 pub mod value;
-use std::str::FromStr;
 
 use pyo3::prelude::*;
 use result::MQResult;
