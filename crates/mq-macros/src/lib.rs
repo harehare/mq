@@ -12,9 +12,22 @@ struct MqArgs {
 }
 impl Parse for MqArgs {
     fn parse(input: ParseStream) -> Result<Self> {
+        // Parse the first string literal
         let code: syn::LitStr = input.parse()?;
+
+        // Parse the comma separator
         input.parse::<syn::Token![,]>()?;
+
+        // Parse the second string literal
         let content: syn::LitStr = input.parse()?;
+
+        // Check if there are any more tokens (which would be an error)
+        if !input.is_empty() {
+            return Err(syn::Error::new(
+                input.span(),
+                "Expected exactly 2 arguments",
+            ));
+        }
 
         Ok(MqArgs {
             code,
@@ -44,7 +57,6 @@ pub fn mq_eval(input: TokenStream) -> TokenStream {
     let code_lit = mq_args.code;
     let input_lit = mq_args.input;
     let generate = {
-        let code_lit = code_lit;
         quote! {
             {
                 let mut engine = ::mq_lang::Engine::default();
