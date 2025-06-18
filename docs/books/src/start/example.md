@@ -83,8 +83,14 @@ def sitemap(item, base_url):
 </url>";
 ```
 
-# CSV to markdown table
+## CSV to markdown table
 
-```python
+```bash
 $ mq 'nodes | csv2table()'
+```
+
+## Merging Multiple Files
+
+```bash
+$ mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
 ```
