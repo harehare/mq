@@ -44,6 +44,8 @@ Options:
           Set the link title surround style for markdown output [default: double] [possible values: double, single, paren]
       --link-url-style <LINK_URL_STYLE>
           Set the link URL surround style for markdown links [default: none] [possible values: none, angle]
+  -S, --separator <QUERY>
+          Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
   -P <PARALLEL_THRESHOLD>

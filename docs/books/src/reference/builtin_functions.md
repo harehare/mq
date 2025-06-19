@@ -45,6 +45,7 @@
 |`gte`|Checks if the first value is greater than or equal to the second value.|`value1`, `value2`|gte(value1, value2)|
 |`halt`|Terminates the program with the given exit code.|`exit_code`|halt(exit_code)|
 |`halt_error`| Halts execution with error code 5||halt_error()|
+|`identity`| Returns the input value unchanged.|`x`|identity(x)|
 |`implode`|Joins an array of characters into a string.|`array`|implode(array)|
 |`in`| Returns true if the element is in the array.|`v`, `elem`|in(v, elem)|
 |`index`|Finds the first occurrence of a substring in the given string.|`string`, `substring`|index(string, substring)|
