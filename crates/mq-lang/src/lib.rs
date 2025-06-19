@@ -155,7 +155,7 @@ pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
     Ok(md.nodes.into_iter().map(Value::from).collect())
 }
 
-/// Parses a plain text string and returns an iterator over a single `Value` node.
+/// Parses a plain text string and returns an iterator over `Value` node.
 pub fn parse_text_input(input: &str) -> miette::Result<Vec<Value>> {
     Ok(input.lines().map(|line| line.to_string().into()).collect())
 }

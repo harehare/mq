@@ -1,4 +1,4 @@
-# mq-macro
+# mq-macros
 
 This crate provides a proc-macro for compile-time validation of mq queries.
 
@@ -7,7 +7,7 @@ This crate provides a proc-macro for compile-time validation of mq queries.
 Add to your `Cargo.toml`:
 
 ```toml
-mq-macro = { path = "../mq-macro" }
+mq-macros = { path = "../mq-macros" }
 ```
 
 In your code:
