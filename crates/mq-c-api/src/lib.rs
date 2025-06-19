@@ -4,7 +4,6 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
-use std::str::FromStr;
 
 pub type MqContext = c_void;
 
@@ -114,9 +113,9 @@ pub unsafe extern "C" fn mq_eval(
     };
 
     let mq_input_values: Vec<Value> = match input_format_str.as_str() {
-        "text" => input_str.lines().map(Value::from).collect::<Vec<_>>(),
-        "markdown" => match mq_markdown::Markdown::from_str(input_str) {
-            Ok(md) => md.nodes.into_iter().map(Value::from).collect::<Vec<_>>(),
+        "text" => mq_lang::parse_text_input(input_str).unwrap(),
+        "markdown" => match mq_lang::parse_markdown_input(input_str) {
+            Ok(v) => v,
             Err(e) => {
                 return MqResult {
                     values: ptr::null_mut(),
@@ -125,8 +124,8 @@ pub unsafe extern "C" fn mq_eval(
                 };
             }
         },
-        "mdx" => match mq_markdown::Markdown::from_mdx_str(input_str) {
-            Ok(md) => md.nodes.into_iter().map(Value::from).collect::<Vec<_>>(),
+        "mdx" => match mq_lang::parse_mdx_input(input_str) {
+            Ok(v) => v,
             Err(e) => {
                 return MqResult {
                     values: ptr::null_mut(),

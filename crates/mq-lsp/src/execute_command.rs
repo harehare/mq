@@ -1,4 +1,4 @@
-use std::{borrow::Cow, str::FromStr};
+use std::borrow::Cow;
 
 use tower_lsp::jsonrpc::Result;
 

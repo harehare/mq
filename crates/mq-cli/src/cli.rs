@@ -372,20 +372,9 @@ impl Cli {
         }
 
         let input = match self.input.input_format {
-            InputFormat::Markdown => mq_markdown::Markdown::from_str(content)?
-                .nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>(),
-            InputFormat::Mdx => mq_markdown::Markdown::from_mdx_str(content)?
-                .nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>(),
-            InputFormat::Text => content
-                .lines()
-                .map(|line| mq_lang::Value::String(line.to_string()))
-                .collect::<Vec<_>>(),
+            InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
+            InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
+            InputFormat::Text => mq_lang::parse_text_input(content)?,
             InputFormat::Null => vec![mq_lang::Value::String("".to_string())],
         };
 

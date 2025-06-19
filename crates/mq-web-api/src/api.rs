@@ -79,27 +79,9 @@ fn execute_query(request: ApiRequest) -> miette::Result<mq_lang::Values> {
     engine.load_builtin_module();
 
     let input = match request.input_format.unwrap_or(InputFormat::Markdown) {
-        format @ (InputFormat::Markdown | InputFormat::Mdx) => {
-            let md = if matches!(format, InputFormat::Mdx) {
-                mq_markdown::Markdown::from_mdx_str(&request.input.unwrap_or_default())
-            } else {
-                request
-                    .input
-                    .unwrap_or_default()
-                    .parse::<mq_markdown::Markdown>()
-            }?;
-
-            md.nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>()
-        }
-        InputFormat::Text => request
-            .input
-            .unwrap_or_default()
-            .lines()
-            .map(mq_lang::Value::from)
-            .collect::<Vec<_>>(),
+        InputFormat::Markdown => mq_lang::parse_markdown_input(&request.input.unwrap_or_default())?,
+        InputFormat::Mdx => mq_lang::parse_mdx_input(&request.input.unwrap_or_default())?,
+        InputFormat::Text => mq_lang::parse_text_input(&request.input.unwrap_or_default())?,
     };
 
     engine

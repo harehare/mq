@@ -1,4 +1,4 @@
-use std::{fmt, fs, str::FromStr};
+use std::{fmt, fs};
 
 use arboard::Clipboard;
 use miette::{IntoDiagnostic, miette};

@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/mq-c-api",
+  "crates/mq-macros",
   "crates/mq-cli",
   "crates/mq-lang",
   "crates/mq-repl",

@@ -1,6 +1,5 @@
 pub mod result;
 pub mod value;
-use std::str::FromStr;
 
 use pyo3::prelude::*;
 use result::MQResult;
@@ -79,30 +78,14 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
     let options = options.unwrap_or_default();
-    let input = match options.input_format {
-        Some(InputFormat::Text) => content
-            .lines()
-            .map(mq_lang::Value::from)
-            .collect::<Vec<_>>(),
-        _ => {
-            let md = match options.input_format {
-                Some(InputFormat::Markdown) => mq_markdown::Markdown::from_str(content),
-                Some(InputFormat::Mdx) => mq_markdown::Markdown::from_mdx_str(content),
-                _ => mq_markdown::Markdown::from_str(content),
-            }
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Error evaluating query: {}",
-                    e
-                ))
-            })?;
-
-            md.nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>()
-        }
-    };
+    let input = match options.input_format.unwrap_or(InputFormat::Markdown) {
+        InputFormat::Markdown => mq_lang::parse_markdown_input(content),
+        InputFormat::Mdx => mq_lang::parse_mdx_input(content),
+        InputFormat::Text => mq_lang::parse_text_input(content),
+    }
+    .map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e))
+    })?;
 
     engine
         .eval(code, input.into_iter())

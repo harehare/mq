@@ -112,7 +112,8 @@ impl Markdown {
             .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
-    fn from_str(content: &str) -> miette::Result<Self> {
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(content: &str) -> miette::Result<Self> {
         let root = markdown::to_mdast(
             content,
             &markdown::ParseOptions {

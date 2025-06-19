@@ -103,7 +103,7 @@ impl Engine {
     /// let mut engine = Engine::default();
     /// engine.load_builtin_module();
     ///
-    /// let input = vec!["hello".to_string().into()];
+    /// let input = mq_lang::parse_text_input("hello").unwrap();
     /// let result = engine.eval("add(\" world\")", input.into_iter());
     /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
