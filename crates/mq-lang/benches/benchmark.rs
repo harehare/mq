@@ -11,9 +11,9 @@ fn eval_fibonacci(n: u64) -> mq_lang::Values {
         .eval(
             "
      def fibonacci(x):
-      if(x == 0):
+      if (x == 0):
         0
-      elif(x == 1):
+      elif (x == 1):
           1
       else:
         fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
@@ -145,13 +145,12 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     mq_lang::parse(
         "
      def fibonacci(x):
-      if(x == 0):
+      if (x == 0):
         0
+      elsif (x == 1):
+        1
       else:
-        if(x == 1):
-          1
-        else:
-          fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
+        fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
         Rc::clone(&token_arena),
     )
     .unwrap()
