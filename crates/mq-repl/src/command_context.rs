@@ -162,7 +162,7 @@ impl CommandContext {
                 .into_diagnostic()
                 .and_then(|markdown_content| {
                     let markdown: mq_markdown::Markdown =
-                        mq_markdown::Markdown::from_str(&markdown_content)?;
+                        mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
 
                     self.input = markdown
                         .nodes

@@ -35,7 +35,7 @@ fn eval_speed_test(n: u64) -> mq_lang::Values {
 
 #[divan::bench(name = "eval_select_h")]
 fn eval_select_h() -> mq_lang::Values {
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(
         "# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n",
     )
     .unwrap();
@@ -57,7 +57,7 @@ fn eval_string_interpolation() -> mq_lang::Values {
 
 #[divan::bench(name = "eval_nodes")]
 fn eval_nodes() -> mq_lang::Values {
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_str(
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(
         "# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n",
     )
     .unwrap();

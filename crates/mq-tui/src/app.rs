@@ -322,7 +322,7 @@ impl App {
         let mut engine = Engine::default();
         engine.load_builtin_module();
         let start = Instant::now();
-        let markdown_result = Markdown::from_str(&self.content);
+        let markdown_result = Markdown::from_markdown_str(&self.content);
         match markdown_result {
             Ok(markdown) => {
                 if !self.query.is_empty() {

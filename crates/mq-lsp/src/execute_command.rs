@@ -23,7 +23,7 @@ pub fn response(
         {
             [Some(command), Some(input)] => {
                 let mut engine = mq_lang::Engine::default();
-                let input = mq_markdown::Markdown::from_str(input)
+                let input = mq_markdown::Markdown::from_markdown_str(input)
                     .map(|markdown| {
                         markdown
                             .nodes

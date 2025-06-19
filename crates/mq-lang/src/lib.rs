@@ -151,7 +151,7 @@ pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<Value>> {
 
 /// Parses a Markdown string and returns an iterator over `Value` nodes.
 pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
-    let md = mq_markdown::Markdown::from_str(input)?;
+    let md = mq_markdown::Markdown::from_markdown_str(input)?;
     Ok(md.nodes.into_iter().map(Value::from).collect())
 }
 
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_eval_basic() {
         let code = "add(\"world!\")";
-        let input = mq_markdown::Markdown::from_str("Hello,").unwrap();
+        let input = mq_markdown::Markdown::from_markdown_str("Hello,").unwrap();
         let mut engine = Engine::default();
 
         assert_eq!(

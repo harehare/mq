@@ -206,7 +206,7 @@ impl Server {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
-        let markdown = mq_markdown::Markdown::from_str(markdown).map_err(|e| {
+        let markdown = mq_markdown::Markdown::from_markdown_str(markdown).map_err(|e| {
             McpError::parse_error(
                 "Failed to parse markdown",
                 Some(serde_json::Value::String(e.to_string())),

@@ -15,7 +15,7 @@ impl FromStr for Markdown {
     type Err = miette::Error;
 
     fn from_str(content: &str) -> Result<Self, Self::Err> {
-        Self::from_str(content)
+        Self::from_markdown_str(content)
     }
 }
 
@@ -113,7 +113,7 @@ impl Markdown {
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(content: &str) -> miette::Result<Self> {
+    pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
         let root = markdown::to_mdast(
             content,
             &markdown::ParseOptions {

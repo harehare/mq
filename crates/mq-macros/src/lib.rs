@@ -48,7 +48,7 @@ pub fn mq_eval(input: TokenStream) -> TokenStream {
             .into();
     }
 
-    if let Err(e) = mq_markdown::Markdown::from_str(&mq_args.input.value()) {
+    if let Err(e) = mq_markdown::Markdown::from_markdown_str(&mq_args.input.value()) {
         return syn::Error::new_spanned(mq_args.input, e)
             .to_compile_error()
             .into();
@@ -64,7 +64,7 @@ pub fn mq_eval(input: TokenStream) -> TokenStream {
 
                 let code = #code_lit;
                 let input = #input_lit;
-                let input = mq_markdown::Markdown::from_str(&input)
+                let input = mq_markdown::Markdown::from_markdown_str(&input)
                     .unwrap()
                     .nodes
                     .into_iter()
