@@ -144,20 +144,20 @@ pub fn parse(
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
-pub fn parse_mdx_input(input: &str) -> miette::Result<impl Iterator<Item = Value>> {
+pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<Value>> {
     let mdx = mq_markdown::Markdown::from_mdx_str(input)?;
-    Ok(mdx.nodes.into_iter().map(Value::from))
+    Ok(mdx.nodes.into_iter().map(Value::from).collect())
 }
 
 /// Parses a Markdown string and returns an iterator over `Value` nodes.
-pub fn parse_markdown_input(input: &str) -> miette::Result<impl Iterator<Item = Value>> {
+pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
     let md = mq_markdown::Markdown::from_str(input)?;
-    Ok(md.nodes.into_iter().map(Value::from))
+    Ok(md.nodes.into_iter().map(Value::from).collect())
 }
 
 /// Parses a plain text string and returns an iterator over a single `Value` node.
-pub fn parse_text_input(input: &str) -> miette::Result<impl Iterator<Item = Value>> {
-    Ok(input.lines().map(|line| line.to_string().into()))
+pub fn parse_text_input(input: &str) -> miette::Result<Vec<Value>> {
+    Ok(input.lines().map(|line| line.to_string().into()).collect())
 }
 
 #[cfg(test)]
@@ -245,7 +245,7 @@ mod tests {
         let input = "# Heading\n\nSome text.";
         let result = parse_markdown_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap().collect();
+        let values: Vec<Value> = result.unwrap();
         assert!(!values.is_empty());
     }
 
@@ -254,7 +254,7 @@ mod tests {
         let input = "# Heading\n\nSome text.";
         let result = parse_mdx_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap().collect();
+        let values: Vec<Value> = result.unwrap();
         assert!(!values.is_empty());
     }
 
@@ -263,7 +263,7 @@ mod tests {
         let input = "line1\nline2\nline3";
         let result = parse_text_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap().collect();
+        let values: Vec<Value> = result.unwrap();
         assert_eq!(values.len(), 3);
     }
 }

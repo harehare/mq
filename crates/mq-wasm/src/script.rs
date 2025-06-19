@@ -176,24 +176,16 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
 
     engine.load_builtin_module();
 
-    let input = match options.input_format {
-        Some(InputFormat::Text) => content
-            .lines()
-            .map(mq_lang::Value::from)
-            .collect::<Vec<_>>(),
-        _ => {
-            let md = match options.input_format {
-                Some(InputFormat::Mdx) => mq_markdown::Markdown::from_mdx_str(content),
-                _ => mq_markdown::Markdown::from_str(content),
-            }
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-            md.nodes
-                .into_iter()
-                .map(mq_lang::Value::from)
-                .collect::<Vec<_>>()
-        }
-    };
+    let input = match options
+        .input_format
+        .as_ref()
+        .unwrap_or(&InputFormat::Markdown)
+    {
+        InputFormat::Text => mq_lang::parse_text_input(content),
+        InputFormat::Mdx => mq_lang::parse_mdx_input(content),
+        InputFormat::Markdown => mq_lang::parse_markdown_input(content),
+    }
+    .map_err(|e| JsValue::from_str(&format!("Failed to parse input content: {}", e)))?;
 
     engine
         .eval(code, input.clone().into_iter())
