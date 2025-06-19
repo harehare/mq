@@ -46,24 +46,39 @@ macro_rules! impl_value_string {
                     Self::Number(n) => n.to_string(),
                     Self::Bool(b) => b.to_string(),
                     Self::String(s) => format!(r#""{}""#, s),
-                    Self::Array(a) => format!(
-                        "[{}]",
-                        a.iter()
-                            .map(|v| format!("{:?}", v))
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    ),
+                    Self::Array(a) => {
+                        let mut s = String::new();
+                        s.push('[');
+                        for (i, v) in a.iter().enumerate() {
+                            if i > 0 {
+                                s.push_str(", ");
+                            }
+                            // This assumes that the Debug trait is implemented for the items
+                            // and that it produces the desired string representation.
+                            // If specific formatting is needed, this might need adjustment.
+                            std::fmt::write(&mut s, format_args!("{:?}", v)).unwrap();
+                        }
+                        s.push(']');
+                        s
+                    }
                     Self::Markdown(m, ..) => m.to_string(),
                     Self::None => "".to_string(),
                     Self::Function(..) => "function".to_string(),
                     Self::NativeFunction(_) => "native_function".to_string(),
                     Self::Dict(map) => {
-                        let items = map
-                            .iter()
-                            .map(|(k, v)| format!("\"{}\": {}", k, v.string()))
-                            .collect::<Vec<String>>()
-                            .join(", ");
-                        format!("{{{}}}", items)
+                        let mut s = String::new();
+                        s.push('{');
+                        for (i, (k, v)) in map.iter().enumerate() {
+                            if i > 0 {
+                                s.push_str(", ");
+                            }
+                            // Similar to Array, this assumes `string()` method on `v`
+                            // produces the desired output.
+                            // Also, k is directly used, ensure it doesn't need escaping if it can contain special chars.
+                            std::fmt::write(&mut s, format_args!("\"{}\": {}", k, v.string())).unwrap();
+                        }
+                        s.push('}');
+                        s
                     }
                 }
             }
