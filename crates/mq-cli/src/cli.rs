@@ -13,7 +13,7 @@ use std::{fs, path::PathBuf};
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
 #[command(author = "Takahiro Sato. <harehare1110@gmail.com>")]
-#[command(version = "0.2.3")]
+#[command(version = "0.2.4")]
 #[command(after_help = "Examples:\n\n\
     To filter markdown nodes:\n\
     $ mq 'query' file.md\n\n\
@@ -142,7 +142,7 @@ struct OutputArgs {
 
     /// Specify a query to insert between files as a separator
     #[clap(short = 'S', long, value_name = "QUERY")]
-    separator_query: Option<String>,
+    separator: Option<String>,
 
     /// Output to the specified file
     #[clap(short = 'o', long = "output", value_name = "FILE")]
@@ -395,10 +395,10 @@ impl Cli {
             engine.eval(query, input.into_iter()).map_err(|e| *e)?
         };
 
-        if let Some(separator_query) = &self.output.separator_query {
+        if let Some(separator) = &self.output.separator {
             let separator = engine
                 .eval(
-                    separator_query,
+                    separator,
                     vec![mq_lang::Value::String("".to_string())].into_iter(),
                 )
                 .map_err(|e| *e)?;
