@@ -383,18 +383,14 @@ impl Evaluator {
         if let ast::Expr::Foreach(ident, values, body) = &*node.expr {
             let values = self.eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?;
             let values = if let RuntimeValue::Array(values) = values {
-                let runtime_values: Vec<RuntimeValue> = Vec::with_capacity(values.len());
                 let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
-
                 values
                     .into_iter()
-                    .try_fold(runtime_values, |mut acc, value| {
+                    .map(|value| {
                         env.borrow_mut().define(ident, value);
-                        let result =
-                            self.eval_program(body, runtime_value.clone(), Rc::clone(&env))?;
-                        acc.push(result);
-                        Ok::<Vec<RuntimeValue>, EvalError>(acc)
-                    })?
+                        self.eval_program(body, runtime_value.clone(), Rc::clone(&env))
+                    })
+                    .collect::<Result<Vec<RuntimeValue>, EvalError>>()?
             } else {
                 return Err(EvalError::InvalidTypes {
                     token: (*self.token_arena.borrow()[node.token_id]).clone(),

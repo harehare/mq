@@ -156,3 +156,15 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
     )
     .unwrap()
 }
+
+#[divan::bench(name = "eval_foreach")]
+fn eval_foreach() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"foreach(x, range(0, 1000, 1)): x + 1;"#,
+            vec!["".into()].into_iter(),
+        )
+        .unwrap()
+}
