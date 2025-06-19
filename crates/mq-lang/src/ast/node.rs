@@ -64,6 +64,15 @@ impl Node {
                     end: end.end,
                 }
             }
+            Expr::Dict(items) => {
+                if items.is_empty() {
+                    arena[self.token_id].range.clone()
+                } else {
+                    let start = items.first().unwrap().0.range(Rc::clone(&arena)).start;
+                    let end = items.last().unwrap().1.range(Rc::clone(&arena)).end;
+                    Range { start, end }
+                }
+            }
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -195,6 +204,7 @@ pub enum Expr {
     Foreach(Ident, Rc<Node>, Program),
     If(Branches),
     Include(Literal),
+    Dict(Vec<(Rc<Node>, Rc<Node>)>),
     Self_,
     Nodes,
 }
@@ -542,5 +552,72 @@ mod tests {
         #[case] expected: std::cmp::Ordering,
     ) {
         assert_eq!(name1.partial_cmp(name2), Some(expected));
+    }
+
+    #[test]
+    fn test_node_range_dict_expression() {
+        let mut arena = Arena::new(10);
+
+        // Case 1: Empty Dictionary
+        let dict_empty_token_id = arena.alloc(create_token(Range {
+            start: Position::new(1, 1),
+            end: Position::new(1, 3), // e.g., "{}"
+        }));
+        let dict_empty_node = Node {
+            token_id: dict_empty_token_id,
+            expr: Rc::new(Expr::Dict(vec![])),
+        };
+        assert_eq!(
+            dict_empty_node.range(Rc::new(arena.clone())),
+            Range {
+                start: Position::new(1, 1),
+                end: Position::new(1, 3)
+            }
+        );
+
+        // Case 2: Non-empty Dictionary
+        let key1_range = Range { start: Position::new(2, 5), end: Position::new(2, 8) };
+        let val1_range = Range { start: Position::new(2, 10), end: Position::new(2, 15) };
+        let key2_range = Range { start: Position::new(3, 5), end: Position::new(3, 8) };
+        let val2_range = Range { start: Position::new(3, 10), end: Position::new(3, 15) };
+
+        let key1_token_id = arena.alloc(create_token(key1_range.clone()));
+        let val1_token_id = arena.alloc(create_token(val1_range.clone()));
+        let key2_token_id = arena.alloc(create_token(key2_range.clone()));
+        let val2_token_id = arena.alloc(create_token(val2_range.clone()));
+
+        let key1_node = Rc::new(Node {
+            token_id: key1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("key1".to_string()))),
+        });
+        let val1_node = Rc::new(Node {
+            token_id: val1_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("val1".to_string()))),
+        });
+        let key2_node = Rc::new(Node {
+            token_id: key2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("key2".to_string()))),
+        });
+        let val2_node = Rc::new(Node {
+            token_id: val2_token_id,
+            expr: Rc::new(Expr::Literal(Literal::String("val2".to_string()))),
+        });
+
+        let dict_non_empty_token_id = arena.alloc(create_token(Range::default())); // Token for the dict itself, range not used here
+        let dict_non_empty_node = Node {
+            token_id: dict_non_empty_token_id,
+            expr: Rc::new(Expr::Dict(vec![
+                (key1_node, val1_node),
+                (key2_node, val2_node),
+            ])),
+        };
+
+        assert_eq!(
+            dict_non_empty_node.range(Rc::new(arena)),
+            Range {
+                start: Position::new(2, 5), // start of key1
+                end: Position::new(3, 15)   // end of val2
+            }
+        );
     }
 }

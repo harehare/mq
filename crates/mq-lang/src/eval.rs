@@ -362,6 +362,23 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Dict(pairs) => {
+                let mut map = std::collections::BTreeMap::new();
+                for (key_node, value_node) in pairs {
+                    let key_val = self.eval_expr(runtime_value, Rc::clone(key_node), Rc::clone(&env))?;
+                    match key_val {
+                        RuntimeValue::String(s) => {
+                            let value_val = self.eval_expr(runtime_value, Rc::clone(value_node), Rc::clone(&env))?;
+                            map.insert(s, value_val);
+                        }
+                        _ => {
+                            let token = Rc::clone(&self.token_arena.borrow()[key_node.token_id]);
+                            return Err(EvalError::InvalidKeyType(token));
+                        }
+                    }
+                }
+                Ok(RuntimeValue::Dict(map))
+            }
         }
     }
 
@@ -3804,6 +3821,161 @@ mod tests {
         eval.options.filter_none = false;
 
         assert_eq!(eval.eval(&program, runtime_values.into_iter()), expected);
+    }
+
+    #[rstest]
+    #[case::empty_dict(
+        vec![RuntimeValue::NONE], // Input context for eval_expr
+        vec![ast_node(ast::Expr::Dict(vec![]))],
+        Ok(vec![RuntimeValue::Dict(BTreeMap::new())])
+    )]
+    #[case::simple_dict_string_keys(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Dict(vec![
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))
+            ),
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
+                ast_node(ast::Expr::Literal(ast::Literal::String("hello".to_string())))
+            )
+        ]))],
+        {
+            let mut expected_map = BTreeMap::new();
+            expected_map.insert("a".to_string(), RuntimeValue::Number(1.into()));
+            expected_map.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+            Ok(vec![RuntimeValue::Dict(expected_map)])
+        }
+    )]
+    #[case::dict_with_various_values(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Dict(vec![
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("s".to_string()))),
+                ast_node(ast::Expr::Literal(ast::Literal::String("text".to_string())))
+            ),
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("n".to_string()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(123.into())))
+            ),
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Bool(true)))
+            ),
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("none_val".to_string()))), // Renamed from "none" to avoid keyword clash if it were an ident
+                ast_node(ast::Expr::Literal(ast::Literal::None))
+            ),
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("arr".to_string()))),
+                ast_call("array", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))
+                ])
+            ),
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("sub_dict".to_string()))),
+                ast_node(ast::Expr::Dict(vec![(
+                    ast_node(ast::Expr::Literal(ast::Literal::String("x".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))
+                )]))
+            )
+        ]))],
+        {
+            let mut expected_map = BTreeMap::new();
+            expected_map.insert("s".to_string(), RuntimeValue::String("text".to_string()));
+            expected_map.insert("n".to_string(), RuntimeValue::Number(123.into()));
+            expected_map.insert("b".to_string(), RuntimeValue::Bool(true));
+            expected_map.insert("none_val".to_string(), RuntimeValue::None);
+            expected_map.insert("arr".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]));
+            let mut sub_map = BTreeMap::new();
+            sub_map.insert("x".to_string(), RuntimeValue::Number(0.into()));
+            expected_map.insert("sub_dict".to_string(), RuntimeValue::Dict(sub_map));
+            Ok(vec![RuntimeValue::Dict(expected_map)])
+        }
+    )]
+    #[case::dict_key_eval_to_string(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Dict(vec![
+            (
+                ast_call("add", smallvec![ // "a" + "b"
+                    ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string())))
+                ]),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into())))
+            )
+        ]))],
+        {
+            let mut expected_map = BTreeMap::new();
+            expected_map.insert("ab".to_string(), RuntimeValue::Number(1.into()));
+            Ok(vec![RuntimeValue::Dict(expected_map)])
+        }
+    )]
+     #[case::dict_value_eval_expr(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Dict(vec![
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::String("key".to_string()))),
+                ast_call("add", smallvec![ // 1 + 2
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))
+                ])
+            )
+        ]))],
+        {
+            let mut expected_map = BTreeMap::new();
+            expected_map.insert("key".to_string(), RuntimeValue::Number(3.into()));
+            Ok(vec![RuntimeValue::Dict(expected_map)])
+        }
+    )]
+    #[case::dict_key_not_string_number(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Dict(vec![
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::Number(123.into()))), // Key is a number
+                ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string())))
+            )
+        ]))],
+        Err(InnerError::Eval(EvalError::RuntimeError(
+            Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() }, // Placeholder, real token_id from ast_node(num)
+            "Dictionary keys must be strings.".to_string()
+        )))
+    )]
+    #[case::dict_key_not_string_bool(
+        vec![RuntimeValue::NONE],
+        vec![ast_node(ast::Expr::Dict(vec![
+            (
+                ast_node(ast::Expr::Literal(ast::Literal::Bool(true))), // Key is a boolean
+                ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string())))
+            )
+        ]))],
+        Err(InnerError::Eval(EvalError::RuntimeError(
+            Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() }, // Placeholder
+            "Dictionary keys must be strings.".to_string()
+        )))
+    )]
+    fn test_eval_dict(
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        #[case] runtime_values: Vec<RuntimeValue>,
+        #[case] program: Program,
+        #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
+    ) {
+        // Note: The token_id for error reporting in EvalError::RuntimeError will be based on ast_node's default (0.into()).
+        // A more precise test setup might involve creating tokens with specific ranges and giving nodes those token_ids.
+        // For now, we check the error type and message.
+        let mut eval = Evaluator::new(ModuleLoader::new(None), Rc::clone(&token_arena));
+         match eval.eval(&program, runtime_values.into_iter()) {
+            Ok(res) => assert_eq!(Ok(res), expected),
+            Err(InnerError::Eval(EvalError::RuntimeError(ref _token, ref msg))) => {
+                if let Err(InnerError::Eval(EvalError::RuntimeError(_, expected_msg))) = expected {
+                     assert_eq!(msg, &expected_msg);
+                } else {
+                    panic!("Expected Ok, got RuntimeError: {}", msg);
+                }
+            }
+            Err(e) => panic!("Unexpected error type: {:?}", e),
+        }
     }
 
     #[test]

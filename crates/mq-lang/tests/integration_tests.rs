@@ -1544,3 +1544,83 @@ fn test_eval(
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
+
+// Helper function to create Value::Dict for expected outcomes
+fn create_dict(pairs: Vec<(&str, Value)>) -> Value {
+    let mut map = BTreeMap::new();
+    for (k, v) in pairs {
+        map.insert(k.to_string(), v);
+    }
+    Value::Dict(map)
+}
+
+#[rstest]
+#[case::empty_dict(
+    "{}",
+    vec![], // No specific input context needed for literal
+    Ok(vec![Value::new_dict()].into())
+)]
+#[case::simple_dict(
+    r#"{"a": "hello", "b": 123, "c": true, "d": None}"#,
+    vec![],
+    Ok(vec![create_dict(vec![
+        ("a", Value::String("hello".to_string())),
+        ("b", Value::Number(123.into())),
+        ("c", Value::Bool(true)),
+        ("d", Value::None),
+    ])].into())
+)]
+#[case::dict_key_expr(
+    r#"{ "key" + "1": "value" }"#,
+    vec![],
+    Ok(vec![create_dict(vec![
+        ("key1", Value::String("value".to_string())),
+    ])].into())
+)]
+#[case::dict_value_expr(
+    r#"{ "key": 1 + 2 }"#,
+    vec![],
+    Ok(vec![create_dict(vec![
+        ("key", Value::Number(3.into())),
+    ])].into())
+)]
+#[case::dict_nested(
+    r#"{ "outer_key": { "inner_key": "value" } }"#,
+    vec![],
+    Ok(vec![create_dict(vec![
+        ("outer_key", create_dict(vec![
+            ("inner_key", Value::String("value".to_string())),
+        ])),
+    ])].into())
+)]
+#[case::dict_with_array(
+    r#"{ "list": [1, 2, "three"] }"#,
+    vec![],
+    Ok(vec![create_dict(vec![
+        ("list", Value::Array(vec![
+            Value::Number(1.into()),
+            Value::Number(2.into()),
+            Value::String("three".to_string()),
+        ])),
+    ])].into())
+)]
+fn test_eval_dict_literals(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] input: Vec<Value>,
+    #[case] expected: MqResult,
+) {
+    assert_eq!(engine.eval(program, input.into_iter()), expected);
+}
+
+#[rstest]
+#[case::dict_missing_colon(r#"{"key" "value"}"#)]
+#[case::dict_missing_value(r#"{"key": }"#)]
+#[case::dict_missing_closing_brace(r#"{"key": "value""#)]
+#[case::dict_comma_before_first(r#"{, "key": "value"}"#)]
+#[case::dict_eval_key_not_string(r#"{123: "value"}"#)]
+// TODO: Add case for {true: "value"} once boolean literal parsing is confirmed/fixed if needed
+// TODO: Add case for {None: "value"} for completeness
+fn test_eval_dict_literals_errors(mut engine: Engine, #[case] program: &str) {
+    assert!(engine.eval(program, vec![].into_iter()).is_err());
+}

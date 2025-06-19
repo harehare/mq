@@ -183,6 +183,7 @@ impl<'a> Parser<'a> {
             TokenKind::StringLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
             TokenKind::LBracket => self.parse_array(token),
+            TokenKind::LBrace => self.parse_dict(token), // Added LBrace case
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
@@ -1242,6 +1243,170 @@ impl<'a> Parser<'a> {
         self._next_token(current_token_id, expected_kinds, false)
     }
 
+    fn parse_dict(&mut self, lbrace_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let lbrace_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&lbrace_token));
+        let mut pairs: Vec<(Rc<Node>, Rc<Node>)> = Vec::new();
+
+        // Check if the dictionary is immediately closed (empty dictionary)
+        if let Some(peeked_token) = self.tokens.peek() {
+            if peeked_token.kind == TokenKind::RBrace {
+                self.tokens.next(); // Consume RBrace
+                return Ok(Rc::new(Node {
+                    token_id: lbrace_token_id,
+                    expr: Rc::new(Expr::Dict(pairs)),
+                }));
+            }
+        }
+
+        loop {
+            // Parse Key
+            let key_token = match self.tokens.next() {
+                Some(t) => t,
+                // If we expect a key but find RBrace, it could be an error for empty dicts not handled above,
+                // or a missing key before RBrace. For now, treat as unexpected EOF if nothing follows.
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+             // Allow RBrace to terminate if it's the first token after LBrace (empty dict already handled)
+            if key_token.kind == TokenKind::RBrace {
+                 // This case should ideally be caught by the empty dict check or if a comma was just consumed.
+                 // If we reach here, it implies something like "{,}" or "{key:val,}" where the loop continued.
+                 // For trailing comma, this is fine. If it's "{,}", it's an error of missing key.
+                 // However, the loop structure expects a key here.
+                 // Let's assume for now that if RBrace is found here, it's after a comma (trailing comma).
+                 // The check after consuming comma handles this better.
+                 // This specific check might be redundant or needs refinement based on test cases.
+                break;
+            }
+
+            let key_node = self.parse_expr(Rc::clone(key_token))?;
+
+            // Expect Colon
+            match self.tokens.next() {
+                Some(token) if token.kind == TokenKind::Colon => (),
+                Some(token) => return Err(ParseError::UnexpectedToken((*token).clone())),
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            // Parse Value
+            let value_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+            let value_node = self.parse_expr(Rc::clone(value_token))?;
+
+            pairs.push((key_node, value_node));
+
+            // Check for Comma or RBrace
+            match self.tokens.peek() {
+                Some(token) if token.kind == TokenKind::Comma => {
+                    self.tokens.next(); // Consume comma
+                    // Check for trailing comma case: if RBrace follows comma, consume RBrace and break
+                    if let Some(next_peeked) = self.tokens.peek() {
+                        if next_peeked.kind == TokenKind::RBrace {
+                            self.tokens.next(); // Consume RBrace
+                            break;
+                        }
+                    }
+                    // If not RBrace, then another key-value pair is expected, or it's an error if not RBrace eventually.
+                }
+                Some(token) if token.kind == TokenKind::RBrace => {
+                    self.tokens.next(); // Consume RBrace
+                    break;
+                }
+                Some(token) => return Err(ParseError::UnexpectedToken((**token).clone())),
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            }
+        }
+
+        Ok(Rc::new(Node {
+            token_id: lbrace_token_id,
+            expr: Rc::new(Expr::Dict(pairs)),
+        }))
+    }
+
+    fn parse_dict(&mut self, lbrace_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let lbrace_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&lbrace_token));
+        let mut pairs: Vec<(Rc<Node>, Rc<Node>)> = Vec::new();
+
+        // Check for immediate RBrace (empty dict)
+        if let Some(peek_token) = self.tokens.peek() {
+            if peek_token.kind == TokenKind::RBrace {
+                self.tokens.next(); // Consume RBrace
+                return Ok(Rc::new(Node {
+                    token_id: lbrace_token_id,
+                    expr: Rc::new(Expr::Dict(pairs)),
+                }));
+            }
+        }
+
+        loop {
+            // 1. Parse Key
+            let key_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            if key_token.kind == TokenKind::RBrace {
+                 // This means we had a comma followed by RBrace, and RBrace was consumed as key_token.
+                 // This indicates a trailing comma scenario was not fully handled before this point,
+                 // or it's an error like { , }
+                 // Given the loop structure, if a comma was consumed, and RBrace is next,
+                 // the peek at the end of the loop should have caught it.
+                 // So, if RBrace is consumed here as a key, it's likely an error.
+                return Err(ParseError::UnexpectedToken((*key_token).clone()));
+            }
+            let key_node = self.parse_expr(Rc::clone(key_token))?;
+
+            // 2. Expect Colon
+            match self.tokens.next() {
+                Some(token) if token.kind == TokenKind::Colon => (),
+                Some(token) => return Err(ParseError::UnexpectedToken((*token).clone())),
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            // 3. Parse Value
+            let value_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+            let value_node = self.parse_expr(Rc::clone(value_token))?;
+
+            pairs.push((key_node, value_node));
+
+            // 4. Expect Comma or RBrace
+            match self.tokens.peek() {
+                Some(peek_token) if peek_token.kind == TokenKind::RBrace => {
+                    self.tokens.next(); // Consume RBrace
+                    break; // End of dictionary
+                }
+                Some(peek_token) if peek_token.kind == TokenKind::Comma => {
+                    self.tokens.next(); // Consume Comma
+                    // Check for trailing comma: if RBrace is next, consume it and break.
+                    if let Some(after_comma_peek) = self.tokens.peek() {
+                        if after_comma_peek.kind == TokenKind::RBrace {
+                            self.tokens.next(); // Consume RBrace
+                            break; // End of dictionary (trailing comma)
+                        }
+                        // If not RBrace, loop continues to parse next key-value pair.
+                        // If RBrace wasn't found, but another token (like another comma or invalid token) is here,
+                        // the next iteration's key parsing will handle it or error.
+                    } else {
+                        // EOF after a comma, expecting RBrace or another key.
+                        return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                    }
+                }
+                // If peek_token is Some but not RBrace or Comma, it's an error.
+                Some(peek_token) => return Err(ParseError::UnexpectedToken((**peek_token).clone())),
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)), // EOF after value, expecting comma or RBrace
+            }
+        }
+
+        Ok(Rc::new(Node {
+            token_id: lbrace_token_id,
+            expr: Rc::new(Expr::Dict(pairs)),
+        }))
+    }
+
     fn _next_token(
         &mut self,
         current_token_id: TokenId,
@@ -1286,7 +1451,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Module, range::Range};
+    use crate::{Module, range::Range, ast::node::Expr};
 
     use super::*;
     use compact_str::CompactString;
@@ -3667,5 +3832,224 @@ mod tests {
             }
             Err(err) => panic!("Parse error: {:?}", err),
         }
+    }
+
+    #[rstest]
+    #[case::empty_dict(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace token
+                expr: Rc::new(Expr::Dict(vec![])),
+            })
+        ]))]
+    #[case::simple_dict(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace token
+                expr: Rc::new(Expr::Dict(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::multi_pair_dict(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("k1".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident("k2".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace
+                expr: Rc::new(Expr::Dict(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("k1".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    ),
+                    (
+                        Rc::new(Node {
+                            token_id: 3.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("k2", Some(Rc::new(token(TokenKind::Ident("k2".into()))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::trailing_comma_dict(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(123.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace
+                expr: Rc::new(Expr::Dict(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(123.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::dict_missing_colon(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            // Missing Colon here
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::StringLiteral("value".to_owned())))))]
+    #[case::dict_missing_value(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            // Missing Value here
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::RBrace))))]
+    #[case::dict_unexpected_eof_key(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::dict_unexpected_eof_colon(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::dict_unexpected_eof_value(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::dict_unexpected_eof_after_comma(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+     #[case::dict_empty_trailing_comma( // Invalid: { , }
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Comma),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof),
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Comma))))]
+    #[case::dict_key_is_expr(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("a".into())),
+            token(TokenKind::Plus),
+            token(TokenKind::Ident("b".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace
+                expr: Rc::new(Expr::Dict(vec![
+                    (
+                        Rc::new(Node { // This is the "add" call node
+                            token_id: 2.into(), // Token for '+'
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident("a".into()))))))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 3.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident("b".into()))))))),
+                                    }),
+                                ],
+                                false
+                            ))
+                        }),
+                        Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    fn test_parse_dict(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
+        let arena = Arena::new(20); // Increased arena size for potentially more tokens
+        assert_eq!(
+            Parser::new(
+                input.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+                Rc::new(RefCell::new(arena)),
+                Module::TOP_LEVEL_MODULE_ID
+            )
+            .parse(),
+            expected
+        );
     }
 }
