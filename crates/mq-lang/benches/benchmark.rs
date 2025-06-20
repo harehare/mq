@@ -147,7 +147,7 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
      def fibonacci(x):
       if (x == 0):
         0
-      elsif (x == 1):
+      elif (x == 1):
         1
       else:
         fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
