@@ -1,6 +1,6 @@
 use clap::Parser;
-use url::Url;
-use web_crawler::crawler::Crawler; // Adjusted path
+use mq_crawler::crawler::Crawler;
+use url::Url; // Adjusted path
 
 // Remove: use web_crawler::robots::RobotsTxt; // No longer directly used in main
 
@@ -9,18 +9,22 @@ use web_crawler::crawler::Crawler; // Adjusted path
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
-    #[clap(required = true)]
-    url: Url,
-        /// Optional path to an output DIRECTORY where markdown files will be saved.
-        /// If not provided, output is printed to stdout.
+    /// Optional path to an output DIRECTORY where markdown files will be saved.
+    /// If not provided, output is printed to stdout.
     #[clap(short, long)]
     output: Option<String>,
+    /// Delay (in seconds) between crawl requests to avoid overloading servers.
     #[clap(short, long, default_value_t = 1.0)]
     crawl_delay: f64,
+    /// Optional path to a custom robots.txt file. If not provided, robots.txt will be fetched from the site.
     #[clap(long)]
-    robots_path: Option<String>, // This will be passed to Crawler::new
+    robots_path: Option<String>,
+    /// Optional mq_lang query to process the crawled Markdown content.
     #[clap(short, long)]
-    mq_script: Option<String>,
+    mq_query: Option<String>,
+    /// The initial URL to start crawling from.
+    #[clap(required = true)]
+    url: Url,
 }
 
 #[tokio::main]
@@ -34,11 +38,14 @@ async fn main() {
         args.url.clone(), // Pass the initial URL
         args.crawl_delay,
         args.robots_path.clone(), // Pass the custom robots path
-        args.mq_script,
+        args.mq_query.clone(),
         args.output,
-    ).await {
+    )
+    .await
+    {
         Ok(mut crawler) => {
-            if let Err(e) = crawler.run().await { // robots_path no longer passed here
+            if let Err(e) = crawler.run().await {
+                // robots_path no longer passed here
                 tracing::error!("Crawler run failed: {}", e);
             } else {
                 tracing::info!("Crawling complete.");
