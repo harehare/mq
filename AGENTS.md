@@ -1,79 +1,104 @@
-# MQ Agents
+# mq Development Guide
 
-This document provides an overview of the different agents (components) that make up the `mq` project. Each component plays a specific role in the overall functionality of `mq`, from parsing and evaluating mq lang, to providing language server features and web capabilities.
+## Project Overview
 
-## Crates
+`mq` is a jq-like command-line tool for Markdown processing. Written in Rust, it allows you to easily slice, filter, map, and transform Markdown files.
 
-These components are Rust crates that form the core functionalities and tools of `mq`.
+## Coding Conventions
 
-### `mq-c-api`
-- **Purpose**: Provides a C API for the `mq` library.
-- **Functionality**: Allows integration of `mq`'s Markdown parsing and processing capabilities into C and C++ applications.
+### Rust Code Conventions
 
-### `mq-cli`
-- **Purpose**: Command-line interface for `mq`.
-- **Functionality**: Enables users to interact with `mq` from the terminal. (Note: README.md was not found for this component during documentation generation).
+- Always format and validate code using `cargo fmt` and `cargo clippy`
+- Add appropriate documentation comments to all public functions, structs, traits, enums, etc.
+- Use the `miette` crate for error handling and provide user-friendly error messages
+- Avoid panics whenever possible and return appropriate `Result` types
+- Write comprehensive tests and update related tests when adding or changing functionality
 
-### `mq-formatter`
-- **Purpose**: Code formatter for `mq` language files.
-- **Functionality**: Enforces a consistent code style for `mq` scripts.
+### Directory Structure
 
-### `mq-hir`
-- **Purpose**: Implements the High-level Intermediate Representation (HIR).
-- **Functionality**: Serves as an intermediate step in the compilation and analysis of `mq` code.
+The mq project follows this main directory structure:
 
-### `mq-lang`
-- **Purpose**: Parser and evaluator for the `mq` language.
-- **Functionality**: Handles the lexical analysis, parsing, and execution of `mq` scripts.
+- `/crates` - Contains multiple Rust crates
+  - `mq-c-api` - C API for integrating mq functionality into C applications
+  - `mq-cli` - Implementation of the mq command-line interface
+  - `mq-formatter` - Code formatter
+  - `mq-hir` - High-level Internal Representation (HIR)
+  - `mq-lang` - Implementation of the mq
+  - `mq-lsp` - Language Server Protocol implementation
+  - `mq-markdown` - Markdown parser and manipulation utilities
+  - `mq-mcp` - MCP implementation for mq
+  - `mq-python` - Python bindings for integrating mq functionality into Python applications
+  - `mq-tui` - Terminal User Interface (TUI) for interacting with mq
+  - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
+- `/docs` - Documentation and user guides
+- `/editors` - Editor integrations and plugins for popular code editors
+- `/assets` - Static assets such as images, icons, and other resources
+- `/examples` - Usage examples
+- `/tests` - Integration tests
+- `/scripts` - Scripts for automation tasks
+- `/packages` - Contains various packages for different functionalities
+  - `mq-web` - npm package for using mq in web applications and JavaScript environments
+  - `playground` - A playground for developing and testing for mq
 
-### `mq-lsp`
-- **Purpose**: Language Server Protocol (LSP) implementation for `mq`.
-- **Functionality**: Provides IDE features like syntax highlighting, code completion, go-to-definition, and diagnostics for `mq` scripts.
+## Pull Request Review Criteria
 
-### `mq-macros`
-- **Purpose**: Provides procedural macros for `mq`.
-- **Functionality**: Offers compile-time validation of `mq` queries embedded in Rust code.
+When creating a pull request, please ensure:
 
-### `mq-markdown`
-- **Purpose**: Handles Markdown parsing and conversion.
-- **Functionality**: Provides utilities for parsing Markdown content and converting it to other formats like HTML.
+1. All tests pass
+2. Code coverage is maintained at existing levels (check with Codecov)
+3. Code is formatted and passes lint checks
+4. Appropriate documentation is added/updated
+5. Changes are recorded in `CHANGELOG.md`
 
-### `mq-mcp`
-- **Purpose**: Implements Markdown Command Protocol (MCP) functionality.
-- **Functionality**: Handles command evaluation and execution against Markdown documents, often used for editor integrations.
+## Commit Message Conventions
 
-### `mq-python`
-- **Purpose**: Python bindings for `mq`.
-- **Functionality**: Allows Python developers to use `mq`'s Markdown processing capabilities from Python. The package is typically installed as `markdown-query`.
+Use the following format for commit messages:
 
-### `mq-repl`
-- **Purpose**: REPL (Read-Eval-Print Loop) environment for `mq`.
-- **Functionality**: Enables interactive execution and experimentation with `mq` scripts.
+```
+<type>(<scope>): <description>
 
-### `mq-test`
-- **Purpose**: Utility crate for testing `mq` components.
-- **Functionality**: Provides tools and helpers for writing tests for the `mq` ecosystem. (Note: README.md was not found for this component during documentation generation).
+[optional body]
 
-### `mq-tui`
-- **Purpose**: Text-based User Interface (TUI) for `mq`.
-- **Functionality**: Offers an interactive terminal interface for querying and manipulating Markdown content.
+[optional footer]
+```
 
-### `mq-wasm`
-- **Purpose**: WebAssembly runtime for `mq`.
-- **Functionality**: Enables execution of `mq` scripts in WebAssembly environments, typically browsers.
+Types include:
 
-### `mq-web-api`
-- **Purpose**: Web API for `mq`.
-- **Functionality**: Likely provides server-side API endpoints for `mq` functionalities. (Note: README.md was not found for this component during documentation generation).
+- ✨ feat: New feature
+- 🐛 fix: Bug fix
+- 📝 docs: Documentation changes
+- 💄 style: Code style changes that don't affect behavior
+- ♻️ refactor: Refactoring
+- ⚡ perf: Performance improvements
+- ✅ test: Adding or modifying tests
+- 📦 build: Changes to build system or external dependencies
+- 👷 ci: Changes to CI configuration files and scripts
 
-## Packages
+## Documentation
 
-These components are typically JavaScript/TypeScript packages, often for web-related functionality.
+When adding new features, update the following documentation:
 
-### `mq-web`
-- **Purpose**: Enables `mq` functionality in web environments.
-- **Functionality**: A TypeScript/JavaScript package that uses WebAssembly to run `mq` scripts, format `mq` code, and provide diagnostics within web applications or browsers.
+1. Documentation comments in the relevant source files
+2. Related documentation in the `/docs` directory
+3. `README.md` as needed
 
-### `playground`
-- **Purpose**: Provides an interactive web-based environment for `mq`.
-- **Functionality**: An online playground for users to experiment with `mq` scripts and see results in real-time, built using web technologies and `mq-wasm`/`mq-web`.
+## Feature Requests
+
+When proposing feature additions to `mq`, include:
+
+1. A description of the use case
+2. Examples of the proposed syntax and behavior
+3. Relationship to existing features
+
+## Bug Reports
+
+When reporting bugs, provide:
+
+1. A detailed description of the issue
+2. Steps to reproduce
+3. Expected behavior vs. actual behavior
+4. If possible, Markdown and `mq` query examples that reproduce the issue
+
+## License
+
+This project is provided under the MIT License. Please ensure all contributions are compatible with this license.
