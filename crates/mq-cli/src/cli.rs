@@ -332,19 +332,6 @@ impl Cli {
             }
         }
 
-        if let Some(raw_file) = &self.input.raw_file {
-            for v in raw_file.chunks(2) {
-                let path = PathBuf::from_str(&v[1]).into_diagnostic()?;
-
-                if !path.exists() {
-                    return Err(miette!("File not found: {}", path.display()));
-                }
-
-                let content = fs::read_to_string(&path).into_diagnostic()?;
-                engine.define_string_value(&v[0], &content);
-            }
-        }
-
         Ok(engine)
     }
 
