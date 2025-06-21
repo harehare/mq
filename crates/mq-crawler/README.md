@@ -6,7 +6,7 @@ A web crawler that fetches HTML content, converts it to Markdown, and optionally
 
 - HTML to Markdown conversion: Automatically converts crawled HTML pages to clean Markdown format
 - Robots.txt compliance: Respects robots.txt rules to crawl ethically
-- mq-lang integration: Process crawled content with mq-lang queries for filtering and transformation
+- mq integration: Process crawled content with mq queries for filtering and transformation
 - Configurable crawl delay: Avoid overloading servers with customizable delays between requests
 - Output flexibility: Save to files or output to stdout
 - Comprehensive statistics: Track crawling progress and results
