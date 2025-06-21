@@ -6,7 +6,7 @@ version = "0.1.0"
 
 [dependencies]
 clap = {version = "4.4", features = ["derive"]}
-html2md = "0.2"
+html_to_markdown = "0.1.0"
 miette = {workspace = true}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}

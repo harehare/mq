@@ -1,11 +1,13 @@
 use crate::robots::RobotsTxt;
-use html2md;
+use html_to_markdown::{TagHandler, convert_html_to_markdown, markdown};
 use miette::miette;
 use reqwest::Client;
 use scraper::{Html, Selector};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fs, io};
@@ -209,6 +211,16 @@ impl Crawler {
         }
         tracing::info!("{}", startup_info);
 
+        let mut handlers: Vec<TagHandler> = vec![
+            Rc::new(RefCell::new(markdown::WebpageChromeRemover)),
+            Rc::new(RefCell::new(markdown::ParagraphHandler)),
+            Rc::new(RefCell::new(markdown::HeadingHandler)),
+            Rc::new(RefCell::new(markdown::CodeHandler)),
+            Rc::new(RefCell::new(markdown::StyledTextHandler)),
+            Rc::new(RefCell::new(markdown::ListHandler)),
+            Rc::new(RefCell::new(markdown::TableHandler::new())),
+        ];
+
         while let Some(current_url) = self.to_visit.pop_front() {
             if self.visited.contains(&current_url) {
                 tracing::debug!("Skipping already visited URL: {}", current_url);
@@ -241,8 +253,9 @@ impl Crawler {
                             .text()
                             .await
                             .map_err(|e| format!("Failed to read response text: {}", e))?;
-
-                        let mut markdown = html2md::parse_html(&html_content);
+                        let mut markdown =
+                            convert_html_to_markdown(&html_content.as_bytes()[..], &mut handlers)
+                                .unwrap();
                         tracing::debug!(
                             "Converted HTML to Markdown (first 100 chars): {:.100}",
                             markdown.chars().take(100).collect::<String>()
