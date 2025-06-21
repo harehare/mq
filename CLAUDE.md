@@ -1,131 +1,109 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# mq Development Guide
 
 ## Project Overview
 
-`mq` is a jq-like command-line tool for Markdown processing written in Rust. It allows users to slice, filter, map, and transform Markdown files using a familiar syntax similar to jq but designed specifically for Markdown documents.
+`mq` is a jq-like command-line tool for Markdown processing. Written in Rust, it allows you to easily slice, filter, map, and transform Markdown files.
 
-## Development Commands
+## Coding Conventions
 
-### Build and Test
-```bash
-# Build the project in release mode
-just build
+### Rust Code Conventions
 
-# Run all tests (includes formatting and linting)
-just test
+- Always format and validate code using `cargo fmt` and `cargo clippy`
+- Add appropriate documentation comments to all public functions, structs, traits, enums, etc.
+- Use the `miette` crate for error handling and provide user-friendly error messages
+- Avoid panics whenever possible and return appropriate `Result` types
+- Write comprehensive tests and update related tests when adding or changing functionality
 
-# Run tests with coverage
-just test-cov
+### Directory Structure
 
-# Run formatting and linting only
-just lint
+The mq project follows this main directory structure:
 
-# Check formatting
-cargo fmt --all -- --check
+- `/crates` - Contains multiple Rust crates
+  - `mq-c-api` - C API for integrating mq functionality into C applications
+  - `mq-cli` - Implementation of the mq command-line interface
+  - `mq-crawler` - Tool for crawling directories and collecting Markdown files for batch processing
+  - `mq-formatter` - Code formatter
+  - `mq-hir` - High-level Internal Representation (HIR)
+  - `mq-lang` - Implementation of the mq
+  - `mq-lsp` - Language Server Protocol implementation
+  - `mq-macros` - Procedural macros for mq
+  - `mq-markdown` - Markdown parser and manipulation utilities
+  - `mq-mcp` - MCP implementation for mq
+  - `mq-python` - Python bindings for integrating mq functionality into Python applications
+  - `mq-repl` - REPL (Read-Eval-Print Loop) for mq
+  - `mq-test` - Test utilities and helpers for mq
+  - `mq-tui` - Terminal User Interface (TUI) for interacting with mq
+  - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
+  - `mq-web-api` - Web API bindings for mq
+- `/docs` - Documentation and user guides
+- `/editors` - Editor integrations and plugins for popular code editors
+- `/assets` - Static assets such as images, icons, and other resources
+- `/examples` - Usage examples
+- `/tests` - Integration tests
+- `/scripts` - Scripts for automation tasks
+- `/packages` - Contains various packages for different functionalities
+  - `mq-web` - npm package for using mq in web applications and JavaScript environments
+  - `playground` - A playground for developing and testing for mq
 
-# Run clippy linter
-cargo clippy --all-targets --all-features --workspace -- -D clippy::all
+## Pull Request Review Criteria
+
+When creating a pull request, please ensure:
+
+1. All tests pass
+2. Code coverage is maintained at existing levels (check with Codecov)
+3. Code is formatted and passes lint checks
+4. Appropriate documentation is added/updated
+5. Changes are recorded in `CHANGELOG.md`
+
+## Commit Message Conventions
+
+Use the following format for commit messages:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
 ```
 
-### Running the CLI
-```bash
-# Run CLI with arguments
-just run [ARGS...]
+Types include:
 
-# Or directly with cargo
-cargo run -- [ARGS...]
+- ✨ feat: New feature
+- 🐛 fix: Bug fix
+- 📝 docs: Documentation changes
+- 💄 style: Code style changes that don't affect behavior
+- ♻️ refactor: Refactoring
+- ⚡ perf: Performance improvements
+- ✅ test: Adding or modifying tests
+- 📦 build: Changes to build system or external dependencies
+- 👷 ci: Changes to CI configuration files and scripts
 
-# Start REPL
-cargo run -- repl
+## Documentation
 
-# Start TUI
-cargo run -- tui
-```
+When adding new features, update the following documentation:
 
-### Development Tools
-```bash
-# Start web playground development server
-just playground
+1. Documentation comments in the relevant source files
+2. Related documentation in the `/docs` directory
+3. `README.md` as needed
 
-# Build WebAssembly package
-just build-wasm
+## Feature Requests
 
-# Run benchmarks
-just bench
+When proposing feature additions to `mq`, include:
 
-# Check for unused dependencies
-just deps
+1. A description of the use case
+2. Examples of the proposed syntax and behavior
+3. Relationship to existing features
 
-# Update documentation
-just docs
-```
+## Bug Reports
 
-## Architecture Overview
+When reporting bugs, provide:
 
-This is a multi-crate Rust workspace with the following key components:
+1. A detailed description of the issue
+2. Steps to reproduce
+3. Expected behavior vs. actual behavior
+4. If possible, Markdown and `mq` query examples that reproduce the issue
 
-### Core Language Infrastructure
-- **mq-lang**: Core language implementation with parser, evaluator, and engine
-- **mq-hir**: High-level Intermediate Representation for code analysis and tooling
-- **mq-markdown**: Markdown parsing and manipulation utilities
+## License
 
-### User Interfaces
-- **mq-cli**: Main command-line interface
-- **mq-repl**: Interactive REPL environment  
-- **mq-tui**: Terminal User Interface
-- **mq-lsp**: Language Server Protocol implementation for editor support
-
-### Language Tooling
-- **mq-formatter**: Code formatter for mq files
-- **mq-test**: Testing utilities
-
-### Integration APIs
-- **mq-c-api**: C API for integration into C applications
-- **mq-python**: Python bindings via PyO3/maturin
-- **mq-wasm**: WebAssembly bindings for browser usage
-- **mq-web-api**: Web API implementation
-- **mq-mcp**: Model Context Protocol implementation
-
-### Processing Pipeline
-1. **Lexing**: Raw text → tokens (`mq-lang/lexer`)
-2. **Parsing**: Tokens → AST/CST (`mq-lang/ast`, `mq-lang/cst`)  
-3. **HIR**: AST → High-level IR for analysis (`mq-hir`)
-4. **Evaluation**: HIR → runtime values (`mq-lang/eval`)
-5. **Output**: Values → formatted output (`mq-formatter`)
-
-The engine (`mq-lang/engine.rs`) orchestrates this pipeline, with the evaluator handling runtime execution and the optimizer improving performance.
-
-## Code Conventions
-
-### Error Handling
-- Use `miette` crate for user-friendly error messages
-- Avoid panics; return `Result` types
-- Provide contextual error information
-
-### Testing
-- Write comprehensive tests for new functionality
-- Update related tests when modifying existing code
-- Use `just test` to run full test suite including lint checks
-
-### Documentation
-- Add documentation comments to all public functions, structs, traits, enums
-- Update `/docs` directory for user-facing features
-- Use `just docs` to regenerate documentation
-
-### Rust Toolchain
-- Uses Rust 1.86.0 (specified in `rust-toolchain.toml`)
-- Format with `cargo fmt`
-- Lint with `cargo clippy`
-- Use workspace dependencies defined in root `Cargo.toml`
-
-## Development Workflow
-
-1. Make changes to relevant crates
-2. Run `just test` to ensure formatting, linting, and tests pass
-3. Build with `just build` to verify release compilation
-4. Test CLI functionality with `just run [args]`
-5. Use `just test-cov` to check code coverage if needed
-
-The project uses `justfile` for task automation - prefer `just` commands over direct `cargo` commands when available.
+This project is provided under the MIT License. Please ensure all contributions are compatible with this license.
