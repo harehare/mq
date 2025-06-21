@@ -1143,14 +1143,16 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     .unwrap_or(RuntimeValue::NONE)),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
                 [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
-                    let a1: Vec<RuntimeValue> = a1.to_vec();
-                    let a2: Vec<RuntimeValue> = a2.to_vec();
-                    Ok(RuntimeValue::Array(itertools::concat(vec![a1, a2])))
+                    let mut a = Vec::with_capacity(a1.len() + a2.len());
+                    a.extend_from_slice(a1);
+                    a.extend_from_slice(a2);
+                    Ok(RuntimeValue::Array(a))
                 }
                 [RuntimeValue::Array(a1), a2] => {
-                    let mut a1: Vec<RuntimeValue> = a1.to_vec();
-                    a1.push(a2.clone());
-                    Ok(RuntimeValue::Array(a1))
+                    let mut a = Vec::with_capacity(a1.len() + 1);
+                    a.extend_from_slice(a1);
+                    a.push(a2.clone());
+                    Ok(RuntimeValue::Array(a))
                 }
                 [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(a.clone()),
                 [a, b] => Err(Error::InvalidTypes(
