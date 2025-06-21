@@ -13,11 +13,9 @@ A web crawler that fetches HTML content, converts it to Markdown, and optionally
 
 ## Installation
 
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-mq-crawler = "0.1.0"
+```sh
+# Using Homebrew (macOS and Linux)
+$ brew install harehare/tap/mqcr
 ```
 
 ## Usage
