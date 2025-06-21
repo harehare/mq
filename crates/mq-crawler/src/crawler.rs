@@ -1,13 +1,10 @@
 use crate::robots::RobotsTxt;
-use html_to_markdown::{TagHandler, convert_html_to_markdown, markdown};
 use miette::miette;
 use reqwest::Client;
 use scraper::{Html, Selector};
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fs, io};
@@ -111,8 +108,8 @@ pub struct Crawler {
     visited: HashSet<Url>,
     robots_cache: HashMap<String, Arc<RobotsTxt>>,
     crawl_delay: Duration,
-    mq_engine: Option<mq_lang::Engine>,
-    mq_query: Option<String>,
+    mq_engine: mq_lang::Engine,
+    mq_query: String,
     user_agent: String,
     output_path: Option<String>,
     initial_domain: String, // To keep crawls within the starting domain
@@ -142,13 +139,8 @@ impl Crawler {
         let mut to_visit = VecDeque::new();
         to_visit.push_back(start_url.clone());
 
-        let (mq_engine, mq_query) = if let Some(query) = mq_query {
-            let engine = mq_lang::Engine::default();
-            (Some(engine), Some(query))
-        } else {
-            tracing::info!("No mq_lang script provided."); // Added log
-            (None, None)
-        };
+        let mut mq_engine = mq_lang::Engine::default();
+        mq_engine.load_builtin_module();
 
         Ok(Self {
             client,
@@ -157,7 +149,7 @@ impl Crawler {
             robots_cache: HashMap::new(),
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
             mq_engine,
-            mq_query,
+            mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
             initial_domain,
@@ -198,28 +190,12 @@ impl Crawler {
         if let Some(ref path) = self.custom_robots_path {
             startup_info.push_str(&format!(" Custom robots.txt path: '{}'.", path));
         }
-        if self.mq_query.is_some() {
-            startup_info.push_str(&format!(
-                " Using mq query ({} bytes).",
-                self.mq_query.as_ref().unwrap().len()
-            ));
-        }
         if let Some(ref path) = self.output_path {
             startup_info.push_str(&format!(" Outputting to directory: '{}'.", path));
         } else {
             startup_info.push_str(" Outputting to stdout.");
         }
         tracing::info!("{}", startup_info);
-
-        let mut handlers: Vec<TagHandler> = vec![
-            Rc::new(RefCell::new(markdown::WebpageChromeRemover)),
-            Rc::new(RefCell::new(markdown::ParagraphHandler)),
-            Rc::new(RefCell::new(markdown::HeadingHandler)),
-            Rc::new(RefCell::new(markdown::CodeHandler)),
-            Rc::new(RefCell::new(markdown::StyledTextHandler)),
-            Rc::new(RefCell::new(markdown::ListHandler)),
-            Rc::new(RefCell::new(markdown::TableHandler::new())),
-        ];
 
         while let Some(current_url) = self.to_visit.pop_front() {
             if self.visited.contains(&current_url) {
@@ -253,28 +229,21 @@ impl Crawler {
                             .text()
                             .await
                             .map_err(|e| format!("Failed to read response text: {}", e))?;
-                        let mut markdown =
-                            convert_html_to_markdown(html_content.as_bytes(), &mut handlers)
-                                .unwrap();
-                        tracing::debug!(
-                            "Converted HTML to Markdown (first 100 chars): {:.100}",
-                            markdown.chars().take(100).collect::<String>()
-                        );
 
-                        if let (Some(engine), Some(script_content_str)) =
-                            (&mut self.mq_engine, &self.mq_query)
+                        let input = mq_lang::parse_html_input(&html_content)
+                            .map_err(|e| format!("Failed to parse HTML: {}", e))?;
+
+                        tracing::info!("Applying mq query to content from {}", current_url);
+
+                        match self
+                            .mq_engine
+                            .eval(&self.mq_query, input.into_iter())
+                            .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
                         {
-                            tracing::info!("Applying mq query to content from {}", current_url);
-
-                            match mq_lang::parse_markdown_input(&markdown).and_then(|input| {
-                                engine
-                                    .eval(script_content_str, input.into_iter())
-                                    .map_err(|e| {
-                                        miette!(format!("Error evaluating mq query: {}", e))
-                                    })
-                            }) {
-                                Ok(values) => {
-                                    markdown = mq_markdown::Markdown::new(
+                            Ok(values) => {
+                                self.output_markdown(
+                                    &current_url,
+                                    &mq_markdown::Markdown::new(
                                         values
                                             .into_iter()
                                             .map(|value| match value {
@@ -283,20 +252,18 @@ impl Crawler {
                                             })
                                             .collect(),
                                     )
-                                    .to_string();
-                                }
-                                Err(e) => {
-                                    let error_string = format!("{:?}", e);
-                                    tracing::error!(
-                                        "Error running mq query on content from {}: {}. Original markdown will be used.",
-                                        current_url,
-                                        error_string.chars().take(200).collect::<String>()
-                                    );
-                                }
+                                    .to_string(),
+                                )?;
+                            }
+                            Err(e) => {
+                                let error_string = format!("{:?}", e);
+                                tracing::error!(
+                                    "Error running mq query on content from {}: {}. Original markdown will be used.",
+                                    current_url,
+                                    error_string.chars().take(200).collect::<String>()
+                                );
                             }
                         }
-
-                        self.output_markdown(&current_url, &markdown)?;
 
                         let new_links = extract_links(&html_content, &current_url);
                         self.result.links_discovered += new_links.len();

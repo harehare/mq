@@ -134,6 +134,16 @@ pub unsafe extern "C" fn mq_eval(
                 };
             }
         },
+        "html" => match mq_lang::parse_html_input(input_str) {
+            Ok(v) => v,
+            Err(e) => {
+                return MqResult {
+                    values: ptr::null_mut(),
+                    values_len: 0,
+                    error_msg: to_c_string(format!("Html parsing error: {}", e)),
+                };
+            }
+        },
         _ => {
             return MqResult {
                 values: ptr::null_mut(),

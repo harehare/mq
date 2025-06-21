@@ -149,6 +149,11 @@ pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<Value>> {
     Ok(mdx.nodes.into_iter().map(Value::from).collect())
 }
 
+pub fn parse_html_input(input: &str) -> miette::Result<Vec<Value>> {
+    let html = mq_markdown::Markdown::from_html_str(input)?;
+    Ok(html.nodes.into_iter().map(Value::from).collect())
+}
+
 /// Parses a Markdown string and returns an iterator over `Value` nodes.
 pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
     let md = mq_markdown::Markdown::from_markdown_str(input)?;
@@ -265,5 +270,14 @@ mod tests {
         assert!(result.is_ok());
         let values: Vec<Value> = result.unwrap();
         assert_eq!(values.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_html_input() {
+        let input = "<h1>Heading</h1><p>Some text.</p>";
+        let result = parse_html_input(input);
+        assert!(result.is_ok());
+        let values: Vec<Value> = result.unwrap();
+        assert!(!values.is_empty());
     }
 }

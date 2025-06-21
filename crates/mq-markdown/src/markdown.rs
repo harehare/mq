@@ -1,5 +1,6 @@
-use std::{fmt, str::FromStr};
+use std::{cell::RefCell, fmt, rc::Rc, str::FromStr};
 
+use html_to_markdown::TagHandler;
 use markdown::Constructs;
 use miette::miette;
 
@@ -112,7 +113,24 @@ impl Markdown {
             .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
-    #[allow(clippy::should_implement_trait)]
+    pub fn from_html_str(content: &str) -> miette::Result<Self> {
+        let mut handlers: Vec<TagHandler> = vec![
+            Rc::new(RefCell::new(
+                html_to_markdown::markdown::WebpageChromeRemover,
+            )),
+            Rc::new(RefCell::new(html_to_markdown::markdown::ParagraphHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::HeadingHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::CodeHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::StyledTextHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::ListHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::TableHandler::new())),
+        ];
+
+        html_to_markdown::convert_html_to_markdown(content.as_bytes(), &mut handlers)
+            .map_err(|e| miette!(e))
+            .and_then(|md| Self::from_markdown_str(&md))
+    }
+
     pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
         let root = markdown::to_mdast(
             content,
@@ -336,6 +354,8 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "json")]
 mod json_tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -380,5 +400,24 @@ mod json_tests {
         let json = md.to_json().unwrap();
 
         assert!(json.contains("\"type\": \"TableCell\""));
+    }
+
+    #[rstest]
+    #[case("<h1>Hello</h1>", 1, "# Hello\n")]
+    #[case("<p>Paragraph</p>", 1, "Paragraph\n")]
+    #[case("<ul><li>Item 1</li><li>Item 2</li></ul>", 2, "- Item 1\n- Item 2\n")]
+    #[case("<ol><li>First</li><li>Second</li></ol>", 2, "- First\n- Second\n")]
+    #[case("<blockquote>Quote</blockquote>", 1, "Quote\n")]
+    #[case("<code>inline</code>", 1, "`inline`\n")]
+    #[case("<pre><code>block</code></pre>", 1, "```\nblock\n```\n")]
+    #[case("<table><tr><td>A</td><td>B</td></tr></table>", 1, "| A | B |\n")]
+    fn test_markdown_from_html(
+        #[case] input: &str,
+        #[case] expected_nodes: usize,
+        #[case] expected_output: &str,
+    ) {
+        let md = Markdown::from_html_str(input).unwrap();
+        assert_eq!(md.nodes.len(), expected_nodes);
+        assert_eq!(md.to_string(), expected_output);
     }
 }

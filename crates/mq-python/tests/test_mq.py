@@ -49,6 +49,12 @@ def test_mq_queries(code, content, expected):
             "# MDX Content\n\n<Component />",
             ["<Component />"],
         ),
+        (
+            mq.InputFormat.HTML,
+            'select(contains("Hello"))',
+            "<h1>Hello</h1><p>World</p>",
+            ["# Hello"],
+        ),
     ],
 )
 def test_input_formats(input_format, code, content, expected):

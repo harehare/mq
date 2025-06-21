@@ -2300,7 +2300,6 @@ name = "mq-crawler"
 version = "0.1.0"
 dependencies = [
  "clap",
- "html_to_markdown",
  "httpmock",
  "miette",
  "mq-lang",
@@ -2355,7 +2354,7 @@ dependencies = [
  "nom",
  "nom_locate",
  "percent-encoding",
- "regex-lite",
+ "regex",
  "rstest",
  "rustc-hash",
  "smallvec",
@@ -2405,6 +2404,7 @@ name = "mq-markdown"
 version = "0.2.4"
 dependencies = [
  "compact_str 0.9.0",
+ "html_to_markdown",
  "itertools 0.14.0",
  "markdown",
  "miette",
