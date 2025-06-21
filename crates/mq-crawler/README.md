@@ -4,12 +4,12 @@ A web crawler that fetches HTML content, converts it to Markdown, and optionally
 
 ## Features
 
-- **HTML to Markdown conversion**: Automatically converts crawled HTML pages to clean Markdown format
-- **Robots.txt compliance**: Respects robots.txt rules to crawl ethically
-- **mq-lang integration**: Process crawled content with mq-lang queries for filtering and transformation
-- **Configurable crawl delay**: Avoid overloading servers with customizable delays between requests
-- **Output flexibility**: Save to files or output to stdout
-- **Comprehensive statistics**: Track crawling progress and results
+- HTML to Markdown conversion: Automatically converts crawled HTML pages to clean Markdown format
+- Robots.txt compliance: Respects robots.txt rules to crawl ethically
+- mq-lang integration: Process crawled content with mq-lang queries for filtering and transformation
+- Configurable crawl delay: Avoid overloading servers with customizable delays between requests
+- Output flexibility: Save to files or output to stdout
+- Comprehensive statistics: Track crawling progress and results
 
 ## Installation
 
@@ -37,7 +37,7 @@ mqcr -o ./output https://example.com
 mqcr -d 2.0 https://example.com
 
 # Process with mq-lang query
-mqcr -q 'select(.title | contains("News"))' https://example.com
+mqcr -q '.h | select(contains("News"))' https://example.com
 
 # Use custom robots.txt file
 mqcr --robots-path ./custom-robots.txt https://example.com
