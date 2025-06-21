@@ -414,9 +414,7 @@ impl Crawler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::robots::RobotsTxt;
     use rstest::rstest;
-    use std::sync::Arc;
     use url::Url;
 
     #[rstest]

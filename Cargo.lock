@@ -134,7 +134,7 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "parking_lot",
- "percent-encoding 2.3.1",
+ "percent-encoding",
  "windows-sys 0.59.0",
  "x11rb",
 ]
@@ -1292,7 +1292,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
- "percent-encoding 2.3.1",
+ "percent-encoding",
 ]
 
 [[package]]
@@ -1555,7 +1555,7 @@ dependencies = [
  "jni",
  "lazy_static",
  "markup5ever_rcdom",
- "percent-encoding 2.3.1",
+ "percent-encoding",
  "regex",
 ]
 
@@ -1667,7 +1667,7 @@ dependencies = [
  "serde_regex",
  "similar",
  "tokio",
- "url 2.5.4",
+ "url",
 ]
 
 [[package]]
@@ -1836,17 +1836,6 @@ name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
-
-[[package]]
-name = "idna"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f09e0f0b1fb55fdee1f17470ad800da77af5186a1a76c026b679358b7e844e"
-dependencies = [
- "matches",
- "unicode-bidi",
- "unicode-normalization",
-]
 
 [[package]]
 name = "idna"
@@ -2149,7 +2138,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
- "url 2.5.4",
+ "url",
 ]
 
 [[package]]
@@ -2215,12 +2204,6 @@ checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
 dependencies = [
  "regex-automata 0.1.10",
 ]
-
-[[package]]
-name = "matches"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
 name = "matchit"
@@ -2341,7 +2324,7 @@ dependencies = [
  "rayon",
  "rstest",
  "tokio",
- "url 2.5.4",
+ "url",
 ]
 
 [[package]]
@@ -2361,7 +2344,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "url 2.5.4",
+ "url",
 ]
 
 [[package]]
@@ -2385,7 +2368,7 @@ dependencies = [
  "slotmap",
  "strsim",
  "thiserror 2.0.12",
- "url 2.5.4",
+ "url",
 ]
 
 [[package]]
@@ -2403,7 +2386,7 @@ dependencies = [
  "mq-test",
  "nom",
  "nom_locate",
- "percent-encoding 2.3.1",
+ "percent-encoding",
  "regex-lite",
  "rstest",
  "rustc-hash",
@@ -2550,7 +2533,7 @@ dependencies = [
  "mq-markdown",
  "serde",
  "serde_json",
- "url 2.5.4",
+ "url",
  "utoipa",
  "worker",
 ]
@@ -2822,12 +2805,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "percent-encoding"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31010dd2e1ac33d5b46a5b413495239882813e0369f8ed8a5e266f173602f831"
 
 [[package]]
 name = "percent-encoding"
@@ -3361,7 +3338,7 @@ dependencies = [
  "mime",
  "native-tls",
  "once_cell",
- "percent-encoding 2.3.1",
+ "percent-encoding",
  "pin-project-lite",
  "rustls",
  "rustls-pemfile",
@@ -3374,7 +3351,7 @@ dependencies = [
  "tokio-native-tls",
  "tokio-rustls",
  "tower-service",
- "url 2.5.4",
+ "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -3430,11 +3407,12 @@ dependencies = [
 
 [[package]]
 name = "robots_txt"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "372473773d98b313db4569b301f6d6f39111c7f16a8cc8968e4d0bfb7103fcb8"
+checksum = "1e8e523889c75c35b3a018da4dbe311d9b248db161786624141b10859800fa0d"
 dependencies = [
- "url 1.7.2",
+ "unicase",
+ "url",
 ]
 
 [[package]]
@@ -4224,21 +4202,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tinyvec"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09b3661f17e86524eccd4371ab0429194e0d7c008abb45f7a7495b1719463c71"
-dependencies = [
- "tinyvec_macros",
-]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
 name = "tokio"
 version = "1.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4469,10 +4432,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "unicode-bidi"
-version = "0.3.18"
+name = "unicase"
+version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+checksum = "75b844d17643ee918803943289730bec8aac480150456169e647ed0b576ba539"
 
 [[package]]
 name = "unicode-id"
@@ -4491,15 +4454,6 @@ name = "unicode-linebreak"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b09c83c3c29d37506a3e260c08c03743a6bb66a9cd432c6934ab501a190571f"
-
-[[package]]
-name = "unicode-normalization"
-version = "0.1.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
-dependencies = [
- "tinyvec",
-]
 
 [[package]]
 name = "unicode-segmentation"
@@ -4550,24 +4504,13 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "1.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd4e7c0d531266369519a4aa4f399d748bd37043b00bde1e4ff1f60a120b355a"
-dependencies = [
- "idna 0.1.5",
- "matches",
- "percent-encoding 1.0.1",
-]
-
-[[package]]
-name = "url"
 version = "2.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32f8b686cadd1473f4bd0117a5d28d36b1ade384ea9b5069a1c40aefed7fda60"
 dependencies = [
  "form_urlencoded",
- "idna 1.0.3",
- "percent-encoding 2.3.1",
+ "idna",
+ "percent-encoding",
  "serde",
 ]
 
@@ -5105,7 +5048,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
- "url 2.5.4",
+ "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-streams",

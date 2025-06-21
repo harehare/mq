@@ -1,5 +1,5 @@
 use reqwest::Client;
-use robots_txt::{Robots, SimpleMatcher};
+use robots_txt::{Robots, matcher::SimpleMatcher};
 use url::Url;
 
 // A simple wrapper for robots.txt handling.
@@ -102,7 +102,7 @@ impl RobotsTxt {
     /// Parses the stored robots.txt content on each call.
     pub fn is_allowed(&self, url_to_check: &Url, user_agent: &str) -> bool {
         let parsed_robots = match &self.robots_text {
-            Some(text) => Robots::from_str(text),
+            Some(text) => Robots::from_str_lossy(text),
             None => return true,
         };
 
