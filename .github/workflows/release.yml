@@ -97,7 +97,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: mq-*
+          pattern: mq*
           path: target
       - name: Generate checksums
         run: |
