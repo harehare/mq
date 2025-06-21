@@ -11,14 +11,14 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.4"
 
 [dependencies]
-compact_str = {workspace = true}
-itertools = {workspace = true}
+compact_str.workspace = true
+itertools.workspace = true
 mq-lang = {workspace = true, features = ["cst"]}
-rustc-hash = {workspace = true}
+rustc-hash.workspace = true
 slotmap = "1.0.7"
 strsim = "0.11.1"
-thiserror = {workspace = true}
-url = {workspace = true}
+thiserror.workspace = true
+url.workspace = true
 
 [dev-dependencies]
-rstest = "0.25.0"
+rstest.workspace = true

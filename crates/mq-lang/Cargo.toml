@@ -15,18 +15,18 @@ version = "0.2.4"
 [dependencies]
 base64 = "0.22.1"
 chrono = "0.4.41"
-compact_str = {workspace = true}
-dirs = {workspace = true}
-itertools = {workspace = true}
-miette = {workspace = true}
-mq-markdown = {workspace = true}
+compact_str.workspace = true
+dirs.workspace = true
+itertools.workspace = true
+miette.workspace = true
+mq-markdown.workspace = true
 nom = {version = "8.0.0"}
 nom_locate = "5.0.0"
 percent-encoding = "2.3.1"
-regex-lite = "0.1.6"
-rustc-hash = {workspace = true}
+regex = "1.5"
+rustc-hash.workspace = true
 smallvec = "1.15.1"
-thiserror = {workspace = true}
+thiserror.workspace = true
 
 [features]
 cst = []
@@ -36,7 +36,7 @@ std = []
 [dev-dependencies]
 divan = {version = "2.8.1", package = "codspeed-divan-compat"}
 mq-test = {path = "../../crates/mq-test", version = "0.2.4"}
-rstest = "0.25.0"
+rstest.workspace = true
 
 [[bench]]
 harness = false

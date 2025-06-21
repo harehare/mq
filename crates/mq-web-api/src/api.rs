@@ -30,6 +30,8 @@ pub enum InputFormat {
     Mdx,
     #[serde(rename = "text")]
     Text,
+    #[serde(rename = "html")]
+    Html,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
@@ -82,6 +84,7 @@ fn execute_query(request: ApiRequest) -> miette::Result<mq_lang::Values> {
         InputFormat::Markdown => mq_lang::parse_markdown_input(&request.input.unwrap_or_default())?,
         InputFormat::Mdx => mq_lang::parse_mdx_input(&request.input.unwrap_or_default())?,
         InputFormat::Text => mq_lang::parse_text_input(&request.input.unwrap_or_default())?,
+        InputFormat::Html => mq_lang::parse_html_input(&request.input.unwrap_or_default())?,
     };
 
     engine

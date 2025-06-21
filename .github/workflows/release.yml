@@ -102,7 +102,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd target
-          for file in mq-*/*; do
+          for file in mq*/*; do
             sha256sum "$file" >> checksums.txt
           done
           mkdir checksums

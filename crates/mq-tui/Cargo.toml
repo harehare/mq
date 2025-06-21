@@ -9,12 +9,12 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.4"
 
 [dependencies]
-arboard = {workspace = true}
+arboard.workspace = true
 crossterm = "0.29.0"
-itertools = {workspace = true}
+itertools.workspace = true
 log = "0.4.27"
-miette = {workspace = true}
-mq-lang = {workspace = true}
-mq-markdown = {workspace = true}
+miette.workspace = true
+mq-lang.workspace = true
+mq-markdown.workspace = true
 ratatui = "0.29.0"
 unicode-width = "0.2.0"

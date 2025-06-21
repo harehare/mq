@@ -25,7 +25,7 @@ export interface Diagnostic {
 
 export interface Options {
     isUpdate: boolean,
-    inputFormat: 'markdown' | 'text' | 'mdx' | null,
+    inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -82,6 +82,8 @@ pub enum InputFormat {
     Mdx,
     #[serde(rename = "text")]
     Text,
+    #[serde(rename = "html")]
+    Html,
 }
 
 impl FromStr for InputFormat {
@@ -182,6 +184,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
         .unwrap_or(&InputFormat::Markdown)
     {
         InputFormat::Text => mq_lang::parse_text_input(content),
+        InputFormat::Html => mq_lang::parse_html_input(content),
         InputFormat::Mdx => mq_lang::parse_mdx_input(content),
         InputFormat::Markdown => mq_lang::parse_markdown_input(content),
     }

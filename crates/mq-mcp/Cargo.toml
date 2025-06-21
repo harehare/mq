@@ -6,16 +6,16 @@ name = "mq-mcp"
 version = "0.2.4"
 
 [dependencies]
-miette = {workspace = true}
-mq-lang = {workspace = true}
-mq-markdown = {workspace = true}
+miette.workspace = true
+mq-lang.workspace = true
+mq-markdown.workspace = true
 rmcp = {version = "0.1.5", features = ["server"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 tokio = {version = "1.45.1", features = ["macros", "rt-multi-thread", "io-std"]}
 
 [dev-dependencies]
-mq-test = {workspace = true}
+mq-test.workspace = true
 
 [lib]
 name = "mq_mcp"

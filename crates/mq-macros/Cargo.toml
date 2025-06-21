@@ -12,6 +12,6 @@ proc-macro = true
 
 [dependencies]
 mq-lang = {workspace = true, features = ["cst"]}
-mq-markdown = {workspace = true}
+mq-markdown.workspace = true
 quote = "1"
 syn = {version = "2", features = ["full"]}

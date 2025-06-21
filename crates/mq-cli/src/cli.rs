@@ -51,6 +51,7 @@ enum InputFormat {
     #[default]
     Markdown,
     Mdx,
+    Html,
     Text,
     Null,
 }
@@ -375,6 +376,7 @@ impl Cli {
             InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
             InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
             InputFormat::Text => mq_lang::parse_text_input(content)?,
+            InputFormat::Html => mq_lang::parse_html_input(content)?,
             InputFormat::Null => vec![mq_lang::Value::String("".to_string())],
         };
 

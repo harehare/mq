@@ -15,6 +15,8 @@ enum InputFormat {
     Mdx,
     #[pyo3(name = "TEXT")]
     Text,
+    #[pyo3(name = "HTML")]
+    Html,
 }
 
 #[pyclass(eq, eq_int)]
@@ -82,6 +84,7 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult
         InputFormat::Markdown => mq_lang::parse_markdown_input(content),
         InputFormat::Mdx => mq_lang::parse_mdx_input(content),
         InputFormat::Text => mq_lang::parse_text_input(content),
+        InputFormat::Html => mq_lang::parse_html_input(content),
     }
     .map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e))

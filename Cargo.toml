@@ -16,6 +16,7 @@ members = [
   "crates/mq-mcp",
   "crates/mq-python",
   "crates/mq-web-api",
+  "crates/mq-crawler",
 ]
 resolver = "3"
 
@@ -34,6 +35,7 @@ mq-mcp = {path = "./crates/mq-mcp", version = "0.2.4"}
 mq-repl = {path = "./crates/mq-repl", version = "0.2.4"}
 mq-test = {path = "./crates/mq-test", version = "0.2.4"}
 mq-tui = {path = "./crates/mq-tui", version = "0.2.4"}
+rstest = "0.25.0"
 rustc-hash = "2.1.1"
 thiserror = "2.0.12"
 url = "2.5.4"
