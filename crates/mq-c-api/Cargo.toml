@@ -5,8 +5,8 @@ version = "0.1.0"
 
 [dependencies]
 libc = "0.2"
-mq-lang = {workspace = true}
-mq-markdown = {workspace = true}
+mq-lang.workspace = true
+mq-markdown.workspace = true
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

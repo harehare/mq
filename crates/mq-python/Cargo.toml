@@ -8,6 +8,6 @@ crate-type = ["cdylib"]
 name = "mq"
 
 [dependencies]
-mq-lang = {workspace = true}
-mq-markdown = {workspace = true}
+mq-lang.workspace = true
+mq-markdown.workspace = true
 pyo3 = {version = "0.25.1", features = ["extension-module", "abi3-py39"]}

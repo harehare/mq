@@ -488,4 +488,40 @@ mod tests {
         let result = sanitize_filename_component(input, max_len);
         assert_eq!(result, expected, "input: {}", input);
     }
+
+    #[test]
+    fn test_crawl_result_duration_some() {
+        let start = Instant::now();
+        let end = start + Duration::from_secs(5);
+        let result = CrawlResult {
+            start_time: Some(start),
+            end_time: Some(end),
+            ..Default::default()
+        };
+        assert_eq!(result.duration(), Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn test_crawl_result_duration_none() {
+        let result = CrawlResult {
+            start_time: None,
+            end_time: None,
+            ..Default::default()
+        };
+        assert_eq!(result.duration(), None);
+
+        let result = CrawlResult {
+            start_time: Some(Instant::now()),
+            end_time: None,
+            ..Default::default()
+        };
+        assert_eq!(result.duration(), None);
+
+        let result = CrawlResult {
+            start_time: None,
+            end_time: Some(Instant::now()),
+            ..Default::default()
+        };
+        assert_eq!(result.duration(), None);
+    }
 }

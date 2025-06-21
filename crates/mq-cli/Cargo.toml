@@ -24,24 +24,24 @@ version = "0.2.4"
 
 [dependencies]
 clap = {version = "4.5.40", features = ["derive"]}
-itertools = {workspace = true}
+itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
-mq-formatter = {workspace = true}
-mq-hir = {workspace = true}
-mq-lang = {workspace = true}
-mq-lsp = {workspace = true}
+mq-formatter.workspace = true
+mq-hir.workspace = true
+mq-lang.workspace = true
+mq-lsp.workspace = true
 mq-markdown = {workspace = true, features = ["json"]}
-mq-mcp = {workspace = true}
-mq-repl = {workspace = true}
-mq-tui = {workspace = true}
+mq-mcp.workspace = true
+mq-repl.workspace = true
+mq-tui.workspace = true
 rayon = "1.10.0"
 tokio = {version = "1.45.1", features = ["io-util", "io-std", "rt"]}
-url = {workspace = true}
+url.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
-mq-test = {workspace = true}
-rstest = {workspace = true}
+mq-test.workspace = true
+rstest.workspace = true
 
 [[bin]]
 doc = false

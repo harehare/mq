@@ -11,17 +11,17 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.4"
 
 [dependencies]
-arboard = {workspace = true}
+arboard.workspace = true
 colored = "3.0.0"
-dirs = {workspace = true}
-itertools = {workspace = true}
-miette = {version = "7.6.0"}
-mq-hir = {workspace = true}
-mq-lang = {workspace = true}
-mq-markdown = {workspace = true}
+dirs.workspace = true
+itertools.workspace = true
+miette.workspace = true
+mq-hir.workspace = true
+mq-lang.workspace = true
+mq-markdown.workspace = true
 rustyline = "16.0.0"
 strum = {version = "0.27.1", features = ["derive"]}
 
 [dev-dependencies]
-mq-test = {workspace = true}
-rstest = {workspace = true}
+mq-test.workspace = true
+rstest.workspace = true

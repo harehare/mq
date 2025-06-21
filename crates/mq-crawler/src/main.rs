@@ -1,8 +1,6 @@
 use clap::Parser;
 use mq_crawler::crawler::Crawler;
-use url::Url; // Adjusted path
-
-// Remove: use web_crawler::robots::RobotsTxt; // No longer directly used in main
+use url::Url;
 
 /// A simple web crawler that fetches HTML, converts it to Markdown,
 /// and optionally processes it with an mq_lang script.
@@ -35,9 +33,9 @@ async fn main() {
     tracing::info!("Initializing crawler for URL: {}", args.url);
 
     match Crawler::new(
-        args.url.clone(), // Pass the initial URL
+        args.url.clone(),
         args.crawl_delay,
-        args.robots_path.clone(), // Pass the custom robots path
+        args.robots_path.clone(),
         args.mq_query.clone(),
         args.output,
     )

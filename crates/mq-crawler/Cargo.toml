@@ -6,16 +6,16 @@ version = "0.1.0"
 
 [dependencies]
 clap = {version = "4.4", features = ["derive"]}
-miette = {workspace = true}
-mq-lang = {workspace = true}
-mq-markdown = {workspace = true}
+miette.workspace = true
+mq-lang.workspace = true
+mq-markdown.workspace = true
 reqwest = {version = "0.11", features = ["json", "rustls-tls"]}
 robots_txt = "0.7"
 scraper = "0.18"
 tokio = {version = "1", features = ["full"]}
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features = ["env-filter"]}
-url = {workspace = true}
+url.workspace = true
 
 [[bin]]
 doc = false
@@ -24,4 +24,4 @@ path = "src/main.rs"
 
 [dev-dependencies]
 httpmock = "0.7.0"
-rstest = {workspace = true}
+rstest.workspace = true

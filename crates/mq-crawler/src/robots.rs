@@ -133,9 +133,6 @@ impl RobotsTxt {
     }
 }
 
-// TODO: Consider a RobotsCache to store RobotsTxt per domain if crawling multiple domains,
-// but for a single-site crawler, this might be overkill if parsing on demand is acceptable.
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 arbitrary = {version = "1.4.1", features = ["derive"]}
-itertools = {workspace = true}
+itertools.workspace = true
 libfuzzer-sys = "0.4"
 mq-lang = {path = "../crates/mq-lang", version = "0.2.4"}
 
