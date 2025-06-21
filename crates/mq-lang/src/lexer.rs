@@ -275,7 +275,7 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
                     ),
                 ))
             },
-            |(text, range)| StringSegment::Text(text.to_string(), range),
+            |(text, range)| StringSegment::Text(text, range),
         ),
         map(
             |input: Span<'a>| {
@@ -349,7 +349,7 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
                 start: start.into(),
                 end: end.into(),
             },
-            kind: TokenKind::StringLiteral(s.to_string()),
+            kind: TokenKind::StringLiteral(s),
             module_id,
         },
     ))
