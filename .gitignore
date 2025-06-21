@@ -80,3 +80,5 @@ docs/playground.html
 docs/logo.svg
 
 *.so
+
+settings.local.json
