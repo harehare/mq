@@ -2356,6 +2356,7 @@ dependencies = [
  "mq-markdown",
  "reqwest",
  "robots_txt",
+ "rstest",
  "scraper",
  "tokio",
  "tracing",

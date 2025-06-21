@@ -15,4 +15,4 @@ mq-lang = {workspace = true, features = ["cst"]}
 rustc-hash = {workspace = true}
 
 [dev-dependencies]
-rstest = "0.25.0"
+rstest = {workspace = true}

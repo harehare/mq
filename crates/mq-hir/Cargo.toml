@@ -21,4 +21,4 @@ thiserror = {workspace = true}
 url = {workspace = true}
 
 [dev-dependencies]
-rstest = "0.25.0"
+rstest = {workspace = true}

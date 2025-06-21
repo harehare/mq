@@ -41,7 +41,7 @@ url = {workspace = true}
 [dev-dependencies]
 assert_cmd = "2.0.17"
 mq-test = {workspace = true}
-rstest = "0.25.0"
+rstest = {workspace = true}
 
 [[bin]]
 doc = false

@@ -7,9 +7,51 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{fs, io};
 use url::Url;
+
+#[derive(Debug, Default)]
+pub struct CrawlResult {
+    pub start_time: Option<Instant>,
+    pub end_time: Option<Instant>,
+    pub pages_crawled: usize,
+    pub pages_skipped_robots: usize,
+    pub pages_failed: usize,
+    pub links_discovered: usize,
+    pub total_pages_visited: usize,
+}
+
+impl CrawlResult {
+    pub fn duration(&self) -> Option<Duration> {
+        if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
+            Some(end.duration_since(start))
+        } else {
+            None
+        }
+    }
+
+    pub fn write_stats_to_stderr(&self) {
+        let stderr = io::stderr();
+        let mut handle = stderr.lock();
+
+        let _ = writeln!(handle, "\n=== Crawl Statistics ===");
+        let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
+        let _ = writeln!(
+            handle,
+            "Pages skipped (robots.txt): {}",
+            self.pages_skipped_robots
+        );
+        let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
+        let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
+        let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
+
+        if let Some(duration) = self.duration() {
+            let _ = writeln!(handle, "Total duration: {:.2}s", duration.as_secs_f64());
+        }
+        let _ = writeln!(handle, "========================\n");
+    }
+}
 
 // Helper function to sanitize filename components
 fn sanitize_filename_component(component: &str, max_len: usize) -> String {
@@ -18,13 +60,18 @@ fn sanitize_filename_component(component: &str, max_len: usize) -> String {
         .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
         .collect();
 
+    dbg!(
+        component
+            .chars()
+            .map(|c| c.is_alphanumeric())
+            .collect::<Vec<_>>()
+    );
     if sanitized.is_empty() {
         sanitized.push_str("empty");
     }
 
-    // Truncate if necessary
-    if sanitized.len() > max_len {
-        sanitized.truncate(max_len);
+    if sanitized.chars().count() > max_len {
+        sanitized = sanitized.chars().take(max_len).collect();
     }
     sanitized
 }
@@ -74,6 +121,7 @@ pub struct Crawler {
     output_path: Option<String>,
     initial_domain: String, // To keep crawls within the starting domain
     custom_robots_path: Option<String>, // Store custom robots path
+    result: CrawlResult,
 }
 
 impl Crawler {
@@ -118,6 +166,7 @@ impl Crawler {
             output_path,
             initial_domain,
             custom_robots_path,
+            result: CrawlResult::default(),
         })
     }
 
@@ -143,6 +192,9 @@ impl Crawler {
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
+        // Record start time
+        self.result.start_time = Some(Instant::now());
+
         let mut startup_info = format!(
             "Crawler run initiated. User-Agent: '{}'. Initial domain: '{}'. Crawl delay: {:?}.",
             self.user_agent, self.initial_domain, self.crawl_delay
@@ -184,6 +236,7 @@ impl Crawler {
             if !robots_rules.is_allowed(&current_url, &self.user_agent) {
                 tracing::warn!("Skipping URL disallowed by robots.txt: {}", current_url);
                 self.visited.insert(current_url);
+                self.result.pages_skipped_robots += 1;
                 continue;
             }
 
@@ -239,6 +292,7 @@ impl Crawler {
                         self.output_markdown(&current_url, &markdown)?;
 
                         let new_links = extract_links(&html_content, &current_url);
+                        self.result.links_discovered += new_links.len();
                         for link in new_links {
                             if !self.visited.contains(&link)
                                 && !self.to_visit.contains(&link)
@@ -247,22 +301,33 @@ impl Crawler {
                                 self.to_visit.push_back(link);
                             }
                         }
+                        self.result.pages_crawled += 1;
                     } else {
                         tracing::warn!(
                             "Request to {} failed with status: {}",
                             current_url,
                             response.status()
                         );
+                        self.result.pages_failed += 1;
                     }
                 }
                 Err(e) => {
                     tracing::error!("Failed to fetch URL {}: {}", current_url, e);
+                    self.result.pages_failed += 1;
                 }
             }
 
             self.visited.insert(current_url);
             tokio::time::sleep(self.crawl_delay).await;
         }
+
+        // Record end time and final statistics
+        self.result.end_time = Some(Instant::now());
+        self.result.total_pages_visited = self.visited.len();
+
+        // Write statistics to stderr
+        self.result.write_stats_to_stderr();
+
         Ok(())
     }
 
@@ -349,46 +414,34 @@ impl Crawler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::robots::RobotsTxt;
+    use rstest::rstest;
+    use std::sync::Arc;
     use url::Url;
 
-    #[test]
-    fn test_extract_no_links() {
-        let html = "<html><body><p>No links here.</p></body></html>";
-        let base = Url::parse("http://example.com").unwrap();
-        let links = extract_links(html, &base);
-        assert!(links.is_empty());
-    }
-
-    #[test]
-    fn test_extract_simple_link() {
-        let html = r#"<html><body><a href="http://example.com/page1">Page 1</a></body></html>"#;
-        let base = Url::parse("http://example.com").unwrap();
-        let links = extract_links(html, &base);
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0].as_str(), "http://example.com/page1");
-    }
-
-    #[test]
-    fn test_extract_relative_link() {
-        let html = r#"<html><body><a href="/page2">Page 2</a></body></html>"#;
-        let base = Url::parse("http://example.com/path/").unwrap();
-        let links = extract_links(html, &base);
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0].as_str(), "http://example.com/page2");
-    }
-
-    #[test]
-    fn test_extract_link_with_fragment() {
-        let html = r#"<html><body><a href="page3#section">Page 3</a></body></html>"#;
-        let base = Url::parse("http://example.com/").unwrap();
-        let links = extract_links(html, &base);
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0].as_str(), "http://example.com/page3"); // Fragment should be removed
-    }
-
-    #[test]
-    fn test_extract_multiple_links() {
-        let html = r##"
+    #[rstest]
+    #[case(
+        "<html><body><p>No links here.</p></body></html>",
+        "http://example.com",
+        vec![]
+    )]
+    #[case(
+        r#"<html><body><a href="http://example.com/page1">Page 1</a></body></html>"#,
+        "http://example.com",
+        vec!["http://example.com/page1"]
+    )]
+    #[case(
+        r#"<html><body><a href="/page2">Page 2</a></body></html>"#,
+        "http://example.com/path/",
+        vec!["http://example.com/page2"]
+    )]
+    #[case(
+        r#"<html><body><a href="page3#section">Page 3</a></body></html>"#,
+        "http://example.com/",
+        vec!["http://example.com/page3"]
+    )]
+    #[case(
+        r##"
             <html><body>
                 <a href="https://othersite.com/abs">Absolute</a>
                 <a href="relative/link">Relative</a>
@@ -396,19 +449,46 @@ mod tests {
                 <a href="#fragmentonly">Fragment Only</a>
                 <a href="page?query=val">With Query</a>
             </body></html>
-        "##;
-        let base = Url::parse("http://example.com/folder1/folder2/current.html").unwrap();
-        let links = extract_links(html, &base);
-
-        let expected_urls = vec![
+        "##,
+        "http://example.com/folder1/folder2/current.html",
+        vec![
             "https://othersite.com/abs",
             "http://example.com/folder1/folder2/relative/link",
             "http://example.com/folder1/another",
-            "http://example.com/folder1/folder2/current.html", // #fragmentonly resolves to base
-            "http://example.com/folder1/folder2/page?query=val",
-        ];
+            "http://example.com/folder1/folder2/current.html",
+            "http://example.com/folder1/folder2/page?query=val"
+        ]
+    )]
+    #[case(
+        r#"<html><body><a href="">Empty Href</a></body></html>"#,
+        "http://example.com/page.html",
+        vec!["http://example.com/page.html"]
+    )]
+    #[case(
+        r#"<html><body><a href="http://[::1]:namedport">Malformed</a></body></html>"#,
+        "http://example.com",
+        vec![]
+    )]
+    #[case(
+        "",
+        "http://example.com",
+        vec![]
+    )]
+    fn test_extract_links(
+        #[case] html: &str,
+        #[case] base_url: &str,
+        #[case] expected_urls: Vec<&str>,
+    ) {
+        let base = Url::parse(base_url).unwrap();
+        let links = extract_links(html, &base);
 
-        assert_eq!(links.len(), expected_urls.len());
+        assert_eq!(
+            links.len(),
+            expected_urls.len(),
+            "Link count mismatch for base_url: {}",
+            base_url
+        );
+
         for expected_url_str in expected_urls {
             let expected_url = Url::parse(expected_url_str).unwrap();
             assert!(
@@ -420,32 +500,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_extract_empty_href() {
-        let html = r#"<html><body><a href="">Empty Href</a></body></html>"#;
-        let base = Url::parse("http://example.com/page.html").unwrap();
-        let links = extract_links(html, &base);
-        assert_eq!(links.len(), 1);
-        // Empty href resolves to the base URL itself
-        assert_eq!(links[0].as_str(), "http://example.com/page.html");
-    }
-
-    #[test]
-    fn test_malformed_url() {
-        let html = r#"<html><body><a href="http://[::1]:namedport">Malformed</a></body></html>"#;
-        let base = Url::parse("http://example.com").unwrap();
-        let links = extract_links(html, &base);
-        // url::Url::join will fail for "http://[::1]:namedport" as it's not a valid relative path part if base is http
-        // and `Url::parse("http://[::1]:namedport")` itself fails.
-        // If `base_url.join(href_attr)` returns Err, it's logged and skipped.
-        assert!(links.is_empty());
-    }
-
-    #[test]
-    fn test_empty_html_input() {
-        let html = "";
-        let base = Url::parse("http://example.com").unwrap();
-        let links = extract_links(html, &base);
-        assert!(links.is_empty());
+    #[rstest]
+    #[case("abcDEF-123_foo", 20, "abcDEF-123_foo")]
+    #[case("!@#abc/\\:*?\"<>|", 20, "abc")]
+    #[case("", 10, "empty")]
+    #[case("valid_name", 5, "valid")]
+    #[case("___", 10, "___")]
+    #[case("foo bar-baz_123", 20, "foobar-baz_123")]
+    #[case("日本語テスト", 10, "日本語テスト")]
+    fn test_sanitize_filename_component(
+        #[case] input: &str,
+        #[case] max_len: usize,
+        #[case] expected: &str,
+    ) {
+        let result = sanitize_filename_component(input, max_len);
+        assert_eq!(result, expected, "input: {}", input);
     }
 }
