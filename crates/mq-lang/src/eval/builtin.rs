@@ -7,7 +7,7 @@ use compact_str::CompactString;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::{Regex, RegexBuilder};
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -223,7 +223,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(std::cmp::min(*n1, *n2).into())
                 }
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::min(s1.to_string(), s2.to_string()).into())
+                    Ok(std::cmp::min(s1, s2).clone().into())
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -239,7 +239,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(std::cmp::max(*n1, *n2).into())
                 }
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::max(s1.to_string(), s2.to_string()).into())
+                    Ok(std::cmp::max(s1, s2).clone().into())
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -634,9 +634,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                     let sub: String = s
                         .chars()
-                        .enumerate()
-                        .filter(|&(i, _)| i >= start && i < end)
-                        .fold("".to_string(), |s, (_, c)| format!("{}{}", s, c));
+                        .skip(start)
+                        .take(end.saturating_sub(start))
+                        .collect();
 
                     Ok(sub.into())
                 }
@@ -668,9 +668,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         let sub: String = md
                             .value()
                             .chars()
-                            .enumerate()
-                            .filter(|&(i, _)| i >= start && i < end)
-                            .fold("".to_string(), |s, (_, c)| format!("{}{}", s, c));
+                            .skip(start)
+                            .take(end.saturating_sub(start))
+                            .collect();
 
                         Ok(node.update_markdown_value(&sub))
                     })
@@ -996,8 +996,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
-                    let mut unique = FxHashMap::default();
-                    vec.retain(|item| unique.insert(item.to_string(), item.clone()).is_none());
+                    let mut seen = FxHashSet::default();
+                    vec.retain(|item| seen.insert(item.to_string()));
                     Ok(RuntimeValue::Array(vec))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
@@ -1143,14 +1143,16 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     .unwrap_or(RuntimeValue::NONE)),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
                 [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
-                    let a1: Vec<RuntimeValue> = a1.to_vec();
-                    let a2: Vec<RuntimeValue> = a2.to_vec();
-                    Ok(RuntimeValue::Array(itertools::concat(vec![a1, a2])))
+                    let mut a = Vec::with_capacity(a1.len() + a2.len());
+                    a.extend_from_slice(a1);
+                    a.extend_from_slice(a2);
+                    Ok(RuntimeValue::Array(a))
                 }
                 [RuntimeValue::Array(a1), a2] => {
-                    let mut a1: Vec<RuntimeValue> = a1.to_vec();
-                    a1.push(a2.clone());
-                    Ok(RuntimeValue::Array(a1))
+                    let mut a = Vec::with_capacity(a1.len() + 1);
+                    a.extend_from_slice(a1);
+                    a.push(a2.clone());
+                    Ok(RuntimeValue::Array(a))
                 }
                 [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(a.clone()),
                 [a, b] => Err(Error::InvalidTypes(
