@@ -254,7 +254,7 @@ impl Crawler {
                             .await
                             .map_err(|e| format!("Failed to read response text: {}", e))?;
                         let mut markdown =
-                            convert_html_to_markdown(&html_content.as_bytes()[..], &mut handlers)
+                            convert_html_to_markdown(html_content.as_bytes(), &mut handlers)
                                 .unwrap();
                         tracing::debug!(
                             "Converted HTML to Markdown (first 100 chars): {:.100}",
