@@ -264,8 +264,9 @@ export const Playground = () => {
         ? "text"
         : format === "mdx"
         ? "mdx"
-        : // TODO: support html
-          null;
+        : format === "html"
+        ? "html"
+        : null;
     })()
   );
 
