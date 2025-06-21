@@ -327,17 +327,17 @@ def group_by(arr, f):
 # Creates an array of numbers within the specified range.
 def range(start, end, step):
   let _range = fn(start, end, step):
-    let current = start
-    | let results = []
-    | until (current <= end):
-        let results = results + current
-        | let current = current + step
-        | results;;
+      let current = start
+      | let results = []
+      | until (current <= end):
+          let results = results + current
+          | let current = current + step
+          | results;;
 
   | if (step <= 0):
-     error("step must be non-negative")
-   else:
-     _range(start, end, step);
+    error("step must be non-negative")
+  else:
+    _range(start, end, step);
 
 # Returns true if any element in the array satisfies the provided function.
 def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;

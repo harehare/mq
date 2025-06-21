@@ -223,7 +223,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(std::cmp::min(*n1, *n2).into())
                 }
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::min(s1.to_string(), s2.to_string()).into())
+                    Ok(std::cmp::min(s1, s2).clone().into())
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -239,7 +239,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     Ok(std::cmp::max(*n1, *n2).into())
                 }
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::max(s1.to_string(), s2.to_string()).into())
+                    Ok(std::cmp::max(s1, s2).clone().into())
                 }
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
@@ -634,9 +634,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
                     let sub: String = s
                         .chars()
-                        .enumerate()
-                        .filter(|&(i, _)| i >= start && i < end)
-                        .fold("".to_string(), |s, (_, c)| format!("{}{}", s, c));
+                        .skip(start)
+                        .take(end.saturating_sub(start))
+                        .collect();
 
                     Ok(sub.into())
                 }
@@ -668,9 +668,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         let sub: String = md
                             .value()
                             .chars()
-                            .enumerate()
-                            .filter(|&(i, _)| i >= start && i < end)
-                            .fold("".to_string(), |s, (_, c)| format!("{}{}", s, c));
+                            .skip(start)
+                            .take(end.saturating_sub(start))
+                            .collect();
 
                         Ok(node.update_markdown_value(&sub))
                     })
