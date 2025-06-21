@@ -7,7 +7,7 @@ use compact_str::CompactString;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::{Regex, RegexBuilder};
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -996,8 +996,8 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array)] => {
                     let mut vec = array.to_vec();
-                    let mut unique = FxHashMap::default();
-                    vec.retain(|item| unique.insert(item.to_string(), item.clone()).is_none());
+                    let mut seen = FxHashSet::default();
+                    vec.retain(|item| seen.insert(item.to_string()));
                     Ok(RuntimeValue::Array(vec))
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
