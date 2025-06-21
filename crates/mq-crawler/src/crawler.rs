@@ -60,12 +60,6 @@ fn sanitize_filename_component(component: &str, max_len: usize) -> String {
         .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
         .collect();
 
-    dbg!(
-        component
-            .chars()
-            .map(|c| c.is_alphanumeric())
-            .collect::<Vec<_>>()
-    );
     if sanitized.is_empty() {
         sanitized.push_str("empty");
     }
