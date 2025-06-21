@@ -137,8 +137,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -219,6 +219,13 @@ $ mq 'select(or(.h1, .h2, .h3)) | let link = to_link(add(__FILE__, "#" + to_text
 $ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
 # Merging Multiple Files
 $ mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
+# Extract all code blocks from an HTML file
+$ mq -I html '.code' example.html
+# Convert HTML to Markdown and filter headers
+$ mq -I html 'select(or(.h1, .h2))' example.html
+```
+
+This allows you to seamlessly convert and query HTML content using mq's Markdown processing features.
 ```
 
 ### Using with markitdown

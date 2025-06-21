@@ -25,6 +25,10 @@ Type `mq '.h | select(contains("Filter"))' demo.md`
 Enter
 Sleep 1.5s
 
+Type `curl -s https://mqlang.org/book/start/example | mq -I html 'nodes | .code | compact() | first()'`
+Enter
+Sleep 1.5s
+
 Type `mq '.h3' demo.md`
 Enter
 Sleep 1.5s
