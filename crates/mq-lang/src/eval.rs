@@ -3592,6 +3592,88 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::String("not a list".to_string())]))]
+    #[case::range_number(vec![RuntimeValue::Number(1.into())],
+            vec![
+                ast_call("range", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
+                ])
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(3.into()),
+                RuntimeValue::Number(4.into()),
+                RuntimeValue::Number(5.into()),
+            ])]))]
+    #[case::range_number_negative(vec![RuntimeValue::Number(5.into())],
+            vec![
+                ast_call("range", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                ])
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(5.into()),
+                RuntimeValue::Number(4.into()),
+                RuntimeValue::Number(3.into()),
+                RuntimeValue::Number(2.into()),
+                RuntimeValue::Number(1.into()),
+            ])]))]
+    #[case::range_string(vec![RuntimeValue::String("a".to_string())],
+            vec![
+                ast_call("range", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("e".to_string()))),
+                ])
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("d".to_string()),
+                RuntimeValue::String("e".to_string()),
+            ])]))]
+    #[case::range_string_reverse(vec![RuntimeValue::String("e".to_string())],
+            vec![
+                ast_call("range", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("e".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                ])
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("e".to_string()),
+                RuntimeValue::String("d".to_string()),
+                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("a".to_string()),
+            ])]))]
+    #[case::range_string_step_2(vec![RuntimeValue::String("a".to_string())],
+                vec![
+                    ast_call("range", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("e".to_string()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Array(vec![
+                    RuntimeValue::String("a".to_string()),
+                    RuntimeValue::String("c".to_string()),
+                    RuntimeValue::String("e".to_string()),
+                ])]))]
+    #[case::range_string_step_minus_2(vec![RuntimeValue::String("e".to_string())],
+                vec![
+                    ast_call("range", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::String("e".to_string()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number((-2).into()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Array(vec![
+                    RuntimeValue::String("e".to_string()),
+                    RuntimeValue::String("c".to_string()),
+                    RuntimeValue::String("a".to_string()),
+                ])]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

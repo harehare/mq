@@ -818,6 +818,132 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("range"),
+            BuiltinFunction::new(ParamNum::Range(1, 3), |ident, _, args| {
+                match args.as_slice() {
+                    // Numeric range: range(end)
+                    [RuntimeValue::Number(end)] => {
+                        let end = end.value() as isize;
+                        let mut result = Vec::new();
+                        for i in 0..=end {
+                            result.push(RuntimeValue::Number(i.into()));
+                        }
+                        Ok(RuntimeValue::Array(result))
+                    }
+                    // Numeric range: range(start, end)
+                    [RuntimeValue::Number(start), RuntimeValue::Number(end)] => {
+                        let (start, end) = (start.value() as isize, end.value() as isize);
+                        let step = if start <= end { 1 } else { -1 };
+                        let mut result = Vec::new();
+                        let mut i = start;
+                        if step > 0 {
+                            while i <= end {
+                                result.push(RuntimeValue::Number(i.into()));
+                                i += step;
+                            }
+                        } else {
+                            while i >= end {
+                                result.push(RuntimeValue::Number(i.into()));
+                                i += step;
+                            }
+                        }
+                        Ok(RuntimeValue::Array(result))
+                    }
+                    // Numeric range: range(start, end, step)
+                    [
+                        RuntimeValue::Number(start),
+                        RuntimeValue::Number(end),
+                        RuntimeValue::Number(step),
+                    ] => {
+                        let (start, end, step) = (
+                            start.value() as isize,
+                            end.value() as isize,
+                            step.value() as isize,
+                        );
+                        if step == 0 {
+                            return Err(Error::Runtime(
+                                "step for range must not be zero".to_string(),
+                            ));
+                        }
+                        let mut result = Vec::new();
+                        let mut i = start;
+                        if step > 0 {
+                            while i <= end {
+                                result.push(RuntimeValue::Number(i.into()));
+                                i += step;
+                            }
+                        } else {
+                            while i >= end {
+                                result.push(RuntimeValue::Number(i.into()));
+                                i += step;
+                            }
+                        }
+                        Ok(RuntimeValue::Array(result))
+                    }
+                    // String range: range("a", "z") or range("A", "Z")
+                    [RuntimeValue::String(start), RuntimeValue::String(end)]
+                        if start.chars().count() == 1 && end.chars().count() == 1 =>
+                    {
+                        let start_char = start.chars().next().unwrap();
+                        let end_char = end.chars().next().unwrap();
+                        let mut result = Vec::new();
+                        if start_char <= end_char {
+                            for c in start_char as u32..=end_char as u32 {
+                                if let Some(ch) = std::char::from_u32(c) {
+                                    result.push(RuntimeValue::String(ch.to_string()));
+                                }
+                            }
+                        } else {
+                            for c in (end_char as u32..=start_char as u32).rev() {
+                                if let Some(ch) = std::char::from_u32(c) {
+                                    result.push(RuntimeValue::String(ch.to_string()));
+                                }
+                            }
+                        }
+                        Ok(RuntimeValue::Array(result))
+                    }
+                    // String range with step: range("a", "z", step)
+                    [
+                        RuntimeValue::String(start),
+                        RuntimeValue::String(end),
+                        RuntimeValue::Number(step),
+                    ] if start.chars().count() == 1 && end.chars().count() == 1 => {
+                        let start_char = start.chars().next().unwrap() as u32;
+                        let end_char = end.chars().next().unwrap() as u32;
+                        let step = step.value() as i32;
+                        if step == 0 {
+                            return Err(Error::Runtime(
+                                "step for range must not be zero".to_string(),
+                            ));
+                        }
+                        let mut result = Vec::new();
+                        if step > 0 {
+                            let mut c = start_char as i32;
+                            while c <= end_char as i32 {
+                                if let Some(ch) = std::char::from_u32(c as u32) {
+                                    result.push(RuntimeValue::String(ch.to_string()));
+                                }
+                                c += step;
+                            }
+                        } else {
+                            let mut c = start_char as i32;
+                            while c >= end_char as i32 {
+                                if let Some(ch) = std::char::from_u32(c as u32) {
+                                    result.push(RuntimeValue::String(ch.to_string()));
+                                }
+                                c += step;
+                            }
+                        }
+                        Ok(RuntimeValue::Array(result))
+                    }
+                    _ => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        args.iter().cloned().collect(),
+                    )),
+                }
+            }),
+        );
+        map.insert(
             CompactString::new("del"),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
@@ -2782,7 +2908,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
                 params: &["dict"],
             },
         );
-
+        map.insert(
+            CompactString::new("range"),
+            BuiltinFunctionDoc {
+            description: "Creates an array from start (inclusive) to end (exclusive) with an optional step.",
+            params: &["start", "end", "step"],
+            },
+        );
         map
     });
 
