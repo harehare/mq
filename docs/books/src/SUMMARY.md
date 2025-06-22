@@ -6,6 +6,7 @@
   - [Development](start/development.md)
   - [Playground](start/playground.md)
   - [TUI](start/tui.md)
+  - [Web crawler](start/crawler.md)
   - [Example](start/example.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)

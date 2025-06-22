@@ -69,3 +69,10 @@ You can use mq in Python through the `markdown-query` package:
 # Install from PyPI
 pip install markdown-query
 ```
+
+## Web crawler
+
+```sh
+# Using Homebrew (macOS and Linux)
+$ brew install harehare/tap/mqcr
+```
