@@ -823,31 +823,15 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 match args.as_slice() {
                     // Numeric range: range(end)
                     [RuntimeValue::Number(end)] => {
-                        let end = end.value() as isize;
-                        let mut result = Vec::new();
-                        for i in 0..=end {
-                            result.push(RuntimeValue::Number(i.into()));
-                        }
-                        Ok(RuntimeValue::Array(result))
+                        let end_val = end.value() as isize;
+                        generate_numeric_range(0, end_val, 1).map(RuntimeValue::Array)
                     }
                     // Numeric range: range(start, end)
                     [RuntimeValue::Number(start), RuntimeValue::Number(end)] => {
-                        let (start, end) = (start.value() as isize, end.value() as isize);
-                        let step = if start <= end { 1 } else { -1 };
-                        let mut result = Vec::new();
-                        let mut i = start;
-                        if step > 0 {
-                            while i <= end {
-                                result.push(RuntimeValue::Number(i.into()));
-                                i += step;
-                            }
-                        } else {
-                            while i >= end {
-                                result.push(RuntimeValue::Number(i.into()));
-                                i += step;
-                            }
-                        }
-                        Ok(RuntimeValue::Array(result))
+                        let start_val = start.value() as isize;
+                        let end_val = end.value() as isize;
+                        let step = if start_val <= end_val { 1 } else { -1 };
+                        generate_numeric_range(start_val, end_val, step).map(RuntimeValue::Array)
                     }
                     // Numeric range: range(start, end, step)
                     [
@@ -855,108 +839,22 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         RuntimeValue::Number(end),
                         RuntimeValue::Number(step),
                     ] => {
-                        let (start, end, step) = (
-                            start.value() as isize,
-                            end.value() as isize,
-                            step.value() as isize,
-                        );
-                        if step == 0 {
-                            return Err(Error::Runtime(
-                                "step for range must not be zero".to_string(),
-                            ));
-                        }
-                        let mut result = Vec::new();
-                        let mut i = start;
-                        if step > 0 {
-                            while i <= end {
-                                result.push(RuntimeValue::Number(i.into()));
-                                i += step;
-                            }
-                        } else {
-                            while i >= end {
-                                result.push(RuntimeValue::Number(i.into()));
-                                i += step;
-                            }
-                        }
-                        Ok(RuntimeValue::Array(result))
+                        let start_val = start.value() as isize;
+                        let end_val = end.value() as isize;
+                        let step_val = step.value() as isize;
+                        generate_numeric_range(start_val, end_val, step_val)
+                            .map(RuntimeValue::Array)
                     }
                     // String range: range("a", "z") or range("A", "Z") or range("aa", "zz")
                     [RuntimeValue::String(start), RuntimeValue::String(end)] => {
-                        if start.chars().count() == 1 && end.chars().count() == 1 {
-                            // Single character range
-                            let start_char = start.chars().next().unwrap();
-                            let end_char = end.chars().next().unwrap();
-                            let mut result = Vec::new();
-                            if start_char <= end_char {
-                                for c in start_char as u32..=end_char as u32 {
-                                    if let Some(ch) = std::char::from_u32(c) {
-                                        result.push(RuntimeValue::String(ch.to_string()));
-                                    }
-                                }
-                            } else {
-                                for c in (end_char as u32..=start_char as u32).rev() {
-                                    if let Some(ch) = std::char::from_u32(c) {
-                                        result.push(RuntimeValue::String(ch.to_string()));
-                                    }
-                                }
-                            }
-                            Ok(RuntimeValue::Array(result))
-                        } else if start.len() == end.len() && start.len() > 1 {
-                            // Multi-character range with same length
-                            let mut result = Vec::new();
-                            let start_bytes = start.as_bytes();
-                            let end_bytes = end.as_bytes();
+                        let start_chars: Vec<char> = start.chars().collect();
+                        let end_chars: Vec<char> = end.chars().collect();
 
-                            fn generate_string_range(
-                                start: &[u8],
-                                end: &[u8],
-                                result: &mut Vec<RuntimeValue>,
-                            ) {
-                                if start.len() != end.len() {
-                                    return;
-                                }
-
-                                let mut current = start.to_vec();
-
-                                loop {
-                                    if let Ok(s) = String::from_utf8(current.clone()) {
-                                        result.push(RuntimeValue::String(s));
-                                    }
-
-                                    if current == end {
-                                        break;
-                                    }
-
-                                    // Increment the string lexicographically
-                                    let mut carry = true;
-                                    for i in (0..current.len()).rev() {
-                                        if carry {
-                                            if current[i] < 255 {
-                                                current[i] += 1;
-                                                carry = false;
-                                            } else {
-                                                current[i] = 0;
-                                            }
-                                        }
-                                    }
-
-                                    if carry {
-                                        break; // Overflow
-                                    }
-
-                                    // Check if we've exceeded the end
-                                    if current > end.to_vec() {
-                                        break;
-                                    }
-                                }
-                            }
-
-                            generate_string_range(start_bytes, end_bytes, &mut result);
-                            Ok(RuntimeValue::Array(result))
+                        if start_chars.len() == 1 && end_chars.len() == 1 {
+                            generate_char_range(start_chars[0], end_chars[0], None)
+                                .map(RuntimeValue::Array)
                         } else {
-                            Err(Error::Runtime(
-                                "String range requires strings of equal length".to_string(),
-                            ))
+                            generate_multi_char_range(start, end).map(RuntimeValue::Array)
                         }
                     }
                     // String range with step: range("a", "z", step)
@@ -965,36 +863,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         RuntimeValue::String(end),
                         RuntimeValue::Number(step),
                     ] => {
-                        let step = step.value() as i32;
-                        if step == 0 {
-                            return Err(Error::Runtime(
-                                "step for range must not be zero".to_string(),
-                            ));
-                        }
+                        let start_chars: Vec<char> = start.chars().collect();
+                        let end_chars: Vec<char> = end.chars().collect();
 
-                        if start.chars().count() == 1 && end.chars().count() == 1 {
-                            // Single character range with step
-                            let start_char = start.chars().next().unwrap() as u32;
-                            let end_char = end.chars().next().unwrap() as u32;
-                            let mut result = Vec::new();
-                            if step > 0 {
-                                let mut c = start_char as i32;
-                                while c <= end_char as i32 {
-                                    if let Some(ch) = std::char::from_u32(c as u32) {
-                                        result.push(RuntimeValue::String(ch.to_string()));
-                                    }
-                                    c += step;
-                                }
-                            } else {
-                                let mut c = start_char as i32;
-                                while c >= end_char as i32 {
-                                    if let Some(ch) = std::char::from_u32(c as u32) {
-                                        result.push(RuntimeValue::String(ch.to_string()));
-                                    }
-                                    c += step;
-                                }
-                            }
-                            Ok(RuntimeValue::Array(result))
+                        if start_chars.len() == 1 && end_chars.len() == 1 {
+                            let step_val = step.value() as i32;
+                            generate_char_range(start_chars[0], end_chars[0], Some(step_val))
+                                .map(RuntimeValue::Array)
                         } else {
                             Err(Error::Runtime(
                                 "String range with step is only supported for single characters"
@@ -3249,6 +3124,116 @@ fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     } else {
         Err(Error::InvalidRegularExpression(pattern.to_string()))
     }
+}
+
+#[inline(always)]
+fn generate_numeric_range(
+    start: isize,
+    end: isize,
+    step: isize,
+) -> Result<Vec<RuntimeValue>, Error> {
+    if step == 0 {
+        return Err(Error::Runtime(
+            "step for range must not be zero".to_string(),
+        ));
+    }
+
+    let mut result = Vec::new();
+    let mut current = start;
+
+    if step > 0 {
+        while current <= end {
+            result.push(RuntimeValue::Number(current.into()));
+            current += step;
+        }
+    } else {
+        while current >= end {
+            result.push(RuntimeValue::Number(current.into()));
+            current += step;
+        }
+    }
+
+    Ok(result)
+}
+
+#[inline(always)]
+fn generate_char_range(
+    start_char: char,
+    end_char: char,
+    step: Option<i32>,
+) -> Result<Vec<RuntimeValue>, Error> {
+    let step = step.unwrap_or(if start_char <= end_char { 1 } else { -1 });
+
+    if step == 0 {
+        return Err(Error::Runtime(
+            "step for range must not be zero".to_string(),
+        ));
+    }
+
+    let mut result = Vec::new();
+    let mut current = start_char as i32;
+    let end = end_char as i32;
+
+    if step > 0 {
+        while current <= end {
+            if let Some(ch) = char::from_u32(current as u32) {
+                result.push(RuntimeValue::String(ch.to_string()));
+            }
+            current += step;
+        }
+    } else {
+        while current >= end {
+            if let Some(ch) = char::from_u32(current as u32) {
+                result.push(RuntimeValue::String(ch.to_string()));
+            }
+            current += step;
+        }
+    }
+
+    Ok(result)
+}
+
+#[inline(always)]
+fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>, Error> {
+    if start.len() != end.len() {
+        return Err(Error::Runtime(
+            "String range requires strings of equal length".to_string(),
+        ));
+    }
+
+    let start_bytes = start.as_bytes();
+    let end_bytes = end.as_bytes();
+    let mut result = Vec::new();
+    let mut current = start_bytes.to_vec();
+
+    loop {
+        if let Ok(s) = String::from_utf8(current.clone()) {
+            result.push(RuntimeValue::String(s));
+        }
+
+        if current.as_slice() == end_bytes {
+            break;
+        }
+
+        // Lexicographic increment
+        let mut carry = true;
+        for byte in current.iter_mut().rev() {
+            if carry {
+                if *byte < 255 {
+                    *byte += 1;
+                    carry = false;
+                } else {
+                    *byte = 0;
+                }
+            }
+        }
+
+        if carry || current.as_slice() > end_bytes {
+            break;
+        }
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
