@@ -52,6 +52,14 @@ else:
 
 let client: lc.LanguageClient | null = null;
 
+const InputFormatMap = {
+  md: "markdown",
+  mdx: "mdx",
+  html: "html",
+  txt: "text",
+} as const;
+type InputFormat = keyof typeof InputFormatMap;
+
 export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.new", async () => {
@@ -101,10 +109,14 @@ export async function activate(context: vscode.ExtensionContext) {
         return null;
       }
 
-      const mdFiles = await vscode.workspace.findFiles("**/*.md");
+      const mdFiles = await vscode.workspace.findFiles(
+        "**/*.{md,mdx,html,txt}"
+      );
 
       if (mdFiles.length === 0) {
-        vscode.window.showInformationMessage("No .md files found in workspace");
+        vscode.window.showInformationMessage(
+          "No .md, .mdx, .html, or .txt files found in workspace"
+        );
         return;
       }
 
@@ -119,17 +131,62 @@ export async function activate(context: vscode.ExtensionContext) {
       });
 
       const selectedItem = await vscode.window.showQuickPick(items, {
-        placeHolder: "Select a .md file as input",
+        placeHolder: "Select a .md, .mdx, .html, or .txt file as input",
       });
 
       if (selectedItem) {
         const document = await vscode.workspace.openTextDocument(
           selectedItem.uri
         );
-        return await executeCommand("mq/run", command, document.getText());
+        const selectedFileExtension =
+          selectedItem.uri.fsPath.split(".").pop() || "";
+        const inputFormat = (
+          Object.keys(InputFormatMap) as Array<InputFormat>
+        ).includes(selectedFileExtension as InputFormat)
+          ? (selectedFileExtension as InputFormat)
+          : "md";
+        return await executeCommand(
+          "mq/run",
+          command,
+          document.getText(),
+          inputFormat
+        );
       } else {
         return await vscode.window.showInformationMessage("No file selected");
       }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.executeMqQuery", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage("No active editor");
+        return;
+      }
+
+      const query = await vscode.window.showInputBox({
+        prompt: "Enter mq query to execute",
+        placeHolder: "e.g. .[] | upcase()",
+      });
+
+      if (!query) {
+        vscode.window.showErrorMessage("No query entered");
+        return;
+      }
+      const currentFileExtension =
+        editor.document.uri.fsPath.split(".").pop() || "";
+      const inputFormat = (
+        Object.keys(InputFormatMap) as Array<InputFormat>
+      ).includes(currentFileExtension as InputFormat)
+        ? (currentFileExtension as InputFormat)
+        : "md";
+      await executeCommand(
+        "mq/run",
+        query,
+        editor.document.getText(),
+        inputFormat
+      );
     })
   );
 
@@ -149,7 +206,6 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const currentFileText = editor.document.getText();
-
       const items = mqFiles.map((uri) => {
         const relativePath = vscode.workspace.asRelativePath(uri);
         const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
@@ -168,7 +224,19 @@ export async function activate(context: vscode.ExtensionContext) {
         const document = await vscode.workspace.openTextDocument(
           selectedItem.uri
         );
-        await executeCommand("mq/run", document.getText(), currentFileText);
+        const currentFileExtension =
+          editor.document.uri.fsPath.split(".").pop() || "";
+        const inputFormat = (
+          Object.keys(InputFormatMap) as Array<InputFormat>
+        ).includes(currentFileExtension as InputFormat)
+          ? (currentFileExtension as InputFormat)
+          : "md";
+        await executeCommand(
+          "mq/run",
+          document.getText(),
+          currentFileText,
+          inputFormat
+        );
       } else {
         await vscode.window.showInformationMessage("No file selected");
       }
@@ -247,7 +315,8 @@ const selectedText = () => {
 const executeCommand = async (
   command: (typeof COMMANDS)[number],
   script: string,
-  input: string
+  input: string,
+  inputFormat: InputFormat
 ) => {
   if (!client) {
     vscode.window.showErrorMessage("LSP server is not running");
@@ -257,7 +326,7 @@ const executeCommand = async (
   try {
     const result = await client.sendRequest(lc.ExecuteCommandRequest.type, {
       command,
-      arguments: [script, input],
+      arguments: [script, input, inputFormat],
     });
 
     if (result) {
