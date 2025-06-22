@@ -271,6 +271,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::Lte
                     | TokenKind::Gt
                     | TokenKind::Gte
+                    | TokenKind::RangeOp
             ) {
                 let leading_trivia = self.parse_leading_trivia();
                 let operator_token = self.tokens.next().unwrap();
@@ -312,6 +313,11 @@ impl<'a> Parser<'a> {
                             kind: TokenKind::Gte,
                             ..
                         } => NodeKind::BinaryOp(BinaryOp::Gte),
+                        Token {
+                            range: _,
+                            kind: TokenKind::RangeOp,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::RangeOp),
                         _ => unreachable!(),
                     },
                     token: Some(Arc::clone(operator_token)),
@@ -3412,6 +3418,41 @@ mod tests {
                 Arc::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::Gte),
                     token: Some(Arc::new(token(TokenKind::Gte))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::range(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::RangeOp)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::RangeOp),
+                    token: Some(Arc::new(token(TokenKind::RangeOp))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![

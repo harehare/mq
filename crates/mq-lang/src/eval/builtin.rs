@@ -880,61 +880,127 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         }
                         Ok(RuntimeValue::Array(result))
                     }
-                    // String range: range("a", "z") or range("A", "Z")
-                    [RuntimeValue::String(start), RuntimeValue::String(end)]
-                        if start.chars().count() == 1 && end.chars().count() == 1 =>
-                    {
-                        let start_char = start.chars().next().unwrap();
-                        let end_char = end.chars().next().unwrap();
-                        let mut result = Vec::new();
-                        if start_char <= end_char {
-                            for c in start_char as u32..=end_char as u32 {
-                                if let Some(ch) = std::char::from_u32(c) {
-                                    result.push(RuntimeValue::String(ch.to_string()));
+                    // String range: range("a", "z") or range("A", "Z") or range("aa", "zz")
+                    [RuntimeValue::String(start), RuntimeValue::String(end)] => {
+                        if start.chars().count() == 1 && end.chars().count() == 1 {
+                            // Single character range
+                            let start_char = start.chars().next().unwrap();
+                            let end_char = end.chars().next().unwrap();
+                            let mut result = Vec::new();
+                            if start_char <= end_char {
+                                for c in start_char as u32..=end_char as u32 {
+                                    if let Some(ch) = std::char::from_u32(c) {
+                                        result.push(RuntimeValue::String(ch.to_string()));
+                                    }
+                                }
+                            } else {
+                                for c in (end_char as u32..=start_char as u32).rev() {
+                                    if let Some(ch) = std::char::from_u32(c) {
+                                        result.push(RuntimeValue::String(ch.to_string()));
+                                    }
                                 }
                             }
+                            Ok(RuntimeValue::Array(result))
+                        } else if start.len() == end.len() && start.len() > 1 {
+                            // Multi-character range with same length
+                            let mut result = Vec::new();
+                            let start_bytes = start.as_bytes();
+                            let end_bytes = end.as_bytes();
+
+                            fn generate_string_range(
+                                start: &[u8],
+                                end: &[u8],
+                                result: &mut Vec<RuntimeValue>,
+                            ) {
+                                if start.len() != end.len() {
+                                    return;
+                                }
+
+                                let mut current = start.to_vec();
+
+                                loop {
+                                    if let Ok(s) = String::from_utf8(current.clone()) {
+                                        result.push(RuntimeValue::String(s));
+                                    }
+
+                                    if current == end {
+                                        break;
+                                    }
+
+                                    // Increment the string lexicographically
+                                    let mut carry = true;
+                                    for i in (0..current.len()).rev() {
+                                        if carry {
+                                            if current[i] < 255 {
+                                                current[i] += 1;
+                                                carry = false;
+                                            } else {
+                                                current[i] = 0;
+                                            }
+                                        }
+                                    }
+
+                                    if carry {
+                                        break; // Overflow
+                                    }
+
+                                    // Check if we've exceeded the end
+                                    if current > end.to_vec() {
+                                        break;
+                                    }
+                                }
+                            }
+
+                            generate_string_range(start_bytes, end_bytes, &mut result);
+                            Ok(RuntimeValue::Array(result))
                         } else {
-                            for c in (end_char as u32..=start_char as u32).rev() {
-                                if let Some(ch) = std::char::from_u32(c) {
-                                    result.push(RuntimeValue::String(ch.to_string()));
-                                }
-                            }
+                            Err(Error::Runtime(
+                                "String range requires strings of equal length".to_string(),
+                            ))
                         }
-                        Ok(RuntimeValue::Array(result))
                     }
                     // String range with step: range("a", "z", step)
                     [
                         RuntimeValue::String(start),
                         RuntimeValue::String(end),
                         RuntimeValue::Number(step),
-                    ] if start.chars().count() == 1 && end.chars().count() == 1 => {
-                        let start_char = start.chars().next().unwrap() as u32;
-                        let end_char = end.chars().next().unwrap() as u32;
+                    ] => {
                         let step = step.value() as i32;
                         if step == 0 {
                             return Err(Error::Runtime(
                                 "step for range must not be zero".to_string(),
                             ));
                         }
-                        let mut result = Vec::new();
-                        if step > 0 {
-                            let mut c = start_char as i32;
-                            while c <= end_char as i32 {
-                                if let Some(ch) = std::char::from_u32(c as u32) {
-                                    result.push(RuntimeValue::String(ch.to_string()));
+
+                        if start.chars().count() == 1 && end.chars().count() == 1 {
+                            // Single character range with step
+                            let start_char = start.chars().next().unwrap() as u32;
+                            let end_char = end.chars().next().unwrap() as u32;
+                            let mut result = Vec::new();
+                            if step > 0 {
+                                let mut c = start_char as i32;
+                                while c <= end_char as i32 {
+                                    if let Some(ch) = std::char::from_u32(c as u32) {
+                                        result.push(RuntimeValue::String(ch.to_string()));
+                                    }
+                                    c += step;
                                 }
-                                c += step;
+                            } else {
+                                let mut c = start_char as i32;
+                                while c >= end_char as i32 {
+                                    if let Some(ch) = std::char::from_u32(c as u32) {
+                                        result.push(RuntimeValue::String(ch.to_string()));
+                                    }
+                                    c += step;
+                                }
                             }
+                            Ok(RuntimeValue::Array(result))
                         } else {
-                            let mut c = start_char as i32;
-                            while c >= end_char as i32 {
-                                if let Some(ch) = std::char::from_u32(c as u32) {
-                                    result.push(RuntimeValue::String(ch.to_string()));
-                                }
-                                c += step;
-                            }
+                            Err(Error::Runtime(
+                                "String range with step is only supported for single characters"
+                                    .to_string(),
+                            ))
                         }
-                        Ok(RuntimeValue::Array(result))
                     }
                     _ => Err(Error::InvalidTypes(
                         ident.to_string(),

@@ -973,6 +973,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::lte("1 <= 2", "<=", SymbolKind::BinaryOp)]
     #[case::gt("1 > 2", ">", SymbolKind::BinaryOp)]
     #[case::gte("1 >= 2", ">=", SymbolKind::BinaryOp)]
+    #[case::range_op("1..2", "..", SymbolKind::BinaryOp)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

@@ -5,9 +5,8 @@ use compact_str::CompactString;
 use error::LexerError;
 use nom::Parser;
 use nom::bytes::complete::{is_not, take_until};
-use nom::character::complete::line_ending;
-use nom::combinator::opt;
-use nom::number::complete::double;
+use nom::character::complete::{digit1, line_ending};
+use nom::combinator::{cut, opt};
 use nom::{
     IResult,
     branch::alt,
@@ -184,6 +183,7 @@ define_token_parser!(none, "None", TokenKind::None);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(question, "?", TokenKind::Question);
+define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(self_, "self", TokenKind::Self_);
@@ -198,7 +198,7 @@ define_token_parser!(gte, ">=", TokenKind::Gte);
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
         l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, ne_eq, lte, gte,
-        lt, gt, equal, plus, pipe, question,
+        lt, gt, equal, plus, pipe, question, range_op,
     ))
     .parse(input)
 }
@@ -211,16 +211,33 @@ fn keywords(input: Span) -> IResult<Span, Token> {
 }
 
 fn number_literal(input: Span) -> IResult<Span, Token> {
-    map_res(recognize(pair(opt(char('-')), double)), |span: Span| {
-        str::parse(span.fragment()).map(|s| {
-            let module_id = span.extra;
-            Token {
-                range: span.into(),
-                kind: TokenKind::NumberLiteral(Number::new(s)),
-                module_id,
-            }
-        })
-    })
+    map_res(
+        recognize(pair(
+            opt(char('-')),
+            recognize((
+                opt(alt((char('+'), char('-')))),
+                alt((
+                    map((digit1, opt(pair(char('.'), digit1))), |_| ()),
+                    map((char('.'), digit1), |_| ()),
+                )),
+                opt((
+                    alt((char('e'), char('E'))),
+                    opt(alt((char('+'), char('-')))),
+                    cut(digit1),
+                )),
+            )),
+        )),
+        |span: Span| {
+            str::parse(span.fragment()).map(|s| {
+                let module_id = span.extra;
+                Token {
+                    range: span.into(),
+                    kind: TokenKind::NumberLiteral(Number::new(s)),
+                    module_id,
+                }
+            })
+        },
+    )
     .parse(input)
 }
 
