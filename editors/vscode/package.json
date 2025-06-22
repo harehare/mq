@@ -81,6 +81,10 @@
       {
         "command": "mq.executeMqFile",
         "title": "mq: Execute mq file"
+      },
+      {
+        "command": "mq.executeMqQuery",
+        "title": "mq: Execute query"
       }
     ],
     "configuration": {
