@@ -2852,8 +2852,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
         map.insert(
             CompactString::new("range"),
             BuiltinFunctionDoc {
-            description: "Creates an array from start (inclusive) to end (exclusive) with an optional step.",
-            params: &["start", "end", "step"],
+                description: "Creates an array from start to end with an optional step.",
+                params: &["start", "end", "step"],
             },
         );
         map
