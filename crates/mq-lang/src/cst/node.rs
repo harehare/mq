@@ -109,6 +109,7 @@ pub enum BinaryOp {
     Lte,
     Gt,
     Gte,
+    RangeOp,
 }
 
 impl Display for Node {

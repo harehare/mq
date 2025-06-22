@@ -125,6 +125,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::Lte
                     | TokenKind::Gt
                     | TokenKind::Gte
+                    | TokenKind::RangeOp
             ) {
                 let operator_token = self.tokens.next().unwrap();
                 let operator_token_id = self
@@ -146,6 +147,7 @@ impl<'a> Parser<'a> {
                     TokenKind::Lte => "lte",
                     TokenKind::Gt => "gt",
                     TokenKind::Gte => "gte",
+                    TokenKind::RangeOp => "range",
                     _ => unreachable!(),
                 };
 
@@ -292,6 +294,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Lte)
             | Some(TokenKind::Gt)
             | Some(TokenKind::Gte)
+            | Some(TokenKind::RangeOp)
             | None => Ok(literal_node),
             Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
         }
@@ -327,6 +330,7 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::Lte)
                     | Some(TokenKind::Gt)
                     | Some(TokenKind::Gte)
+                    | Some(TokenKind::RangeOp)
                     | Some(TokenKind::Comment(_))
                     | None => Ok(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -355,6 +359,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Lte)
             | Some(TokenKind::Gt)
             | Some(TokenKind::Gte)
+            | Some(TokenKind::RangeOp)
             | Some(TokenKind::Comment(_))
             | None => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),

@@ -162,6 +162,13 @@ impl Formatter {
 
                 match &**node {
                     mq_lang::CstNode {
+                        kind: mq_lang::CstNodeKind::BinaryOp(mq_lang::CstBinaryOp::RangeOp),
+                        token: Some(token),
+                        ..
+                    } => {
+                        self.output.push_str(format!("{}", token).as_str());
+                    }
+                    mq_lang::CstNode {
                         kind: mq_lang::CstNodeKind::BinaryOp(_),
                         token: Some(token),
                         ..
@@ -186,7 +193,6 @@ impl Formatter {
     ) {
         let is_prev_pipe = self.is_prev_pipe();
         let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
-        dbg!(&indent_adjustment);
 
         if node.has_new_line() {
             self.append_indent(indent_level);
@@ -783,6 +789,10 @@ process();"#,
     #[case::less_than_equal_operator("let x = 1 <= 2", "let x = 1 <= 2")]
     #[case::greater_than_operator("let x = 2 > 1", "let x = 2 > 1")]
     #[case::greater_than_equal_operator("let x = 2 >= 1", "let x = 2 >= 1")]
+    #[case::range_operator("1..1", "1..1")]
+    #[case::range_operator_with_spaces("1 .. 1", "1..1")]
+    #[case::range_operator_with_variables("x..y", "x..y")]
+    #[case::range_operator_with_string(r#""1" .. "2""#, r#""1".."2""#)]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

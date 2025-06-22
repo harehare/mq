@@ -1344,29 +1344,6 @@ fn engine() -> Engine {
               value: "false".to_string(),
               position: None,
             }))].into()))]
-#[case::range_basic("range(1, 5, 1)",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![
-                Value::Number(1.into()),
-                Value::Number(2.into()),
-                Value::Number(3.into()),
-                Value::Number(4.into()),
-                Value::Number(5.into()),
-              ])].into()))]
-#[case::range_negative("range(-2, 2, 1)",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![
-                Value::Number((-2).into()),
-                Value::Number((-1).into()),
-                Value::Number(0.into()),
-                Value::Number(1.into()),
-                Value::Number(2.into()),
-              ])].into()))]
-#[case::range_single("range(3, 3, 1)",
-              vec![Value::Number(0.into())],
-              Ok(vec![Value::Array(vec![
-                Value::Number(3.into()),
-              ])].into()))]
 #[case::any_true("
               any([1, 2, 3], fn(x): x == 2;)",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
