@@ -10,6 +10,13 @@ mq-crawler is a web crawler that fetches HTML content from websites, converts it
 - **Configurable crawling**: Customizable delays, domain restrictions, and link discovery
 - **Flexible output**: Save to files or output to stdout
 
+## Installation
+
+```sh
+# Using Homebrew (macOS and Linux)
+$ brew install harehare/tap/mqcr
+```
+
 ## Usage
 
 ```bash

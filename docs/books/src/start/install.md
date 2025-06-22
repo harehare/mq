@@ -63,11 +63,19 @@ See the [MCP documentation](https://github.com/harehare/mq/blob/main/crates/mq-m
 
 ## Python
 
-You can use mq in Python through the `markdown-query` package:
+You can use mq in Python through the [`markdown-query`](https://pypi.org/project/markdown-query/) package:
 
 ```sh
 # Install from PyPI
-pip install markdown-query
+$ pip install markdown-query
+```
+
+## npm
+
+You can use mq in npm through the [`mq-web`](https://www.npmjs.com/package/mq-web) package:
+
+```sh
+$ npm i mq-web
 ```
 
 ## Web crawler
