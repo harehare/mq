@@ -22,9 +22,9 @@ pub fn response(
             .as_slice()
         {
             [Some(command), Some(input), Some(input_format)] => {
-                execute(&command, input, Some(input_format))
+                execute(command, input, Some(input_format))
             }
-            [Some(command), Some(input)] => execute(&command, input, None),
+            [Some(command), Some(input)] => execute(command, input, None),
             _ => Err(tower_lsp::jsonrpc::Error {
                 code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
                 message: Cow::Owned("Invalid arguments".to_string()),
