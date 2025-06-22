@@ -3138,7 +3138,7 @@ fn generate_numeric_range(
         ));
     }
 
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(((end - start) / step).unsigned_abs() + 1);
     let mut current = start;
 
     if step > 0 {
@@ -3170,7 +3170,8 @@ fn generate_char_range(
         ));
     }
 
-    let mut result = Vec::new();
+    let capacity = (end_char as i32 - start_char as i32).unsigned_abs() as usize + 1;
+    let mut result = Vec::with_capacity(capacity);
     let mut current = start_char as i32;
     let end = end_char as i32;
 
@@ -3203,7 +3204,12 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
 
     let start_bytes = start.as_bytes();
     let end_bytes = end.as_bytes();
-    let mut result = Vec::new();
+    let mut result = Vec::with_capacity(
+        (end_bytes.iter().zip(start_bytes.iter()))
+            .map(|(e, s)| e.max(s) - e.min(s))
+            .sum::<u8>() as usize
+            + 1,
+    );
     let mut current = start_bytes.to_vec();
 
     loop {
