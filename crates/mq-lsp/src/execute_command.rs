@@ -21,42 +21,10 @@ pub fn response(
             .collect::<Vec<_>>()
             .as_slice()
         {
-            [Some(command), Some(input)] => {
-                let mut engine = mq_lang::Engine::default();
-                let input = mq_markdown::Markdown::from_markdown_str(input)
-                    .map(|markdown| {
-                        markdown
-                            .nodes
-                            .into_iter()
-                            .map(mq_lang::Value::from)
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]);
-
-                engine.load_builtin_module();
-                let result = engine.eval(command, input.into_iter());
-
-                match result {
-                    Ok(values) => {
-                        let markdown = mq_markdown::Markdown::new(
-                            values
-                                .into_iter()
-                                .map(|value| match value {
-                                    mq_lang::Value::Markdown(node) => node.clone(),
-                                    _ => value.to_string().into(),
-                                })
-                                .collect(),
-                        );
-
-                        Ok(Some(markdown.to_string().into()))
-                    }
-                    Err(e) => Err(tower_lsp::jsonrpc::Error {
-                        code: tower_lsp::jsonrpc::ErrorCode::InternalError,
-                        message: Cow::Owned(format!("Error: {}", e)),
-                        data: None,
-                    }),
-                }
+            [Some(command), Some(input), Some(input_format)] => {
+                execute(&command, input, Some(input_format))
             }
+            [Some(command), Some(input)] => execute(&command, input, None),
             _ => Err(tower_lsp::jsonrpc::Error {
                 code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
                 message: Cow::Owned("Invalid arguments".to_string()),
@@ -70,6 +38,59 @@ pub fn response(
         }),
     }
 }
+
+fn execute(
+    query: &str,
+    input: &str,
+    input_format: Option<&str>,
+) -> Result<Option<serde_json::Value>> {
+    let mut engine = mq_lang::Engine::default();
+    let input = match input_format.unwrap_or("markdown") {
+        "markdown" => mq_lang::parse_markdown_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+        "mdx" => mq_lang::parse_mdx_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+        "html" => mq_lang::parse_html_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+        "text" => mq_lang::parse_text_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+        _ => {
+            return Err(tower_lsp::jsonrpc::Error {
+                code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+                message: Cow::Owned(format!(
+                    "Unsupported input format: {}",
+                    input_format.unwrap_or("unknown")
+                )),
+                data: None,
+            });
+        }
+    };
+
+    engine.load_builtin_module();
+    let result = engine.eval(query, input.into_iter());
+
+    match result {
+        Ok(values) => {
+            let markdown = mq_markdown::Markdown::new(
+                values
+                    .into_iter()
+                    .map(|value| match value {
+                        mq_lang::Value::Markdown(node) => node.clone(),
+                        _ => value.to_string().into(),
+                    })
+                    .collect(),
+            );
+
+            Ok(Some(markdown.to_string().into()))
+        }
+        Err(e) => Err(tower_lsp::jsonrpc::Error {
+            code: tower_lsp::jsonrpc::ErrorCode::InternalError,
+            message: Cow::Owned(format!("Error: {}", e)),
+            data: None,
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
