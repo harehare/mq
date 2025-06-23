@@ -63,15 +63,15 @@
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://mqlang.org/book/reference/pipe_operator</loc>
+  <loc>https://mqlang.org/book/reference/comments</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://mqlang.org/book/reference/q_operator</loc>
+  <loc>https://mqlang.org/book/reference/control_flow</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://mqlang.org/book/reference/env</loc>
+  <loc>https://mqlang.org/book/reference/operators</loc>
   <priority>1.0</priority>
 </url>
 <url>
@@ -79,31 +79,11 @@
   <priority>1.0</priority>
 </url>
 <url>
+  <loc>https://mqlang.org/book/reference/env</loc>
+  <priority>1.0</priority>
+</url>
+<url>
   <loc>https://mqlang.org/book/reference/fn</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/let</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/if</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/while</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/until</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/foreach</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/comments</loc>
   <priority>1.0</priority>
 </url>
 <url>
@@ -111,15 +91,19 @@
   <priority>1.0</priority>
 </url>
 <url>
+  <loc>https://mqlang.org/book/reference/let</loc>
+  <priority>1.0</priority>
+</url>
+<url>
   <loc>https://mqlang.org/book/reference/self</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://mqlang.org/book/reference/nodes</loc>
+  <loc>https://mqlang.org/book/reference/string_interpolation</loc>
   <priority>1.0</priority>
 </url>
 <url>
-  <loc>https://mqlang.org/book/reference/string_interpolation</loc>
+  <loc>https://mqlang.org/book/reference/nodes</loc>
   <priority>1.0</priority>
 </url>
 <url>
