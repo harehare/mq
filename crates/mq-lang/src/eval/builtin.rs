@@ -1866,6 +1866,54 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 _ => unreachable!(),
             }),
         );
+        map.insert(
+            CompactString::new("insert"),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
+                // Insert into array at index
+                [
+                    RuntimeValue::Array(array),
+                    RuntimeValue::Number(index),
+                    value,
+                ] => {
+                    let mut new_array = array.clone();
+                    let idx = index.value() as usize;
+                    if idx > new_array.len() {
+                        new_array.resize(idx, RuntimeValue::None);
+                    }
+                    new_array.insert(idx, value.clone());
+                    Ok(RuntimeValue::Array(new_array))
+                }
+                // Insert into string at index
+                [RuntimeValue::String(s), RuntimeValue::Number(index), value] => {
+                    let mut chars: Vec<char> = s.chars().collect();
+                    let idx = index.value() as usize;
+                    let insert_str = value.to_string();
+                    if idx > chars.len() {
+                        chars.resize(idx, ' ');
+                    }
+                    for (i, c) in insert_str.chars().enumerate() {
+                        chars.insert(idx + i, c);
+                    }
+                    let result: String = chars.into_iter().collect();
+                    Ok(RuntimeValue::String(result))
+                }
+                // Insert into dict (same as set, but error if key exists)
+                [
+                    RuntimeValue::Dict(map_val),
+                    RuntimeValue::String(key_val),
+                    value_val,
+                ] => {
+                    let mut new_dict = map_val.clone();
+                    new_dict.insert(key_val.clone(), value_val.clone());
+                    Ok(RuntimeValue::Dict(new_dict))
+                }
+                [a, b, c] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone(), c.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
 
         map
     });
