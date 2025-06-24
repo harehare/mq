@@ -200,6 +200,7 @@ impl<'a> Parser<'a> {
                     .map_err(|_| ParseError::EnvNotFound((*token).clone(), CompactString::new(s)))
                     .map(|s| Rc::new(Expr::Literal(Literal::String(s.to_owned()))))?,
             })),
+            TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
     }
@@ -273,6 +274,7 @@ impl<'a> Parser<'a> {
                     .alloc(Rc::clone(&literal_token)),
                 expr: Rc::new(Expr::Literal(Literal::None)),
             })),
+            TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*literal_token).clone())),
         }?;
 
@@ -861,10 +863,12 @@ impl<'a> Parser<'a> {
             prev_token = Some(token);
 
             if let Some(token) = self.tokens.peek() {
-                if !matches!(token.kind, TokenKind::RParen)
-                    && !matches!(token.kind, TokenKind::Comma)
-                {
-                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                if !matches!(token.kind, TokenKind::RParen | TokenKind::Comma) {
+                    if matches!(token.kind, TokenKind::Eof) {
+                        return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                    } else {
+                        return Err(ParseError::UnexpectedToken((***token).clone()));
+                    }
                 }
             }
         }
