@@ -1,0 +1,305 @@
+/* mq Theme - Inspired by Nushell book styling */
+
+:root {
+    /* mq brand colors from logo */
+    --mq-primary: #2B5773;
+    --mq-secondary: #61AFEF;
+    --mq-accent: #4A90E2;
+
+    /* Light theme */
+    --bg: #ffffff;
+    --fg: #333333;
+    --sidebar-bg: #ffffff;
+    --sidebar-fg: #364149;
+    --sidebar-non-existent: #aaaaaa;
+    --sidebar-active: var(--mq-primary);
+    --sidebar-spacer: #f4f4f4;
+    --scrollbar: #cccccc;
+    --icons: #747474;
+    --icons-hover: var(--mq-primary);
+    --links: var(--mq-secondary);
+    --inline-code-color: var(--mq-primary);
+    --theme-popup-bg: #fafafa;
+    --theme-popup-border: #cccccc;
+    --theme-hover: #e6e6e6;
+    --quote-bg: #f4f4f4;
+    --quote-border: var(--mq-accent);
+    --table-border-color: #b3c6d4;
+    --table-header-bg: #eaf4fb;
+    --table-alternate-bg: #f9f9f9;
+    --searchbar-border-color: #cccccc;
+    --searchbar-bg: #ffffff;
+    --searchbar-fg: #333333;
+    --searchbar-shadow-color: rgba(0, 0, 0, 0.1);
+    --searchresults-header-fg: #666666;
+    --searchresults-border-color: #cccccc;
+    --searchresults-li-bg: #ffffff;
+    --search-mark-bg: var(--mq-secondary);
+    --color-scheme: light;
+    --content-max-width: 1024px;
+}
+
+.navy {
+    /* Dark theme */
+    --bg: #1b1b1f;
+    --fg: #c8c8c8;
+    --sidebar-bg: #1b1b1f;
+    --sidebar-fg: #c8c8c8;
+    --sidebar-non-existent: #5c5c68;
+    --sidebar-active: var(--mq-secondary);
+    --sidebar-spacer: #21212f;
+    --scrollbar: #454545;
+    --icons: #737373;
+    --icons-hover: var(--mq-secondary);
+    --links: var(--mq-secondary);
+    --inline-code-color: var(--mq-secondary);
+    --theme-popup-bg: #16161a;
+    --theme-popup-border: #454545;
+    --theme-hover: #1f1f23;
+    --quote-bg: #21212f;
+    --quote-border: var(--mq-accent);
+    --table-border-color: #454545;
+    --table-header-bg: #21212f;
+    --table-alternate-bg: #1f1f23;
+    --searchbar-border-color: #454545;
+    --searchbar-bg: #21212f;
+    --searchbar-fg: #c8c8c8;
+    --searchbar-shadow-color: rgba(0, 0, 0, 0.3);
+    --searchresults-header-fg: #999999;
+    --searchresults-border-color: #454545;
+    --searchresults-li-bg: #21212f;
+    --search-mark-bg: var(--mq-primary);
+    --color-scheme: dark;
+}
+
+/* Header styling */
+#menu-bar {
+    background-color: var(--bg);
+    border-bottom: 1px solid var(--theme-popup-border);
+}
+
+.menu-title {
+    color: var(--fg) !important;
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: -0.02em;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    display: inline-block;
+}
+
+.menu-title:hover {
+    color: var(--mq-secondary) !important;
+    transform: translateY(-1px);
+    text-shadow: 0 2px 8px rgba(97, 175, 239, 0.2);
+}
+
+.menu-title::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--mq-primary), var(--mq-secondary));
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.menu-title:hover::after {
+    width: 100%;
+}
+
+/* Subtle fade-in animation on page load */
+@keyframes titleFadeIn {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.menu-title {
+    animation: titleFadeIn 0.6s ease-out;
+}
+
+/* Sidebar enhancements */
+.sidebar {
+    background-color: var(--sidebar-bg);
+    border-right: 1px solid var(--table-border-color);
+}
+
+.sidebar .sidebar-scrollbox {
+    padding-top: 10px;
+}
+
+.chapter-item {
+    padding: 5px 15px;
+}
+
+.chapter-item.expanded>.toggle {
+    color: var(--mq-primary);
+}
+
+.chapter-item>a.active {
+    color: var(--mq-primary);
+}
+
+.chapter-item>a:hover {
+    background-color: var(--theme-hover);
+    border-radius: 3px;
+}
+
+/* Content styling */
+.page {
+    background-color: var(--bg);
+    color: var(--fg);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--mq-primary);
+}
+
+/* Links */
+a {
+    color: var(--links);
+}
+
+a:hover {
+    color: var(--mq-primary);
+    text-decoration: underline;
+}
+
+/* Code blocks */
+pre {
+    background-color: var(--quote-bg);
+    border: 1px solid var(--table-border-color);
+    border-radius: 4px;
+}
+
+code {
+    background-color: var(--quote-bg);
+    color: var(--inline-code-color);
+    border-radius: 2px;
+    padding: 2px 4px;
+}
+
+/* Blockquotes */
+blockquote {
+    background-color: var(--quote-bg);
+    border-left: 4px solid var(--quote-border);
+    margin: 20px 0;
+    padding: 10px 20px;
+    border-radius: 0 4px 4px 0;
+}
+
+/* Tables */
+table {
+    border-collapse: collapse;
+    margin: 20px 0;
+    width: 100%;
+}
+
+table th {
+    background-color: var(--table-header-bg);
+    border: 1px solid var(--table-border-color);
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+}
+
+table td {
+    border: 1px solid var(--table-border-color);
+    padding: 8px 12px;
+}
+
+table tbody tr:nth-child(even) {
+    background-color: var(--table-alternate-bg);
+}
+
+/* Search styling */
+#searchbar {
+    border: 1px solid var(--searchbar-border-color);
+    background-color: var(--searchbar-bg);
+    color: var(--searchbar-fg);
+    border-radius: 4px;
+}
+
+#searchbar:focus {
+    border-color: var(--mq-secondary);
+    box-shadow: 0 0 0 2px rgba(97, 175, 239, 0.2);
+}
+
+/* Navigation buttons */
+.nav-chapters {
+    background-color: var(--bg);
+}
+
+.nav-chapters a {
+    color: var(--mq-primary);
+    background-color: var(--theme-hover);
+    border-radius: 4px;
+    padding: 8px 12px;
+    transition: all 0.2s ease;
+}
+
+.nav-chapters a:hover {
+    background-color: var(--mq-primary);
+    color: white;
+    text-decoration: none;
+}
+
+/* Custom logo styling in sidebar */
+.sidebar .sidebar-scrollbox::before {
+    content: "";
+    display: block;
+    width: 60px;
+    height: 60px;
+    margin: 10px auto 20px;
+    background-image: url("../src/images/logo.svg");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .sidebar .sidebar-scrollbox::before {
+        width: 40px;
+        height: 40px;
+        margin: 10px auto 15px;
+    }
+}
+
+/* Print styles */
+@media print {
+    .sidebar .sidebar-scrollbox::before {
+        display: none;
+    }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--mq-primary);
+}
