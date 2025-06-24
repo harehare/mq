@@ -262,7 +262,6 @@ impl Cli {
                     })
                     .collect::<VecDeque<_>>();
 
-                doc_csv.push_front(mq_lang::Value::String("---\t---\t---\t---".to_string()));
                 doc_csv.push_front(mq_lang::Value::String(
                     ["Function Name", "Description", "Parameters", "Example"]
                         .iter()
@@ -271,7 +270,7 @@ impl Cli {
 
                 let mut engine = self.create_engine()?;
                 let doc_values = engine
-                    .eval("nodes | tsv2table()", doc_csv.into_iter())
+                    .eval("nodes | tsv2table_with_header()", doc_csv.into_iter())
                     .map_err(|e| *e)?;
                 self.print(doc_values)?;
 
