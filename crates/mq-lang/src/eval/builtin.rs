@@ -2904,6 +2904,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
                 params: &["start", "end", "step"],
             },
         );
+        map.insert(
+            CompactString::new("insert"),
+            BuiltinFunctionDoc {
+            description: "Inserts a value into an array or string at the specified index, or into a dict with the specified key.",
+            params: &["target", "index_or_key", "value"],
+            },
+        );
         map
     });
 
