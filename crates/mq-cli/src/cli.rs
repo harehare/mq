@@ -95,8 +95,8 @@ struct InputArgs {
     from_file: bool,
 
     /// Set input format
-    #[arg(short = 'I', long, value_enum, default_value_t)]
-    input_format: InputFormat,
+    #[arg(short = 'I', long, value_enum)]
+    input_format: Option<InputFormat>,
 
     /// Search modules from the directory
     #[arg(short = 'L', long = "directory")]
@@ -183,7 +183,9 @@ impl Cli {
             return Cli::command().print_help().into_diagnostic();
         }
 
-        if !matches!(self.input.input_format, InputFormat::Markdown) && self.output.update {
+        if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None)
+            && self.output.update
+        {
             return Err(miette!(
                 "The output format is not supported for the update option"
             ));
@@ -358,7 +360,25 @@ impl Cli {
             engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
         }
 
-        let input = match self.input.input_format {
+        let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
+            if let Some(file) = file {
+                match file
+                    .extension()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .as_str()
+                {
+                    "md" | "markdown" => &InputFormat::Markdown,
+                    "mdx" => &InputFormat::Mdx,
+                    "html" | "htm" => &InputFormat::Html,
+                    "txt" | "csv" | "tsv" => &InputFormat::Text,
+                    _ => &InputFormat::Markdown,
+                }
+            } else {
+                &InputFormat::Markdown
+            }
+        }) {
             InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
             InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
             InputFormat::Text => mq_lang::parse_text_input(content)?,
@@ -397,7 +417,7 @@ impl Cli {
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
-        if matches!(self.input.input_format, InputFormat::Null) {
+        if matches!(self.input.input_format, Some(InputFormat::Null)) {
             return Ok(vec![(None, "".to_string())]);
         }
 
@@ -498,7 +518,7 @@ mod tests {
     fn test_cli_null_input() {
         let cli = Cli {
             input: InputArgs {
-                input_format: InputFormat::Null,
+                input_format: Some(InputFormat::Null),
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -524,7 +544,7 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: InputFormat::Text,
+                input_format: Some(InputFormat::Text),
                 ..Default::default()
             },
             output: OutputArgs::default(),
