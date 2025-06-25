@@ -184,6 +184,32 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = mq_test::create_file(
+        "test_cli_run_with_query_from_file.mq",
+        r#".h | select(contains("title")?)"#,
+    );
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = Command::cargo_bin("mq")?;
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--from-file")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .write_stdin("# **title**\n\n- test1\n- test2")
+        .assert();
+
+    assert.success().code(0).stdout("# **title**\n");
+    Ok(())
+}
+
+#[test]
 fn test_cli_run_with_csv_input() -> Result<(), Box<dyn std::error::Error>> {
     let csv_content = "name,age\nAlice,30\nBob,25";
     let (_, temp_file_path) = mq_test::create_file("test_cli_run_with_csv_input.csv", csv_content);
@@ -284,11 +310,30 @@ In {year}, the snowfall was above average.
 }
 
 #[test]
-fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>> {
-    let (_, temp_file_path) = mq_test::create_file(
-        "test_cli_run_with_query_from_file.mq",
-        r#".h | select(contains("title")?)"#,
-    );
+fn test_cli_sections_n_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
+    let markdown_content = r#"
+# Section 1
+
+Content of section 1.
+
+## Subsection 1.1
+
+Content of subsection 1.1.
+
+## Subsection 1.2
+
+Content of subsection 1.2.
+
+# Section 2
+
+Content of section 2.
+
+# Section 3
+
+Content of section 3.
+"#;
+    let (_, temp_file_path) =
+        mq_test::create_file("test_cli_sections_n_with_file_input.md", markdown_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -297,14 +342,33 @@ fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>>
         }
     }
 
+    // Test extracting top-level sections (n=1)
     let mut cmd = Command::cargo_bin("mq")?;
     let assert = cmd
         .arg("--unbuffered")
-        .arg("--from-file")
+        .arg("nodes | sections(1)")
         .arg(temp_file_path.to_string_lossy().to_string())
-        .write_stdin("# **title**\n\n- test1\n- test2")
         .assert();
 
-    assert.success().code(0).stdout("# **title**\n");
+    let expected =
+        "[# Section 1, Content of section 1., ## Subsection 1.1, Content of subsection 1.1., ## Subsection 1.2, Content of subsection 1.2.]
+[# Section 2, Content of section 2.]
+[# Section 3, Content of section 3.]
+";
+    assert.success().code(0).stdout(expected);
+
+    // Test extracting second-level sections (n=2)
+    let mut cmd = Command::cargo_bin("mq")?;
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("nodes | sections(2)")
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    let expected = "[## Subsection 1.1, Content of subsection 1.1.]
+[## Subsection 1.2, Content of subsection 1.2., # Section 2, Content of section 2., # Section 3, Content of section 3.]
+";
+    assert.success().code(0).stdout(expected);
+
     Ok(())
 }
