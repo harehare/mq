@@ -137,8 +137,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -205,7 +205,7 @@ $ mq 'or(.[], .h) | select(contains("name"))'
 # Exclude js code
 $ mq 'select(not(.code("js")))'
 # CSV to markdown table
-$ mq 'nodes | csv2table()'
+$ mq 'nodes | csv2table()' example.csv
 ```
 
 ### Advanced Usage
@@ -220,9 +220,9 @@ $ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am $
 # Merging Multiple Files
 $ mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
 # Extract all code blocks from an HTML file
-$ mq -I html '.code' example.html
+$ mq '.code' example.html
 # Convert HTML to Markdown and filter headers
-$ mq -I html 'select(or(.h1, .h2))' example.html
+$ mq 'select(or(.h1, .h2))' example.html
 ```
 
 This allows you to seamlessly convert and query HTML content using mq's Markdown processing features.
