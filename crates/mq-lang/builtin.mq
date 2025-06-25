@@ -139,6 +139,23 @@ def is_h6(md): to_md_name(md) == "h6";
 # Checks if markdown is heading
 def is_h(md): or(is_h1(md), is_h2(md), is_h3(md), is_h4(md), is_h5(md), is_h6(md));
 
+# Checks if markdown is a heading of the specified level (1-6)
+def is_h_level(md, level):
+  if (level == 1):
+    is_h1(md)
+  elif (level == 2):
+    is_h2(md)
+  elif (level == 3):
+    is_h3(md)
+  elif (level == 4):
+    is_h4(md)
+  elif (level == 5):
+    is_h5(md)
+  elif (level == 6):
+    is_h6(md)
+  else:
+    error("Invalid heading level: " + to_string(level));
+
 # Checks if markdown is not an h1 heading
 def is_not_h1(md): is_h1(md) | not();
 
@@ -402,3 +419,20 @@ def unique_by(arr, f):
 
 # Returns the input value unchanged.
 def identity(x): x;
+
+# Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
+def sections(md_nodes, level):
+  let indices = foreach (i, range(sub(len(md_nodes), 1))):
+      let n = nth(md_nodes, i)
+      | if (is_h_level(n, level)): i;
+  | let indices = compact(indices)
+  | let indices_with_end = indices + len(md_nodes)
+  | let result = []
+  | let i = 0
+  | until (i < len(indices)):
+      let start = nth(indices, i)
+      | let end = nth(indices_with_end, i + 1)
+      | let section = slice(md_nodes, start, end)
+      | let result = result + array(section)
+      | let i = i + 1
+      | result;;
