@@ -226,7 +226,6 @@ $ mq -I html 'select(or(.h1, .h2))' example.html
 ```
 
 This allows you to seamlessly convert and query HTML content using mq's Markdown processing features.
-```
 
 ### Using with markitdown
 
