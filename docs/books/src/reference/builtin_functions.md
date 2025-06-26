@@ -18,7 +18,9 @@
 |`contains`| Checks if string contains a substring|`haystack`, `needle`|contains(haystack, needle)|
 |`csv2table`| Convert csv string to markdown table|`csv`|csv2table(csv)|
 |`csv2table_row`| Convert csv string to markdown table row|`row`|csv2table_row(row)|
+|`csv2table_with_header`| Converts a CSV string array to a markdown table.|`csv`|csv2table_with_header(csv)|
 |`debug`| Prints the debug information of the given value.|`msg`|debug(msg)|
+|`decrease_header_level`|Decreases the level of a markdown heading node by one, down to a minimum of 1.|`heading_node`|decrease_header_level(heading_node)|
 |`del`|Deletes the element at the specified index in the array or string.|`array_or_string`, `index`|del(array_or_string, index)|
 |`dict`|Creates a new, empty dict.||dict()|
 |`div`|Divides the first value by the second value.|`value1`, `value2`|div(value1, value2)|
@@ -28,6 +30,7 @@
 |`eq`|Checks if two values are equal.|`value1`, `value2`|eq(value1, value2)|
 |`error`|Raises a user-defined error with the specified message.|`message`|error(message)|
 |`explode`|Splits the given string into an array of characters.|`string`|explode(string)|
+|`fill`| Returns an array of length n filled with the given value.|`value`, `n`|fill(value, n)|
 |`filter`| Filters the elements of an array based on a provided callback function.|`v`, `f`|filter(v, f)|
 |`find_index`| Returns the index of the first element in an array that satisfies the provided function.|`arr`, `f`|find_index(arr, f)|
 |`first`| Returns the first element of an array|`arr`|first(arr)|
@@ -48,7 +51,9 @@
 |`identity`| Returns the input value unchanged.|`x`|identity(x)|
 |`implode`|Joins an array of characters into a string.|`array`|implode(array)|
 |`in`| Returns true if the element is in the array.|`v`, `elem`|in(v, elem)|
+|`increase_header_level`|Increases the level of a markdown heading node by one, up to a maximum of 6.|`heading_node`|increase_header_level(heading_node)|
 |`index`|Finds the first occurrence of a substring in the given string.|`string`, `substring`|index(string, substring)|
+|`insert`|Inserts a value into an array or string at the specified index, or into a dict with the specified key.|`target`, `index_or_key`, `value`|insert(target, index_or_key, value)|
 |`is_array`| Checks if input is an array|`a`|is_array(a)|
 |`is_bool`| Checks if input is a boolean|`b`|is_bool(b)|
 |`is_code`| Checks if markdown is code block|`md`|is_code(md)|
@@ -62,6 +67,7 @@
 |`is_h4`| Checks if markdown is h4 heading|`md`|is_h4(md)|
 |`is_h5`| Checks if markdown is h5 heading|`md`|is_h5(md)|
 |`is_h6`| Checks if markdown is h6 heading|`md`|is_h6(md)|
+|`is_h_level`| Checks if markdown is a heading of the specified level (1-6)|`md`, `level`|is_h_level(md, level)|
 |`is_html`| Checks if markdown is html|`md`|is_html(md)|
 |`is_list`| Checks if markdown is list|`list`|is_list(list)|
 |`is_list1`| Checks if markdown is list with indentation level 1|`list`|is_list1(list)|
@@ -108,7 +114,7 @@
 |`numbers`| Returns number if input is number, None otherwise|`n`|numbers(n)|
 |`or`|Performs a logical OR operation on two boolean values.|`value1`, `value2`|or(value1, value2)|
 |`pow`|Raises the base to the power of the exponent.|`base`, `exponent`|pow(base, exponent)|
-|`range`| Creates an array of numbers within the specified range.|`start`, `end`, `step`|range(start, end, step)|
+|`range`|Creates an array from start to end with an optional step.|`start`, `end`, `step`|range(start, end, step)|
 |`repeat`|Repeats the given string a specified number of times.|`string`, `count`|repeat(string, count)|
 |`replace`|Replaces all occurrences of a substring with another substring.|`from`, `pattern`, `to`|replace(from, pattern, to)|
 |`reverse`|Reverses the given string or array.|`value`|reverse(value)|
@@ -116,6 +122,7 @@
 |`round`|Rounds the given number to the nearest integer.|`number`|round(number)|
 |`rtrimstr`| Removes suffix string from input if it exists|`s`, `right`|rtrimstr(s, right)|
 |`second`| Returns the second element of an array|`arr`|second(arr)|
+|`sections`| Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.|`md_nodes`, `level`|sections(md_nodes, level)|
 |`select`| Returns value if condition is true, None otherwise|`v`, `f`|select(v, f)|
 |`set`|Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.|`dict`, `key`, `value`|set(dict, key, value)|
 |`set_check`|Creates a markdown list node with the given checked state.|`list`, `checked`|set_check(list, checked)|
@@ -146,6 +153,7 @@
 |`to_html`|Converts the given markdown string to HTML.|`markdown`|to_html(markdown)|
 |`to_image`|Creates a markdown image node with the given URL, alt text, and title.|`url`, `alt`, `title`|to_image(url, alt, title)|
 |`to_link`|Creates a markdown link node  with the given  url and title.|`url`, `value`, `title`|to_link(url, value, title)|
+|`to_markdown_string`|Converts the given value(s) to a markdown string representation.|`value`|to_markdown_string(value)|
 |`to_math`|Creates a markdown math block with the given value.|`value`|to_math(value)|
 |`to_math_inline`|Creates an inline markdown math node with the given value.|`value`|to_math_inline(value)|
 |`to_md_list`|Creates a markdown list node with the given value and indent level.|`value`, `indent`|to_md_list(value, indent)|
@@ -161,6 +169,7 @@
 |`trunc`|Truncates the given number to an integer by removing the fractional part.|`number`|trunc(number)|
 |`tsv2table`| Convert tsv string to markdown table|`tsv`|tsv2table(tsv)|
 |`tsv2table_row`| Convert tsv string to markdown table row|`row`|tsv2table_row(row)|
+|`tsv2table_with_header`| Converts a CSV string array to a markdown table.|`tsv`|tsv2table_with_header(tsv)|
 |`type`|Returns the type of the given value.|`value`|type(value)|
 |`uniq`|Removes duplicate elements from the given array.|`array`|uniq(array)|
 |`unique_by`| Returns a new array with duplicate elements removed, comparing by the result of the provided function.|`arr`, `f`|unique_by(arr, f)|
