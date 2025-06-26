@@ -52,7 +52,7 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 ### Cargo
 
 ```sh
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.5
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.6
 # Latest Development Version
 $ cargo install --git https://github.com/harehare/mq.git mq-cli
 ```
@@ -63,19 +63,19 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Intel)
-$ curl -L https://github.com/harehare/mq/releases/download/v0.2.5/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.2.6/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # macOS (Apple Silicon)
-$ curl -L https://github.com/harehare/mq/releases/download/v0.2.5/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.2.6/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # Linux x86_64
-$ curl -L https://github.com/harehare/mq/releases/download/v0.2.5/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.2.6/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # Linux arm64
-$ curl -L https://github.com/harehare/mq/releases/download/v0.2.5/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+$ curl -L https://github.com/harehare/mq/releases/download/v0.2.6/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 
 # Windows (PowerShell)
-$ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.2.5/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+$ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.2.6/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
@@ -88,7 +88,7 @@ $ brew install harehare/tap/mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.2.5
+$ docker run --rm ghcr.io/harehare/mq:0.2.6
 ```
 
 ### Visual Studio Code Extension
