@@ -128,22 +128,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("flatten"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::Array(arrays)] => {
-                    fn _flatten(arrays: &Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-                        let mut flattened = Vec::new();
-                        for inner_array in arrays {
-                            match inner_array {
-                                RuntimeValue::Array(inner) => {
-                                    flattened.extend(_flatten(inner));
-                                }
-                                other => flattened.push(other.clone()),
-                            }
-                        }
-                        flattened
-                    }
-
-                    Ok(_flatten(arrays).into())
-                }
+                [RuntimeValue::Array(arrays)] => Ok(flatten(arrays).into()),
                 [a] => Ok(a.clone()),
                 _ => unreachable!(),
             }),
@@ -258,6 +243,23 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 }
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("to_markdown_string"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| {
+                let args = flatten(&args.to_vec());
+
+                Ok(mq_markdown::Markdown::new(
+                    args.iter()
+                        .flat_map(|arg| match arg {
+                            RuntimeValue::Markdown(node, _) => vec![node.clone()],
+                            a => vec![a.to_string().into()],
+                        })
+                        .collect(),
+                )
+                .to_string()
+                .into())
             }),
         );
         map.insert(
@@ -2373,6 +2375,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
+            CompactString::new("to_markdown_string"),
+            BuiltinFunctionDoc {
+                description: "Converts the given value(s) to a markdown string representation.",
+                params: &["value"],
+            },
+        );
+        map.insert(
             CompactString::new("to_number"),
             BuiltinFunctionDoc {
                 description: "Converts the given value to a number.",
@@ -3295,6 +3304,17 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
     }
 
     Ok(result)
+}
+
+fn flatten(args: &Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+    let mut result = Vec::new();
+    for arg in args {
+        match arg {
+            RuntimeValue::Array(arr) => result.extend(flatten(arr)),
+            other => result.push(other.clone()),
+        }
+    }
+    result
 }
 
 #[cfg(test)]
