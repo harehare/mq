@@ -3851,6 +3851,80 @@ mod tests {
                     ast_call("to_markdown_string", SmallVec::new())
                 ],
                 Ok(vec![RuntimeValue::NONE]))]
+    #[case::increase_header_level_h1(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                depth: 1,
+                values: vec!["Heading 1".to_string().into()],
+                position: None
+            }), None)],
+                vec![
+                    ast_call("increase_header_level", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                    depth: 2,
+                    values: vec!["Heading 1".to_string().into()],
+                    position: None
+                }), None)]))]
+    #[case::increase_header_level_h6(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                depth: 6,
+                values: vec!["Heading 6".to_string().into()],
+                position: None
+            }), None)],
+                vec![
+                    ast_call("increase_header_level", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                    depth: 6,
+                    values: vec!["Heading 6".to_string().into()],
+                    position: None
+                }), None)]))]
+    #[case::increase_header_level_non_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+                value: "Not a heading".to_string(),
+                position: None
+            }), None)],
+                vec![
+                    ast_call("increase_header_level", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "Not a heading".to_string(),
+                    position: None
+                }), None)]))]
+    #[case::decrease_header_level_h2(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                depth: 2,
+                values: vec!["Heading 2".to_string().into()],
+                position: None
+            }), None)],
+                vec![
+                    ast_call("decrease_header_level", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                    depth: 1,
+                    values: vec!["Heading 2".to_string().into()],
+                    position: None
+                }), None)]))]
+    #[case::decrease_header_level_h1(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                depth: 1,
+                values: vec!["Heading 1".to_string().into()],
+                position: None
+            }), None)],
+                vec![
+                    ast_call("decrease_header_level", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+                    depth: 1,
+                    values: vec!["Heading 1".to_string().into()],
+                    position: None
+                }), None)]))]
+    #[case::decrease_header_level_non_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+                value: "Not a heading".to_string(),
+                position: None
+            }), None)],
+                vec![
+                    ast_call("decrease_header_level", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+                    value: "Not a heading".to_string(),
+                    position: None
+                }), None)]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

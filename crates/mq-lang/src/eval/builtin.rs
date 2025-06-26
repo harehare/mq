@@ -1360,6 +1360,41 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("increase_header_level"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [a @ RuntimeValue::Markdown(node, _)] => {
+                    if let mq_markdown::Node::Heading(mut heading) = node.clone() {
+                        if heading.depth < 6 {
+                            heading.depth += 1;
+                        }
+                        Ok(mq_markdown::Node::Heading(heading).into())
+                    } else {
+                        Ok(a.clone())
+                    }
+                }
+                [a] => Ok(a.clone()),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("decrease_header_level"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [a @ RuntimeValue::Markdown(node, _)] => {
+                    if let mq_markdown::Node::Heading(mut heading) = node.clone() {
+                        if heading.depth > 1 {
+                            heading.depth -= 1;
+                        }
+                        Ok(mq_markdown::Node::Heading(heading).into())
+                    } else {
+                        Ok(a.clone())
+                    }
+                }
+                [a] => Ok(a.clone()),
+                _ => unreachable!(),
+            }),
+        );
+
+        map.insert(
             CompactString::new("to_hr"),
             BuiltinFunction::new(ParamNum::Fixed(0), |_, _, _| {
                 Ok(
@@ -2918,6 +2953,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
             description: "Inserts a value into an array or string at the specified index, or into a dict with the specified key.",
             params: &["target", "index_or_key", "value"],
+            },
+        );
+        map.insert(
+            CompactString::new("increase_header_level"),
+            BuiltinFunctionDoc {
+            description: "Increases the level of a markdown heading node by one, up to a maximum of 6.",
+            params: &["heading_node"],
+            },
+        );
+        map.insert(
+            CompactString::new("decrease_header_level"),
+            BuiltinFunctionDoc {
+            description: "Decreases the level of a markdown heading node by one, down to a minimum of 1.",
+            params: &["heading_node"],
             },
         );
         map
