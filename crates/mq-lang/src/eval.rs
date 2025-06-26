@@ -3787,45 +3787,70 @@ mod tests {
                                      name: "insert".to_string(),
                                      args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
     #[case::insert_string_middle(vec![RuntimeValue::String("ac".to_string())],
-                    vec![
-                        ast_call("insert", smallvec![
-                            ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-                            ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
-                        ])
-                    ],
-                    Ok(vec![RuntimeValue::String("abc".to_string())]))]
+                vec![
+                    ast_call("insert", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("abc".to_string())]))]
     #[case::insert_string_start(vec![RuntimeValue::String("bc".to_string())],
-                    vec![
-                        ast_call("insert", smallvec![
-                            ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
-                            ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
-                        ])
-                    ],
-                    Ok(vec![RuntimeValue::String("abc".to_string())]))]
+                vec![
+                    ast_call("insert", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("abc".to_string())]))]
     #[case::insert_string_end(vec![RuntimeValue::String("ab".to_string())],
-                    vec![
-                        ast_call("insert", smallvec![
-                            ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
-                            ast_node(ast::Expr::Literal(ast::Literal::String("c".to_string()))),
-                        ])
-                    ],
-                    Ok(vec![RuntimeValue::String("abc".to_string())]))]
+                vec![
+                    ast_call("insert", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("c".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("abc".to_string())]))]
     #[case::insert_string_out_of_bounds(vec![RuntimeValue::String("a".to_string())],
-                    vec![
-                        ast_call("insert", smallvec![
-                            ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
-                            ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
-                        ])
-                    ],
-                    Ok(vec![RuntimeValue::String("a    b".to_string())]))]
+                vec![
+                    ast_call("insert", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("a    b".to_string())]))]
     #[case::insert_string_negative_index(vec![RuntimeValue::String("bc".to_string())],
-                    vec![
-                        ast_call("insert", smallvec![
-                            ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
-                            ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
-                        ])
-                    ],
-                    Ok(vec![RuntimeValue::String("abc".to_string())]))]
+                vec![
+                    ast_call("insert", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("abc".to_string())]))]
+    #[case::to_markdown_string_string(vec![RuntimeValue::String("test".to_string())],
+                vec![
+                    ast_call("to_markdown_string", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::String("test\n".to_string())]))]
+    #[case::to_markdown_string_markdown_text(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
+                vec![
+                    ast_call("to_markdown_string", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test\n".to_string(), position: None}), None)]))]
+    #[case::to_markdown_string_markdown_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading".to_string().into()], position: None}), None)],
+                vec![
+                    ast_call("to_markdown_string", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "## Heading\n".to_string(), position: None}), None)]))]
+    #[case::to_markdown_string_markdown_code(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{value: "let x = 1;".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}), None)],
+                vec![
+                    ast_call("to_markdown_string", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "```rust\nlet x = 1;\n```\n".to_string(), position: None}), None)]))]
+    #[case::to_markdown_string_none(vec![RuntimeValue::NONE],
+                vec![
+                    ast_call("to_markdown_string", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::NONE]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
