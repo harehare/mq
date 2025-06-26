@@ -10,3 +10,4 @@ applyTo: "crates/mq-markdown/**/*.rs"
 - Document all public APIs and provide usage examples in doc comments.
 - Avoid panics on malformed input; return descriptive errors using `miette`.
 - Keep the API surface minimal and focused on Markdown processing.
+

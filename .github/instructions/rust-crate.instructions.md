@@ -14,3 +14,4 @@ applyTo: "crates/**/*.rs"
 - Use feature flags for optional functionality.
 - Keep dependencies minimal and up-to-date.
 - Each crate should have its own `CHANGELOG.md` if it is published independently.
+

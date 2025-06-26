@@ -13,3 +13,4 @@ applyTo: "tests/**/*.rs,crates/**/tests/**/*.rs"
 - Mock external dependencies where possible.
 - Keep tests fast and isolated.
 - Update or add tests when changing existing code.
+

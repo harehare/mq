@@ -11,3 +11,4 @@ applyTo: "crates/mq-cli/**/*.rs"
 - Write integration tests for CLI behavior and edge cases.
 - Ensure the CLI is robust against malformed input and unexpected usage.
 - Output should be clear and suitable for piping/automation.
+

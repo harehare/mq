@@ -4,13 +4,15 @@ applyTo: "**"
 
 # Commit Message Conventions
 
-- Use the following format for commit messages:
+Use the following format for commit messages:
 
-  <type>(<scope>): <description>
+```
+<type>(<scope>): <description>
 
-  [optional body]
+[optional body]
 
-  [optional footer]
+[optional footer]
+```
 
 - Types include:
   - ✨ feat: New feature
@@ -24,3 +26,4 @@ applyTo: "**"
   - 👷 ci: Changes to CI configuration files and scripts
 - Write clear, concise, and descriptive commit messages.
 - Reference related issues or pull requests when relevant.
+

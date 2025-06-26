@@ -11,3 +11,4 @@ applyTo: "crates/mq-lsp/**/*.rs"
 - Use `miette` for error reporting to the user where possible.
 - Avoid blocking operations in async handlers.
 - Ensure robust handling of invalid or unexpected LSP messages.
+

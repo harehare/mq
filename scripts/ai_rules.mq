@@ -1,0 +1,16 @@
+# Generates AI rules for the specified header with front matter.
+def gen_ai_rules_with_apply_to(header_name, path):
+  let applyTo = s"---\napplyTo: \"${path}\"\n---\n\n"
+  | sections(2)
+  | filter(fn(section): let head = first(section) | contains(head, header_name);)
+  | first()
+  | map(decrease_header_level)
+  | applyTo + to_markdown_string();
+
+# Generates AI rules for the specified header without front matter.
+def gen_ai_rules(header_name):
+  sections(2)
+  | filter(fn(section): let head = first(section) | contains(head, header_name);)
+  | first()
+  | map(decrease_header_level)
+  | to_markdown_string()
