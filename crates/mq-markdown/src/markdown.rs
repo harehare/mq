@@ -1,8 +1,11 @@
-use std::{cell::RefCell, fmt, rc::Rc, str::FromStr};
+use std::{fmt, str::FromStr}; // Removed RefCell, Rc, TagHandler
 
-use html_to_markdown::TagHandler;
+// use html_to_markdown::TagHandler; // Removed this line
 use markdown::Constructs;
 use miette::miette;
+
+#[cfg(feature = "html-to-markdown")] // Only needed if from_html_str is active
+use crate::html_to_markdown; // For our new converter
 
 use crate::node::{Node, Position, RenderOptions};
 
@@ -113,22 +116,24 @@ impl Markdown {
             .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
+    #[cfg(feature = "html-to-markdown")]
     pub fn from_html_str(content: &str) -> miette::Result<Self> {
-        let mut handlers: Vec<TagHandler> = vec![
-            Rc::new(RefCell::new(
-                html_to_markdown::markdown::WebpageChromeRemover,
-            )),
-            Rc::new(RefCell::new(html_to_markdown::markdown::ParagraphHandler)),
-            Rc::new(RefCell::new(html_to_markdown::markdown::HeadingHandler)),
-            Rc::new(RefCell::new(html_to_markdown::markdown::CodeHandler)),
-            Rc::new(RefCell::new(html_to_markdown::markdown::StyledTextHandler)),
-            Rc::new(RefCell::new(html_to_markdown::markdown::ListHandler)),
-            Rc::new(RefCell::new(html_to_markdown::markdown::TableHandler::new())),
-        ];
-
-        html_to_markdown::convert_html_to_markdown(content.as_bytes(), &mut handlers)
-            .map_err(|e| miette!(e))
-            .and_then(|md| Self::from_markdown_str(&md))
+        // Use the new html_to_markdown converter
+        // The old TagHandler logic is removed as it's not compatible with the new parser's design.
+        // The new parser takes HTML string and returns Markdown string directly.
+        html_to_markdown::convert_html_to_markdown(content)
+            .map_err(|e| {
+                // Convert HtmlToMarkdownError to miette::Error
+                // This requires HtmlToMarkdownError to implement std::error::Error and Display
+                // and ideally Diagnostic for richer errors.
+                // For now, a simple message conversion.
+                // TODO: Enhance error reporting here if HtmlToMarkdownError provides more details.
+                // One way to make it richer is to ensure HtmlToMarkdownError is a miette::Diagnostic
+                // and then just return it.
+                // Assuming HtmlToMarkdownError is already a miette::Diagnostic source:
+                miette!(e)
+            })
+            .and_then(|md_string| Self::from_markdown_str(&md_string))
     }
 
     pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
@@ -411,6 +416,7 @@ mod json_tests {
     #[case("<code>inline</code>", 1, "`inline`\n")]
     #[case("<pre><code>block</code></pre>", 1, "```\nblock\n```\n")]
     #[case("<table><tr><td>A</td><td>B</td></tr></table>", 1, "| A | B |\n")]
+    #[cfg(feature = "html-to-markdown")]
     fn test_markdown_from_html(
         #[case] input: &str,
         #[case] expected_nodes: usize,

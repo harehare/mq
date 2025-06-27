@@ -30,7 +30,7 @@ mq-formatter.workspace = true
 mq-hir.workspace = true
 mq-lang.workspace = true
 mq-lsp.workspace = true
-mq-markdown = {workspace = true, features = ["json"]}
+mq-markdown = {workspace = true, features = ["json", "html-to-markdown"]}
 mq-mcp.workspace = true
 mq-repl.workspace = true
 mq-tui.workspace = true
