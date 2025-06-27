@@ -725,24 +725,24 @@ mod tests {
     #[case("{}",
             Options::default(),
             Ok(vec![
-                Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::LBrace, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 5} }, kind: TokenKind::RBrace, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+                Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 2} }, kind: TokenKind::LBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 3} }, kind: TokenKind::RBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 3} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case(" { } ",
             Options::default(),
             Ok(vec![
-                Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 4} }, kind: TokenKind::LBrace, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 7} }, kind: TokenKind::RBrace, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 8}, end: Position {line: 1, column: 8} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
-    #[case("{{key: value}}", // Adjusted to match LBrace/RBrace being {{ and }}
+                Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 3} }, kind: TokenKind::LBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::RBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 6} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case("{key: value}", // Adjusted to match LBrace/RBrace being {{ and }}
             Options::default(),
             Ok(vec![
-                Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::LBrace, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 6} }, kind: TokenKind::Ident(CompactString::new("key")), module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 7} }, kind: TokenKind::Colon, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 8}, end: Position {line: 1, column: 13} }, kind: TokenKind::Ident(CompactString::new("value")), module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 13}, end: Position {line: 1, column: 15} }, kind: TokenKind::RBrace, module_id: 1.into()},
-                Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+                Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 2} }, kind: TokenKind::LBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 5} }, kind: TokenKind::Ident(CompactString::new("key")), module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 6} }, kind: TokenKind::Colon, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 12} }, kind: TokenKind::Ident(CompactString::new("value")), module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 13} }, kind: TokenKind::RBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 13}, end: Position {line: 1, column: 13} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,

@@ -279,6 +279,13 @@ impl Hir {
             mq_lang::CstNodeKind::While => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Array => {
+                self.add_array_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Dict => {
+                self.add_dict_expr(node, source_id, scope_id, parent);
+            }
+
             _ => {}
         }
     }
@@ -905,6 +912,58 @@ impl Hir {
     fn add_source(&mut self, source: Source) -> SourceId {
         self.sources.insert(source)
     }
+
+    fn add_array_expr(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Array,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Array,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+    }
+
+    fn add_dict_expr(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Dict,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Dict,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -974,6 +1033,11 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::gt("1 > 2", ">", SymbolKind::BinaryOp)]
     #[case::gte("1 >= 2", ">=", SymbolKind::BinaryOp)]
     #[case::range_op("1..2", "..", SymbolKind::BinaryOp)]
+    #[case::array_with_numbers("[1, 2, 3]", "1", SymbolKind::Number)]
+    #[case::array_with_strings("[\"a\", \"b\"]", "a", SymbolKind::String)]
+    #[case::array_nested("[[1], [2]]", "1", SymbolKind::Number)]
+    #[case::dict_simple("{\"a\": 1, \"b\": 2}", "a", SymbolKind::String)]
+    #[case::dict_nested("{\"a\": {\"b\": 2}}", "b", SymbolKind::String)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

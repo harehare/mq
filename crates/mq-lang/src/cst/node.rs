@@ -80,6 +80,7 @@ pub enum NodeKind {
     Array,
     Call,
     Def,
+    Dict,
     Eof,
     Elif,
     Else,

@@ -22,6 +22,8 @@ pub struct Symbol {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolKind {
+    Array,
+    Dict,
     Call,
     If,
     Elif,

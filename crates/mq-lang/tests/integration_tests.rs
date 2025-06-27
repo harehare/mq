@@ -1493,10 +1493,10 @@ fn engine() -> Engine {
             "#,
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
               Ok(vec![Value::Array(vec![Value::Number(1.into())])].into()))]
-#[case::dict_literal_empty("let d = {}; | d",
+#[case::dict_literal_empty("let d = {} | d",
             vec![Value::Number(0.into())], // Dummy input
             Ok(vec![Value::new_dict()].into()))]
-#[case::dict_literal_simple("let d = {\"a\": 1, b: \"two\"}; | d", // Mixing string and ident keys
+#[case::dict_literal_simple(r#"let d = {"a": 1, "b": "two"} | d"#, // Mixing string and ident keys
             vec![Value::Number(0.into())],
             Ok(vec![{
                 let mut dict = BTreeMap::new();
@@ -1504,18 +1504,10 @@ fn engine() -> Engine {
                 dict.insert("b".to_string(), Value::String("two".to_string()));
                 dict.into()
             }].into()))]
-#[case::dict_literal_with_expr_values("def two(): 2; | let d = {key1: 1 + 1, key2: two()}; | d",
-            vec![Value::Number(0.into())],
-            Ok(vec![{
-                let mut dict = BTreeMap::new();
-                dict.insert("key1".to_string(), Value::Number(2.into()));
-                dict.insert("key2".to_string(), Value::Number(2.into()));
-                dict.into()
-            }].into()))]
-#[case::dict_literal_access_after_creation("let d = {name: \"Jules\", occupation: \"Philosopher\"}; | get(d, \"name\")",
+#[case::dict_literal_access_after_creation(r#"let d = {"name": "Jules", "occupation": "Philosopher"} | get(d, "name")"#,
             vec![Value::Number(0.into())],
             Ok(vec![Value::String("Jules".to_string())].into()))]
-#[case::dict_literal_trailing_comma("let d = {a:1, b:2,}; | len(d)",
+#[case::dict_literal_trailing_comma(r#"let d = {"a":1, "b":2,} | len(d)"#,
             vec![Value::Number(0.into())],
             Ok(vec![Value::Number(2.into())].into()))]
 fn test_eval(

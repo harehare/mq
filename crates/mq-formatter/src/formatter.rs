@@ -93,6 +93,9 @@ impl Formatter {
             mq_lang::CstNodeKind::Array => {
                 self.format_array(&node, indent_level_consider_new_line);
             }
+            mq_lang::CstNodeKind::Dict => {
+                self.format_dict(&node, indent_level_consider_new_line);
+            }
             mq_lang::CstNodeKind::BinaryOp(_) => {
                 self.format_binary_op(&node, indent_level_consider_new_line, indent_level);
             }
@@ -146,6 +149,71 @@ impl Formatter {
 
         for child in &node.children {
             self.format_node(Arc::clone(child), 0);
+        }
+    }
+
+    fn format_dict(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+
+        let mut i = 0;
+        while i < node.children.len() {
+            let child = &node.children[i];
+
+            // Format LBrace
+            if i == 0 {
+                self.format_node(Arc::clone(child), 0);
+                i += 1;
+                continue;
+            }
+
+            // Format RBrace (last token)
+            if i == node.children.len() - 1 {
+                if child.has_new_line() {
+                    self.format_node(Arc::clone(child), indent_level);
+                } else {
+                    self.format_node(Arc::clone(child), 0);
+                }
+                break;
+            }
+
+            // Format key-value pairs in groups of 3 (key, colon, value)
+            if i + 2 < node.children.len() {
+                let key = &node.children[i];
+                let colon = &node.children[i + 1];
+                let value = &node.children[i + 2];
+
+                // Format key with proper indentation if it has new line
+                if key.has_new_line() {
+                    self.format_node(Arc::clone(key), indent_level + 1);
+                } else {
+                    self.format_node(Arc::clone(key), 0);
+                }
+
+                // Format colon
+                self.format_node(Arc::clone(colon), 0);
+                // Add space after colon
+                self.append_space();
+                // Format value
+                self.format_node(Arc::clone(value), 0);
+
+                i += 3;
+
+                // Check if there's a comma next
+                if i < node.children.len()
+                    && node.children[i]
+                        .token
+                        .as_ref()
+                        .map(|t| matches!(t.kind, mq_lang::TokenKind::Comma))
+                        .unwrap_or(false)
+                {
+                    self.format_node(Arc::clone(&node.children[i]), 0);
+                    i += 1;
+                }
+            } else {
+                // Fallback for other tokens
+                self.format_node(Arc::clone(child), 0);
+                i += 1;
+            }
         }
     }
 
@@ -759,6 +827,36 @@ s"test${val1}"
     #[case::array_mixed_types("[1,\"test\",true]", "[1, \"test\", true]")]
     #[case::array_nested("[[1,2],[3,4]]", "[[1, 2], [3, 4]]")]
     #[case::array_with_spaces("[ 1 , 2 , 3 ]", "[1, 2, 3]")]
+    #[case::dict_empty("{}", "{}")]
+    #[case::dict_single_pair("{\"key\": \"value\"}", "{\"key\": \"value\"}")]
+    #[case::dict_multiple_pairs(
+        "{\"key1\": \"value1\", \"key2\": \"value2\"}",
+        "{\"key1\": \"value1\", \"key2\": \"value2\"}"
+    )]
+    #[case::dict_with_spaces("{ \"key\" : \"value\" }", "{\"key\": \"value\"}")]
+    #[case::dict_mixed_types(
+        "{\"str\": \"value\", \"num\": 42, \"bool\": true}",
+        "{\"str\": \"value\", \"num\": 42, \"bool\": true}"
+    )]
+    #[case::dict_nested(
+        "{\"outer\": {\"inner\": \"value\"}}",
+        "{\"outer\": {\"inner\": \"value\"}}"
+    )]
+    #[case::dict_multiline(
+        r#"{
+"key1": "value1",
+"key2": "value2"
+}"#,
+        "{\n  \"key1\": \"value1\",\n  \"key2\": \"value2\"}"
+    )]
+    #[case::dict_multiline_mixed(
+        r#"{
+"str": "value",
+"num": 42,
+"bool": true
+}"#,
+        "{\n  \"str\": \"value\",\n  \"num\": 42,\n  \"bool\": true}"
+    )]
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
     #[case::string_with_newline(r#""line1\\nline2""#, r#""line1\nline2""#)]
