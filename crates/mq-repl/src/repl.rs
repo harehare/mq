@@ -53,7 +53,7 @@ impl Highlighter for MqLineHelper {
 impl Validator for MqLineHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> Result<ValidationResult, ReadlineError> {
         let input = ctx.input();
-        if input.is_empty() || input.ends_with("\n") || input.starts_with(":") {
+        if input.is_empty() || input.ends_with("\n") || input.starts_with("/") {
             return Ok(ValidationResult::Valid(None));
         }
 
@@ -151,7 +151,7 @@ impl Repl {
             }
         }
 
-        println!("Welcome to mq. For help, type :help");
+        println!("Welcome to mq. For help, type /help");
 
         loop {
             let prompt = format!("{}", PROMPT.cyan());
