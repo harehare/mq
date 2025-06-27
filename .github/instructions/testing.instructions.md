@@ -14,3 +14,5 @@ applyTo: "tests/**/*.rs,crates/**/tests/**/*.rs"
 - Keep tests fast and isolated.
 - Update or add tests when changing existing code.
 
+Use `just test` to run tests instead of `cargo test`.
+

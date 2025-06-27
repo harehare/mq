@@ -1,6 +1,5 @@
-# GitHub Copilot Instructions for mq
+# mq Development Guide
 
-This file contains instructions for GitHub Copilot for the mq.
 
 ## Project Overview
 
@@ -76,7 +75,7 @@ Use the following format for commit messages:
   - 💄 style: Code style changes that don't affect behavior
   - ♻️ refactor: Refactoring
   - ⚡ perf: Performance improvements
-  - ✅ Test: Adding or modifying tests
+  - ✅ test: Adding or modifying tests
   - 📦 build: Changes to build system or external dependencies
   - 👷 ci: Changes to CI configuration files and scripts
 - Write clear, concise, and descriptive commit messages.
