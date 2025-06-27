@@ -364,7 +364,134 @@ impl Optimizer {
             | ast::Expr::Literal(_)
             | ast::Expr::Nodes
             | ast::Expr::Self_ => Rc::clone(&node),
+            ast::Expr::DictionaryLiteral(pairs) => {
+                let dict_ident = ast::Ident::new_with_token(
+                    "dict",
+                    node.token_id.get_token(&self.constant_table), // Attempt to get token
+                );
+                let mut args: Args = SmallVec::new();
+                for (key_node, value_node) in pairs {
+                    args.push(self.optimize_node(Rc::clone(key_node)));
+                    args.push(self.optimize_node(Rc::clone(value_node)));
+                }
+                Rc::new(ast::Node {
+                    token_id: node.token_id,
+                    expr: Rc::new(ast::Expr::Call(dict_ident, args, false)),
+                })
+            }
         }
+    }
+
+    #[rstest]
+    #[case::optimize_empty_dictionary_literal(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::DictionaryLiteral(vec![])),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new_with_token("dict", None), // Token might be None due to TokenResolver
+                    smallvec![],
+                    false,
+                )),
+            }),
+        ]
+    )]
+    #[case::optimize_dictionary_literal_simple(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(), // Token ID for the original DictionaryLiteral node
+                expr: Rc::new(AstExpr::DictionaryLiteral(vec![
+                    (
+                        Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Ident(Ident::new("a"))) }),
+                        Rc::new(Node { token_id: 2.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) })
+                    ),
+                    (
+                        Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::String("b".to_string()))) }),
+                        Rc::new(Node { token_id: 4.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) })
+                    )
+                ])),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(), // Original DictionaryLiteral's token_id preserved
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new_with_token("dict", None),
+                    smallvec![
+                        Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Ident(Ident::new("a"))) }), // Optimized key
+                        Rc::new(Node { token_id: 2.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }), // Optimized value
+                        Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::String("b".to_string()))) }), // Optimized key
+                        Rc::new(Node { token_id: 4.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) })  // Optimized value
+                    ],
+                    false,
+                )),
+            }),
+        ]
+    )]
+    #[case::optimize_dictionary_with_expressions_to_fold(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::DictionaryLiteral(vec![
+                    (
+                        Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Ident(Ident::new("key1"))) }),
+                        Rc::new(Node { // Value is an expression that can be folded: add(1,2)
+                            token_id: 2.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("add"),
+                                smallvec![
+                                    Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }),
+                                    Rc::new(Node { token_id: 4.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) })
+                                ],
+                                false
+                            ))
+                        })
+                    )
+                ])),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new_with_token("dict", None),
+                    smallvec![
+                        Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Ident(Ident::new("key1"))) }),
+                        Rc::new(Node { token_id: 2.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))) }) // Value folded
+                    ],
+                    false,
+                )),
+            }),
+        ]
+    )]
+    fn test_optimizer_dictionaries(#[case] input: Program, #[case] expected: Program) {
+        let mut optimizer = Optimizer::new();
+        let optimized_program = optimizer.optimize(&input);
+        assert_eq!(optimized_program, expected);
+    }
+}
+
+// Helper trait to attempt to get a token from TokenId via constant_table
+// This is a conceptual placeholder; actual implementation depends on how TokenId relates to tokens
+// stored or accessible via optimizer's state or Arena.
+// For now, this will likely be None as constant_table doesn't store tokens directly.
+trait TokenResolver {
+    fn get_token(&self, _constant_table: &FxHashMap<ast::Ident, Rc<ast::Expr>>) -> Option<Rc<crate::Token>>;
+}
+
+impl TokenResolver for crate::arena::ArenaId<Rc<crate::Token>> {
+    fn get_token(&self, _constant_table: &FxHashMap<ast::Ident, Rc<ast::Expr>>) -> Option<Rc<crate::Token>> {
+        // In a real scenario, you might look up the token in an Arena if self is an ID.
+        // Or, if the Ident itself stored an Rc<Token>, you'd use that.
+        // Given the current structure, directly getting the original token for "dict" is non-trivial
+        // without passing the token arena or ensuring Idents store their tokens.
+        // For now, returning None, meaning Ident::new will be used (no specific token).
+        None
     }
 }
 

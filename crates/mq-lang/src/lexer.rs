@@ -176,6 +176,7 @@ define_token_parser!(if_, "if", TokenKind::If);
 define_token_parser!(include, "include", TokenKind::Include);
 define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
+define_token_parser!(l_brace, "{{", TokenKind::LBrace);
 define_token_parser!(let_, "let ", TokenKind::Let);
 define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
@@ -186,6 +187,7 @@ define_token_parser!(question, "?", TokenKind::Question);
 define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
+define_token_parser!(r_brace, "}}", TokenKind::RBrace);
 define_token_parser!(self_, "self", TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_token_parser!(until, "until", TokenKind::Until);
@@ -197,8 +199,8 @@ define_token_parser!(gte, ">=", TokenKind::Gte);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq, ne_eq, lte, gte,
-        lt, gt, equal, plus, pipe, question, range_op,
+        l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq,
+        ne_eq, lte, gte, lt, gt, equal, plus, pipe, question, range_op,
     ))
     .parse(input)
 }
@@ -720,6 +722,27 @@ mod tests {
                   Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::NeEq, module_id: 1.into()},
                   Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::Equal, module_id: 1.into()},
                   Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case("{}",
+            Options::default(),
+            Ok(vec![
+                Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::LBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 5} }, kind: TokenKind::RBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case(" { } ",
+            Options::default(),
+            Ok(vec![
+                Token{range: Range { start: Position {line: 1, column: 2}, end: Position {line: 1, column: 4} }, kind: TokenKind::LBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 7} }, kind: TokenKind::RBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 8}, end: Position {line: 1, column: 8} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case("{{key: value}}", // Adjusted to match LBrace/RBrace being {{ and }}
+            Options::default(),
+            Ok(vec![
+                Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::LBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 6} }, kind: TokenKind::Ident(CompactString::new("key")), module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 6}, end: Position {line: 1, column: 7} }, kind: TokenKind::Colon, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 8}, end: Position {line: 1, column: 13} }, kind: TokenKind::Ident(CompactString::new("value")), module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 13}, end: Position {line: 1, column: 15} }, kind: TokenKind::RBrace, module_id: 1.into()},
+                Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,

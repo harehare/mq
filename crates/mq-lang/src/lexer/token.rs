@@ -62,6 +62,7 @@ pub enum TokenKind {
     Question,
     RangeOp,
     RBracket,
+    RBrace,
     RParen,
     Selector(CompactString),
     Self_,
@@ -72,6 +73,7 @@ pub enum TokenKind {
     Whitespace(usize),
     While,
     LParen,
+    LBrace,
 }
 
 impl Display for Token {
@@ -119,6 +121,7 @@ impl Display for TokenKind {
             TokenKind::Question => write!(f, "?"),
             TokenKind::RangeOp => write!(f, ".."),
             TokenKind::RBracket => write!(f, "]"),
+            TokenKind::RBrace => write!(f, "}}"),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::Selector(selector) => write!(f, "{}", selector),
             TokenKind::Self_ => write!(f, "self"),
@@ -128,6 +131,7 @@ impl Display for TokenKind {
             TokenKind::Until => write!(f, "until"),
             TokenKind::While => write!(f, "while"),
             TokenKind::Whitespace(n) => write!(f, "{}", " ".repeat(*n)),
+            TokenKind::LBrace => write!(f, "{{"),
         }
     }
 }

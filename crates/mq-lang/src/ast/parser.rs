@@ -185,11 +185,105 @@ impl<'a> Parser<'a> {
             TokenKind::StringLiteral(_) => self.parse_literal(token),
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
             TokenKind::LBracket => self.parse_array(token),
+            TokenKind::LBrace => self.parse_dictionary_literal(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
+    }
+
+    fn parse_dictionary_literal(
+        &mut self,
+        lbrace_token: Rc<Token>,
+    ) -> Result<Rc<Node>, ParseError> {
+        let token_id = self
+            .token_arena
+            .borrow_mut()
+            .alloc(Rc::clone(&lbrace_token));
+        let mut pairs = Vec::new();
+
+        loop {
+            match self.tokens.peek() {
+                Some(token) if token.kind == TokenKind::RBrace => {
+                    self.tokens.next(); // Consume RBrace
+                    break;
+                }
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                _ => {} // Continue parsing key-value pair
+            }
+
+            // Parse key
+            let key_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            let key_node = match &key_token.kind {
+                TokenKind::Ident(name) => Rc::new(Node {
+                    token_id: self
+                        .token_arena
+                        .borrow_mut()
+                        .alloc(Rc::clone(&key_token)),
+                    expr: Rc::new(Expr::Ident(Ident::new_with_token(
+                        name,
+                        Some(Rc::clone(&key_token)),
+                    ))),
+                }),
+                TokenKind::StringLiteral(s) => Rc::new(Node {
+                    token_id: self
+                        .token_arena
+                        .borrow_mut()
+                        .alloc(Rc::clone(&key_token)),
+                    expr: Rc::new(Expr::Literal(Literal::String(s.clone()))),
+                }),
+                _ => {
+                    return Err(ParseError::UnexpectedToken((**key_token).clone()));
+                }
+            };
+
+            // Expect Colon
+            match self.tokens.next() {
+                Some(token) if token.kind == TokenKind::Colon => {}
+                Some(token) => return Err(ParseError::UnexpectedToken((**token).clone())),
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            }
+
+            // Parse value
+            let value_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+            let value_node = self.parse_expr(Rc::clone(value_token))?;
+            pairs.push((key_node, value_node));
+
+            // Peek for Comma or RBrace
+            match self.tokens.peek() {
+                Some(token) if token.kind == TokenKind::Comma => {
+                    self.tokens.next(); // Consume Comma
+                                        // Check for trailing comma followed by RBrace
+                    if let Some(next_token) = self.tokens.peek() {
+                        if next_token.kind == TokenKind::RBrace {
+                            self.tokens.next(); // Consume RBrace
+                            break;
+                        }
+                    }
+                }
+                Some(token) if token.kind == TokenKind::RBrace => {
+                    self.tokens.next(); // Consume RBrace
+                    break;
+                }
+                Some(token) => {
+                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                }
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            }
+        }
+
+        Ok(Rc::new(Node {
+            token_id,
+            expr: Rc::new(Expr::DictionaryLiteral(pairs)),
+        }))
     }
 
     fn parse_env(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -1309,6 +1403,191 @@ mod tests {
             module_id: 1.into(),
         }
     }
+
+    #[rstest]
+    #[case::empty_dict(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // Token ID of LBrace
+                expr: Rc::new(Expr::DictionaryLiteral(vec![])),
+            })
+        ]))]
+    #[case::simple_dict_ident_key(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("key".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // Token ID of LBrace
+                expr: Rc::new(Expr::DictionaryLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(), // Token ID of Ident("key")
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("key", Some(Rc::new(token(TokenKind::Ident("key".into()))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 3.into(), // Token ID of StringLiteral("value")
+                            expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::simple_dict_string_key(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // Token ID of LBrace
+                expr: Rc::new(Expr::DictionaryLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(), // Token ID of StringLiteral("key")
+                            expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 3.into(), // Token ID of NumberLiteral(1)
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::dict_multiple_entries(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("key1".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::StringLiteral("key2".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::BoolLiteral(true)),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace
+                expr: Rc::new(Expr::DictionaryLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(), // Ident("key1")
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("key1", Some(Rc::new(token(TokenKind::Ident("key1".into()))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 3.into(), // NumberLiteral(1)
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    ),
+                    (
+                        Rc::new(Node {
+                            token_id: 5.into(), // StringLiteral("key2")
+                            expr: Rc::new(Expr::Literal(Literal::String("key2".to_owned()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 7.into(), // BoolLiteral(true)
+                            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::dict_trailing_comma(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("key".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Comma),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(), // LBrace
+                expr: Rc::new(Expr::DictionaryLiteral(vec![
+                    (
+                        Rc::new(Node {
+                            token_id: 1.into(), // Ident("key")
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("key", Some(Rc::new(token(TokenKind::Ident("key".into()))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 3.into(), // NumberLiteral(1)
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        })
+                    )
+                ])),
+            })
+        ]))]
+    #[case::dict_missing_colon(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("key".into())),
+            // Missing Colon here
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
+    #[case::dict_missing_comma(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("key1".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            // Missing Comma here
+            token(TokenKind::Ident("key2".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident("key2".into())))))]
+    #[case::dict_missing_closing_brace(
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident("key".into())),
+            token(TokenKind::Colon),
+            token(TokenKind::NumberLiteral(1.into())),
+            // Missing RBrace here
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::dict_invalid_key_type( // Assuming only Ident and StringLiteral are valid keys direct in dict literal
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::NumberLiteral(1.into())), // Invalid key
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
+    #[case::dict_empty_with_comma_error( // { , } is invalid
+        vec![
+            token(TokenKind::LBrace),
+            token(TokenKind::Comma),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Comma))))]
 
     #[rstest]
     #[case::ident1(

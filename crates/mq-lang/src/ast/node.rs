@@ -202,6 +202,7 @@ pub enum Expr {
     Include(Literal),
     Self_,
     Nodes,
+    DictionaryLiteral(Vec<(Rc<Node>, Rc<Node>)>),
 }
 #[cfg(test)]
 mod tests {
