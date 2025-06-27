@@ -76,7 +76,7 @@ Use the following format for commit messages:
   - 💄 style: Code style changes that don't affect behavior
   - ♻️ refactor: Refactoring
   - ⚡ perf: Performance improvements
-  - ✅ test: Adding or modifying tests
+  - ✅ Test: Adding or modifying tests
   - 📦 build: Changes to build system or external dependencies
   - 👷 ci: Changes to CI configuration files and scripts
 - Write clear, concise, and descriptive commit messages.
@@ -113,6 +113,8 @@ When proposing feature additions to `mq`, include:
 - Mock external dependencies where possible.
 - Keep tests fast and isolated.
 - Update or add tests when changing existing code.
+
+Use `just test` to run tests instead of `cargo test`.
 
 ## Markdown Parser/Utility Coding Rules
 

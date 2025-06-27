@@ -142,7 +142,11 @@ impl Node {
             self.range()
         } else {
             let start = self.range().start;
-            let end = self.children.last().unwrap().range().end;
+            let end = self
+                .children
+                .last()
+                .map(|child| child.range().end)
+                .unwrap_or(start.clone());
             Range { start, end }
         }
     }
@@ -175,7 +179,13 @@ impl Node {
         let expr_index = self
             .children
             .iter()
-            .position(|child| matches!(child.token.as_ref().unwrap().kind, TokenKind::Colon))
+            .position(|child| {
+                child
+                    .token
+                    .as_ref()
+                    .map(|token| matches!(token.kind, TokenKind::Colon))
+                    .unwrap_or(false)
+            })
             .unwrap_or_default();
 
         (
