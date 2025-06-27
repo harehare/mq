@@ -11,8 +11,11 @@ use crate::{
     parse,
 };
 
+/// Configuration options for the mq engine.
 #[derive(Debug, Clone)]
 pub struct Options {
+    /// Whether to enable code optimization during evaluation.
+    /// When enabled, performs constant folding and dead code elimination.
     pub optimize: bool,
 }
 
@@ -22,6 +25,23 @@ impl Default for Options {
     }
 }
 
+/// The main execution engine for the mq.
+///
+/// The `Engine` manages parsing, optimization, and evaluation of mq code.
+/// It provides methods for configuration, loading modules, and evaluating code.
+///
+/// # Examples
+///
+/// ```rust
+/// use mq_lang::Engine;
+///
+/// let mut engine = Engine::default();
+/// engine.load_builtin_module();
+///
+/// let input = mq_lang::parse_text_input("hello").unwrap();
+/// let result = engine.eval("add(\" world\")", input.into_iter());
+/// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
+/// ```
 #[derive(Debug, Clone)]
 pub struct Engine {
     pub(crate) evaluator: Evaluator,
@@ -42,32 +62,60 @@ impl Default for Engine {
 }
 
 impl Engine {
+    /// Enable or disable code optimization.
+    ///
+    /// When optimization is enabled, the engine performs constant folding
+    /// and dead code elimination to improve execution performance.
     pub fn set_optimize(&mut self, optimize: bool) {
         self.options.optimize = optimize;
     }
 
+    /// Configure whether to filter out None values from results.
+    ///
+    /// When enabled, None values are automatically removed from the output,
+    /// resulting in cleaner results for most use cases.
     pub fn set_filter_none(&mut self, filter_none: bool) {
         self.evaluator.options.filter_none = filter_none;
     }
 
+    /// Set the maximum call stack depth for function calls.
+    ///
+    /// This prevents infinite recursion by limiting how deep function
+    /// calls can be nested. Useful for controlling resource usage.
     pub fn set_max_call_stack_depth(&mut self, max_call_stack_depth: u32) {
         self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
     }
 
+    /// Set search paths for module loading.
+    ///
+    /// These paths will be searched when loading external modules
+    /// via the `include` statement in mq code.
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
         self.evaluator.module_loader.search_paths = Some(paths);
     }
 
+    /// Define a string variable that can be used in mq code.
+    ///
+    /// This allows you to inject values from the host environment
+    /// into the mq execution context.
     pub fn define_string_value(&self, name: &str, value: &str) {
         self.evaluator.define_string_value(name, value);
     }
 
+    /// Load the built-in function modules.
+    ///
+    /// This must be called to enable access to standard functions
+    /// like `add`, `sub`, `map`, `filter`, etc.
     pub fn load_builtin_module(&mut self) {
         self.evaluator
             .load_builtin_module()
             .expect("Failed to load builtin module");
     }
 
+    /// Load an external module by name.
+    ///
+    /// The module will be searched for in the configured search paths
+    /// and made available for use in mq code.
     pub fn load_module(&mut self, module_name: &str) -> Result<(), Box<error::Error>> {
         let module = self
             .evaluator

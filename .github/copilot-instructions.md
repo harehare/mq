@@ -1,6 +1,5 @@
-# GitHub Copilot Instructions for mq
+# mq Development Guide
 
-This file contains instructions for GitHub Copilot for the mq.
 
 ## Project Overview
 
@@ -113,6 +112,8 @@ When proposing feature additions to `mq`, include:
 - Mock external dependencies where possible.
 - Keep tests fast and isolated.
 - Update or add tests when changing existing code.
+
+Use `just test` to run tests instead of `cargo test`.
 
 ## Markdown Parser/Utility Coding Rules
 

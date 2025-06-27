@@ -12,6 +12,7 @@ use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::process::exit;
+
 use std::rc::Rc;
 use std::{
     sync::{LazyLock, Mutex},
@@ -115,8 +116,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("type"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| {
-                Ok(args.first().unwrap().name().to_string().into())
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.first() {
+                Some(value) => Ok(value.name().to_string().into()),
+                None => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(

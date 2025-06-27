@@ -57,11 +57,16 @@ impl Node {
             }
             Expr::Let(_, node) => node.range(Rc::clone(&arena)),
             Expr::If(nodes) => {
-                let start = nodes.first().unwrap().1.range(Rc::clone(&arena));
-                let end = nodes.last().unwrap().1.range(Rc::clone(&arena));
-                Range {
-                    start: start.start,
-                    end: end.end,
+                if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
+                    let start = first.1.range(Rc::clone(&arena));
+                    let end = last.1.range(Rc::clone(&arena));
+                    Range {
+                        start: start.start,
+                        end: end.end,
+                    }
+                } else {
+                    // Fallback to token range if no branches exist
+                    arena[self.token_id].range.clone()
                 }
             }
             Expr::Literal(_)

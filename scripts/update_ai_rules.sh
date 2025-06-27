@@ -1,5 +1,8 @@
 #!/bin/bash
 
+cat ../AGENTS.md > ../CLAUDE.md
+cat ../AGENTS.md > ../.github/copilot-instructions.md
+
 # Generate copilot instructions
 mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("Commit", "**")' ../.github/copilot-instructions.md > ../.github/instructions/commit.instructions.md
 mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("Language Server Protocol", "crates/mq-lsp/**/*.rs")' ../.github/copilot-instructions.md > ../.github/instructions/lsp.instructions.md
