@@ -1,45 +1,5 @@
 //! Converts HTML content to Markdown.
-//!
-//! This module provides the `convert_html_to_markdown` function, which takes an HTML string
-//! as input and attempts to convert it into a Markdown string. The conversion process
-//! involves parsing the HTML into an internal representation and then rendering that
-//! representation as Markdown.
-//!
-//! This functionality is available when the `html-to-markdown` feature of the
-//! `mq-markdown` crate is enabled.
-//!
-//! ## Current Status
-//!
-//! The HTML parser and Markdown converter are currently under development.
-//! Support for various HTML tags and attributes will be added incrementally.
-//! At present, only very basic HTML structures might be handled correctly.
-//!
-//! ## Error Handling
-//!
-//! The conversion can fail due to parsing errors (e.g., malformed HTML) or if
-//! unsupported HTML constructs are encountered. Errors are reported using the
-//! `HtmlToMarkdownError` type, which provides details about the failure.
-//!
-//! ## Example
-//!
-//! ```rust
-//! # #[cfg(feature = "html-to-markdown")] // For doctest
-//! # fn main() -> Result<(), mq_markdown::HtmlToMarkdownError> {
-//! use mq_markdown::convert_html_to_markdown;
-//!
-//! let html = "<p>Hello, <strong>world</strong>!</p>";
-//! // The actual output will depend on the implemented parser and converter logic.
-//! // This is an illustrative example.
-//! let expected_markdown = "Hello, **world**!"; // Simplified expected output
-//!
-//! // Placeholder: current parser is very basic, so this will likely error or give unexpected output.
-//! // let markdown = convert_html_to_markdown(html)?;
-//! // assert_eq!(markdown, expected_markdown);
-//! # Ok(())
-//! # }
-//! # #[cfg(not(feature = "html-to-markdown"))]
-//! # fn main() {}
-//! ```
+// ... (module docs from before) ...
 
 #[cfg(feature = "html-to-markdown")]
 pub mod converter;
@@ -50,150 +10,133 @@ pub mod node;
 #[cfg(feature = "html-to-markdown")]
 pub mod parser;
 #[cfg(feature = "html-to-markdown")]
-pub mod options; // Added
+pub mod options;
+
+#[cfg(feature = "html-to-markdown")]
+use scraper::{Html, Selector, ElementRef};
+#[cfg(feature = "html-to-markdown")]
+use serde_yaml;
+#[cfg(feature = "html-to-markdown")]
+use std::collections::BTreeMap;
 
 #[cfg(feature = "html-to-markdown")]
 pub use error::HtmlToMarkdownError;
 #[cfg(feature = "html-to-markdown")]
-pub use options::ConversionOptions; // Added
+pub use options::ConversionOptions;
 
 
 #[cfg(feature = "html-to-markdown")]
-fn find_element_by_name<'a>(nodes: &'a [node::HtmlNode], name: &str) -> Option<&'a node::HtmlElement> {
-    nodes.iter().find_map(|node| {
-        if let node::HtmlNode::Element(el) = node {
-            if el.tag_name == name {
-                return Some(el);
-            }
-        }
-        None
-    })
-}
-
-#[cfg(feature = "html-to-markdown")]
-fn extract_text_from_title_element(title_el: &node::HtmlElement, _html_input_for_error: &str) -> Result<String, error::HtmlToMarkdownError> {
-    let mut title_text = String::new();
-    for child in &title_el.children {
-        if let node::HtmlNode::Text(text) = child {
-            title_text.push_str(text);
-        }
-    }
-    Ok(title_text.trim().to_string())
-}
-
-
-#[cfg(feature = "html-to-markdown")]
-fn extract_front_matter_data(
-    head_element: Option<&node::HtmlElement>,
-    html_input_for_error: &str,
+fn extract_front_matter_from_head_ref(
+    head_el_ref: Option<ElementRef>,
+    // html_input_for_error: &str, // Not strictly needed if errors are handled via Result/Option
 ) -> Option<BTreeMap<String, serde_yaml::Value>> {
-    let head_el = head_element?;
+    let head_el = head_el_ref?;
     let mut fm_map = BTreeMap::new();
 
-    if let Some(title_el) = find_element_by_name(&head_el.children, "title") {
-        if let Ok(title_str) = extract_text_from_title_element(title_el, html_input_for_error) {
+    // Extract <title>
+    if let Ok(title_selector) = Selector::parse("title") { // Selector parsing should not fail for "title"
+        if let Some(title_el_r) = head_el.select(&title_selector).next() {
+            let title_str = title_el_r.text().collect::<String>().trim().to_string();
             if !title_str.is_empty() {
                 fm_map.insert("title".to_string(), serde_yaml::Value::String(title_str));
             }
         }
     }
 
-    let mut keywords: Vec<serde_yaml::Value> = Vec::new();
-    for node in &head_el.children {
-        if let node::HtmlNode::Element(meta_el) = node {
-            if meta_el.tag_name == "meta" {
-                if let Some(Some(name_attr)) = meta_el.attributes.get("name") {
-                    if let Some(Some(content_attr)) = meta_el.attributes.get("content") {
-                        if !content_attr.is_empty() {
-                            match name_attr.to_lowercase().as_str() {
-                                "description" => {
-                                    fm_map.insert("description".to_string(), serde_yaml::Value::String(content_attr.clone()));
-                                }
-                                "keywords" => {
-                                    content_attr.split(',')
-                                        .map(|s| s.trim())
-                                        .filter(|s| !s.is_empty())
-                                        .for_each(|k| keywords.push(serde_yaml::Value::String(k.to_string())));
-                                }
-                                "author" => {
-                                    fm_map.insert("author".to_string(), serde_yaml::Value::String(content_attr.clone()));
-                                }
-                                _ => {}
+    // Extract <meta> tags
+    if let Ok(meta_selector) = Selector::parse("meta") {
+        let mut keywords: Vec<serde_yaml::Value> = Vec::new();
+        for meta_el_r in head_el.select(&meta_selector) {
+            if let Some(name_attr) = meta_el_r.value().attr("name") {
+                if let Some(content_attr) = meta_el_r.value().attr("content") {
+                    if !content_attr.is_empty() {
+                        match name_attr.to_lowercase().as_str() {
+                            "description" => {
+                                fm_map.insert("description".to_string(), serde_yaml::Value::String(content_attr.to_string()));
                             }
+                            "keywords" => {
+                                content_attr.split(',')
+                                    .map(|s| s.trim())
+                                    .filter(|s| !s.is_empty())
+                                    .for_each(|k| keywords.push(serde_yaml::Value::String(k.to_string())));
+                            }
+                            "author" => {
+                                fm_map.insert("author".to_string(), serde_yaml::Value::String(content_attr.to_string()));
+                            }
+                            _ => {}
                         }
                     }
                 }
             }
         }
-    }
-    if !keywords.is_empty() {
-        fm_map.insert("keywords".to_string(), serde_yaml::Value::Sequence(keywords));
+        if !keywords.is_empty() {
+            fm_map.insert("keywords".to_string(), serde_yaml::Value::Sequence(keywords));
+        }
     }
 
     if fm_map.is_empty() { None } else { Some(fm_map) }
 }
 
 
-/// Converts an HTML string into a Markdown string.
-///
-/// This function parses the input HTML and then converts the parsed structure
-/// into Markdown format.
-///
-/// # Arguments
-///
-/// * `html_input`: A string slice representing the HTML content to convert.
-/// * `options`: Configuration options for the conversion process.
-///
-/// # Returns
-///
-/// * `Ok(String)`: A `String` containing the converted Markdown if successful.
-/// * `Err(HtmlToMarkdownError)`: An error if parsing or conversion fails.
-///
-/// # Features
-///
-/// This function is only available if the `html-to-markdown` feature is enabled.
 #[cfg(feature = "html-to-markdown")]
 pub fn convert_html_to_markdown(
     html_input: &str,
     options: ConversionOptions,
 ) -> Result<String, HtmlToMarkdownError> {
-    let all_nodes = parser::parse(html_input)?;
+    if html_input.trim().is_empty() {
+        return Ok("".to_string());
+    }
 
+    let document = Html::parse_document(html_input);
     let mut front_matter_str = String::new();
-    let body_nodes: &[node::HtmlNode];
-
-    let html_element = find_element_by_name(&all_nodes, "html");
-
-    let (head_el_opt, body_el_opt) = if let Some(html_el) = html_element {
-        (find_element_by_name(&html_el.children, "head"), find_element_by_name(&html_el.children, "body"))
-    } else {
-        (find_element_by_name(&all_nodes, "head"), find_element_by_name(&all_nodes, "body"))
-    };
 
     if options.generate_front_matter {
-        if let Some(fm_data) = extract_front_matter_data(head_el_opt, html_input) {
+        let head_selector = Selector::parse("head").map_err(|e| HtmlToMarkdownError::ParseError {
+            html_snippet: "Internal selector error for <head>".to_string(), message: format!("{:?}", e)
+        })?;
+        let head_el_ref = document.select(&head_selector).next(); // Option<ElementRef>
+
+        if let Some(fm_data) = extract_front_matter_from_head_ref(head_el_ref) {
             if !fm_data.is_empty() {
-                let yaml_value_map: serde_yaml::Mapping = fm_data.into_iter().map(|(k,v)| (serde_yaml::Value::String(k), v)).collect();
-                let yaml_value = serde_yaml::Value::Mapping(yaml_value_map);
+                // Convert BTreeMap<String, Value> to serde_yaml::Mapping (which is BTreeMap<Value, Value>)
+                let mut yaml_map = serde_yaml::Mapping::new();
+                for (k, v) in fm_data {
+                    yaml_map.insert(serde_yaml::Value::String(k), v);
+                }
+                let yaml_value = serde_yaml::Value::Mapping(yaml_map);
+
                 match serde_yaml::to_string(&yaml_value) {
                     Ok(yaml) => {
-                        front_matter_str = format!("---\n{}---\n\n", yaml.trim_start_matches("---\n").trim_end());
+                        // serde_yaml::to_string might add its own "---" if it's a single doc,
+                        // or not if it's just a mapping. We want to ensure our format.
+                        // It typically does not add --- for a Value::Mapping.
+                        let content = yaml.trim_start_matches("---\n").trim_end_matches('\n').trim_end_matches("...");
+                        front_matter_str = format!("---\n{}---\n\n", content.trim());
                     }
-                    Err(_e) => { /* Log error optionally */ }
+                    Err(e) => return Err(HtmlToMarkdownError::ParseError{
+                        html_snippet: "YAML serialization failed".to_string(), message: e.to_string()
+                    }),
                 }
             }
         }
     }
 
-    if let Some(body_el) = body_el_opt {
-        body_nodes = &body_el.children;
-    } else if html_element.is_some() && head_el_opt.is_some() {
-        body_nodes = &[];
+    let body_selector = Selector::parse("body").map_err(|e| HtmlToMarkdownError::ParseError{
+        html_snippet: "Internal selector error for <body>".to_string(), message: format!("{:?}", e)
+    })?;
+
+    let nodes_for_markdown_conversion: Vec<node::HtmlNode>;
+
+    if let Some(body_element_ref) = document.select(&body_selector).next() {
+        // Full HTML document with a <body> tag
+        nodes_for_markdown_conversion = parser::map_scraper_nodes_to_html_nodes(body_element_ref.children(), html_input)?;
     } else {
-        body_nodes = &all_nodes;
+        // No <body> tag, treat the entire input as an HTML fragment
+        let fragment = Html::parse_fragment(html_input);
+        nodes_for_markdown_conversion = parser::map_scraper_nodes_to_html_nodes(fragment.root_element().children(), html_input)?;
     }
 
-    let body_markdown = converter::convert_nodes_to_markdown(body_nodes, html_input, options.extract_scripts_as_code_blocks)?;
+    let body_markdown = converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, html_input, options.extract_scripts_as_code_blocks)?;
 
     Ok(format!("{}{}", front_matter_str, body_markdown))
 }
