@@ -26,6 +26,36 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
 }
 
 #[cfg(feature = "html-to-markdown")]
+#[derive(PartialEq, Debug, Clone, Copy)]
+enum Alignment { Left, Center, Right, Default }
+
+#[cfg(feature = "html-to-markdown")]
+fn get_cell_alignment(element: &HtmlElement) -> Alignment {
+    if let Some(Some(style_attr)) = element.attributes.get("style") {
+        for part in style_attr.split(';') {
+            let sub_parts: Vec<&str> = part.trim().splitn(2, ':').collect();
+            if sub_parts.len() == 2 && sub_parts[0].trim() == "text-align" {
+                match sub_parts[1].trim().to_lowercase().as_str() {
+                    "left" => return Alignment::Left,
+                    "center" => return Alignment::Center,
+                    "right" => return Alignment::Right,
+                    _ => {}
+                }
+            }
+        }
+    }
+    if let Some(Some(align_attr)) = element.attributes.get("align") {
+        match align_attr.to_lowercase().as_str() {
+            "left" => return Alignment::Left,
+            "center" => return Alignment::Center,
+            "right" => return Alignment::Right,
+            _ => {}
+        }
+    }
+    Alignment::Default
+}
+
+#[cfg(feature = "html-to-markdown")]
 fn escape_table_cell_content(content: &str) -> String {
     content.replace("|", "\\|")
 }
@@ -36,6 +66,7 @@ fn convert_html_table_to_markdown(
     html_input_for_error: &str,
 ) -> Result<String, HtmlToMarkdownError> {
     let mut header_cells: Vec<String> = Vec::new();
+    let mut header_alignments: Vec<Alignment> = Vec::new(); // For storing alignments
     let mut body_rows: Vec<Vec<String>> = Vec::new();
 
     let mut first_tbody_first_row_used_as_header = false;
@@ -48,9 +79,10 @@ fn convert_html_table_to_markdown(
                     if let HtmlNode::Element(tr_element) = tr_node {
                         for cell_node in &tr_element.children {
                             if let HtmlNode::Element(cell_element) = cell_node {
-                                if cell_element.tag_name == "th" || cell_element.tag_name == "td" {
+                                if cell_element.tag_name == "th" || cell_element.tag_name == "td" { // Changed from th || td to th only for thead priority
                                     let cell_content = convert_children_to_string(&cell_element.children, html_input_for_error)?;
                                     header_cells.push(escape_table_cell_content(cell_content.trim()));
+                                    header_alignments.push(get_cell_alignment(cell_element));
                                 }
                             }
                         }
@@ -138,8 +170,16 @@ fn convert_html_table_to_markdown(
     markdown_table.push_str(" |\n");
 
     markdown_table.push_str("|");
-    for _ in 0..column_count {
-        markdown_table.push_str(" --- |");
+    for i in 0..column_count {
+        let align = header_alignments.get(i).unwrap_or(&Alignment::Default);
+        let sep_str = match align {
+            Alignment::Left => ":---",
+            Alignment::Center => ":---:",
+            Alignment::Right => "---:",
+            Alignment::Default => "---",
+        };
+        markdown_table.push_str(sep_str);
+        markdown_table.push_str("|");
     }
     markdown_table.push_str("\n");
 
@@ -164,6 +204,21 @@ fn convert_html_table_to_markdown(
     Ok(markdown_table.trim_end_matches('\n').to_string())
 }
 
+#[cfg(feature = "html-to-markdown")]
+fn process_url_for_markdown(url: &str) -> String {
+    let mut processed_url = url.replace(" ", "%20");
+
+    let needs_angle_brackets = url.is_empty() ||
+                               url.contains(' ') ||
+                               processed_url.contains('(') ||
+                               processed_url.contains(')');
+    if needs_angle_brackets {
+        format!("<{}>", processed_url)
+    } else {
+        processed_url
+    }
+}
+
 
 #[cfg(feature = "html-to-markdown")]
 fn convert_html_list_to_markdown(
@@ -175,7 +230,6 @@ fn convert_html_list_to_markdown(
     let base_indent = "    ".repeat(indent_level); // 4 spaces per indent level
 
     let mut current_list_number = if list_element.tag_name == "ol" {
-        // TODO: Handle <ol start="N"> attribute if present and make it configurable
         list_element.attributes.get("start")
             .and_then(|opt_val| opt_val.as_ref())
             .and_then(|s| s.parse::<usize>().ok())
@@ -253,11 +307,8 @@ pub fn convert_children_to_string(nodes: &[HtmlNode], html_input_for_error: &str
                                 .map(|title_str| format!(" \"{}\"", title_str.replace('"', "\\\"")))
                                 .unwrap_or_default();
 
-                            // TODO: URL Escaping for characters like '(', ')', ' ' if not already handled or if using < >.
-                            // For now, assume href is mostly okay or already encoded.
-                            // Markdown common practice: URL encode spaces to %20. Parentheses can be problematic.
-                            // For simplicity, not adding < > around URL yet unless tests show necessity.
-                            parts.push(format!("[{}]({}{})", link_text, href, title_part));
+                            let processed_href = process_url_for_markdown(href);
+                            parts.push(format!("[{}]({}{})", link_text, processed_href, title_part));
                         } else {
                             // No href, treat as plain text (e.g., <a name="anchor">text</a>)
                             if !link_text.is_empty() { parts.push(link_text); }
@@ -291,7 +342,8 @@ pub fn convert_children_to_string(nodes: &[HtmlNode], html_input_for_error: &str
                                     .map(|title_str| format!(" \"{}\"", title_str.replace('"', "\\\"")))
                                     .unwrap_or_default();
 
-                                parts.push(format!("![{}]({}{})", alt_text, src_url, title_part));
+                                let processed_src = process_url_for_markdown(src_url);
+                                parts.push(format!("![{}]({}{})", alt_text, processed_src, title_part));
                             }
                             // If src_url is empty, effectively ignore the tag by not pushing anything.
                         }

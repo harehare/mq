@@ -13,6 +13,33 @@ fn assert_conversion(html: &str, expected_markdown: &str) {
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
+fn test_table_with_alignments() {
+    let html = concat!(
+        "<table><thead>",
+        "<tr><th style=\"text-align:left\">Left</th>",
+        "<th style=\"text-align:center\">Center</th>",
+        "<th style=\"text-align:right\">Right</th>",
+        "<th>Default</th></tr>",
+        "</thead><tbody><tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></tbody></table>"
+    );
+    let expected = concat!(
+        "| Left | Center | Right | Default |\n",
+        "|:---|:---:|---:|---|\n", // Default is ---
+        "| 1 | 2 | 3 | 4 |"
+    );
+    assert_conversion(html, expected);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_table_with_align_attribute() {
+    let html = "<table><thead><tr><th align=\"right\">H1</th><th align=\"center\">H2</th></tr></thead><tbody><tr><td>c1</td><td>c2</td></tr></tbody></table>";
+    let expected = "| H1 | H2 |\n|---:|:---:|\n| c1 | c2 |";
+    assert_conversion(html, expected);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
 fn test_br_in_paragraph() {
     assert_conversion("<p>line1<br>line2</p>", "line1  \nline2");
 }
@@ -207,6 +234,146 @@ fn test_iframe_simple() {
         "<iframe src=\"https://example.com/embed\" title=\"My Embed\"></iframe>",
         "[My Embed](https://example.com/embed \"My Embed\")",
     );
+}
+
+// --- Combination / Integration Tests ---
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_li_complex_content() {
+    let html = concat!(
+        "<ul>",
+        "  <li>",
+        "    <p>Paragraph 1 in li.</p>",
+        "    <p>Paragraph 2 in li.</p>",
+        "    <ul>",
+        "      <li>Nested item</li>",
+        "    </ul>",
+        "    <blockquote>",
+        "      <p>Quote in li.</p>",
+        "    </blockquote>",
+        "    <pre><code>Code in li.</code></pre>",
+        "  </li>",
+        "</ul>"
+    );
+    // Marker "* " (2 chars), continuation indent is 2 spaces.
+    let expected = concat!(
+        "* Paragraph 1 in li.\n",
+        "  \n", // Blank line between paras, indented
+        "  Paragraph 2 in li.\n",
+        "  \n", // Blank line before nested list, indented
+        "  * Nested item\n", // Nested list itself is further indented by its own logic on top of this continuation
+        "  \n", // Blank line before blockquote, indented
+        "  > Quote in li.\n",
+        "  \n", // Blank line before pre, indented
+        "  ```\n",
+        "  Code in li.\n",
+        "  ```"
+    );
+    assert_conversion(html, expected);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_table_cell_various_content() {
+    let html = concat!(
+        "<table><thead><tr><th>Header</th></tr></thead><tbody>",
+        "<tr><td>Cell with <strong>bold</strong>, <em>italic</em>,<br>and a <a href=\"#\">link</a>.</td></tr>",
+        "<tr><td>Cell with list:<ul><li>L1</li><li>L2</li></ul> (list becomes inline)</td></tr>",
+        "<tr><td>Cell with image: <img src=\"img.png\" alt=\"alt\"></td></tr>",
+        "</tbody></table>"
+    );
+    // convert_children_to_string for <ul><li>L1</li><li>L2</li></ul> results in "L1L2" or similar.
+    // Let's assume it becomes "L1 L2" if there were spaces, or just "L1L2". For simplicity, "L1L2".
+    let expected = concat!(
+        "| Header |\n",
+        "| --- |\n",
+        "| Cell with **bold**, *italic*,  \\nand a [link](<#>) |\n", // <br> becomes "  \n"
+        "| Cell with list:L1L2 (list becomes inline) |\n",
+        "| Cell with image: ![alt](<img.png>) |"
+    );
+    assert_conversion(html, expected);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_blockquote_complex_content() {
+    let html = concat!(
+        "<blockquote>",
+        "  <p>Quote text.</p>",
+        "  <ul><li>List in quote</li></ul>",
+        "  <pre><code>Code in quote</code></pre>",
+        "  <blockquote><p>Nested quote</p></blockquote>",
+        "</blockquote>"
+    );
+    let expected = concat!(
+        "> Quote text.\n",
+        ">\n", // Blank line before list
+        "> * List in quote\n",
+        ">\n", // Blank line before pre
+        "> ```\n",
+        "> Code in quote\n",
+        "> ```\n",
+        ">\n", // Blank line before nested quote
+        "> > Nested quote"
+    );
+    assert_conversion(html, expected);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_dd_complex_content() {
+    let html = concat!(
+        "<dl>",
+        "  <dt>Term</dt>",
+        "  <dd>",
+        "    <p>Para in dd.</p>",
+        "    <ul><li>List in dd</li></ul>",
+        "    <pre><code>Code in dd</code></pre>",
+        "  </dd>",
+        "</dl>"
+    );
+    // <dd> content is processed by convert_nodes_to_markdown, then each line indented by "  "
+    // convert_nodes_to_markdown for children of <dd> gives:
+    // "Para in dd.\n\n* List in dd\n\n```\nCode in dd\n```"
+    // Indenting this:
+    let expected = concat!(
+        "**Term**\n",
+        "  Para in dd.\n",
+        "  \n",
+        "  * List in dd\n",
+        "  \n",
+        "  ```\n",
+        "  Code in dd\n",
+        "  ```"
+    );
+    assert_conversion(html, expected);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_full_page_structure() {
+    let html = concat!(
+        "<h1>Title</h1>",
+        "<p>Intro paragraph with <a href=\"#l\">link</a>.</p>",
+        "<ul><li>Item 1</li><li>Item 2 <input type=\"checkbox\" checked> done</li></ul>",
+        "<table><thead><tr><th align=\"center\">TH</th></tr></thead><tbody><tr><td>TD</td></tr></tbody></table>",
+        "<blockquote><p>Quote</p></blockquote>",
+        "<pre><code>code block here</code></pre>",
+        "<dl><dt>DT</dt><dd>DD</dd></dl>",
+        "<p>Final para.</p>"
+    );
+    let expected = concat!(
+        "# Title\n\n",
+        "Intro paragraph with [link](<#l>).\n\n",
+        "* Item 1\n* [x] done\n\n", // List items, checkbox processed
+        "| TH |\n|:---:|\n| TD |\n\n", // Table with alignment
+        "> Quote\n\n", // Blockquote
+        "```\ncode block here\n```\n\n", // Pre block
+        "**DT**\n  DD\n\n", // Definition list
+        "Final para."
+    );
+    assert_conversion(html, expected);
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1041,7 +1208,7 @@ fn test_img_url_with_special_chars() {
     // For now, assume src URL is passed as is.
     assert_conversion(
         "<img src=\"images/my image (new).jpg\" alt=\"special\">",
-        "![special](images/my image (new).jpg)",
+        "![special](</images/my%20image%20(new).jpg>)",
     );
 }
 
@@ -1264,8 +1431,8 @@ fn test_link_empty_text() {
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
-fn test_link_href_empty() {
-    assert_conversion("<a href=\"\">empty href</a>", "[empty href]()");
+fn test_link_href_empty_processed() {
+    assert_conversion("<a href=\"\">empty href</a>", "[empty href](<>)");
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1306,10 +1473,10 @@ fn test_link_url_with_spaces_and_parentheses() {
     // Markdown link destination can have spaces if URL-encoded, or sometimes if surrounded by <>.
     // Parentheses in URL for Markdown need to be balanced or URL enclosed in <>.
     // For simplicity, assume valid, possibly encoded URLs in href.
-    // If href="foo bar.html", output "[text](foo%20bar.html)" is common.
-    // If href="/path(with)parens", output "[text](/path(with)parens)" or "[text](</path(with)parens>)"
+    // If href="foo bar.html", output "[text](<foo%20bar.html>)" is common.
+    // If href="/path(with)parens", output "[text](</path(with)parens>)"
     // We'll aim for direct passthrough for now and refine if specific encoding/escaping is needed by Markdown spec.
-    assert_conversion("<a href=\"/url%20with%20spaces(and%29parentheses.html\">Link</a>", "[Link](/url%20with%20spaces(and%29parentheses.html)");
+    assert_conversion("<a href=\"/url%20with%20spaces(and%29parentheses.html\">Link</a>", "[Link](</url%20with%20spaces(and%29parentheses.html>)");
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1317,12 +1484,16 @@ fn test_link_url_with_spaces_and_parentheses() {
 fn test_link_url_with_unescaped_parentheses_in_href() {
     // Markdown requires parentheses in URL to be escaped or the URL enclosed in <>
     // For now, we will assume the parser provides the href as is, and converter might need to handle this.
-    // Let's test a simple case. If href="/a(b)c", output could be "[text](/a(b)c)" which is fine for many renderers,
+    // Let's test a simple case. If href="/a(b)c", output could be "[text](</a(b)c>)" which is fine for many renderers,
     // or ideally "[text](</a(b)c>)" or "[text](/a\(b\)c)".
-    // For now, direct passthrough:
-    assert_conversion("<a href=\"/a(b)c\">text</a>", "[text](/a(b)c)");
+    assert_conversion("<a href=\"/a(b)c\">text</a>", "[text](</a(b)c>)");
 }
 
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_link_href_with_spaces_only() {
+    assert_conversion("<a href=\"/url with spaces\">Link</a>", "[Link](</url%20with%20spaces>)");
+}
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
