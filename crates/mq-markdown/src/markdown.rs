@@ -118,28 +118,17 @@ impl Markdown {
 
     pub fn from_html_str(content: &str) -> miette::Result<Self> {
         // Create handlers more efficiently with direct creation
-        let mut handlers: Vec<TagHandler> = Vec::with_capacity(7);
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::WebpageChromeRemover,
-        )));
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::ParagraphHandler,
-        )));
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::HeadingHandler,
-        )));
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::CodeHandler,
-        )));
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::StyledTextHandler,
-        )));
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::ListHandler,
-        )));
-        handlers.push(Rc::new(RefCell::new(
-            html_to_markdown::markdown::TableHandler::new(),
-        )));
+        let mut handlers: Vec<TagHandler> = vec![
+            Rc::new(RefCell::new(
+                html_to_markdown::markdown::WebpageChromeRemover,
+            )),
+            Rc::new(RefCell::new(html_to_markdown::markdown::ParagraphHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::HeadingHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::CodeHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::StyledTextHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::ListHandler)),
+            Rc::new(RefCell::new(html_to_markdown::markdown::TableHandler::new())),
+        ];
 
         html_to_markdown::convert_html_to_markdown(content.as_bytes(), &mut handlers)
             .map_err(|e| miette!("Failed to convert HTML to markdown: {}", e))

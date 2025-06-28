@@ -1,6 +1,7 @@
 # mq-markdown
 
-High-performance markdown parsing and manipulation library for [mq](https://github.com/harehare/mq).
+This crate provides markdown parsing and HTML conversion functionality used in [mq](https://github.com/harehare/mq).
+It offers a simple API to manipulate markdown content and generate different output formats.
 
 ## Features
 
@@ -53,11 +54,10 @@ println!("{}", doc);
 ## Performance
 
 - Uses structural comparison for efficient node equality
-- Pre-allocates buffers to minimize string allocations  
+- Pre-allocates buffers to minimize string allocations
 - Leverages `CompactString` for memory-efficient string storage
 - Zero-copy operations where possible
 
 ## License
 
 MIT
-
