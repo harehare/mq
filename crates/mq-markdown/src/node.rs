@@ -6,7 +6,10 @@ use markdown::mdast::{self};
 
 type Level = u8;
 
-pub const EMPTY_NODE: Node = Node::Empty;
+pub const EMPTY_NODE: Node = Node::Text(Text {
+    value: String::new(),
+    position: None,
+});
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RenderOptions {
@@ -584,34 +587,7 @@ pub struct HorizontalRule {
     pub position: Option<Position>,
 }
 
-/// Represents a single node in a Markdown Abstract Syntax Tree (AST).
-///
-/// Each variant corresponds to a different type of Markdown element that can appear
-/// in a document. This enum provides a unified interface for working with all types
-/// of Markdown content, from simple text to complex structures like tables and lists.
-///
-/// # Examples
-///
-/// ```rust
-/// use mq_markdown::{Node, Text};
-///
-/// // Create a simple text node
-/// let text_node = Node::Text(Text {
-///     value: "Hello, world!".to_string(),
-///     position: None,
-/// });
-///
-/// // Check the type of content
-/// assert!(text_node.is_text());
-/// assert_eq!(text_node.value(), "Hello, world!");
-/// ```
-///
-/// # Performance Notes
-///
-/// - Node comparison is implemented structurally for efficiency
-/// - Use `is_empty()` to check for empty content before processing
-/// - The `position` field can be used for source mapping but adds memory overhead
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -651,6 +627,12 @@ pub enum Node {
     Text(Text),
     Fragment(Fragment),
     Empty,
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
 }
 
 impl PartialOrd for Node {
@@ -1173,37 +1155,12 @@ impl Node {
 
     pub fn set_position(&mut self, pos: Option<Position>) {
         match self {
-            Self::Blockquote(v) => {
-                v.position = pos.clone();
-                for child in &mut v.values {
-                    child.set_position(pos.clone());
-                }
-            }
+            Self::Blockquote(v) => v.position = pos,
             Self::Definition(d) => d.position = pos,
-            Self::Delete(v) => {
-                v.position = pos.clone();
-                for child in &mut v.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::Heading(h) => {
-                h.position = pos.clone();
-                for child in &mut h.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::Emphasis(v) => {
-                v.position = pos.clone();
-                for child in &mut v.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::Footnote(f) => {
-                f.position = pos.clone();
-                for child in &mut f.values {
-                    child.set_position(pos.clone());
-                }
-            }
+            Self::Delete(v) => v.position = pos,
+            Self::Heading(h) => h.position = pos,
+            Self::Emphasis(v) => v.position = pos,
+            Self::Footnote(f) => f.position = pos,
             Self::FootnoteRef(f) => f.position = pos,
             Self::Html(v) => v.position = pos,
             Self::Yaml(v) => v.position = pos,
@@ -1212,69 +1169,24 @@ impl Node {
             Self::ImageRef(i) => i.position = pos,
             Self::CodeInline(v) => v.position = pos,
             Self::MathInline(v) => v.position = pos,
-            Self::Link(l) => {
-                l.position = pos.clone();
-                for child in &mut l.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::LinkRef(l) => {
-                l.position = pos.clone();
-                for child in &mut l.values {
-                    child.set_position(pos.clone());
-                }
-            }
+            Self::Link(l) => l.position = pos,
+            Self::LinkRef(l) => l.position = pos,
             Self::Math(v) => v.position = pos,
             Self::Code(c) => c.position = pos,
-            Self::TableCell(c) => {
-                c.position = pos.clone();
-                for child in &mut c.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::TableRow(r) => {
-                r.position = pos.clone();
-                for child in &mut r.values {
-                    child.set_position(pos.clone());
-                }
-            }
+            Self::TableCell(c) => c.position = pos,
+            Self::TableRow(r) => r.position = pos,
             Self::TableHeader(c) => c.position = pos,
-            Self::List(l) => {
-                l.position = pos.clone();
-                for child in &mut l.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::Strong(s) => {
-                s.position = pos.clone();
-                for child in &mut s.values {
-                    child.set_position(pos.clone());
-                }
-            }
+            Self::List(l) => l.position = pos,
+            Self::Strong(s) => s.position = pos,
             Self::MdxFlowExpression(m) => m.position = pos,
             Self::MdxTextExpression(m) => m.position = pos,
             Self::MdxJsEsm(m) => m.position = pos,
-            Self::MdxJsxFlowElement(m) => {
-                m.position = pos.clone();
-                for child in &mut m.children {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::MdxJsxTextElement(m) => {
-                m.position = pos.clone();
-                for child in &mut m.children {
-                    child.set_position(pos.clone());
-                }
-            }
+            Self::MdxJsxFlowElement(m) => m.position = pos,
+            Self::MdxJsxTextElement(m) => m.position = pos,
             Self::Break(b) => b.position = pos,
             Self::HorizontalRule(h) => h.position = pos,
             Self::Text(t) => t.position = pos,
-            Self::Fragment(f) => {
-                for child in &mut f.values {
-                    child.set_position(pos.clone());
-                }
-            }
-            Self::Empty => {}
+            Self::Fragment(_) | Self::Empty => {}
         }
     }
 
