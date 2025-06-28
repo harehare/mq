@@ -151,6 +151,7 @@ pub enum Selector {
     Math,
     Heading(Option<Depth>),
     Table(Option<usize>, Option<usize>),
+    Slice(Option<isize>, Option<isize>),
     Text,
     HorizontalRule,
     Definition,

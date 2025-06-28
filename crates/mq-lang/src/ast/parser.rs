@@ -14,9 +14,6 @@ use super::{Program, TokenId};
 
 type IfExpr = (Option<Rc<Node>>, Rc<Node>);
 
-#[derive(Debug)]
-struct ArrayIndex(Option<usize>);
-
 pub struct Parser<'a> {
     tokens: Peekable<core::slice::Iter<'a, Rc<Token>>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
@@ -1027,38 +1024,179 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
-    // Example: .[0][1] or .[0]
-    fn parse_selector_table_args(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        let token1 = match self.tokens.peek() {
-            Some(token) => Ok(Rc::clone(token)),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-        }?;
+    // Helper function to parse an optional integer inside brackets.
+    // Assumes the opening LBracket has just been consumed.
+    // It expects to find an optional NumberLiteral followed by an RBracket.
+    fn parse_optional_int_inside_brackets(
+        &mut self,
+        lbracket_token_for_err_reporting: Rc<Token>, // Used for context in case of error
+    ) -> Result<Option<usize>, ParseError> {
+        let lbracket_token_id = self
+            .token_arena
+            .borrow_mut()
+            .alloc(lbracket_token_for_err_reporting);
 
-        let ArrayIndex(i1) = self.parse_int_array_arg(&token1)?;
-        let token2 = match self.tokens.peek() {
-            Some(token) => Ok(Rc::clone(token)),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-        }?;
+        match self.tokens.peek() {
+            Some(peeked_token_rc) => {
+                match &peeked_token_rc.kind {
+                    TokenKind::NumberLiteral(n) => {
+                        let num_token = self.tokens.next().unwrap(); // Consume NumberLiteral
+                        let num_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(num_token));
+                        self.next_token(num_token_id, |k| k == &TokenKind::RBracket)?; // Consume RBracket
+                        Ok(Some(n.value() as usize))
+                    }
+                    TokenKind::RBracket => {
+                        self.tokens.next(); // Consume RBracket
+                        Ok(None) // Indicates `[]`
+                    }
+                    _ => {
+                        // Found something other than a number or RBracket after LBracket
+                        Err(ParseError::UnexpectedToken((***peeked_token_rc).clone()))
+                    }
+                }
+            }
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)), // EOF after LBracket
+        }
+    }
 
-        if let Token {
-            range: _,
-            kind: TokenKind::LBracket,
-            module_id: _,
-        } = &*token2
-        {
-            // .[n][n]
-            let ArrayIndex(i2) = self.parse_int_array_arg(&token2)?;
-            Ok(Rc::new(Node {
-                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                expr: Rc::new(Expr::Selector(Selector::Table(i1, i2))),
-            }))
-        } else {
-            // .[n]
-            Ok(Rc::new(Node {
-                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                expr: Rc::new(Expr::Selector(Selector::List(i1, None))),
-            }))
+    // Parses arguments for table, list item, or slice selectors.
+    // Examples: .[index], .[row][col], .[start:end], .[:end], .[start:], .[:]
+    // The initial '.' token is `dot_token`.
+    fn parse_selector_table_args(&mut self, dot_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let dot_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&dot_token));
+
+        // Expect and consume LBracket
+        let lbracket_token_1 = match self.tokens.next() {
+            Some(t) if t.kind == TokenKind::LBracket => t,
+            Some(t) => return Err(ParseError::UnexpectedToken((*t).clone())),
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+        let lbracket_token_1_id = self.token_arena.borrow_mut().alloc(Rc::clone(&lbracket_token_1));
+
+        // Peek at the token immediately following lbracket_token_1
+        match self.tokens.peek() {
+            Some(peek1_rc) => {
+                let peek1_token_clone = Rc::clone(peek1_rc); // Clone for potential error reporting
+                match &peek1_token_clone.kind {
+                    TokenKind::NumberLiteral(n1) => {
+                        let num1_rc = self.tokens.next().unwrap(); // Consume NumberLiteral(n1)
+                        let num1_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&num1_rc));
+                        let val1 = n1.value() as isize;
+
+                        match self.tokens.peek() {
+                            Some(peek2_rc) => {
+                                let peek2_token_clone = Rc::clone(peek2_rc);
+                                match &peek2_token_clone.kind {
+                                    TokenKind::Colon => {
+                                        let colon_rc = self.tokens.next().unwrap(); // Consume Colon
+                                        let colon_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&colon_rc));
+                                        let start = Some(val1);
+                                        let mut token_id_before_rbracket = colon_token_id;
+
+                                        let end = match self.tokens.peek() {
+                                            Some(peek3_rc) if matches!(&peek3_rc.kind, TokenKind::NumberLiteral(_)) => {
+                                                if let TokenKind::NumberLiteral(n2) = &peek3_rc.kind {
+                                                    let num2_rc = self.tokens.next().unwrap(); // Consume NumberLiteral(n2)
+                                                    token_id_before_rbracket = self.token_arena.borrow_mut().alloc(Rc::clone(&num2_rc));
+                                                    Some(n2.value() as isize)
+                                                } else { unreachable!() }
+                                            }
+                                            _ => None, // Not a number, could be RBracket for [val1:]
+                                        };
+                                        // Expect and consume RBracket
+                                        self.next_token(token_id_before_rbracket, |k| k == &TokenKind::RBracket)?;
+                                        Ok(Rc::new(Node {
+                                            token_id: dot_token_id,
+                                            expr: Rc::new(Expr::Selector(Selector::Slice(start, end))),
+                                        }))
+                                    }
+                                    TokenKind::RBracket => {
+                                        self.tokens.next(); // Consume RBracket
+                                        let i1_val = Some(val1 as usize);
+                                        // Check for second LBracket for Table selector
+                                        if let Some(peek_for_lbracket_2_rc) = self.tokens.peek() {
+                                            if peek_for_lbracket_2_rc.kind == TokenKind::LBracket {
+                                                let lbracket_token_2_rc = self.tokens.next().unwrap(); // Consume LBracket
+                                                let i2_val = self.parse_optional_int_inside_brackets(lbracket_token_2_rc)?;
+                                                Ok(Rc::new(Node {
+                                                    token_id: dot_token_id,
+                                                    expr: Rc::new(Expr::Selector(Selector::Table(i1_val, i2_val))),
+                                                }))
+                                            } else {
+                                                // No second LBracket, so it's a List selector
+                                                Ok(Rc::new(Node {
+                                                    token_id: dot_token_id,
+                                                    expr: Rc::new(Expr::Selector(Selector::List(i1_val, None))),
+                                                }))
+                                            }
+                                        } else {
+                                            // EOF after first RBracket, it's a List selector
+                                            Ok(Rc::new(Node {
+                                                token_id: dot_token_id,
+                                                expr: Rc::new(Expr::Selector(Selector::List(i1_val, None))),
+                                            }))
+                                        }
+                                    }
+                                    _ => Err(ParseError::UnexpectedToken((**peek2_token_clone).clone())),
+                                }
+                            }
+                            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)), // EOF after num1
+                        }
+                    }
+                    TokenKind::Colon => {
+                        let colon_rc = self.tokens.next().unwrap(); // Consume Colon
+                        let colon_token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&colon_rc));
+                        let start = None;
+                        let mut token_id_before_rbracket = colon_token_id;
+
+                        let end = match self.tokens.peek() {
+                            Some(peek2_rc) if matches!(&peek2_rc.kind, TokenKind::NumberLiteral(_)) => {
+                                if let TokenKind::NumberLiteral(n2) = &peek2_rc.kind {
+                                    let num2_rc = self.tokens.next().unwrap(); // Consume NumberLiteral(n2)
+                                    token_id_before_rbracket = self.token_arena.borrow_mut().alloc(Rc::clone(&num2_rc));
+                                    Some(n2.value() as isize)
+                                } else { unreachable!() }
+                            }
+                            _ => None, // Not a number, could be RBracket for [:]
+                        };
+                        // Expect and consume RBracket
+                        self.next_token(token_id_before_rbracket, |k| k == &TokenKind::RBracket)?;
+                        Ok(Rc::new(Node {
+                            token_id: dot_token_id,
+                            expr: Rc::new(Expr::Selector(Selector::Slice(start, end))),
+                        }))
+                    }
+                    TokenKind::RBracket => {
+                        self.tokens.next(); // Consume RBracket, we have parsed `[]`
+                        let i1_val = None;
+                        // Check for second LBracket for Table selector
+                        if let Some(peek_for_lbracket_2_rc) = self.tokens.peek() {
+                            if peek_for_lbracket_2_rc.kind == TokenKind::LBracket {
+                                let lbracket_token_2_rc = self.tokens.next().unwrap(); // Consume LBracket
+                                let i2_val = self.parse_optional_int_inside_brackets(lbracket_token_2_rc)?;
+                                Ok(Rc::new(Node {
+                                    token_id: dot_token_id,
+                                    expr: Rc::new(Expr::Selector(Selector::Table(i1_val, i2_val))),
+                                }))
+                            } else {
+                                // No second LBracket, so it's a List selector
+                                Ok(Rc::new(Node {
+                                    token_id: dot_token_id,
+                                    expr: Rc::new(Expr::Selector(Selector::List(i1_val, None))),
+                                }))
+                            }
+                        } else {
+                            // EOF after first RBracket, it's a List selector
+                            Ok(Rc::new(Node {
+                                token_id: dot_token_id,
+                                expr: Rc::new(Expr::Selector(Selector::List(i1_val, None))),
+                            }))
+                        }
+                    }
+                    _ => Err(ParseError::UnexpectedToken((*peek1_token_clone).clone())),
+                }
+            }
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)), // EOF after first LBracket
         }
     }
 
@@ -1088,6 +1226,42 @@ impl<'a> Parser<'a> {
             }))
         }
     }
+
+    // fn parse_int_array_arg(&mut self, token: &Rc<Token>) -> Result<ArrayIndex, ParseError> {
+    //     let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(token));
+    //     self.next_token(token_id, |token_kind| {
+    //         matches!(token_kind, TokenKind::LBracket)
+    //     })?;
+    //
+    //     let token = match self.tokens.peek() {
+    //         Some(token) => Ok(Rc::clone(token)),
+    //         None => return Err(ParseError::InsufficientTokens((**token).clone())),
+    //     }?;
+    //
+    //     if let Token {
+    //         range: _,
+    //         kind: TokenKind::NumberLiteral(n),
+    //         module_id: _,
+    //     } = &*token
+    //     {
+    //         let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&token));
+    //         self.tokens.next();
+    //         self.next_token(token_id, |token_kind| {
+    //             matches!(token_kind, TokenKind::RBracket)
+    //         })?;
+    //         Ok(ArrayIndex(Some(n.value() as usize)))
+    //     } else if let Token {
+    //         range: _,
+    //         kind: TokenKind::RBracket,
+    //         module_id: _,
+    //     } = &*token
+    //     {
+    //         self.tokens.next();
+    //         Ok(ArrayIndex(None))
+    //     } else {
+    //         Err(ParseError::UnexpectedToken((*token).clone()))
+    //     }
+    // }
 
     // Parses arguments for heading selectors like `.h(level)` or just `.h`.
     // Example: .h(1) or .h
@@ -1120,42 +1294,6 @@ impl<'a> Parser<'a> {
 
         if args.len() == 1 {
             Ok(args[0].clone())
-        } else {
-            Err(ParseError::UnexpectedToken((*token).clone()))
-        }
-    }
-
-    fn parse_int_array_arg(&mut self, token: &Rc<Token>) -> Result<ArrayIndex, ParseError> {
-        let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(token));
-        self.next_token(token_id, |token_kind| {
-            matches!(token_kind, TokenKind::LBracket)
-        })?;
-
-        let token = match self.tokens.peek() {
-            Some(token) => Ok(Rc::clone(token)),
-            None => return Err(ParseError::InsufficientTokens((**token).clone())),
-        }?;
-
-        if let Token {
-            range: _,
-            kind: TokenKind::NumberLiteral(n),
-            module_id: _,
-        } = &*token
-        {
-            let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&token));
-            self.tokens.next();
-            self.next_token(token_id, |token_kind| {
-                matches!(token_kind, TokenKind::RBracket)
-            })?;
-            Ok(ArrayIndex(Some(n.value() as usize)))
-        } else if let Token {
-            range: _,
-            kind: TokenKind::RBracket,
-            module_id: _,
-        } = &*token
-        {
-            self.tokens.next();
-            Ok(ArrayIndex(None))
         } else {
             Err(ParseError::UnexpectedToken((*token).clone()))
         }
@@ -1950,6 +2088,85 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Elif, module_id: 1.into()})))]
+    // Slice Syntax Tests
+    #[case::slice_empty(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::Colon), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(None, None))) })])
+    )]
+    #[case::slice_end_only(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::Colon), token(TokenKind::NumberLiteral(3.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(None, Some(3)))) })])
+    )]
+    #[case::slice_start_only(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(2.into())), token(TokenKind::Colon), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(Some(2), None))) })])
+    )]
+    #[case::slice_start_and_end(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::Colon), token(TokenKind::NumberLiteral(3.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(Some(1), Some(3)))) })])
+    )]
+    #[case::slice_negative_indices(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral((-3).into())), token(TokenKind::Colon), token(TokenKind::NumberLiteral((-1).into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(Some(-3), Some(-1)))) })])
+    )]
+    #[case::slice_negative_start_only(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral((-1).into())), token(TokenKind::Colon), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(Some(-1), None))) })])
+    )]
+    #[case::slice_negative_end_only(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::Colon), token(TokenKind::NumberLiteral((-2).into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Slice(None, Some(-2)))) })])
+    )]
+    // Non-Regression: Existing Selector::List and Selector::Table
+    #[case::list_empty_brackets(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::List(None, None))) })])
+    )]
+    #[case::list_single_index(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::List(Some(1), None))) })])
+    )]
+    #[case::table_two_indices(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::RBracket), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(2.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Table(Some(1), Some(2)))) })])
+    )]
+    #[case::table_empty_first_index(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::RBracket), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(2.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Table(None, Some(2)))) })])
+    )]
+    #[case::table_empty_second_index(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::RBracket), token(TokenKind::LBracket), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Ok(vec![Rc::new(Node { token_id: 0.into(), expr: Rc::new(Expr::Selector(Selector::Table(Some(1), None))) })])
+    )]
+    // Invalid Slice Forms
+    #[case::slice_too_many_colons(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::Colon), token(TokenKind::NumberLiteral(2.into())), token(TokenKind::Colon), token(TokenKind::NumberLiteral(3.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Colon))) // Error at the second colon
+    )]
+    #[case::slice_non_integer_end_after_colon(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::Colon), token(TokenKind::Ident("a".into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident("a".into()))))
+    )]
+    #[case::slice_non_integer_end_after_number_colon(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::Colon), token(TokenKind::Ident("b".into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident("b".into()))))
+    )]
+    #[case::slice_non_integer_start(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::Ident("c".into())), token(TokenKind::Colon), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident("c".into()))))
+    )]
+    #[case::slice_double_colon(
+        vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::Colon), token(TokenKind::Colon), token(TokenKind::NumberLiteral(2.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+        Err(ParseError::UnexpectedToken(token(TokenKind::Colon))) // Error at the second colon
+    )]
+    // #[case::slice_missing_rbracket_after_colon_number( // This is valid [1:]
+    //     vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::Colon), token(TokenKind::Eof)],
+    //     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID))
+    // )]
+     #[case::slice_space_before_number_if_disallowed( // Assuming lexer handles this, if not, parser might see it as separate tokens
+         vec![token(TokenKind::Selector(CompactString::new("."))), token(TokenKind::LBracket), token(TokenKind::Colon), token(TokenKind::Whitespace(" ".into())), token(TokenKind::NumberLiteral(1.into())), token(TokenKind::RBracket), token(TokenKind::Eof)],
+         Err(ParseError::UnexpectedToken(token(TokenKind::Whitespace(" ".into())))) // Or error from Number parsing if lexer is strict
+     )]
     #[case::h_selector(
         vec![
             token(TokenKind::Selector(CompactString::new(".h"))),

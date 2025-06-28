@@ -326,9 +326,89 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
-            ast::Expr::Selector(ident) => {
-                Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
-            }
+            ast::Expr::Selector(selector_variant) => match selector_variant {
+                ast::Selector::Slice(opt_start, opt_end) => {
+                    match runtime_value {
+                        RuntimeValue::Array(values) => {
+                            let len = values.len();
+                            let actual_start = match opt_start {
+                                Some(s_val) => {
+                                    if *s_val < 0 {
+                                        (len as isize + s_val).max(0) as usize
+                                    } else {
+                                        *s_val as usize
+                                    }
+                                }
+                                None => 0,
+                            }
+                            .min(len);
+
+                            let actual_end = match opt_end {
+                                Some(e_val) => {
+                                    if *e_val < 0 {
+                                        (len as isize + e_val).max(0) as usize
+                                    } else {
+                                        *e_val as usize
+                                    }
+                                }
+                                None => len,
+                            }
+                            .min(len);
+
+                            if actual_start >= actual_end {
+                                Ok(RuntimeValue::Array(Vec::new()))
+                            } else {
+                                let sliced_values = values[actual_start..actual_end].to_vec();
+                                Ok(RuntimeValue::Array(sliced_values))
+                            }
+                        }
+                        RuntimeValue::String(s) => {
+                            let chars: Vec<char> = s.chars().collect();
+                            let len = chars.len();
+                            let actual_start = match opt_start {
+                                Some(s_val) => {
+                                    if *s_val < 0 {
+                                        (len as isize + s_val).max(0) as usize
+                                    } else {
+                                        *s_val as usize
+                                    }
+                                }
+                                None => 0,
+                            }
+                            .min(len);
+
+                            let actual_end = match opt_end {
+                                Some(e_val) => {
+                                    if *e_val < 0 {
+                                        (len as isize + e_val).max(0) as usize
+                                    } else {
+                                        *e_val as usize
+                                    }
+                                }
+                                None => len,
+                            }
+                            .min(len);
+
+                            if actual_start >= actual_end {
+                                Ok(RuntimeValue::String(String::new()))
+                            } else {
+                                let sliced_string =
+                                    chars[actual_start..actual_end].iter().collect::<String>();
+                                Ok(RuntimeValue::String(sliced_string))
+                            }
+                        }
+                        _ => Err(EvalError::InvalidTypes {
+                            token: (*self.token_arena.borrow()[node.token_id]).clone(),
+                            name: "slice operator [:]".to_string(),
+                            args: vec![runtime_value.name().to_string().into()],
+                        }),
+                    }
+                }
+                other_selector => Ok(Self::eval_selector_expr(
+                    runtime_value.clone(),
+                    other_selector,
+                )),
+            },
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }

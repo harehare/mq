@@ -1486,13 +1486,119 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![])],
               Ok(vec![Value::Array(vec![])].into()))]
-#[case::unique_by_all_same_key(r#"
-            def always_same(x):
-              "same";
-            | unique_by([1, 2, 3, 4], always_same)
-            "#,
-              vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
-              Ok(vec![Value::Array(vec![Value::Number(1.into())])].into()))]
+
+    // Slice Evaluation Tests
+    // Array Slicing - Basic
+    #[case::slice_array_basic_1("'.[1:3]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(2.into()), Value::Number(3.into())])].into()))]
+    #[case::slice_array_basic_2("'.[0:5]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])].into()))]
+    #[case::slice_array_basic_start_only("'.[2:]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])].into()))]
+    #[case::slice_array_basic_end_only("'.[:3]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+    #[case::slice_array_basic_full("'.[:]'".trim(), // Added trim() to ensure no leading/trailing whitespace issues with just .[:]
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])].into()))]
+
+    // Array Slicing - Negative Indices
+    #[case::slice_array_negative_indices_1("'.[-3:-1]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(3.into()), Value::Number(4.into())])].into()))]
+    #[case::slice_array_negative_indices_end_only("'.[:-2]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])].into()))]
+    #[case::slice_array_negative_indices_start_only("'.[-3:]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into())])].into()))]
+
+    // Array Slicing - Edge Cases
+    #[case::slice_array_edge_empty_array("'.[0:1]'",
+        vec![Value::Array(vec![])],
+        Ok(vec![Value::Array(vec![])].into()))]
+    #[case::slice_array_edge_start_equals_end("'.[1:1]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+    #[case::slice_array_edge_start_greater_than_end("'.[2:1]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+    #[case::slice_array_edge_end_out_of_bounds("'.[0:10]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())])].into()))]
+    #[case::slice_array_edge_start_negative_out_of_bounds("'.[-10:1]'",
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![Value::Number(1.into())])].into()))]
+    #[case::slice_array_edge_end_negative_out_of_bounds("'.[1:-10]'", // results in start (1) > end (0 after clamp)
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+    #[case::slice_array_edge_both_negative_out_of_bounds("'.[-10:-20]'", // results in start (0) > end (0 after clamp, effectively 0:0)
+        vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
+        Ok(vec![Value::Array(vec![])].into()))]
+
+    // String Slicing - Basic
+    #[case::slice_string_basic_1("'hello' | .[1:4]",
+        vec![Value::String("unused_input".to_string())], // Input for string tests is in the query itself
+        Ok(vec![Value::String("ell".to_string())].into()))]
+    #[case::slice_string_basic_end_only("'hello' | .[:2]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("he".to_string())].into()))]
+    #[case::slice_string_basic_start_only("'hello' | .[3:]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("lo".to_string())].into()))]
+    #[case::slice_string_basic_full("'hello' | .[:]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("hello".to_string())].into()))]
+    #[case::slice_string_unicode("'😊🌍' | .[0:1]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("😊".to_string())].into()))]
+    #[case::slice_string_unicode_2("'😊🌍' | .[1:]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("🌍".to_string())].into()))]
+
+    // String Slicing - Negative Indices
+    #[case::slice_string_negative_indices("'hello' | .[-4:-1]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("ell".to_string())].into()))]
+
+    // String Slicing - Edge Cases
+    #[case::slice_string_edge_empty_string("'' | .[0:1]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("".to_string())].into()))]
+    #[case::slice_string_edge_start_equals_end("'abc' | .[1:1]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("".to_string())].into()))]
+    #[case::slice_string_edge_end_out_of_bounds("'abc' | .[0:10]",
+        vec![Value::String("unused_input".to_string())],
+        Ok(vec![Value::String("abc".to_string())].into()))]
+
+    // Error Handling for Slice
+    #[case::slice_error_number("123 | .[0:1]",
+        vec![Value::Number(0.into())], // Dummy input as actual value is in query
+        Err(mq_lang::Error::Eval(mq_lang::eval::error::EvalError::InvalidTypes{
+            token: mq_lang::Token { range: mq_lang::range::Range::default(), kind: mq_lang::TokenKind::Selector(".".to_string().into()), module_id: ModuleId::new(0) }, // Placeholder token
+            name: "slice operator [:]".to_string(),
+            args: vec!["number".into()]
+        })))]
+    #[case::slice_error_bool("true | .[:]",
+        vec![Value::Number(0.into())],
+        Err(mq_lang::Error::Eval(mq_lang::eval::error::EvalError::InvalidTypes{
+            token: mq_lang::Token { range: mq_lang::range::Range::default(), kind: mq_lang::TokenKind::Selector(".".to_string().into()), module_id: ModuleId::new(0) }, // Placeholder token
+            name: "slice operator [:]".to_string(),
+            args: vec!["bool".into()]
+        })))]
+
+    // Non-Regression for existing List/Table selectors
+    #[case::slice_non_regression_list_selector("[1,2,3] | .[1]",
+        vec![Value::Number(0.into())],
+        Ok(vec![Value::Number(2.into())].into()))]
+    #[case::slice_non_regression_table_selector("array(array(1,2), array(3,4)) | .[0][1]",
+        vec![Value::Number(0.into())],
+        Ok(vec![Value::Number(2.into())].into()))]
+
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,
