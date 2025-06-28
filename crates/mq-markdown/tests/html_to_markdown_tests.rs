@@ -2,12 +2,13 @@
 use mq_markdown::{convert_html_to_markdown, HtmlToMarkdownError};
 
 #[cfg(feature = "html-to-markdown")]
-fn assert_conversion_with_options(html: &str, expected_markdown: &str, extract_scripts: bool) {
-    match convert_html_to_markdown(html, extract_scripts) {
-        // Trailing newline is often added by formatters or part of block structure,
-        // so trim it for comparison if the expected value doesn't explicitly include it.
-        // Or ensure all expected values for blocks end with \n.
-        // For now, let's trim trailing newlines from actual for block comparisons.
+fn assert_conversion_with_options(
+    html: &str,
+    expected_markdown: &str,
+    extract_scripts: bool,
+    generate_front_matter: bool, // New option
+) {
+    match convert_html_to_markdown(html, extract_scripts, generate_front_matter) {
         Ok(markdown) => assert_eq!(markdown.trim_end_matches('\n'), expected_markdown.trim_end_matches('\n')),
         Err(e) => panic!("Conversion failed for HTML '{}': {:?}", html, e),
     }
@@ -15,8 +16,8 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, extract_s
 
 #[cfg(feature = "html-to-markdown")]
 fn assert_conversion(html: &str, expected_markdown: &str) {
-    // Default for existing tests: don't extract scripts.
-    assert_conversion_with_options(html, expected_markdown, false);
+    // Default for existing tests: don't extract scripts, don't generate front matter.
+    assert_conversion_with_options(html, expected_markdown, false, false);
 }
 
 // --- <br> Tests ---
@@ -129,7 +130,117 @@ fn test_script_tag_with_html_comments_and_cdata() {
     let html = "<script><!-- alert(1); // --><![CDATA[\nalert(2);\n//]]></script>";
     let expected_content = "<!-- alert(1); // --><![CDATA[\nalert(2);\n//]]>";
     let expected_markdown = format!("```\n{}\n```", expected_content);
-    assert_conversion_with_options(html, &expected_markdown, true);
+    assert_conversion_with_options(html, &expected_markdown, true, false); // Assuming no front matter for this script test
+}
+
+// --- Front Matter Generation Tests ---
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_disabled() {
+    let html = "<html><head><title>My Title</title></head><body><p>Body</p></body></html>";
+    let expected = "Body"; // No front matter
+    assert_conversion_with_options(html, expected, false, false);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_title_only() {
+    let html = "<html><head><title>My Title</title></head><body><p>Body</p></body></html>";
+    let expected_fm = "---\ntitle: My Title\n---\n\nBody";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_description() {
+    let html = "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>";
+    let expected_fm = "---\ndescription: Page description.\n---\n\nB";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_keywords_single() {
+    let html = "<html><head><meta name=\"keywords\" content=\"rust\"></head><body><p>B</p></body></html>";
+    let expected_fm = "---\nkeywords:\n  - rust\n---\n\nB";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_keywords_multiple_comma_separated() {
+    let html = "<html><head><meta name=\"keywords\" content=\"rust, web, html\"></head><body><p>B</p></body></html>";
+    let expected_fm = "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_keywords_comma_space_separated() {
+    let html = "<html><head><meta name=\"keywords\" content=\"rust, web,  html \"></head><body><p>B</p></body></html>";
+    let expected_fm = "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_author() {
+    let html = "<html><head><meta name=\"author\" content=\"Jules Verne\"></head><body><p>B</p></body></html>";
+    let expected_fm = "---\nauthor: Jules Verne\n---\n\nB";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_all_present() {
+    let html = "<html><head><title>Full Test</title><meta name=\"description\" content=\"Desc here\"><meta name=\"keywords\" content=\"key1,key2\"><meta name=\"author\" content=\"Author Name\"></head><body><p>Content</p></body></html>";
+    // Order in BTreeMap might vary, but serde_yaml usually sorts keys alphabetically.
+    // Expect: author, description, keywords, title
+    let expected_fm = "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n  - key1\n  - key2\ntitle: Full Test\n---\n\nContent";
+    assert_conversion_with_options(html, expected_fm, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_no_head_tag() {
+    let html = "<html><body><p>Only body</p></body></html>";
+    let expected = "Only body"; // No front matter
+    assert_conversion_with_options(html, expected, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_empty_head() {
+    let html = "<html><head></head><body><p>Body</p></body></html>";
+    let expected = "Body"; // No front matter
+    assert_conversion_with_options(html, expected, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_no_relevant_tags_in_head() {
+    let html = "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body><p>Body</p></body></html>";
+    let expected = "Body"; // No relevant tags for front matter
+    assert_conversion_with_options(html, expected, false, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_with_script_extraction_option() {
+    // Test both options together
+    let html = "<html><head><title>Script Page</title></head><body><script>let x=1;</script><p>Text</p></body></html>";
+    let expected_fm_script = "---\ntitle: Script Page\n---\n\n```\nlet x=1;\n```\n\nText";
+    assert_conversion_with_options(html, expected_fm_script, true, true);
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_front_matter_html_fragment_no_head() {
+    // If input is just a fragment without <head>, no front matter should be generated.
+    let html = "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">";
+    let expected = "Just a paragraph"; // Meta tag not in <head> context
+    assert_conversion_with_options(html, expected, false, true);
 }
 
 #[cfg(feature = "html-to-markdown")]

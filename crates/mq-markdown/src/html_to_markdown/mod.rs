@@ -51,7 +51,89 @@ pub mod node;
 pub mod parser;
 
 #[cfg(feature = "html-to-markdown")]
+use serde_yaml;
+#[cfg(feature = "html-to-markdown")]
+use std::collections::BTreeMap;
+
+#[cfg(feature = "html-to-markdown")]
 pub use error::HtmlToMarkdownError;
+
+
+#[cfg(feature = "html-to-markdown")]
+fn find_element_by_name<'a>(nodes: &'a [node::HtmlNode], name: &str) -> Option<&'a node::HtmlElement> {
+    nodes.iter().find_map(|node| {
+        if let node::HtmlNode::Element(el) = node {
+            if el.tag_name == name {
+                return Some(el);
+            }
+        }
+        None
+    })
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn extract_text_from_title_element(title_el: &node::HtmlElement, _html_input_for_error: &str) -> Result<String, error::HtmlToMarkdownError> {
+    let mut title_text = String::new();
+    for child in &title_el.children {
+        if let node::HtmlNode::Text(text) = child {
+            title_text.push_str(text);
+        }
+    }
+    Ok(title_text.trim().to_string())
+}
+
+
+#[cfg(feature = "html-to-markdown")]
+fn extract_front_matter_data(
+    head_element: Option<&node::HtmlElement>,
+    html_input_for_error: &str,
+) -> Option<BTreeMap<String, serde_yaml::Value>> {
+    let head_el = head_element?;
+    let mut fm_map = BTreeMap::new();
+
+    if let Some(title_el) = find_element_by_name(&head_el.children, "title") {
+        if let Ok(title_str) = extract_text_from_title_element(title_el, html_input_for_error) {
+            if !title_str.is_empty() {
+                fm_map.insert("title".to_string(), serde_yaml::Value::String(title_str));
+            }
+        }
+    }
+
+    let mut keywords: Vec<serde_yaml::Value> = Vec::new();
+    for node in &head_el.children {
+        if let node::HtmlNode::Element(meta_el) = node {
+            if meta_el.tag_name == "meta" {
+                if let Some(Some(name_attr)) = meta_el.attributes.get("name") {
+                    if let Some(Some(content_attr)) = meta_el.attributes.get("content") {
+                        if !content_attr.is_empty() {
+                            match name_attr.to_lowercase().as_str() {
+                                "description" => {
+                                    fm_map.insert("description".to_string(), serde_yaml::Value::String(content_attr.clone()));
+                                }
+                                "keywords" => {
+                                    content_attr.split(',')
+                                        .map(|s| s.trim())
+                                        .filter(|s| !s.is_empty())
+                                        .for_each(|k| keywords.push(serde_yaml::Value::String(k.to_string())));
+                                }
+                                "author" => {
+                                    fm_map.insert("author".to_string(), serde_yaml::Value::String(content_attr.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !keywords.is_empty() {
+        fm_map.insert("keywords".to_string(), serde_yaml::Value::Sequence(keywords));
+    }
+
+    if fm_map.is_empty() { None } else { Some(fm_map) }
+}
+
 
 /// Converts an HTML string into a Markdown string.
 ///
@@ -61,6 +143,8 @@ pub use error::HtmlToMarkdownError;
 /// # Arguments
 ///
 /// * `html_input`: A string slice representing the HTML content to convert.
+/// * `extract_scripts_as_code_blocks`: A boolean flag to enable script content extraction.
+/// * `generate_front_matter`: A boolean flag to enable Front Matter generation from head elements.
 ///
 /// # Returns
 ///
@@ -71,9 +155,48 @@ pub use error::HtmlToMarkdownError;
 ///
 /// This function is only available if the `html-to-markdown` feature is enabled.
 #[cfg(feature = "html-to-markdown")]
-pub fn convert_html_to_markdown(html_input: &str, extract_scripts_as_code_blocks: bool) -> Result<String, HtmlToMarkdownError> {
-    // Actual parsing and conversion will be implemented progressively.
-    // The current implementation is a placeholder.
-    let nodes = parser::parse(html_input)?;
-    converter::convert_nodes_to_markdown(&nodes, html_input, extract_scripts_as_code_blocks)
+pub fn convert_html_to_markdown(
+    html_input: &str,
+    extract_scripts_as_code_blocks: bool,
+    generate_front_matter: bool,
+) -> Result<String, HtmlToMarkdownError> {
+    let all_nodes = parser::parse(html_input)?;
+
+    let mut front_matter_str = String::new();
+    let body_nodes: &[node::HtmlNode];
+
+    let html_element = find_element_by_name(&all_nodes, "html");
+
+    let (head_el_opt, body_el_opt) = if let Some(html_el) = html_element {
+        (find_element_by_name(&html_el.children, "head"), find_element_by_name(&html_el.children, "body"))
+    } else {
+        (find_element_by_name(&all_nodes, "head"), find_element_by_name(&all_nodes, "body"))
+    };
+
+    if generate_front_matter {
+        if let Some(fm_data) = extract_front_matter_data(head_el_opt, html_input) {
+            if !fm_data.is_empty() {
+                let yaml_value_map: serde_yaml::Mapping = fm_data.into_iter().map(|(k,v)| (serde_yaml::Value::String(k), v)).collect();
+                let yaml_value = serde_yaml::Value::Mapping(yaml_value_map);
+                match serde_yaml::to_string(&yaml_value) {
+                    Ok(yaml) => {
+                        front_matter_str = format!("---\n{}---\n\n", yaml.trim_start_matches("---\n").trim_end());
+                    }
+                    Err(_e) => { /* Log error optionally */ }
+                }
+            }
+        }
+    }
+
+    if let Some(body_el) = body_el_opt {
+        body_nodes = &body_el.children;
+    } else if html_element.is_some() && head_el_opt.is_some() {
+        body_nodes = &[];
+    } else {
+        body_nodes = &all_nodes;
+    }
+
+    let body_markdown = converter::convert_nodes_to_markdown(body_nodes, html_input, extract_scripts_as_code_blocks)?;
+
+    Ok(format!("{}{}", front_matter_str, body_markdown))
 }
