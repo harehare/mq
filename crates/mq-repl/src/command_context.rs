@@ -148,7 +148,7 @@ impl CommandContext {
                 help_lines.push("".to_string());
                 help_lines.push("Available commands:".to_string());
                 help_lines.push("".to_string());
-                
+
                 let commands: Vec<String> = Command::iter()
                     .filter_map(|c| {
                         if matches!(c, Command::Eval(_)) || matches!(c, Command::NotFound(_)) {
@@ -158,10 +158,10 @@ impl CommandContext {
                         }
                     })
                     .collect();
-                
+
                 help_lines.extend(commands);
                 help_lines.push("".to_string());
-                
+
                 Ok(CommandOutput::String(help_lines))
             }
             Command::Quit => {
