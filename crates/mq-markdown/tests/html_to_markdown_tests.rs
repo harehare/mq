@@ -5,10 +5,9 @@ use mq_markdown::{convert_html_to_markdown, HtmlToMarkdownError};
 fn assert_conversion_with_options(
     html: &str,
     expected_markdown: &str,
-    extract_scripts: bool,
-    generate_front_matter: bool, // New option
+    options: ConversionOptions,
 ) {
-    match convert_html_to_markdown(html, extract_scripts, generate_front_matter) {
+    match convert_html_to_markdown(html, options) {
         Ok(markdown) => assert_eq!(markdown.trim_end_matches('\n'), expected_markdown.trim_end_matches('\n')),
         Err(e) => panic!("Conversion failed for HTML '{}': {:?}", html, e),
     }
@@ -17,7 +16,7 @@ fn assert_conversion_with_options(
 #[cfg(feature = "html-to-markdown")]
 fn assert_conversion(html: &str, expected_markdown: &str) {
     // Default for existing tests: don't extract scripts, don't generate front matter.
-    assert_conversion_with_options(html, expected_markdown, false, false);
+    assert_conversion_with_options(html, expected_markdown, ConversionOptions::default());
 }
 
 // --- <br> Tests ---

@@ -49,14 +49,13 @@ pub mod error;
 pub mod node;
 #[cfg(feature = "html-to-markdown")]
 pub mod parser;
-
 #[cfg(feature = "html-to-markdown")]
-use serde_yaml;
-#[cfg(feature = "html-to-markdown")]
-use std::collections::BTreeMap;
+pub mod options; // Added
 
 #[cfg(feature = "html-to-markdown")]
 pub use error::HtmlToMarkdownError;
+#[cfg(feature = "html-to-markdown")]
+pub use options::ConversionOptions; // Added
 
 
 #[cfg(feature = "html-to-markdown")]
@@ -143,8 +142,7 @@ fn extract_front_matter_data(
 /// # Arguments
 ///
 /// * `html_input`: A string slice representing the HTML content to convert.
-/// * `extract_scripts_as_code_blocks`: A boolean flag to enable script content extraction.
-/// * `generate_front_matter`: A boolean flag to enable Front Matter generation from head elements.
+/// * `options`: Configuration options for the conversion process.
 ///
 /// # Returns
 ///
@@ -157,8 +155,7 @@ fn extract_front_matter_data(
 #[cfg(feature = "html-to-markdown")]
 pub fn convert_html_to_markdown(
     html_input: &str,
-    extract_scripts_as_code_blocks: bool,
-    generate_front_matter: bool,
+    options: ConversionOptions,
 ) -> Result<String, HtmlToMarkdownError> {
     let all_nodes = parser::parse(html_input)?;
 
@@ -173,7 +170,7 @@ pub fn convert_html_to_markdown(
         (find_element_by_name(&all_nodes, "head"), find_element_by_name(&all_nodes, "body"))
     };
 
-    if generate_front_matter {
+    if options.generate_front_matter {
         if let Some(fm_data) = extract_front_matter_data(head_el_opt, html_input) {
             if !fm_data.is_empty() {
                 let yaml_value_map: serde_yaml::Mapping = fm_data.into_iter().map(|(k,v)| (serde_yaml::Value::String(k), v)).collect();
@@ -196,7 +193,7 @@ pub fn convert_html_to_markdown(
         body_nodes = &all_nodes;
     }
 
-    let body_markdown = converter::convert_nodes_to_markdown(body_nodes, html_input, extract_scripts_as_code_blocks)?;
+    let body_markdown = converter::convert_nodes_to_markdown(body_nodes, html_input, options.extract_scripts_as_code_blocks)?;
 
     Ok(format!("{}{}", front_matter_str, body_markdown))
 }

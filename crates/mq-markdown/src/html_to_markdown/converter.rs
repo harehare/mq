@@ -4,6 +4,8 @@ use super::node::HtmlNode;
 use super::node::HtmlElement; // Added for convenience
 #[cfg(feature = "html-to-markdown")]
 use super::error::HtmlToMarkdownError;
+#[cfg(feature = "html-to-markdown")]
+use super::options::ConversionOptions; // Added
 
 #[cfg(feature = "html-to-markdown")]
 fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
@@ -219,13 +221,263 @@ fn process_url_for_markdown(url: &str) -> String {
     }
 }
 
+#[cfg(feature = "html-to-markdown")]
+fn handle_heading_element(
+    element: &HtmlElement,
+    html_input_for_error: &str,
+    // options: ConversionOptions,
+) -> Result<String, HtmlToMarkdownError> {
+    let children_content_str = convert_children_to_string(&element.children, html_input_for_error)?;
+    let marker_level = element.tag_name[1..].parse().unwrap_or(1);
+    Ok(format!("{} {}", "#".repeat(marker_level), children_content_str))
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_paragraph_element(
+    element: &HtmlElement,
+    html_input_for_error: &str,
+    // options: ConversionOptions,
+) -> Result<String, HtmlToMarkdownError> {
+    convert_children_to_string(&element.children, html_input_for_error)
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_hr_element() -> Result<String, HtmlToMarkdownError> {
+    Ok("---".to_string())
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_list_element(
+    element: &HtmlElement,
+    options: ConversionOptions,
+    html_input_for_error: &str,
+) -> Result<String, HtmlToMarkdownError> {
+    convert_html_list_to_markdown(element, 0, html_input_for_error, options)
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_blockquote_element(
+    element: &HtmlElement,
+    options: ConversionOptions,
+    html_input_for_error: &str,
+) -> Result<String, HtmlToMarkdownError> {
+    let inner_markdown = convert_nodes_to_markdown(&element.children, html_input_for_error, options)?;
+    if !inner_markdown.is_empty() {
+        let quoted_lines: Vec<String> = inner_markdown
+            .lines()
+            .map(|line| format!("> {}", line))
+            .collect();
+        Ok(quoted_lines.join("\n"))
+    } else {
+        Ok(">".to_string())
+    }
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions, _html_input_for_error: &str) -> Result<String, HtmlToMarkdownError> {
+    let mut lang_specifier = String::new();
+    let mut content_nodes = &element.children;
+
+    if let Some(HtmlNode::Element(code_element)) = element.children.get(0) {
+        if code_element.tag_name == "code" {
+            content_nodes = &code_element.children;
+            if let Some(Some(class_attr)) = code_element.attributes.get("class") {
+                for class_name in class_attr.split_whitespace() {
+                    if let Some(lang) = class_name.strip_prefix("language-") {
+                        lang_specifier = lang.to_string();
+                        break;
+                    } else if let Some(lang) = class_name.strip_prefix("lang-") {
+                        lang_specifier = lang.to_string();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let mut text_content = extract_text_from_pre_children(content_nodes);
+    if text_content.starts_with('\n') { text_content.remove(0); }
+    Ok(format!("```{}\n{}\n```", lang_specifier, text_content.trim_end_matches('\n')))
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_table_element(
+    element: &HtmlElement,
+    _options: ConversionOptions, // options might be used later for table specific conversions
+    html_input_for_error: &str,
+) -> Result<String, HtmlToMarkdownError> {
+    let table_md = convert_html_table_to_markdown(element, html_input_for_error)?;
+    // convert_html_table_to_markdown already returns "" for invalid/empty tables
+    Ok(table_md)
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_dl_element(
+    element: &HtmlElement,
+    options: ConversionOptions,
+    html_input_for_error: &str,
+) -> Result<String, HtmlToMarkdownError> {
+    let mut dl_content_parts = Vec::new();
+    for child_node in &element.children {
+        match child_node {
+            HtmlNode::Element(dt_el) if dt_el.tag_name == "dt" => {
+                let dt_text = convert_children_to_string(&dt_el.children, html_input_for_error)?;
+                dl_content_parts.push(format!("**{}**", dt_text.trim()));
+            }
+            HtmlNode::Element(dd_el) if dd_el.tag_name == "dd" => {
+                let dd_markdown_block = convert_nodes_to_markdown(&dd_el.children, html_input_for_error, options)?;
+                if !dd_markdown_block.is_empty() {
+                    let indented_dd_lines: Vec<String> = dd_markdown_block
+                        .lines()
+                        .map(|line| format!("  {}", line))
+                        .collect();
+                    dl_content_parts.push(indented_dd_lines.join("\n"));
+                }
+            }
+            HtmlNode::Text(text) if text.trim().is_empty() => {}
+            HtmlNode::Comment(_) => {}
+            _ => {
+                let unexpected_block = convert_nodes_to_markdown(&[child_node.clone()], html_input_for_error, options)?;
+                if !unexpected_block.is_empty() {
+                    dl_content_parts.push(unexpected_block);
+                }
+            }
+        }
+    }
+    if !dl_content_parts.is_empty() {
+        Ok(dl_content_parts.join("\n"))
+    } else {
+        Ok("".to_string())
+    }
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_script_element(
+    element: &HtmlElement,
+    options: ConversionOptions,
+    _html_input_for_error: &str, // html_input_for_error not used if not calling other converters
+) -> Result<Option<String>, HtmlToMarkdownError> {
+    if options.extract_scripts_as_code_blocks {
+        if element.attributes.get("src").and_then(|opt| opt.as_ref()).is_none() { // Inline script
+            let type_attr = element.attributes.get("type").and_then(|opt| opt.as_ref()).map(|s| s.to_lowercase());
+            let lang_specifier = match type_attr.as_deref() {
+                Some("text/javascript") | Some("application/javascript") | Some("module") => "javascript".to_string(),
+                Some("application/json") | Some("application/ld+json") => "json".to_string(),
+                _ => "".to_string(),
+            };
+            let mut script_content = extract_text_from_pre_children(&element.children);
+            if script_content.starts_with('\n') { script_content.remove(0); }
+            let final_content = script_content.trim_end_matches('\n');
+            Ok(Some(format!("```{}\n{}\n```", lang_specifier, final_content)))
+        } else {
+            Ok(None) // External script, ignored
+        }
+    } else {
+        Ok(None) // Option disabled, script ignored
+    }
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_embedded_content_element(
+    element: &HtmlElement,
+    _options: ConversionOptions, // options not used currently
+    _html_input_for_error: &str,
+) -> Result<Option<String>, HtmlToMarkdownError> {
+    let tag_name = element.tag_name.as_str();
+    let mut src_url: Option<String> = None;
+    let mut additional_info = String::new();
+
+    match tag_name {
+        "iframe" | "embed" => {
+            src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
+        }
+        "video" | "audio" => {
+            src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
+            if src_url.is_none() {
+                for child_node in &element.children {
+                    if let HtmlNode::Element(source_el) = child_node {
+                        if source_el.tag_name == "source" {
+                            if let Some(Some(s_src)) = source_el.attributes.get("src") {
+                                src_url = Some(s_src.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if tag_name == "video" {
+                if let Some(Some(poster_url)) = element.attributes.get("poster") {
+                    if !poster_url.is_empty() {
+                        additional_info = format!(" (Poster: {})", poster_url);
+                    }
+                }
+            }
+        }
+        "object" => {
+            src_url = element.attributes.get("data").and_then(|opt| opt.as_ref().cloned());
+        }
+        _ => {}
+    }
+
+    if let Some(url) = src_url {
+        if !url.is_empty() {
+            let title_val_opt = element.attributes.get("title").and_then(|opt| opt.as_ref());
+            let final_description_text = match title_val_opt {
+                Some(title_str) if !title_str.is_empty() => title_str.clone(),
+                _ => match tag_name {
+                    "iframe" => "Embedded Iframe".to_string(),
+                    "video" => "Video".to_string(),
+                    "audio" => "Audio".to_string(),
+                    "embed" => "Embedded Content".to_string(),
+                    "object" => "Embedded Object".to_string(),
+                    _ => "Embedded Resource".to_string(),
+                },
+            };
+            let title_md_part = title_val_opt
+                .filter(|t_str| !t_str.is_empty())
+                .map(|t_str| format!(" \"{}\"", t_str.replace('"', "\\\"")))
+                .unwrap_or_default();
+            Ok(Some(format!("[{}]({}{}){}", final_description_text, url, title_md_part, additional_info)))
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(feature = "html-to-markdown")]
+fn handle_svg_element(
+    element: &HtmlElement,
+    _options: ConversionOptions,
+    html_input_for_error: &str,
+) -> Result<String, HtmlToMarkdownError> {
+    let mut title_text: Option<String> = None;
+    for child_node in &element.children {
+        if let HtmlNode::Element(title_el) = child_node {
+            if title_el.tag_name == "title" {
+                let extracted_title = convert_children_to_string(&title_el.children, html_input_for_error)?;
+                let trimmed_title = extracted_title.trim();
+                if !trimmed_title.is_empty() {
+                    title_text = Some(trimmed_title.to_string());
+                }
+                break;
+            }
+        }
+    }
+    if let Some(title) = title_text {
+        Ok(format!("[SVG: {}]", title))
+    } else {
+        Ok("[SVG Image]".to_string())
+    }
+}
+
 
 #[cfg(feature = "html-to-markdown")]
 fn convert_html_list_to_markdown(
     list_element: &HtmlElement, // This should be ul or ol
     indent_level: usize,
     html_input_for_error: &str,
-    extract_scripts_as_code_blocks: bool, // New option
+    options: ConversionOptions, // Changed to options
 ) -> Result<String, HtmlToMarkdownError> {
     let mut markdown_items = Vec::new();
     let base_indent = "    ".repeat(indent_level); // 4 spaces per indent level
@@ -253,7 +505,7 @@ fn convert_html_list_to_markdown(
                     _ => return Err(HtmlToMarkdownError::ParseError { html_snippet: format!("Unexpected list type: {}", list_element.tag_name), message: "Expected 'ul' or 'ol'".to_string() }),
                 };
 
-                let li_content_markdown = convert_nodes_to_markdown(&li_element.children, html_input_for_error, extract_scripts_as_code_blocks)?;
+                let li_content_markdown = convert_nodes_to_markdown(&li_element.children, html_input_for_error, options)?;
 
                 if li_content_markdown.is_empty() {
                     markdown_items.push(format!("{}{}", base_indent, marker_prefix));
@@ -381,7 +633,7 @@ pub fn convert_children_to_string(nodes: &[HtmlNode], html_input_for_error: &str
 pub fn convert_nodes_to_markdown(
     nodes: &[HtmlNode],
     html_input_for_error: &str,
-    extract_scripts_as_code_blocks: bool, // New option
+    options: ConversionOptions, // Changed to options
 ) -> Result<String, HtmlToMarkdownError> {
     let mut markdown_blocks = Vec::new();
 
@@ -395,22 +647,16 @@ pub fn convert_nodes_to_markdown(
                 }
             }
             HtmlNode::Element(element) => {
-                // `convert_children_to_string` is designed to get the content of an element,
-                // applying inline formatting like strong/em to its children recursively.
-                let children_content_str = convert_children_to_string(&element.children, html_input_for_error)?;
-
+                // children_content_str is now obtained only for specific cases (top-level inline, default)
                 match element.tag_name.as_str() {
-                    "h1" => markdown_blocks.push(format!("# {}", children_content_str)),
-                    "h2" => markdown_blocks.push(format!("## {}", children_content_str)),
-                    "h3" => markdown_blocks.push(format!("### {}", children_content_str)),
-                    "h4" => markdown_blocks.push(format!("#### {}", children_content_str)),
-                    "h5" => markdown_blocks.push(format!("##### {}", children_content_str)),
-                    "h6" => markdown_blocks.push(format!("###### {}", children_content_str)),
+                    "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                        markdown_blocks.push(handle_heading_element(element, html_input_for_error)?);
+                    }
                     "p" => {
-                        markdown_blocks.push(children_content_str);
+                        markdown_blocks.push(handle_paragraph_element(element, html_input_for_error)?);
                     }
                     "hr" => {
-                        markdown_blocks.push("---".to_string());
+                        markdown_blocks.push("---".to_string()); // hr has no children, so no handler needed for content
                     }
                     "ul" | "ol" => {
                         // Initial indent level for top-level list is 0
@@ -475,7 +721,7 @@ pub fn convert_nodes_to_markdown(
                                    dl_content_parts.push(format!("**{}**", dt_text.trim()));
                                }
                                HtmlNode::Element(dd_el) if dd_el.tag_name == "dd" => {
-                                   let dd_markdown_block = convert_nodes_to_markdown(&dd_el.children, html_input_for_error, extract_scripts_as_code_blocks)?;
+                                   let dd_markdown_block = convert_nodes_to_markdown(&dd_el.children, html_input_for_error, options)?;
                                    if !dd_markdown_block.is_empty() {
                                        let indented_dd_lines: Vec<String> = dd_markdown_block
                                            .lines()
@@ -486,8 +732,8 @@ pub fn convert_nodes_to_markdown(
                                }
                                HtmlNode::Text(text) if text.trim().is_empty() => {}
                                HtmlNode::Comment(_) => {}
-                               _ => { // Unexpected elements within dl
-                                   let unexpected_block = convert_nodes_to_markdown(&[child_node.clone()], html_input_for_error, extract_scripts_as_code_blocks)?;
+                               _ => { // Unexpected elements within dl - pass options along
+                                   let unexpected_block = convert_nodes_to_markdown(&[child_node.clone()], html_input_for_error, options)?;
                                    if !unexpected_block.is_empty() {
                                        dl_content_parts.push(unexpected_block);
                                    }
@@ -499,7 +745,7 @@ pub fn convert_nodes_to_markdown(
                        }
                     }
                     "script" => {
-                        if extract_scripts_as_code_blocks {
+                        if options.extract_scripts_as_code_blocks {
                             if element.attributes.get("src").and_then(|opt| opt.as_ref()).is_none() { // Inline script
                                 let type_attr = element.attributes.get("type").and_then(|opt| opt.as_ref()).map(|s| s.to_lowercase());
                                 let lang_specifier = match type_attr.as_deref() {
