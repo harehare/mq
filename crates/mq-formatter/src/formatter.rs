@@ -147,8 +147,24 @@ impl Formatter {
     fn format_array(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
 
-        for child in &node.children {
-            self.format_node(Arc::clone(child), 0);
+        let len = node.children.len();
+
+        if len == 0 {
+            return;
+        }
+
+        let is_multiline = node.children[1].has_new_line();
+
+        for child in &node.children[..len.saturating_sub(1)] {
+            self.format_node(Arc::clone(child), indent_level + 1);
+        }
+
+        if let Some(last) = node.children.last() {
+            if is_multiline {
+                self.append_newline();
+            }
+
+            self.format_node(Arc::clone(last), indent_level);
         }
     }
 
@@ -161,15 +177,15 @@ impl Formatter {
         }
 
         // Format LBrace
-        self.format_node(Arc::clone(&node.children[0]), 0);
+        self.format_node(Arc::clone(&node.children[0]), indent_level);
 
         // Early return if only braces exist
         if len == 2 {
-            self.format_node(Arc::clone(&node.children[1]), 0);
+            self.format_node(Arc::clone(&node.children[1]), indent_level);
             return;
         }
 
-        let is_multiline_dict = node.children[1].has_new_line();
+        let is_multiline = node.children[1].has_new_line();
 
         let mut i = 1;
         while i < len - 1 {
@@ -206,15 +222,11 @@ impl Formatter {
 
         // Format RBrace
         if let Some(rbrace) = node.children.last() {
-            if is_multiline_dict {
+            if is_multiline {
                 self.append_newline();
             }
 
-            if rbrace.has_new_line() {
-                self.format_node(Arc::clone(rbrace), indent_level);
-            } else {
-                self.format_node(Arc::clone(rbrace), 0);
-            }
+            self.format_node(Arc::clone(rbrace), indent_level);
         }
     }
 
@@ -489,7 +501,6 @@ impl Formatter {
                 token
                     .to_string()
                     .replace("\"", "\\\"")
-                    .replace("\n", "\\n")
                     .replace("\t", "\\t")
                     .replace("\r", "\\r")
             ))
@@ -832,6 +843,14 @@ s"test${val1}"
     #[case::array_mixed_types("[1,\"test\",true]", "[1, \"test\", true]")]
     #[case::array_nested("[[1,2],[3,4]]", "[[1, 2], [3, 4]]")]
     #[case::array_with_spaces("[ 1 , 2 , 3 ]", "[1, 2, 3]")]
+    #[case::array_multiline(
+        r#"[
+    1,
+    2,
+    3
+    ]"#,
+        "[\n  1,\n  2,\n  3\n]"
+    )]
     #[case::dict_empty("{}", "{}")]
     #[case::dict_single_pair("{\"key\": \"value\"}", "{\"key\": \"value\"}")]
     #[case::dict_multiple_pairs(
