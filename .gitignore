@@ -82,3 +82,6 @@ docs/logo.svg
 *.so
 
 settings.local.json
+
+# claude
+CLAUDE.local.md

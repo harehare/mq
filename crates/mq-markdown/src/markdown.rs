@@ -22,49 +22,50 @@ impl FromStr for Markdown {
 
 impl fmt::Display for Markdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut pre_position = None;
+        let mut pre_position: Option<Position> = None;
         let mut is_first = true;
-        let text = self
-            .nodes
-            .iter()
-            .filter_map(|node| {
-                let value = node.to_string_with(&self.options);
 
-                if value.is_empty() || value == "\n" {
-                    pre_position = None;
-                    return None;
-                }
+        // Pre-allocate buffer to reduce allocations
+        let mut buffer = String::with_capacity(self.nodes.len() * 50); // Reasonable estimate
 
-                let value = if let Some(pos) = node.position() {
-                    let new_line_count = pre_position
-                        .as_ref()
-                        .map(|p: &Position| pos.start.line - p.end.line)
-                        .unwrap_or_else(|| if is_first { 0 } else { 1 });
+        for node in &self.nodes {
+            let value = node.to_string_with(&self.options);
 
-                    pre_position = Some(pos);
-                    format!("{}{}", "\n".repeat(new_line_count), value)
-                } else {
-                    pre_position = None;
-                    format!("{}{}", value, '\n')
-                };
-
-                if is_first {
-                    is_first = false;
-                }
-
-                Some(value)
-            })
-            .collect::<String>();
-
-        write!(
-            f,
-            "{}",
-            if text.is_empty() || text.ends_with('\n') {
-                text
-            } else {
-                format!("{}\n", &text)
+            if value.is_empty() || value == "\n" {
+                pre_position = None;
+                continue;
             }
-        )
+
+            if let Some(pos) = node.position() {
+                let new_line_count = pre_position
+                    .as_ref()
+                    .map(|p| pos.start.line - p.end.line)
+                    .unwrap_or_else(|| if is_first { 0 } else { 1 });
+
+                pre_position = Some(pos.clone());
+
+                // Write newlines directly to buffer instead of creating temp string
+                for _ in 0..new_line_count {
+                    buffer.push('\n');
+                }
+                buffer.push_str(&value);
+            } else {
+                pre_position = None;
+                buffer.push_str(&value);
+                buffer.push('\n');
+            }
+
+            if is_first {
+                is_first = false;
+            }
+        }
+
+        // Write final result to formatter
+        if buffer.is_empty() || buffer.ends_with('\n') {
+            write!(f, "{}", buffer)
+        } else {
+            writeln!(f, "{}", buffer)
+        }
     }
 }
 
@@ -96,10 +97,12 @@ impl Markdown {
     }
 
     pub fn to_text(&self) -> String {
-        self.nodes
-            .iter()
-            .map(|node| format!("{}\n", node.value()))
-            .collect::<String>()
+        let mut result = String::with_capacity(self.nodes.len() * 20); // Reasonable estimate
+        for node in &self.nodes {
+            result.push_str(&node.value());
+            result.push('\n');
+        }
+        result
     }
 
     #[cfg(feature = "json")]
@@ -114,6 +117,7 @@ impl Markdown {
     }
 
     pub fn from_html_str(content: &str) -> miette::Result<Self> {
+        // Create handlers more efficiently with direct creation
         let mut handlers: Vec<TagHandler> = vec![
             Rc::new(RefCell::new(
                 html_to_markdown::markdown::WebpageChromeRemover,
@@ -127,7 +131,7 @@ impl Markdown {
         ];
 
         html_to_markdown::convert_html_to_markdown(content.as_bytes(), &mut handlers)
-            .map_err(|e| miette!(e))
+            .map_err(|e| miette!("Failed to convert HTML to markdown: {}", e))
             .and_then(|md| Self::from_markdown_str(&md))
     }
 
