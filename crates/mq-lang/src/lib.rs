@@ -1,4 +1,4 @@
-//! `mq-lang` is provides a parser and evaluator for a [mq](https://github.com/harehare/mq).
+//! `mq-lang` provides a parser and evaluator for a [mq](https://github.com/harehare/mq).
 //!
 //! ## Examples
 //!
@@ -20,7 +20,7 @@
 //!
 //! let code = "1 + 2";
 //! let token_arena = Rc::new(RefCell::new(Arena::new()));
-//! let parser = mq_lang::parse(code, token_arena).unwrap();
+//! let ast = mq_lang::parse(code, token_arena).unwrap();
 //!
 //! assert_eq!(ast.nodes.len(), 1);
 //!
@@ -31,7 +31,7 @@
 //! let code = "1 + 2";
 //! let (cst_nodes, errors) = mq_lang::parse_recovery(code);
 //!
-//! assert!(errors.errors().is_empty());
+//! assert!(!errors.has_errors());
 //! assert!(!cst_nodes.is_empty());
 //! ```
 mod arena;

@@ -51,7 +51,7 @@ pub struct Engine {
 
 impl Default for Engine {
     fn default() -> Self {
-        let token_arena = Rc::new(RefCell::new(Arena::new(10000)));
+        let token_arena = Rc::new(RefCell::new(Arena::new(5120)));
 
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(None), Rc::clone(&token_arena)),
@@ -111,7 +111,6 @@ impl Engine {
             .load_builtin_module()
             .expect("Failed to load builtin module");
     }
-
     /// Load an external module by name.
     ///
     /// The module will be searched for in the configured search paths

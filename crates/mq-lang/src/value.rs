@@ -7,16 +7,30 @@ use crate::{
 
 use mq_markdown::Node;
 
+/// Represents a value in the mq language.
+///
+/// Values are the fundamental data types that can be manipulated and processed
+/// within mq expressions. They include primitive types like numbers and strings,
+/// as well as complex types like arrays, dictionaries, and Markdown nodes.
 #[derive(Clone, PartialEq)]
 pub enum Value {
+    /// A numeric value (integer or floating-point)
     Number(Number),
+    /// A boolean value (true or false)
     Bool(bool),
+    /// A string value
     String(String),
+    /// An array of values
     Array(Vec<Value>),
+    /// A Markdown node
     Markdown(Node),
+    /// A user-defined function with parameters and body
     Function(AstParams, Program),
+    /// A built-in native function
     NativeFunction(AstIdent),
+    /// A dictionary/map of string keys to values
     Dict(BTreeMap<String, Value>),
+    /// Represents no value or null
     None,
 }
 
@@ -68,9 +82,7 @@ impl From<RuntimeValue> for Value {
             RuntimeValue::Number(n) => Value::Number(n),
             RuntimeValue::Bool(b) => Value::Bool(b),
             RuntimeValue::String(s) => Value::String(s),
-            RuntimeValue::Array(a) => {
-                Value::Array(a.iter().map(|v| v.clone().into()).collect::<Vec<_>>())
-            }
+            RuntimeValue::Array(a) => Value::Array(a.into_iter().map(Into::into).collect()),
             RuntimeValue::Markdown(m, _) => Value::Markdown(m),
             RuntimeValue::Function(params, program, _) => Value::Function(params, program),
             RuntimeValue::NativeFunction(ident) => Value::NativeFunction(ident),
@@ -93,26 +105,111 @@ impl Value {
     pub const TRUE: Value = Self::Bool(true);
     pub const FALSE: Value = Self::Bool(false);
 
+    /// Creates a new empty dictionary value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let dict = Value::new_dict();
+    /// assert!(matches!(dict, Value::Dict(_)));
+    /// assert_eq!(dict.len(), 0);
+    /// ```
     pub fn new_dict() -> Self {
         Value::Dict(BTreeMap::new())
     }
 
+    /// Returns true if the value is a number.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let num = Value::from(42);
+    /// assert!(num.is_number());
+    ///
+    /// let text = Value::from("hello");
+    /// assert!(!text.is_number());
+    /// ```
     pub fn is_number(&self) -> bool {
         matches!(self, Value::Number(_))
     }
 
+    /// Returns true if the value is None.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let none = Value::NONE;
+    /// assert!(none.is_none());
+    ///
+    /// let text = Value::from("hello");
+    /// assert!(!text.is_none());
+    /// ```
     pub fn is_none(&self) -> bool {
         matches!(self, Value::None)
     }
 
+    /// Returns true if the value is a function.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let text = Value::from("hello");
+    /// assert!(!text.is_function());
+    /// ```
     pub fn is_function(&self) -> bool {
         matches!(self, Value::Function(_, _))
     }
 
+    /// Returns true if the value is an array.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let arr = Value::Array(vec![Value::from(1), Value::from(2)]);
+    /// assert!(arr.is_array());
+    ///
+    /// let text = Value::from("hello");
+    /// assert!(!text.is_array());
+    /// ```
     pub fn is_array(&self) -> bool {
         matches!(self, Value::Array(_))
     }
 
+    /// Returns the length of the value.
+    ///
+    /// For different value types:
+    /// - Number: the numeric value as usize
+    /// - Bool: always 1
+    /// - String: character count
+    /// - Array: number of elements
+    /// - Markdown: length of the text content
+    /// - Dict: number of key-value pairs
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on Function or NativeFunction values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let text = Value::from("hello");
+    /// assert_eq!(text.len(), 5);
+    ///
+    /// let arr = Value::Array(vec![Value::from(1), Value::from(2)]);
+    /// assert_eq!(arr.len(), 2);
+    /// ```
     pub fn len(&self) -> usize {
         match self {
             Value::Number(n) => n.value() as usize,
@@ -121,10 +218,25 @@ impl Value {
             Value::Array(a) => a.len(),
             Value::Markdown(m) => m.value().len(),
             Value::Dict(m) => m.len(),
-            _ => panic!("not supported"),
+            _ => panic!("len() not supported for this value type"),
         }
     }
 
+    /// Returns true if the value is empty.
+    ///
+    /// Uses the same logic as `len()` to determine emptiness.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::Value;
+    ///
+    /// let empty_string = Value::from("");
+    /// assert!(empty_string.is_empty());
+    ///
+    /// let text = Value::from("hello");
+    /// assert!(!text.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
