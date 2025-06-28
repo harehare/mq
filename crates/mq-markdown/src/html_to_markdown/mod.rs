@@ -71,9 +71,9 @@ pub use error::HtmlToMarkdownError;
 ///
 /// This function is only available if the `html-to-markdown` feature is enabled.
 #[cfg(feature = "html-to-markdown")]
-pub fn convert_html_to_markdown(html_input: &str) -> Result<String, HtmlToMarkdownError> {
+pub fn convert_html_to_markdown(html_input: &str, extract_scripts_as_code_blocks: bool) -> Result<String, HtmlToMarkdownError> {
     // Actual parsing and conversion will be implemented progressively.
     // The current implementation is a placeholder.
     let nodes = parser::parse(html_input)?;
-    converter::convert_nodes_to_markdown(&nodes, html_input)
+    converter::convert_nodes_to_markdown(&nodes, html_input, extract_scripts_as_code_blocks)
 }
