@@ -115,6 +115,21 @@ impl Repl {
         }
     }
 
+    fn print_welcome() {
+        println!();
+        println!(
+            "  {}",
+            "mq - A jq-like command-line tool for Markdown processing".bright_cyan()
+        );
+        println!();
+        println!("  Welcome to mq. Start by typing commands or expressions.");
+        println!(
+            "  Type {} to see available commands.",
+            "/help".bright_cyan()
+        );
+        println!();
+    }
+
     pub fn config_dir() -> Option<std::path::PathBuf> {
         std::env::var_os("MDQ_CONFIG_DIR")
             .map(std::path::PathBuf::from)
@@ -151,7 +166,7 @@ impl Repl {
             }
         }
 
-        println!("Welcome to mq. For help, type /help");
+        Self::print_welcome();
 
         loop {
             let prompt = format!("{}", PROMPT.cyan());

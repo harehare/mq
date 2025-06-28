@@ -143,8 +143,13 @@ impl CommandContext {
                 unsafe { std::env::set_var(name, value) };
                 Ok(CommandOutput::None)
             }
-            Command::Help => Ok(CommandOutput::String(
-                Command::iter()
+            Command::Help => {
+                let mut help_lines = vec![];
+                help_lines.push("".to_string());
+                help_lines.push("Available commands:".to_string());
+                help_lines.push("".to_string());
+
+                let commands: Vec<String> = Command::iter()
                     .filter_map(|c| {
                         if matches!(c, Command::Eval(_)) || matches!(c, Command::NotFound(_)) {
                             None
@@ -152,8 +157,13 @@ impl CommandContext {
                             Some(c.help().to_string())
                         }
                     })
-                    .collect(),
-            )),
+                    .collect();
+
+                help_lines.extend(commands);
+                help_lines.push("".to_string());
+
+                Ok(CommandOutput::String(help_lines))
+            }
             Command::Quit => {
                 std::process::exit(0);
             }

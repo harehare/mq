@@ -1,4 +1,3 @@
-use clap::CommandFactory;
 use clap::{Parser, Subcommand};
 use itertools::Itertools;
 use miette::IntoDiagnostic;
@@ -179,10 +178,6 @@ enum Commands {
 
 impl Cli {
     pub fn run(&self) -> miette::Result<()> {
-        if self.commands.is_none() && self.query.is_none() {
-            return Cli::command().print_help().into_diagnostic();
-        }
-
         if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None)
             && self.output.update
         {
@@ -193,6 +188,9 @@ impl Cli {
 
         match &self.commands {
             Some(Commands::Repl) => {
+                mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
+            }
+            None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
             }
             Some(Commands::Tui { file_path }) => {
