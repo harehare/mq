@@ -69,7 +69,9 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 mq_hir::SymbolKind::BinaryOp => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::OPERATOR)
                 }
-                mq_hir::SymbolKind::Boolean => {
+                mq_hir::SymbolKind::Dict
+                | mq_hir::SymbolKind::Boolean
+                | mq_hir::SymbolKind::Array => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::TYPE)
                 }
                 mq_hir::SymbolKind::Call => {

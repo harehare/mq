@@ -146,7 +146,7 @@ impl ModuleLoader {
                 path.to_str().unwrap_or("").to_string()
             })
             .unwrap_or("".to_string());
-        let origin = std::env::current_exe()
+        let origin = std::env::current_dir()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()));
 

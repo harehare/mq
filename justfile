@@ -66,8 +66,12 @@ publish-python-test: build-python
 publish-python: build-python
     twine upload --repository pypi ../../target/wheels/*
 
+# Run formatting
+fmt:
+    cargo fmt --all -- --check
+
 # Run formatting, linting and all tests
-test: lint
+test: fmt lint
     cargo test --workspace --all-features
 
 # Run tests with code coverage reporting
@@ -85,7 +89,6 @@ test-wasm:
 
 # Run formatter and linter
 lint:
-    cargo fmt --all -- --check
     cargo clippy  --all-targets --all-features --workspace -- -D clippy::all
 
 # Check for unused dependencies
