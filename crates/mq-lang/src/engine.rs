@@ -51,7 +51,7 @@ pub struct Engine {
 
 impl Default for Engine {
     fn default() -> Self {
-        let token_arena = Rc::new(RefCell::new(Arena::new(5120)));
+        let token_arena = Rc::new(RefCell::new(Arena::new(10240)));
 
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(None), Rc::clone(&token_arena)),
