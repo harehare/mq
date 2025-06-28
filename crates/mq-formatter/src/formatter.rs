@@ -155,64 +155,65 @@ impl Formatter {
     fn format_dict(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
 
-        let mut i = 0;
-        while i < node.children.len() {
-            let child = &node.children[i];
+        let len = node.children.len();
+        if len == 0 {
+            return;
+        }
 
-            // Format LBrace
-            if i == 0 {
-                self.format_node(Arc::clone(child), 0);
-                i += 1;
-                continue;
-            }
+        // Format LBrace
+        self.format_node(Arc::clone(&node.children[0]), 0);
 
-            // Format RBrace (last token)
-            if i == node.children.len() - 1 {
-                if child.has_new_line() {
-                    self.format_node(Arc::clone(child), indent_level);
-                } else {
-                    self.format_node(Arc::clone(child), 0);
-                }
-                break;
-            }
+        // Early return if only braces exist
+        if len == 2 {
+            self.format_node(Arc::clone(&node.children[1]), 0);
+            return;
+        }
 
-            // Format key-value pairs in groups of 3 (key, colon, value)
-            if i + 2 < node.children.len() {
-                let key = &node.children[i];
-                let colon = &node.children[i + 1];
-                let value = &node.children[i + 2];
+        let is_multiline_dict = node.children[1].has_new_line();
 
-                // Format key with proper indentation if it has new line
+        let mut i = 1;
+        while i < len - 1 {
+            let key = &node.children[i];
+            let colon = node.children.get(i + 1);
+            let value = node.children.get(i + 2);
+
+            // Defensive: ensure we have key: value
+            if let (Some(colon), Some(value)) = (colon, value) {
                 if key.has_new_line() {
                     self.format_node(Arc::clone(key), indent_level + 1);
                 } else {
                     self.format_node(Arc::clone(key), 0);
                 }
-
-                // Format colon
                 self.format_node(Arc::clone(colon), 0);
-                // Add space after colon
                 self.append_space();
-                // Format value
                 self.format_node(Arc::clone(value), 0);
-
                 i += 3;
-
-                // Check if there's a comma next
-                if i < node.children.len()
-                    && node.children[i]
-                        .token
-                        .as_ref()
-                        .map(|t| matches!(t.kind, mq_lang::TokenKind::Comma))
-                        .unwrap_or(false)
-                {
-                    self.format_node(Arc::clone(&node.children[i]), 0);
-                    i += 1;
-                }
             } else {
-                // Fallback for other tokens
-                self.format_node(Arc::clone(child), 0);
+                self.format_node(Arc::clone(key), 0);
                 i += 1;
+            }
+
+            // Handle comma if present
+            if i < len - 1 {
+                if let Some(token) = node.children[i].token.as_ref() {
+                    if matches!(token.kind, mq_lang::TokenKind::Comma) {
+                        self.format_node(Arc::clone(&node.children[i]), 0);
+                        i += 1;
+                    }
+                }
+            }
+        }
+
+        // Format RBrace
+        if let Some(rbrace) = node.children.last() {
+            if is_multiline_dict {
+                self.append_newline();
+            }
+
+            if rbrace.has_new_line() {
+                self.format_node(Arc::clone(rbrace), indent_level);
+            } else {
+                self.format_node(Arc::clone(rbrace), 0);
             }
         }
     }
@@ -583,6 +584,10 @@ impl Formatter {
         self.output.push(' ');
     }
 
+    fn append_newline(&mut self) {
+        self.output.push('\n');
+    }
+
     fn is_prev_pipe(&self) -> bool {
         self.output.ends_with("| ")
     }
@@ -847,7 +852,7 @@ s"test${val1}"
 "key1": "value1",
 "key2": "value2"
 }"#,
-        "{\n  \"key1\": \"value1\",\n  \"key2\": \"value2\"}"
+        "{\n  \"key1\": \"value1\",\n  \"key2\": \"value2\"\n}"
     )]
     #[case::dict_multiline_mixed(
         r#"{
@@ -855,7 +860,7 @@ s"test${val1}"
 "num": 42,
 "bool": true
 }"#,
-        "{\n  \"str\": \"value\",\n  \"num\": 42,\n  \"bool\": true}"
+        "{\n  \"str\": \"value\",\n  \"num\": 42,\n  \"bool\": true\n}"
     )]
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
