@@ -146,6 +146,7 @@ impl Formatter {
 
     fn format_array(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
+        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
 
         let len = node.children.len();
 
@@ -156,20 +157,22 @@ impl Formatter {
         let is_multiline = node.children[1].has_new_line();
 
         for child in &node.children[..len.saturating_sub(1)] {
-            self.format_node(Arc::clone(child), indent_level + 1);
+            self.format_node(Arc::clone(child), indent_level + indent_adjustment + 1);
         }
 
         if let Some(last) = node.children.last() {
             if is_multiline {
                 self.append_newline();
+                self.append_indent(indent_level + indent_adjustment);
             }
 
-            self.format_node(Arc::clone(last), indent_level);
+            self.format_node(Arc::clone(last), indent_level + indent_adjustment);
         }
     }
 
     fn format_dict(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
+        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
 
         let len = node.children.len();
         if len == 0 {
@@ -177,11 +180,17 @@ impl Formatter {
         }
 
         // Format LBrace
-        self.format_node(Arc::clone(&node.children[0]), indent_level);
+        self.format_node(
+            Arc::clone(&node.children[0]),
+            indent_level + indent_adjustment,
+        );
 
         // Early return if only braces exist
         if len == 2 {
-            self.format_node(Arc::clone(&node.children[1]), indent_level);
+            self.format_node(
+                Arc::clone(&node.children[1]),
+                indent_level + indent_adjustment,
+            );
             return;
         }
 
@@ -196,7 +205,7 @@ impl Formatter {
             // Defensive: ensure we have key: value
             if let (Some(colon), Some(value)) = (colon, value) {
                 if key.has_new_line() {
-                    self.format_node(Arc::clone(key), indent_level + 1);
+                    self.format_node(Arc::clone(key), indent_level + indent_adjustment + 1);
                 } else {
                     self.format_node(Arc::clone(key), 0);
                 }
@@ -224,9 +233,10 @@ impl Formatter {
         if let Some(rbrace) = node.children.last() {
             if is_multiline {
                 self.append_newline();
+                self.append_indent(indent_level + indent_adjustment);
             }
 
-            self.format_node(Arc::clone(rbrace), indent_level);
+            self.format_node(Arc::clone(rbrace), indent_level + indent_adjustment);
         }
     }
 
@@ -605,7 +615,7 @@ impl Formatter {
 
     fn is_let_line(&self) -> bool {
         if let Some(last_line) = self.output.lines().last() {
-            last_line.trim().starts_with("let ")
+            !last_line.starts_with("let ") && last_line.trim().starts_with("let ")
         } else {
             false
         }
@@ -851,7 +861,30 @@ s"test${val1}"
     ]"#,
         "[\n  1,\n  2,\n  3\n]"
     )]
+    #[case::let_with_array(r#"let arr = [1, 2, 3]"#, r#"let arr = [1, 2, 3]"#)]
+    #[case::let_with_array_multiline(
+        r#"let arr = [
+1,
+2,
+3
+]"#,
+        "let arr = [\n  1,\n  2,\n  3\n]"
+    )]
     #[case::dict_empty("{}", "{}")]
+    #[case::def_with_let_and_array(
+        r#"def foo():
+  let arr = [
+  1,
+  2,
+  3];
+"#,
+        r#"def foo():
+  let arr = [
+    1,
+    2,
+    3
+  ];"#
+    )]
     #[case::dict_single_pair("{\"key\": \"value\"}", "{\"key\": \"value\"}")]
     #[case::dict_multiple_pairs(
         "{\"key1\": \"value1\", \"key2\": \"value2\"}",
@@ -897,15 +930,15 @@ test
 else:
 test2"#,
         r#"let x = if (test):
-    test
-  else:
-    test2"#
+  test
+else:
+  test2"#
     )]
     #[case::let_with_while_multiline(
         r#"let x = while(condition()):
 process();"#,
         r#"let x = while (condition()):
-    process();"#
+  process();"#
     )]
     #[case::less_than_operator("let x = 1 < 2", "let x = 1 < 2")]
     #[case::less_than_equal_operator("let x = 1 <= 2", "let x = 1 <= 2")]
