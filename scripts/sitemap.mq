@@ -9,11 +9,11 @@ def sitemap_item(item, base_url):
 
 def sitemap(items, base_url):
   let headers = [
-  "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-  "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">",
-  "  <url>\n    <loc>https://mqlang.org</loc><priority>1.0</priority>  </url>",
-  "  <url>\n    <loc>https://mqlang.org/playground</loc><priority>1.0</priority>\n  </url>"
-]
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+    "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">",
+    "  <url>\n    <loc>https://mqlang.org</loc><priority>1.0</priority>  </url>",
+    "  <url>\n    <loc>https://mqlang.org/playground</loc><priority>1.0</priority>\n  </url>"
+  ]
   | let footer = "</urlset>"
   | [headers, map(items, fn(item): sitemap_item(item, base_url);), footer]
   | flatten()
