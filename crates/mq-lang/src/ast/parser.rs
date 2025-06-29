@@ -435,6 +435,7 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::Gte)
                     | Some(TokenKind::RangeOp)
                     | Some(TokenKind::RBrace)
+                    | Some(TokenKind::RBracket)
                     | Some(TokenKind::Comment(_))
                     | None => Ok(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -465,6 +466,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Gte)
             | Some(TokenKind::RangeOp)
             | Some(TokenKind::RBrace)
+            | Some(TokenKind::RBracket)
             | Some(TokenKind::Comment(_))
             | None => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -2762,6 +2764,34 @@ mod tests {
                         token(TokenKind::Eof)
                     ],
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::array_with_ident(
+                    vec![
+                        token(TokenKind::LBracket),
+                        token(TokenKind::Ident(CompactString::new("foo"))),
+                        token(TokenKind::Comma),
+                        token(TokenKind::Ident(CompactString::new("bar"))),
+                        token(TokenKind::RBracket),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        })
+                    ]))]
     #[case::equality_simple(
                     vec![
                         token(TokenKind::StringLiteral("hello".to_owned())),
