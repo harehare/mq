@@ -276,15 +276,14 @@ def debug(msg):
 
 # Sorts an array using a key function that extracts a comparable value for each element.
 def sort_by(arr, f):
-  let decorate_arr = foreach (x, arr): array(f(x), x); | _sort_by_impl(decorate_arr) | map(second);
+  let decorate_arr = foreach (x, arr): [f(x), x]; | _sort_by_impl(decorate_arr) | map(second);
 
 
 # Skips the first n elements of an array and returns the rest
 def skip(arr, n):
   if (n < 0):
     error("n must be non-negative")
-  elif (n > len(arr)):
-    array()
+  elif (n > len(arr)): []
   else:
     slice(arr, n, len(arr));
 
@@ -323,8 +322,7 @@ def skip_while(arr, f):
   else:
     until (and(i < len(arr), f(nth(arr, i)))):
       let i = i + 1 | i;
-  | if (is_none(si)):
-    array()
+  | if (is_none(si)): []
   else:
     slice(arr, si, len(arr));
 
@@ -339,8 +337,7 @@ def take_while(arr, f):
   else:
     until (and(i < len(arr), f(nth(arr, i)))):
       let i = i + 1 | i;
-  | if (is_none(ti)):
-    array()
+  | if (is_none(ti)): []
   else:
     slice(arr, 0, ti);
 
@@ -358,7 +355,7 @@ def group_by(arr, f):
       | let i = i + 1
       | let key = to_string(f(v))
       | let existing = get(groups, key)
-      | let new_group = if (is_none(existing)): array(v) else: existing + v
+      | let new_group = if (is_none(existing)): [v] else: existing + v
       | let groups = set(groups, key, new_group)
       | groups;;
 
@@ -433,6 +430,6 @@ def sections(md_nodes, level):
       let start = nth(indices, i)
       | let end = nth(indices_with_end, i + 1)
       | let section = slice(md_nodes, start, end)
-      | let result = result + array(section)
+      | let result = result + [section]
       | let i = i + 1
       | result;;
