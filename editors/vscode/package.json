@@ -7,7 +7,7 @@
   "homepage": "https://mqlang.org/",
   "icon": "assets/logo.png",
   "private": true,
-  "version": "0.2.6",
+  "version": "0.2.7",
   "engines": {
     "vscode": "^1.101.0"
   },

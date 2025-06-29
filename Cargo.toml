@@ -26,15 +26,15 @@ compact_str = "0.9.0"
 dirs = "6.0.0"
 itertools = "0.14.0"
 miette = {version = "7.6.0"}
-mq-formatter = {path = "./crates/mq-formatter", version = "0.2.6"}
-mq-hir = {path = "./crates/mq-hir", version = "0.2.6"}
-mq-lang = {path = "./crates/mq-lang", version = "0.2.6"}
-mq-lsp = {path = "./crates/mq-lsp", version = "0.2.6"}
-mq-markdown = {path = "./crates/mq-markdown", version = "0.2.6"}
-mq-mcp = {path = "./crates/mq-mcp", version = "0.2.6"}
-mq-repl = {path = "./crates/mq-repl", version = "0.2.6"}
-mq-test = {path = "./crates/mq-test", version = "0.2.6"}
-mq-tui = {path = "./crates/mq-tui", version = "0.2.6"}
+mq-formatter = {path = "./crates/mq-formatter", version = "0.2.7"}
+mq-hir = {path = "./crates/mq-hir", version = "0.2.7"}
+mq-lang = {path = "./crates/mq-lang", version = "0.2.7"}
+mq-lsp = {path = "./crates/mq-lsp", version = "0.2.7"}
+mq-markdown = {path = "./crates/mq-markdown", version = "0.2.7"}
+mq-mcp = {path = "./crates/mq-mcp", version = "0.2.7"}
+mq-repl = {path = "./crates/mq-repl", version = "0.2.7"}
+mq-test = {path = "./crates/mq-test", version = "0.2.7"}
+mq-tui = {path = "./crates/mq-tui", version = "0.2.7"}
 rstest = "0.25.0"
 rustc-hash = "2.1.1"
 thiserror = "2.0.12"
