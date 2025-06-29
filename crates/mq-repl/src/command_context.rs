@@ -33,7 +33,7 @@ impl fmt::Display for Command {
             }
             Command::Help => write!(f, "/help"),
             Command::Quit => write!(f, "/quit"),
-            Command::LoadFile(_) => write!(f, "/load_file"),
+            Command::LoadFile(_) => write!(f, "/load"),
             Command::Vars => write!(f, "/vars"),
             Command::Eval(_) => write!(f, "/eval"),
             Command::Version => write!(f, "/version"),
@@ -54,7 +54,7 @@ impl Command {
             }
             Command::Help => format!("{:<12}{}", "/help", "Print command help"),
             Command::Quit => format!("{:<12}{}", "/quit", "Quit evaluation and exit"),
-            Command::LoadFile(_) => format!("{:<12}{}", "/load_file", "Load a markdown file"),
+            Command::LoadFile(_) => format!("{:<12}{}", "/load", "Load a markdown file"),
             Command::Vars => format!("{:<12}{}", "/vars", "List bound variables"),
             Command::Eval(_) => format!("{:<12}{}", "/eval", ""),
             Command::NotFound(_) => format!("{:<12}{}", "/not_found", ""),
@@ -75,7 +75,7 @@ impl From<String> for Command {
             ["/env", name, value] => Command::Env(name.to_string(), value.to_string()),
             ["/help"] => Command::Help,
             ["/quit"] => Command::Quit,
-            ["/load_file", file_path] => Command::LoadFile(file_path.to_string()),
+            ["/load", file_path] => Command::LoadFile(file_path.to_string()),
             ["/vars"] => Command::Vars,
             ["/version"] => Command::Version,
             _ if s.starts_with("/") => Command::NotFound(s),
@@ -274,7 +274,7 @@ mod tests {
             panic!("Expected Env command");
         }
 
-        if let Command::LoadFile(path) = Command::from("/load_file test.md".to_string()) {
+        if let Command::LoadFile(path) = Command::from("/load test.md".to_string()) {
             assert_eq!(path, "test.md");
         } else {
             panic!("Expected LoadFile command");
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(format!("{}", Command::Version), "/version");
         assert_eq!(
             format!("{}", Command::LoadFile("test.md".to_string())),
-            "/load_file"
+            "/load"
         );
         assert_eq!(
             format!("{}", Command::Env("key".to_string(), "value".to_string())),
@@ -311,7 +311,7 @@ mod tests {
                 Command::Quit => assert!(help.contains("/quit")),
                 Command::Vars => assert!(help.contains("/vars")),
                 Command::Version => assert!(help.contains("/version")),
-                Command::LoadFile(_) => assert!(help.contains("/load_file")),
+                Command::LoadFile(_) => assert!(help.contains("/load")),
                 Command::Env(_, _) => assert!(help.contains("/env")),
                 Command::Eval(_) => assert!(help.contains("/eval")),
                 Command::NotFound(_) => assert!(help.contains("/not_found")),
@@ -402,7 +402,7 @@ mod tests {
             }
         }
 
-        let result = ctx.execute(&format!("/load_file {}", temp_file_path.to_str().unwrap()));
+        let result = ctx.execute(&format!("/load {}", temp_file_path.to_str().unwrap()));
         assert!(matches!(result, Ok(CommandOutput::None)));
 
         let list_items = ctx
