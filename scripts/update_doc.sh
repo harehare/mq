@@ -11,9 +11,4 @@ mq '.h' docs/books/src/reference/builtin_functions.md > docs/books/src/reference
 && mv docs/books/src/reference/builtin_functions.md.tmp docs/books/src/reference/builtin_functions.md
 
 # Generate the sitemap
-echo '<?xml version="1.0" encoding="UTF-8"?>' > docs/books/src/sitemap.xml
-echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' >> docs/books/src/sitemap.xml
-echo '<url><loc>https://mqlang.org</loc><priority>1.0</priority></url>' >> docs/books/src/sitemap.xml
-echo '<url><loc>https://mqlang.org/playground</loc><priority>1.0</priority></url>' >> docs/books/src/sitemap.xml
-mq -f scripts/sitemap.mq docs/books/src/SUMMARY.md >> docs/books/src/sitemap.xml
-echo '</urlset>' >> docs/books/src/sitemap.xml
+cd scripts && mq 'include "sitemap" | .[] | nodes | sitemap("https://mqlang.org/book/")' ../docs/books/src/SUMMARY.md > ../docs/books/src/sitemap.xml

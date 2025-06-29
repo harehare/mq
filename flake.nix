@@ -39,19 +39,25 @@
 
       devShells = forEachSupportedSystem ({ pkgs }: {
         default = pkgs.mkShell {
-          packages = with pkgs; [
+            packages = with pkgs; [
+            cargo-codspeed
             cargo-deny
             cargo-edit
+            cargo-llvm-cov
             cargo-readme
+            cargo-udeps
             cargo-watch
             just
+            maturin
             nodejs_22
             openssl
             pkg-config
+            python314
             rust-analyzer
             rustToolchain
+            twine
             wasm-pack
-          ];
+            ];
 
           env = {
             RUST_SRC_PATH =
@@ -79,4 +85,3 @@
       });
     };
 }
-

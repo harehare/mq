@@ -1,121 +1,128 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-<url><loc>https://mqlang.org</loc><priority>1.0</priority></url>
-<url><loc>https://mqlang.org/playground</loc><priority>1.0</priority></url>
-<url>
-  <loc>https://mqlang.org/book/</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/install</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/development</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/playground</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/tui</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/crawler</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/start/example</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/cli</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/types_and_values</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/conditionals_and_comparisons</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/conditionals</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/comparisons</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/syntax</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/comments</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/control_flow</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/operators</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/def</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/env</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/fn</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/include</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/let</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/self</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/string_interpolation</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/nodes</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/builtins</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/builtin_functions</loc>
-  <priority>1.0</priority>
-</url>
-<url>
-  <loc>https://mqlang.org/book/reference/builtin_selectors</loc>
-  <priority>1.0</priority>
-</url>
+  <url>
+    <loc>https://mqlang.org</loc><priority>1.0</priority>  </url>
+  <url>
+    <loc>https://mqlang.org/playground</loc><priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/install</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/development</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/playground</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/tui</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/crawler</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/start/example</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/cli</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/types_and_values</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/conditionals_and_comparisons</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/conditionals</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/comparisons</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/syntax</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/comments</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/control_flow</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/operators</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/def</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/env</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/fn</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/include</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/let</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/self</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/string_interpolation</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/nodes</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/builtins</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/builtin_functions</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/builtin_selectors</loc>
+    <priority>1.0</priority>
+  </url>
 </urlset>

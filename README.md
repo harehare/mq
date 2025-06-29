@@ -239,6 +239,12 @@ $ markitdown https://github.com/harehare/mq | mq '.code'
 $ markitdown test.xlsx | mq '.[][]'
 ```
 
+## Support
+
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
+- 💡 [Request features](https://github.com/harehare/mq/issues)
+- ⭐ [Star the project](https://github.com/harehare/mq) if you find it useful!
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
