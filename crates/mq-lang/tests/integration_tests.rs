@@ -1538,3 +1538,138 @@ fn test_eval(
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
+
+#[cfg(feature = "ast-json")]
+mod ast_json {
+    use mq_lang::{ArenaId, AstExpr, AstLiteral, AstNode, Program};
+    use rstest::rstest;
+    use smallvec::smallvec;
+    use std::rc::Rc;
+
+    fn default_token_id() -> ArenaId<Rc<mq_lang::Token>> {
+        ArenaId::new(0)
+    }
+
+    #[rstest]
+    #[case(
+    Rc::new(AstNode {
+        token_id: default_token_id(),
+        expr: Rc::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+    }),
+    Some(vec!["Literal", "String", "hello"]),
+    true
+)]
+    #[case(
+    Rc::new(AstNode {
+        token_id: default_token_id(),
+        expr: Rc::new(AstExpr::Literal(AstLiteral::Number(123.45.into()))),
+    }),
+    Some(vec!["Literal", "Number", "123.45"]),
+    true
+)]
+    #[case(
+    Rc::new(AstNode {
+        token_id: default_token_id(),
+        expr: Rc::new(AstExpr::Ident(mq_lang::AstIdent::new("my_var"))),
+    }),
+    Some(vec!["Ident", "my_var"]),
+    true
+)]
+    #[case(
+    Rc::new(AstNode {
+        token_id: default_token_id(),
+        expr: Rc::new(AstExpr::Call(
+            mq_lang::AstIdent::new("my_func"),
+            smallvec![Rc::new(AstNode {
+                token_id: default_token_id(),
+                expr: Rc::new(AstExpr::Literal(AstLiteral::Number(1.into()))),
+            })],
+            false,
+        )),
+    }),
+    Some(vec!["Call", "my_func", "Literal", "Number", "1.0"]),
+    true
+)]
+    #[case(
+    Rc::new(AstNode {
+        token_id: default_token_id(),
+        expr: Rc::new(AstExpr::If(smallvec![
+            (
+                Some(Rc::new(AstNode {
+                    token_id: default_token_id(),
+                    expr: Rc::new(AstExpr::Literal(AstLiteral::Bool(true))),
+                })),
+                Rc::new(AstNode {
+                    token_id: default_token_id(),
+                    expr: Rc::new(AstExpr::Literal(AstLiteral::String("then_branch".to_string()))),
+                })
+            )
+        ])),
+    }),
+    Some(vec!["If", "Bool", "true", "String", "then_branch"]),
+    false // token_idは比較しない
+)]
+    fn test_astnode_serialization_deserialization(
+        #[case] original_node: Rc<AstNode>,
+        #[case] expected_json_parts: Option<Vec<&str>>,
+        #[case] check_token_id: bool,
+    ) {
+        let json_string = original_node.to_json().unwrap();
+        if let Some(parts) = expected_json_parts {
+            for part in parts {
+                assert!(
+                    json_string.contains(part),
+                    "json does not contain: {}",
+                    part
+                );
+            }
+        }
+        let deserialized_node: AstNode = AstNode::from_json(&json_string).unwrap();
+        assert_eq!(deserialized_node.expr, original_node.expr);
+        if check_token_id {
+            assert_eq!(deserialized_node.token_id, default_token_id());
+        }
+        // Ident型の場合はtokenがNoneであることも確認
+        if let AstExpr::Ident(ident) = &*deserialized_node.expr {
+            assert_eq!(ident.token, None);
+        }
+    }
+
+    #[test]
+    fn test_program_serialization_deserialization() {
+        let node1 = Rc::new(AstNode {
+            token_id: default_token_id(),
+            expr: Rc::new(AstExpr::Literal(AstLiteral::String("first".to_string()))),
+        });
+        let node2 = Rc::new(AstNode {
+            token_id: default_token_id(),
+            expr: Rc::new(AstExpr::Literal(AstLiteral::Number(10.into()))),
+        });
+        let original_program: Program = vec![node1, node2];
+
+        let json_string = serde_json::to_string_pretty(&original_program)
+            .unwrap()
+            .replace(" ", "");
+
+        assert!(json_string.starts_with('['));
+        assert!(json_string.contains("\"String\":\"first\""));
+        assert!(json_string.contains("\"Number\":10.0"));
+        assert!(json_string.ends_with("\n]"));
+
+        let deserialized_program: Program = serde_json::from_str(&json_string).unwrap();
+
+        assert_eq!(deserialized_program.len(), original_program.len());
+        for (orig, deser) in original_program.iter().zip(deserialized_program.iter()) {
+            assert_eq!(deser.expr, orig.expr);
+            assert_eq!(deser.token_id, default_token_id());
+        }
+    }
+
+    #[rstest]
+    #[case("{invalid_json}")]
+    #[case(r#"{\"expr\": {\"UnknownVariant\": \"some_data\"}}"#)]
+    fn test_invalid_or_malformed_json_deserialization(#[case] json_string: &str) {
+        let result: Result<AstNode, _> = AstNode::from_json(json_string);
+        assert!(result.is_err());
+    }
+}

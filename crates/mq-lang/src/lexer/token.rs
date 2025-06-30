@@ -4,7 +4,10 @@ use compact_str::CompactString;
 use itertools::Itertools;
 
 use crate::{eval::module::ModuleId, number::Number, range::Range};
+#[cfg(feature = "ast-json")]
+use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub enum StringSegment {
     Text(String, Range),
@@ -20,6 +23,7 @@ impl Display for StringSegment {
     }
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Token {
     pub range: Range,
@@ -27,6 +31,7 @@ pub struct Token {
     pub module_id: ModuleId,
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum TokenKind {
     BoolLiteral(bool),

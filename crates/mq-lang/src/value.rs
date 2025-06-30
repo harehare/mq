@@ -4,8 +4,8 @@ use crate::{
     AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, impl_value_formatting,
     number::Number,
 };
-
 use mq_markdown::Node;
+use std::ops::{Index, IndexMut};
 
 /// Represents a value in the mq language.
 ///
@@ -261,6 +261,20 @@ pub struct Values(Vec<Value>);
 impl From<Vec<Value>> for Values {
     fn from(values: Vec<Value>) -> Self {
         Self(values)
+    }
+}
+
+impl Index<usize> for Values {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for Values {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 

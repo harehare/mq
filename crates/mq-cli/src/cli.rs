@@ -2,15 +2,12 @@ use clap::{Parser, Subcommand};
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
-use mq_lang::{Engine, parse as parse_mq};
+use mq_lang::Engine;
 use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
-use std::path::PathBuf;
-use std::fs; // fs is used generally
-use std::rc::Rc; // Rc is used for token_arena
-use std::cell::RefCell; // RefCell is used for token_arena
+use std::{fs, path::PathBuf};
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
@@ -46,22 +43,6 @@ pub struct Cli {
     #[arg(value_name = "QUERY OR FILE")]
     query: Option<String>,
     files: Option<Vec<PathBuf>>,
-
-    /// Path to a JSON file containing the AST to execute.
-    /// When this option is used, the QUERY argument is ignored for execution logic,
-    /// but might be used for other purposes like identifying which AST is being run if multiple are handled.
-    /// This cannot be used with --output-ast-json.
-    #[cfg(feature = "ast-json")]
-    #[arg(long = "execute-ast-json", value_name = "FILEPATH")]
-    execute_ast_json: Option<PathBuf>,
-
-    /// Path to a file where the JSON representation of the query's AST should be saved.
-    /// If this option is used, the query is parsed, its AST is saved to the specified file,
-    /// and the program exits without executing the query.
-    /// This cannot be used with --execute-ast-json.
-    #[cfg(feature = "ast-json")]
-    #[arg(long = "output-ast-json", value_name = "FILEPATH")]
-    output_ast_json: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -195,52 +176,8 @@ enum Commands {
     Docs,
 }
 
-#[cfg(feature = "ast-json")]
-use mq_lang::ast::Program;
-
 impl Cli {
     pub fn run(&self) -> miette::Result<()> {
-        #[cfg(feature = "ast-json")]
-        {
-            if self.output_ast_json.is_some() && self.execute_ast_json.is_some() {
-                return Err(miette!(
-                    "--output-ast-json and --execute-ast-json cannot be used together"
-                ));
-            }
-
-            if let Some(output_path) = &self.output_ast_json {
-                let query_str = self.get_query()?;
-                let token_arena = Rc::new(RefCell::new(mq_lang::arena::Arena::new(1024)));
-                let program = parse_mq(&query_str, token_arena)
-                    .map_err(|e| miette!("Failed to parse query for AST output: {}", e))?;
-
-                let json_ast = serde_json::to_string_pretty(&program).into_diagnostic()?;
-                fs::write(output_path, json_ast).into_diagnostic()?;
-                return Ok(());
-            }
-
-            if let Some(ast_file_path) = &self.execute_ast_json {
-                let json_content = fs::read_to_string(ast_file_path).into_diagnostic()?;
-                let program: Program = serde_json::from_str(&json_content).into_diagnostic()?;
-
-                let files = self.read_contents()?;
-                let error_report_context = ast_file_path.to_string_lossy().into_owned();
-
-                if files.len() > self.parallel_threshold {
-                    files.par_iter().try_for_each(|(file, content)| {
-                        let mut engine = self.create_engine()?;
-                        self.execute_ast(&mut engine, &program, &error_report_context, file, content)
-                    })?;
-                } else {
-                    let mut engine = self.create_engine()?;
-                    files.iter().try_for_each(|(file, content)| {
-                        self.execute_ast(&mut engine, &program, &error_report_context, file, content)
-                    })?;
-                }
-                return Ok(());
-            }
-        }
-
         if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None)
             && self.output.update
         {
@@ -253,7 +190,7 @@ impl Cli {
             Some(Commands::Repl) => {
                 mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
             }
-            None if self.query.is_none() && self.execute_ast_json.is_none() => { // ensure execute_ast_json is also None
+            None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
             }
             Some(Commands::Tui { file_path }) => {
@@ -444,7 +381,7 @@ impl Cli {
             InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
             InputFormat::Text => mq_lang::parse_text_input(content)?,
             InputFormat::Html => mq_lang::parse_html_input(content)?,
-            InputFormat::Null => vec![mq_lang::Value::String("".to_string())],
+            InputFormat::Null => mq_lang::null_input(),
         };
 
         let runtime_values = if self.output.update {
@@ -477,74 +414,8 @@ impl Cli {
         self.print(runtime_values)
     }
 
-    #[cfg(feature = "ast-json")]
-    fn execute_ast(
-        &self,
-        engine: &mut mq_lang::Engine,
-        program: &Program,
-        error_report_context: &str,
-        file: &Option<PathBuf>,
-        content: &str,
-    ) -> miette::Result<()> {
-        if let Some(file) = file {
-            engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
-        }
-
-        let input = match self.input.input_format.as_ref().unwrap_or_else(|| {
-            if let Some(file) = file {
-                match file
-                    .extension()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .as_str()
-                {
-                    "md" | "markdown" => &InputFormat::Markdown,
-                    "mdx" => &InputFormat::Mdx,
-                    "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" => &InputFormat::Text,
-                    _ => &InputFormat::Markdown,
-                }
-            } else {
-                &InputFormat::Markdown
-            }
-        }) {
-            InputFormat::Markdown => mq_lang::parse_markdown_input(content)?,
-            InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
-            InputFormat::Text => mq_lang::parse_text_input(content)?,
-            InputFormat::Html => mq_lang::parse_html_input(content)?,
-            InputFormat::Null => vec![mq_lang::Value::String("".to_string())],
-        };
-
-        if self.output.update {
-            return Err(miette!("--update is not supported with --execute-ast-json"));
-        }
-
-        let runtime_values = engine.eval_ast(program.clone(), error_report_context, input.into_iter()).map_err(|e| *e)?;
-
-        if let Some(separator) = &self.output.separator {
-            let mut sep_engine = self.create_engine()?;
-            let separator_values = sep_engine
-                .eval(
-                    separator,
-                    vec![mq_lang::Value::String("".to_string())].into_iter(),
-                )
-                .map_err(|e| *e)?;
-            self.print(separator_values)?;
-        }
-
-        self.print(runtime_values)
-    }
-
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {
         if matches!(self.input.input_format, Some(InputFormat::Null)) {
-            #[cfg(feature = "ast-json")]
-            if self.execute_ast_json.is_some() && self.files.is_some() {
-                 // Continue
-            } else {
-                return Ok(vec![(None, "".to_string())]);
-            }
-            #[cfg(not(feature = "ast-json"))]
             return Ok(vec![(None, "".to_string())]);
         }
 

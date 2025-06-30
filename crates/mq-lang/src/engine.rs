@@ -49,15 +49,15 @@ pub struct Engine {
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
 }
 
-// Helper function to create a default token arena with one dummy token
 fn create_default_token_arena() -> Rc<RefCell<Arena<Rc<Token>>>> {
-    let arena = Rc::new(RefCell::new(Arena::new(1)));
-    arena.borrow_mut().alloc(Rc::new(Token { // Ensure at least one token for ArenaId::new(0)
+    let token_arena = Rc::new(RefCell::new(Arena::new(10240)));
+    token_arena.borrow_mut().alloc(Rc::new(Token {
+        // Ensure at least one token for ArenaId::new(0)
         kind: crate::TokenKind::Eof, // Dummy token
         range: crate::range::Range::default(),
         module_id: crate::arena::ArenaId::new(0), // Dummy module_id
     }));
-    arena
+    token_arena
 }
 
 impl Default for Engine {
@@ -72,65 +72,6 @@ impl Default for Engine {
 }
 
 impl Engine {
-    /// Evaluates a pre-parsed AST (Program).
-    ///
-    /// This is similar to `eval`, but takes an AST directly, skipping parsing.
-    /// The AST is typically obtained from deserializing a JSON AST.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # #[cfg(feature = "ast-json")] // This example requires ast-json feature
-    /// # {
-    /// use mq_lang::{Engine, ast::{node::{Node, Expr, Literal}, Program}, Value};
-    /// use std::rc::Rc;
-    ///
-    /// let mut engine = Engine::default();
-    /// engine.load_builtin_module();
-    ///
-    /// // Construct a simple AST: Literal("hello")
-    /// // Note: In a real scenario, token_id would be a concern if not handled by default.
-    /// let ast_node = Rc::new(Node {
-    ///     // token_id: Default::default(), // Or a valid ArenaId from a real token
-    ///     token_id: mq_lang::arena::ArenaId::new(0), // Assuming default_token_id provides this
-    ///     expr: Rc::new(Expr::Literal(Literal::String("hello from AST".to_string()))),
-    /// });
-    /// let program: Program = vec![ast_node];
-    ///
-    /// let input = mq_lang::parse_text_input("").unwrap(); // Dummy input
-    /// let result = engine.eval_ast(program, "", input.into_iter());
-    /// assert_eq!(result.unwrap(), vec!["hello from AST".to_string().into()].into());
-    /// # }
-    /// ```
-    #[cfg(feature = "ast-json")]
-    pub fn eval_ast<I: Iterator<Item = Value>>(&mut self, program: crate::ast::Program, code_for_error_reporting: &str, input: I) -> MqResult {
-        // AST is already provided, so we don't parse.
-        // Optimization might be applicable to ASTs as well, but the current Optimizer seems to work on Program.
-        // Let's assume the provided AST might not be optimized, or optimization is optional here too.
-        let program = if self.options.optimize {
-            Optimizer::new().optimize(&program)
-        } else {
-            program
-        };
-
-        self.evaluator
-            .eval(&program, input.into_iter().map(|v| v.into()))
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(Into::into)
-                    .collect::<Vec<_>>()
-                    .into()
-            })
-            .map_err(|e| {
-                Box::new(error::Error::from_error(
-                    &code_for_error_reporting, // Use the provided string for error context
-                    e,
-                    self.evaluator.module_loader.clone(),
-                ))
-            })
-    }
-
     /// Enable or disable code optimization.
     ///
     /// When optimization is enabled, the engine performs constant folding
@@ -243,6 +184,62 @@ impl Engine {
             .map_err(|e| {
                 Box::new(error::Error::from_error(
                     code,
+                    e,
+                    self.evaluator.module_loader.clone(),
+                ))
+            })
+    }
+
+    /// Evaluates a pre-parsed AST (Program).
+    ///
+    /// This is similar to `eval`, but takes an AST directly, skipping parsing.
+    /// The AST is typically obtained from deserializing a JSON AST.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// #[cfg(feature = "ast-json")]
+    /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, Value};
+    /// use std::rc::Rc;
+    ///
+    /// let mut engine = Engine::default();
+    /// engine.load_builtin_module();
+    ///
+    /// let json = r#"[{
+    ///     "Literal": {
+    ///         "String": "hello"
+    ///     }
+    /// }]"#;
+    /// let ast_node: Rc<mq_lang::AstNode> = serde_json::from_str(json).unwrap();
+    /// dbg!(&ast_node);
+    /// let program: Program = vec![ast_node];
+    /// let result = engine.eval_ast(program, mq_lang::null_input().into_iter());
+    /// assert_eq!(result.unwrap(), vec!["hello".to_string().into()].into());
+    /// ```
+    #[cfg(feature = "ast-json")]
+    pub fn eval_ast<I: Iterator<Item = Value>>(
+        &mut self,
+        program: crate::ast::Program,
+        input: I,
+    ) -> MqResult {
+        let program = if self.options.optimize {
+            Optimizer::new().optimize(&program)
+        } else {
+            program
+        };
+
+        self.evaluator
+            .eval(&program, input.into_iter().map(|v| v.into()))
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<_>>()
+                    .into()
+            })
+            .map_err(|e| {
+                Box::new(error::Error::from_error(
+                    "",
                     e,
                     self.evaluator.module_loader.clone(),
                 ))

@@ -25,16 +25,16 @@ nom_locate = "5.0.0"
 percent-encoding = "2.3.1"
 regex = "1.5"
 rustc-hash.workspace = true
+serde = {version = "1.0", features = ["derive"], optional = true}
+serde_json = {version = "1.0", optional = true}
 smallvec = "1.15.1"
-serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
 thiserror.workspace = true
 
 [features]
+ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde"]
 cst = []
 default = ["std"]
 std = []
-ast-json = ["dep:serde", "dep:serde_json"]
 
 [dev-dependencies]
 divan = {version = "2.8.1", package = "codspeed-divan-compat"}

@@ -63,6 +63,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 pub use arena::Arena;
+#[cfg(feature = "ast-json")]
+pub use arena::ArenaId;
 pub use ast::IdentName as AstIdentName;
 pub use ast::Program;
 pub use ast::node::Expr as AstExpr;
@@ -170,6 +172,11 @@ pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
 /// Parses a plain text string and returns an iterator over `Value` node.
 pub fn parse_text_input(input: &str) -> miette::Result<Vec<Value>> {
     Ok(input.lines().map(|line| line.to_string().into()).collect())
+}
+
+/// Returns a vector containing a single `Value` representing an empty input.
+pub fn null_input() -> Vec<Value> {
+    vec!["".to_string().into()]
 }
 
 #[cfg(test)]

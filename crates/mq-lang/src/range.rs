@@ -1,9 +1,12 @@
 use nom_locate::LocatedSpan;
 
 use crate::eval::module::ModuleId;
+#[cfg(feature = "ast-json")]
+use serde::{Deserialize, Serialize};
 
 pub type Span<'a> = LocatedSpan<&'a str, ModuleId>;
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]
 pub struct Position {
     pub line: u32,
@@ -22,6 +25,7 @@ impl Position {
     }
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default, Hash)]
 pub struct Range {
     pub start: Position,

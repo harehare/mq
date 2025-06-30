@@ -1,17 +1,16 @@
+use super::{IdentName, Program, TokenId};
+#[cfg(feature = "ast-json")]
+use crate::arena::ArenaId;
+use crate::{Token, arena::Arena, lexer, number::Number, range::Range};
+use compact_str::CompactString;
+#[cfg(feature = "ast-json")]
+use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
     rc::Rc,
 };
-
-use compact_str::CompactString;
-#[cfg(feature = "ast-json")]
-use serde::{Serialize, Deserialize};
-use smallvec::SmallVec;
-
-use crate::{Token, arena::{Arena, ArenaId}, lexer, number::Number, range::Range};
-
-use super::{IdentName, Program, TokenId};
 
 type Depth = u8;
 type Index = usize;
@@ -25,15 +24,17 @@ pub type Branches = SmallVec<[Cond; 4]>;
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub struct Node {
-    #[cfg_attr(feature = "ast-json", serde(skip_serializing, default = "default_token_id"))]
+    #[cfg_attr(
+        feature = "ast-json",
+        serde(skip_serializing, skip_deserializing, default = "default_token_id")
+    )]
     pub token_id: TokenId,
     pub expr: Rc<Expr>,
 }
 
 #[cfg(feature = "ast-json")]
-// Function to provide a default TokenId during deserialization
 fn default_token_id() -> TokenId {
-    ArenaId::new(0) // Use ArenaId::new(0) as a placeholder/default
+    ArenaId::new(0)
 }
 
 impl Node {
@@ -108,7 +109,10 @@ impl Node {
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Ident {
     pub name: IdentName,
-    #[cfg_attr(feature = "ast-json", serde(skip_serializing_if = "Option::is_none", default))]
+    #[cfg_attr(
+        feature = "ast-json",
+        serde(skip_serializing_if = "Option::is_none", default)
+    )]
     pub token: Option<Rc<Token>>,
 }
 
@@ -231,12 +235,10 @@ pub enum Expr {
 }
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{Position, TokenKind, arena::ArenaId};
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
-
-    use crate::{Position, TokenKind, arena::ArenaId};
-
-    use super::*;
 
     fn create_token(range: Range) -> Rc<Token> {
         Rc::new(Token {
