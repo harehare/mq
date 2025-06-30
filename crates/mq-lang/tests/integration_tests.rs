@@ -1607,7 +1607,7 @@ mod ast_json {
         ])),
     }),
     Some(vec!["If", "Bool", "true", "String", "then_branch"]),
-    false // token_idは比較しない
+    false
 )]
     fn test_astnode_serialization_deserialization(
         #[case] original_node: Rc<AstNode>,
@@ -1629,7 +1629,6 @@ mod ast_json {
         if check_token_id {
             assert_eq!(deserialized_node.token_id, default_token_id());
         }
-        // Ident型の場合はtokenがNoneであることも確認
         if let AstExpr::Ident(ident) = &*deserialized_node.expr {
             assert_eq!(ident.token, None);
         }
