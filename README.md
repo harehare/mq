@@ -46,7 +46,6 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 - **Built-in support**: Filter and transform content with many built-in functions and selectors.
 - **REPL Support**: Interactive command-line REPL for testing and experimenting.
 - **IDE Support**: VSCode Extension and Language Server Protocol (LSP) support for custom function development.
-- **AST JSON (De)serialization (Optional Feature)**: The `mq-lang` crate provides an `ast-json` feature flag. When enabled, it allows serializing the query's Abstract Syntax Tree (AST) to JSON and deserializing it back. This also enables direct execution of an AST via `Engine::eval_ast`. The `mq-cli` tool enables this feature by default, providing `--output-ast-json` and `--execute-ast-json` options.
 
 ## Installation
 
@@ -138,8 +137,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -170,15 +169,6 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
-      --output-ast-json <FILEPATH>
-          Path to a file where the JSON representation of the query's AST should be saved.
-          If this option is used, the query is parsed, its AST is saved to the specified file,
-          and the program exits without executing the query.
-          This cannot be used with --execute-ast-json.
-      --execute-ast-json <FILEPATH>
-          Path to a JSON file containing the AST to execute.
-          When this option is used, the QUERY argument is ignored for execution logic.
-          This cannot be used with --output-ast-json.
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
   -h, --help
@@ -236,32 +226,6 @@ $ mq 'select(or(.h1, .h2))' example.html
 ```
 
 This allows you to seamlessly convert and query HTML content using mq's Markdown processing features.
-
-### AST Input/Output
-
-`mq` allows for more advanced workflows by enabling the export and import of a query's Abstract Syntax Tree (AST) in JSON format. This can be useful for debugging, analyzing queries, or programmatically generating and executing `mq` operations.
-
-**Exporting AST to JSON:**
-
-You can save the AST of a given query to a JSON file using the `--output-ast-json` option. This will parse the query and write its AST representation to the specified file without executing the query.
-
-```sh
-# Save the AST of the query 'select(.h1)' to ast.json
-$ mq 'select(.h1)' --output-ast-json ast.json
-```
-
-The `ast.json` file will then contain the JSON representation of the query's AST.
-
-**Executing AST from JSON:**
-
-Conversely, you can execute a query directly from an AST stored in a JSON file using the `--execute-ast-json` option. This bypasses the query parsing step.
-
-```sh
-# Execute a query from an AST stored in ast.json, applying it to input.md
-$ mq --execute-ast-json ast.json input.md
-```
-
-This is particularly useful if you have a pre-generated or modified AST that you want to run.
 
 ### Using with markitdown
 
