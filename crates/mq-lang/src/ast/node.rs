@@ -21,8 +21,8 @@ pub type Args = SmallVec<[Rc<Node>; 4]>;
 pub type Cond = (Option<Rc<Node>>, Rc<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
 
-#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 pub struct Node {
     #[cfg_attr(
         feature = "ast-json",

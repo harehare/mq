@@ -205,14 +205,14 @@ impl Engine {
     /// let mut engine = Engine::default();
     /// engine.load_builtin_module();
     ///
-    /// let json = r#"[{
-    ///     "Literal": {
-    ///         "String": "hello"
+    /// let json = r#"[
+    ///   {
+    ///     "expr": {
+    ///       "Literal": {"String": "hello"}
     ///     }
-    /// }]"#;
-    /// let ast_node: Rc<mq_lang::AstNode> = serde_json::from_str(json).unwrap();
-    /// dbg!(&ast_node);
-    /// let program: Program = vec![ast_node];
+    ///   }
+    /// ]"#;
+    /// let program: mq_lang::Program = serde_json::from_str(json).unwrap();
     /// let result = engine.eval_ast(program, mq_lang::null_input().into_iter());
     /// assert_eq!(result.unwrap(), vec!["hello".to_string().into()].into());
     /// ```
