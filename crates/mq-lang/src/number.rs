@@ -1,7 +1,11 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Rem, Sub};
+#[cfg(feature = "ast-json")]
+use serde::{Serialize, Deserialize};
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ast-json", serde(transparent))]
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Number(f64);
 

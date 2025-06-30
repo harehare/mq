@@ -16,6 +16,223 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Tests for --output-ast-json and --execute-ast-json
+// This module is added inside the existing tests module
+#[cfg(feature = "ast-json")]
+mod test_cli_ast_options {
+    // No need for super::* if Command and NamedTempFile are brought into scope directly
+    use std::fs;
+    use assert_cmd::prelude::*;
+    use predicates::prelude::*;
+    use tempfile::NamedTempFile;
+    use rstest::rstest;
+
+    #[rstest]
+    fn test_output_ast_json() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+        let temp_ast_file = NamedTempFile::new().unwrap();
+        let ast_file_path = temp_ast_file.path().to_str().unwrap();
+
+        cmd.arg("'add(1, 2)'")
+           .arg("--output-ast-json")
+           .arg(ast_file_path);
+
+        cmd.assert().success();
+
+        let ast_json_content = fs::read_to_string(ast_file_path).unwrap();
+        assert!(ast_json_content.contains("\"Call\""));
+        assert!(ast_json_content.contains("\"name\":\"add\""));
+        assert!(ast_json_content.contains("{\"Literal\":{\"Number\":1.0}}"));
+        assert!(ast_json_content.contains("{\"Literal\":{\"Number\":2.0}}"));
+    }
+
+    #[rstest]
+    fn test_execute_ast_json() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+
+        let ast_content = r#"[
+            {
+                "expr": {
+                    "Call": [
+                        { "name": "add" },
+                        [
+                            { "expr": { "Literal": { "Number": 10.0 } } },
+                            { "expr": { "Literal": { "Number": 5.0 } } }
+                        ],
+                        false
+                    ]
+                }
+            }
+        ]"#;
+        let mut temp_ast_file = NamedTempFile::new().unwrap();
+        use std::io::Write;
+        writeln!(temp_ast_file, "{}", ast_content).unwrap();
+        let ast_file_path = temp_ast_file.path().to_str().unwrap();
+
+        let mut temp_input_file = NamedTempFile::new().unwrap();
+        writeln!(temp_input_file, "dummy input line").unwrap();
+        let input_file_path = temp_input_file.path().to_str().unwrap();
+
+        cmd.arg("--execute-ast-json")
+           .arg(ast_file_path)
+           .arg(input_file_path);
+
+        cmd.assert()
+           .success()
+           .stdout(predicate::str::contains("15"));
+    }
+
+    #[rstest]
+    fn test_output_and_execute_ast_json_mutual_exclusion() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+        let temp_file1 = NamedTempFile::new().unwrap();
+        let temp_file2 = NamedTempFile::new().unwrap();
+
+        cmd.arg("--output-ast-json")
+           .arg(temp_file1.path())
+           .arg("--execute-ast-json")
+           .arg(temp_file2.path())
+           .arg("'dummy query'");
+
+        cmd.assert()
+           .failure()
+           .stderr(predicate::str::contains("cannot be used together"));
+    }
+
+    #[rstest]
+    fn test_execute_ast_json_with_update_should_fail() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+
+        let ast_content = r#"[ { "expr": { "Literal": { "String": "test" } } } ]"#;
+        let mut temp_ast_file = NamedTempFile::new().unwrap();
+        use std::io::Write;
+        writeln!(temp_ast_file, "{}", ast_content).unwrap();
+        let ast_file_path = temp_ast_file.path().to_str().unwrap();
+
+        let mut temp_input_file = NamedTempFile::new().unwrap();
+        writeln!(temp_input_file, "dummy input line").unwrap();
+        let input_file_path = temp_input_file.path().to_str().unwrap();
+
+        cmd.arg("--execute-ast-json")
+           .arg(ast_file_path)
+           .arg("--update")
+           .arg(input_file_path);
+
+        cmd.assert()
+           .failure()
+           .stderr(predicate::str::contains("--update is not supported with --execute-ast-json"));
+    }
+}
+
+// Tests for --output-ast-json and --execute-ast-json
+mod test_cli_ast_options {
+    // use super::*; // Not strictly needed if we qualify types, but can be convenient.
+    use std::fs;
+    use assert_cmd::prelude::*; // For Command::cargo_bin etc.
+    use predicates::prelude::*; // For predicate::str::contains etc.
+    use tempfile::NamedTempFile;
+    use rstest::rstest; // If rstest is used within this module
+
+    #[rstest]
+    fn test_output_ast_json() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+        let temp_ast_file = NamedTempFile::new().unwrap();
+        let ast_file_path = temp_ast_file.path().to_str().unwrap();
+
+        cmd.arg("'add(1, 2)'") // Query that results in a known AST structure
+           .arg("--output-ast-json")
+           .arg(ast_file_path);
+
+        cmd.assert().success();
+
+        let ast_json_content = fs::read_to_string(ast_file_path).unwrap();
+        // More specific checks for the AST of 'add(1, 2)'
+        assert!(ast_json_content.contains("\"Call\""));
+        assert!(ast_json_content.contains("\"name\":\"add\"")); // The function name
+        assert!(ast_json_content.contains("{\"Literal\":{\"Number\":1.0}}")); // Argument 1
+        assert!(ast_json_content.contains("{\"Literal\":{\"Number\":2.0}}")); // Argument 2
+    }
+
+    #[rstest]
+    fn test_execute_ast_json() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+
+        // AST for 'add(10, 5)'
+        // Note: token_id fields are omitted as they are defaulted during deserialization.
+        let ast_content = r#"[
+            {
+                "expr": {
+                    "Call": [
+                        { "name": "add" },
+                        [
+                            { "expr": { "Literal": { "Number": 10.0 } } },
+                            { "expr": { "Literal": { "Number": 5.0 } } }
+                        ],
+                        false
+                    ]
+                }
+            }
+        ]"#;
+        let mut temp_ast_file = NamedTempFile::new().unwrap();
+        use std::io::Write;
+        writeln!(temp_ast_file, "{}", ast_content).unwrap();
+        let ast_file_path = temp_ast_file.path().to_str().unwrap();
+
+        let mut temp_input_file = NamedTempFile::new().unwrap();
+        writeln!(temp_input_file, "dummy input line").unwrap();
+        let input_file_path = temp_input_file.path().to_str().unwrap();
+
+        cmd.arg("--execute-ast-json")
+           .arg(ast_file_path)
+           .arg(input_file_path); // Provide an input file
+
+        cmd.assert()
+           .success()
+           .stdout(predicate::str::contains("15"));
+    }
+
+    #[rstest]
+    fn test_output_and_execute_ast_json_mutual_exclusion() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+        let temp_file1 = NamedTempFile::new().unwrap();
+        let temp_file2 = NamedTempFile::new().unwrap();
+
+        cmd.arg("--output-ast-json")
+           .arg(temp_file1.path())
+           .arg("--execute-ast-json")
+           .arg(temp_file2.path())
+           .arg("'dummy query'");
+
+        cmd.assert()
+           .failure()
+           .stderr(predicate::str::contains("cannot be used together"));
+    }
+
+    #[rstest]
+    fn test_execute_ast_json_with_update_should_fail() {
+        let mut cmd = std::process::Command::cargo_bin("mq").unwrap();
+
+        let ast_content = r#"[ { "expr": { "Literal": { "String": "test" } } } ]"#;
+        let mut temp_ast_file = NamedTempFile::new().unwrap();
+        use std::io::Write;
+        writeln!(temp_ast_file, "{}", ast_content).unwrap();
+        let ast_file_path = temp_ast_file.path().to_str().unwrap();
+
+        let mut temp_input_file = NamedTempFile::new().unwrap();
+        writeln!(temp_input_file, "dummy input line").unwrap();
+        let input_file_path = temp_input_file.path().to_str().unwrap();
+
+        cmd.arg("--execute-ast-json")
+           .arg(ast_file_path)
+           .arg("--update")
+           .arg(input_file_path);
+
+        cmd.assert()
+           .failure()
+           .stderr(predicate::str::contains("--update is not supported with --execute-ast-json"));
+    }
+}
+
 #[rstest]
 #[case::json(
     vec!["--unbuffered", "-F", "json", ".code_inline"],

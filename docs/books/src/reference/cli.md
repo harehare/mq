@@ -48,6 +48,15 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
+      --output-ast-json <FILEPATH>
+          Path to a file where the JSON representation of the query's AST should be saved.
+          If this option is used, the query is parsed, its AST is saved to the specified file,
+          and the program exits without executing the query.
+          This cannot be used with --execute-ast-json.
+      --execute-ast-json <FILEPATH>
+          Path to a JSON file containing the AST to execute.
+          When this option is used, the QUERY argument is ignored for execution logic.
+          This cannot be used with --output-ast-json.
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
   -h, --help
