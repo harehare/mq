@@ -28,27 +28,20 @@ itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter.workspace = true
 mq-hir.workspace = true
-mq-lang = { workspace = true, features = ["ast-json"] } # Enable ast-json feature
+mq-lang.workspace = true
 mq-lsp.workspace = true
 mq-markdown = {workspace = true, features = ["json"]}
 mq-mcp.workspace = true
 mq-repl.workspace = true
 mq-tui.workspace = true
 rayon = "1.10.0"
-serde_json = "1.0" # Add serde_json
 tokio = {version = "1.45.1", features = ["io-util", "io-std", "rt"]}
 url.workspace = true
-
-[features]
-default = ["ast-json"] # Make ast-json a default feature for mq-cli
-ast-json = ["mq-lang/ast-json"]
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
 mq-test.workspace = true
-predicates = "3.1.0" # Often used with assert_cmd
 rstest.workspace = true
-tempfile = "3.10.1" # For creating temporary files/dirs in tests
 
 [[bin]]
 doc = false
