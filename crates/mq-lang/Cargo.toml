@@ -25,7 +25,7 @@ nom_locate = "5.0.0"
 percent-encoding = "2.3.1"
 regex = "1.5"
 rustc-hash.workspace = true
-serde = {workspace = true, features = ["derive"], optional = true}
+serde = {workspace = true, features = ["derive", "rc"], optional = true}
 serde_json = {workspace = true, optional = true}
 smallvec = "1.15.1"
 thiserror.workspace = true

@@ -2570,6 +2570,7 @@ dependencies = [
  "mq-markdown",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
