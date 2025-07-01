@@ -15,7 +15,7 @@ mq-formatter.workspace = true
 mq-hir.workspace = true
 mq-lang.workspace = true
 mq-markdown.workspace = true
-serde = {version = "1.0.219", features = ["derive"]}
+serde = {workspace = true, features = ["derive"]}
 serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "0.2.100"
 
