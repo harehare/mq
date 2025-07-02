@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [dependencies]
 clap = {version = "4.4", features = ["derive"]}
+fantoccini = "0.22.0"
 miette.workspace = true
 mq-lang.workspace = true
 mq-markdown.workspace = true

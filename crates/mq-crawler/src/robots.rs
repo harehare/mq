@@ -1,4 +1,4 @@
-use reqwest::Client;
+use crate::http_client::HttpClient;
 use robots_txt::{Robots, matcher::SimpleMatcher};
 use url::Url;
 
@@ -15,7 +15,7 @@ impl RobotsTxt {
     /// If a custom_robots_path is provided and is a valid URL, it fetches from there.
     /// Otherwise, it constructs the default robots.txt URL (e.g., http://example.com/robots.txt).
     pub async fn fetch(
-        client: &Client,
+        http_client: &HttpClient,
         target_url: &Url,
         custom_robots_path: Option<&str>,
     ) -> Result<Self, String> {
@@ -64,36 +64,20 @@ impl RobotsTxt {
 
         tracing::info!("Fetching robots.txt from: {}", robots_url);
 
-        match client.get(robots_url).send().await {
+        match http_client.fetch(robots_url).await {
             Ok(response) => {
-                if response.status().is_success() {
-                    let text = response
-                        .text()
-                        .await
-                        .map_err(|e| format!("Failed to read robots.txt response body: {}", e))?;
-                    tracing::debug!("robots.txt content for {}:\n{}", domain, text);
-                    Ok(RobotsTxt {
-                        robots_text: Some(text),
-                        domain,
-                    })
-                } else {
-                    tracing::warn!(
-                        "Failed to fetch robots.txt for {}: HTTP {}",
-                        domain,
-                        response.status()
-                    );
-                    Ok(RobotsTxt {
-                        robots_text: None,
-                        domain,
-                    }) // No robots.txt or error, assume crawl is allowed
-                }
+                tracing::debug!("robots.txt content for {}:\n{}", domain, response);
+                Ok(RobotsTxt {
+                    robots_text: Some(response),
+                    domain,
+                })
             }
             Err(e) => {
                 tracing::warn!("Error fetching robots.txt for {}: {}", domain, e);
                 Ok(RobotsTxt {
                     robots_text: None,
                     domain,
-                }) // Network error, assume crawl is allowed
+                })
             }
         }
     }
@@ -161,9 +145,9 @@ mod tests {
                 })
                 .await;
 
-            let client = reqwest::Client::new();
+            let http_client = HttpClient::new_reqwest().unwrap();
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
-            let robots = RobotsTxt::fetch(&client, &url, None).await.unwrap();
+            let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
 
             assert_eq!(robots.domain, server.address().to_string());
             assert_eq!(robots.robots_text.as_deref(), Some(robots_body));
@@ -184,9 +168,9 @@ mod tests {
                 })
                 .await;
 
-            let client = reqwest::Client::new();
+            let http_client = HttpClient::new_reqwest().unwrap();
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
-            let robots = RobotsTxt::fetch(&client, &url, None).await.unwrap();
+            let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
 
             assert_eq!(robots.domain, server.address().to_string());
             assert!(robots.robots_text.is_none());
@@ -208,10 +192,10 @@ mod tests {
                 })
                 .await;
 
-            let client = reqwest::Client::new();
+            let http_client = HttpClient::new_reqwest().unwrap();
             let custom_url = format!("http://{}/custom-robots.txt", server.address());
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
-            let robots = RobotsTxt::fetch(&client, &url, Some(&custom_url))
+            let robots = RobotsTxt::fetch(&http_client, &url, Some(&custom_url))
                 .await
                 .unwrap();
 
@@ -226,9 +210,9 @@ mod tests {
         init_tracing();
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let client = reqwest::Client::new();
+            let http_client = HttpClient::new_reqwest().unwrap();
             let url = Url::parse("http://example.com").unwrap();
-            let result = RobotsTxt::fetch(&client, &url, Some("/not/a/url")).await;
+            let result = RobotsTxt::fetch(&http_client, &url, Some("/not/a/url")).await;
             assert!(result.is_err());
             assert!(result.unwrap_err().contains("not a valid URL"));
         });

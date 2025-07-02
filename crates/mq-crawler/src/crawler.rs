@@ -1,6 +1,6 @@
+use crate::http_client::HttpClient;
 use crate::robots::RobotsTxt;
 use miette::miette;
-use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
@@ -103,7 +103,7 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
 }
 
 pub struct Crawler {
-    client: Client,
+    http_client: HttpClient,
     to_visit: VecDeque<Url>,
     visited: HashSet<Url>,
     robots_cache: HashMap<String, Arc<RobotsTxt>>,
@@ -119,17 +119,13 @@ pub struct Crawler {
 
 impl Crawler {
     pub async fn new(
+        http_client: HttpClient,
         start_url: Url,
         crawl_delay_secs: f64,
         custom_robots_path: Option<String>, // Accept from CLI args
         mq_query: Option<String>,
         output_path: Option<String>,
     ) -> Result<Self, String> {
-        let client = Client::builder()
-            .user_agent(format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE")))
-            .build()
-            .map_err(|e| format!("Failed to build reqwest client: {}", e))?;
-
         let initial_domain = start_url
             .domain()
             .ok_or_else(|| "Start URL has no domain".to_string())?
@@ -143,7 +139,7 @@ impl Crawler {
         mq_engine.load_builtin_module();
 
         Ok(Self {
-            client,
+            http_client,
             to_visit,
             visited: HashSet::new(),
             robots_cache: HashMap::new(),
@@ -169,7 +165,7 @@ impl Crawler {
 
         // Use the stored custom_robots_path
         let robots = RobotsTxt::fetch(
-            &self.client,
+            &self.http_client,
             url_to_check,
             self.custom_robots_path.as_deref(),
         )
@@ -222,68 +218,54 @@ impl Crawler {
                 continue;
             }
 
-            match self.client.get(current_url.clone()).send().await {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        let html_content = response
-                            .text()
-                            .await
-                            .map_err(|e| format!("Failed to read response text: {}", e))?;
+            match self.http_client.fetch(current_url.clone()).await {
+                Ok(html_content) => {
+                    let input = mq_lang::parse_html_input(&html_content)
+                        .map_err(|e| format!("Failed to parse HTML: {}", e))?;
 
-                        let input = mq_lang::parse_html_input(&html_content)
-                            .map_err(|e| format!("Failed to parse HTML: {}", e))?;
+                    tracing::info!("Applying mq query to content from {}", current_url);
 
-                        tracing::info!("Applying mq query to content from {}", current_url);
-
-                        match self
-                            .mq_engine
-                            .eval(&self.mq_query, input.into_iter())
-                            .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
-                        {
-                            Ok(values) => {
-                                self.output_markdown(
-                                    &current_url,
-                                    &mq_markdown::Markdown::new(
-                                        values
-                                            .into_iter()
-                                            .map(|value| match value {
-                                                mq_lang::Value::Markdown(node) => node.clone(),
-                                                _ => value.to_string().into(),
-                                            })
-                                            .collect(),
-                                    )
-                                    .to_string(),
-                                )?;
-                            }
-                            Err(e) => {
-                                let error_string = format!("{:?}", e);
-                                tracing::error!(
-                                    "Error running mq query on content from {}: {}. Original markdown will be used.",
-                                    current_url,
-                                    error_string.chars().take(200).collect::<String>()
-                                );
-                            }
+                    match self
+                        .mq_engine
+                        .eval(&self.mq_query, input.into_iter())
+                        .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
+                    {
+                        Ok(values) => {
+                            self.output_markdown(
+                                &current_url,
+                                &mq_markdown::Markdown::new(
+                                    values
+                                        .into_iter()
+                                        .map(|value| match value {
+                                            mq_lang::Value::Markdown(node) => node.clone(),
+                                            _ => value.to_string().into(),
+                                        })
+                                        .collect(),
+                                )
+                                .to_string(),
+                            )?;
                         }
-
-                        let new_links = extract_links(&html_content, &current_url);
-                        self.result.links_discovered += new_links.len();
-                        for link in new_links {
-                            if !self.visited.contains(&link)
-                                && !self.to_visit.contains(&link)
-                                && link.domain().is_some_and(|d| d == self.initial_domain)
-                            {
-                                self.to_visit.push_back(link);
-                            }
+                        Err(e) => {
+                            let error_string = format!("{:?}", e);
+                            tracing::error!(
+                                "Error running mq query on content from {}: {}. Original markdown will be used.",
+                                current_url,
+                                error_string.chars().take(200).collect::<String>()
+                            );
                         }
-                        self.result.pages_crawled += 1;
-                    } else {
-                        tracing::warn!(
-                            "Request to {} failed with status: {}",
-                            current_url,
-                            response.status()
-                        );
-                        self.result.pages_failed += 1;
                     }
+
+                    let new_links = extract_links(&html_content, &current_url);
+                    self.result.links_discovered += new_links.len();
+                    for link in new_links {
+                        if !self.visited.contains(&link)
+                            && !self.to_visit.contains(&link)
+                            && link.domain().is_some_and(|d| d == self.initial_domain)
+                        {
+                            self.to_visit.push_back(link);
+                        }
+                    }
+                    self.result.pages_crawled += 1;
                 }
                 Err(e) => {
                     tracing::error!("Failed to fetch URL {}: {}", current_url, e);
