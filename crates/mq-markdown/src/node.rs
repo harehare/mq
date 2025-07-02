@@ -1820,6 +1820,239 @@ impl Node {
         }
     }
 
+    /// Sets the value of the specified attribute for the node, if supported.
+    pub fn set_attr(&mut self, attr: &str, value: &str) {
+        match self {
+            Node::Footnote(f) if attr == "ident" => {
+                f.ident = value.to_string();
+            }
+            Node::Html(h) if attr == "value" => {
+                h.value = value.to_string();
+            }
+            Node::Text(t) if attr == "value" => {
+                t.value = value.to_string();
+            }
+            Node::Code(c) => match attr {
+                "value" => {
+                    c.value = value.to_string();
+                }
+                "lang" => {
+                    c.lang = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                "meta" => {
+                    c.meta = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                "fence" => {
+                    c.fence = value == "true";
+                }
+                _ => (),
+            },
+            Node::CodeInline(ci) if attr == "value" => {
+                ci.value = value.into();
+            }
+            Node::MathInline(mi) if attr == "value" => {
+                mi.value = value.into();
+            }
+            Node::Math(m) if attr == "value" => {
+                m.value = value.to_string();
+            }
+            Node::Yaml(y) if attr == "value" => {
+                y.value = value.to_string();
+            }
+            Node::Toml(t) if attr == "value" => {
+                t.value = value.to_string();
+            }
+            Node::Image(i) => match attr {
+                "alt" => {
+                    i.alt = value.to_string();
+                }
+                "url" => {
+                    i.url = value.to_string();
+                }
+                "title" => {
+                    i.title = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                _ => (),
+            },
+            Node::ImageRef(i) => match attr {
+                "alt" => {
+                    i.alt = value.to_string();
+                }
+                "ident" => {
+                    i.ident = value.to_string();
+                }
+                "label" => {
+                    i.label = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                _ => (),
+            },
+            Node::Link(l) => match attr {
+                "url" => {
+                    l.url = Url::new(value.to_string());
+                }
+                "title" => {
+                    l.title = if value.is_empty() {
+                        None
+                    } else {
+                        Some(Title::new(value.to_string()))
+                    };
+                }
+                _ => (),
+            },
+            Node::LinkRef(l) => match attr {
+                "ident" => {
+                    l.ident = value.to_string();
+                }
+                "label" => {
+                    l.label = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                _ => (),
+            },
+            Node::FootnoteRef(f) => match attr {
+                "ident" => {
+                    f.ident = value.to_string();
+                }
+                "label" => {
+                    f.label = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                _ => (),
+            },
+            Node::Definition(d) => match attr {
+                "ident" => {
+                    d.ident = value.to_string();
+                }
+                "url" => {
+                    d.url = Url::new(value.to_string());
+                }
+                "title" => {
+                    d.title = if value.is_empty() {
+                        None
+                    } else {
+                        Some(Title::new(value.to_string()))
+                    };
+                }
+                "label" => {
+                    d.label = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    };
+                }
+                _ => (),
+            },
+            Node::Heading(h) if attr == "depth" => {
+                if let Ok(depth) = value.parse::<u8>() {
+                    h.depth = depth;
+                }
+            }
+            Node::List(l) => match attr {
+                "index" => {
+                    if let Ok(index) = value.parse::<usize>() {
+                        l.index = index;
+                    }
+                }
+                "level" => {
+                    if let Ok(level) = value.parse::<u8>() {
+                        l.level = level;
+                    }
+                }
+                "ordered" => {
+                    l.ordered = value == "true";
+                }
+                "checked" => {
+                    l.checked = if value.is_empty() {
+                        None
+                    } else {
+                        Some(value == "true")
+                    }
+                }
+                _ => (),
+            },
+            Node::TableCell(c) => match attr {
+                "column" => {
+                    if let Ok(column) = value.parse::<usize>() {
+                        c.column = column;
+                    }
+                }
+                "row" => {
+                    if let Ok(row) = value.parse::<usize>() {
+                        c.row = row;
+                    }
+                }
+                "last_cell_in_row" => {
+                    c.last_cell_in_row = value == "true";
+                }
+                "last_cell_of_in_table" => {
+                    c.last_cell_of_in_table = value == "true";
+                }
+                _ => (),
+            },
+            Node::TableHeader(th) if attr == "align" => {
+                th.align = value
+                    .split(',')
+                    .map(|s| match s.trim() {
+                        ":---" => TableAlignKind::Left,
+                        "---:" => TableAlignKind::Right,
+                        ":---:" => TableAlignKind::Center,
+                        "---" => TableAlignKind::None,
+                        _ => TableAlignKind::None,
+                    })
+                    .collect();
+            }
+            Node::MdxFlowExpression(m) if attr == "value" => {
+                m.value = value.into();
+            }
+            Node::MdxTextExpression(m) if attr == "value" => {
+                m.value = value.into();
+            }
+            Node::MdxJsEsm(m) if attr == "value" => {
+                m.value = value.into();
+            }
+            Node::MdxJsEsm(m) if attr == "value" => {
+                m.value = value.into();
+            }
+            Node::MdxJsxFlowElement(m) if attr == "name" => {
+                m.name = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                }
+            }
+            Node::MdxJsxTextElement(m) if attr == "name" => {
+                m.name = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.into())
+                };
+            }
+            _ => (),
+        }
+    }
+
     pub(crate) fn from_mdast_node(node: mdast::Node) -> Vec<Node> {
         match node.clone() {
             mdast::Node::Root(root) => root
@@ -3815,5 +4048,287 @@ mod tests {
     #[case(Node::Empty, "value", None)]
     fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<String>) {
         assert_eq!(node.attr(attr), expected);
+    }
+
+    #[rstest]
+    #[case(
+        Node::Text(Text{value: "old".to_string(), position: None}),
+        "value",
+        "new",
+        Node::Text(Text{value: "new".to_string(), position: None})
+    )]
+    #[case(
+        Node::Code(Code{value: "old".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}),
+        "value",
+        "new_code",
+        Node::Code(Code{value: "new_code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None})
+    )]
+    #[case(
+        Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), fence: true, meta: None, position: None}),
+        "lang",
+        "python",
+        Node::Code(Code{value: "code".to_string(), lang: Some("python".to_string()), fence: true, meta: None, position: None})
+    )]
+    #[case(
+        Node::Code(Code{value: "code".to_string(), lang: None, fence: false, meta: None, position: None}),
+        "fence",
+        "true",
+        Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None})
+    )]
+    #[case(
+        Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}),
+        "alt",
+        "new_alt",
+        Node::Image(Image{alt: "new_alt".to_string(), url: "url".to_string(), title: None, position: None})
+    )]
+    #[case(
+        Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: None, position: None}),
+        "url",
+        "new_url",
+        Node::Image(Image{alt: "alt".to_string(), url: "new_url".to_string(), title: None, position: None})
+    )]
+    #[case(
+        Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}),
+        "title",
+        "new_title",
+        Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("new_title".to_string()), position: None})
+    )]
+    #[case(
+        Node::Heading(Heading{depth: 2, values: vec![], position: None}),
+        "depth",
+        "3",
+        Node::Heading(Heading{depth: 3, values: vec![], position: None})
+    )]
+    #[case(
+        Node::List(List{index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
+        "checked",
+        "false",
+        Node::List(List{index: 1, level: 2, checked: Some(false), ordered: false, values: vec![], position: None})
+    )]
+    #[case(
+        Node::List(List{index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
+        "ordered",
+        "true",
+        Node::List(List{index: 1, level: 2, checked: Some(true), ordered: true, values: vec![], position: None})
+    )]
+    #[case(
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        "column",
+        "3",
+        Node::TableCell(TableCell{column: 3, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None})
+    )]
+    #[case(
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        "row",
+        "5",
+        Node::TableCell(TableCell{column: 1, row: 5, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None})
+    )]
+    #[case(
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        "last_cell_in_row",
+        "true",
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})
+    )]
+    #[case(
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}),
+        "last_cell_of_in_table",
+        "true",
+        Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: false, last_cell_of_in_table: true, values: vec![], position: None})
+    )]
+    #[case(
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None}),
+        "ident",
+        "new_id",
+        Node::Definition(Definition{ident: "new_id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None})
+    )]
+    #[case(
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None}),
+        "url",
+        "new_url",
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("new_url".to_string()), title: None, label: None, position: None})
+    )]
+    #[case(
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None}),
+        "label",
+        "new_label",
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: None, label: None, position: None}),
+        "title",
+        "new_title",
+        Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("new_title".to_string())), label: None, position: None})
+    )]
+    #[case(
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}),
+        "alt",
+        "new_alt",
+        Node::ImageRef(ImageRef{alt: "new_alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None})
+    )]
+    #[case(
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}),
+        "ident",
+        "new_id",
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "new_id".to_string(), label: Some("label".to_string()), position: None})
+    )]
+    #[case(
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}),
+        "label",
+        "new_label",
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: None, position: None}),
+        "label",
+        "new_label",
+        Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: Some("label".to_string()), position: None}),
+        "ident",
+        "new_id",
+        Node::LinkRef(LinkRef{ident: "new_id".to_string(), values: vec![], label: Some("label".to_string()), position: None})
+    )]
+    #[case(
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: Some("label".to_string()), position: None}),
+        "label",
+        "new_label",
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: None, position: None}),
+        "label",
+        "new_label",
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: Some("label".to_string()), position: None}),
+        "unknown",
+        "ignored",
+        Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![], label: Some("label".to_string()), position: None})
+    )]
+    #[case(
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}),
+        "ident",
+        "new_id",
+        Node::FootnoteRef(FootnoteRef{ident: "new_id".to_string(), label: Some("label".to_string()), position: None})
+    )]
+    #[case(
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}),
+        "label",
+        "new_label",
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: None, position: None}),
+        "label",
+        "new_label",
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("new_label".to_string()), position: None})
+    )]
+    #[case(
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}),
+        "unknown",
+        "ignored",
+        Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None})
+    )]
+    #[case(Node::Empty, "value", "ignored", Node::Empty)]
+    #[case(
+        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}),
+        "align",
+        "---,:---:",
+        Node::TableHeader(TableHeader{align: vec![TableAlignKind::None, TableAlignKind::Center], position: None})
+    )]
+    #[case(
+        Node::TableHeader(TableHeader{align: vec![], position: None}),
+        "align",
+        ":---,---:",
+        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None})
+    )]
+    #[case(
+        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left], position: None}),
+        "unknown",
+        "ignored",
+        Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left], position: None})
+    )]
+    #[case(
+        Node::MdxFlowExpression(MdxFlowExpression{value: "old".into(), position: None}),
+        "value",
+        "new_expr",
+        Node::MdxFlowExpression(MdxFlowExpression{value: "new_expr".into(), position: None})
+    )]
+    #[case(
+        Node::MdxFlowExpression(MdxFlowExpression{value: "expr".into(), position: None}),
+        "unknown",
+        "ignored",
+        Node::MdxFlowExpression(MdxFlowExpression{value: "expr".into(), position: None})
+    )]
+    #[case(
+        Node::MdxTextExpression(MdxTextExpression{value: "old".into(), position: None}),
+        "value",
+        "new_expr",
+        Node::MdxTextExpression(MdxTextExpression{value: "new_expr".into(), position: None})
+    )]
+    #[case(
+        Node::MdxTextExpression(MdxTextExpression{value: "expr".into(), position: None}),
+        "unknown",
+        "ignored",
+        Node::MdxTextExpression(MdxTextExpression{value: "expr".into(), position: None})
+    )]
+    #[case(
+        Node::MdxJsEsm(MdxJsEsm{value: "import x".into(), position: None}),
+        "value",
+        "import y",
+        Node::MdxJsEsm(MdxJsEsm{value: "import y".into(), position: None})
+    )]
+    #[case(
+        Node::MdxJsEsm(MdxJsEsm{value: "import x".into(), position: None}),
+        "unknown",
+        "ignored",
+        Node::MdxJsEsm(MdxJsEsm{value: "import x".into(), position: None})
+    )]
+    #[case(
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None}),
+        "name",
+        "section",
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("section".to_string()), attributes: Vec::new(), children: Vec::new(), position: None})
+    )]
+    #[case(
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}),
+        "name",
+        "main",
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("main".to_string()), attributes: Vec::new(), children: Vec::new(), position: None})
+    )]
+    #[case(
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None}),
+        "unknown",
+        "ignored",
+        Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None})
+    )]
+    #[case(
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None}),
+        "name",
+        "b",
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("b".into()), attributes: Vec::new(), children: Vec::new(), position: None})
+    )]
+    #[case(
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}),
+        "name",
+        "i",
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("i".into()), attributes: Vec::new(), children: Vec::new(), position: None})
+    )]
+    #[case(
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None}),
+        "unknown",
+        "ignored",
+        Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None})
+    )]
+    fn test_set_attr(
+        #[case] mut node: Node,
+        #[case] attr: &str,
+        #[case] value: &str,
+        #[case] expected: Node,
+    ) {
+        node.set_attr(attr, value);
+        assert_eq!(node, expected);
     }
 }
