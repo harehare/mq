@@ -23,6 +23,9 @@ struct CliArgs {
     /// The initial URL to start crawling from.
     #[clap(required = true)]
     url: Url,
+    /// Optional WebDriver URL for browser-based crawling (e.g., http://localhost:4444).
+    #[clap(short = 'U', long, value_name = "WEBDRIVER_URL")]
+    webdriver_url: Option<Url>,
 }
 
 #[tokio::main]
@@ -33,6 +36,16 @@ async fn main() {
     tracing::info!("Initializing crawler for URL: {}", args.url);
 
     match Crawler::new(
+        if let Some(url) = args.webdriver_url {
+            mq_crawler::http_client::HttpClient::Fantoccini(
+                fantoccini::ClientBuilder::native()
+                    .connect(url.as_ref())
+                    .await
+                    .expect("Failed to connect to WebDriver"),
+            )
+        } else {
+            mq_crawler::http_client::HttpClient::new_reqwest().unwrap()
+        },
         args.url.clone(),
         args.crawl_delay,
         args.robots_path.clone(),
