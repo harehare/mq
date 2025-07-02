@@ -37,6 +37,8 @@ mq-test = {path = "./crates/mq-test", version = "0.2.7"}
 mq-tui = {path = "./crates/mq-tui", version = "0.2.7"}
 rstest = "0.25.0"
 rustc-hash = "2.1.1"
+serde = "1.0"
+serde_json = "1.0"
 thiserror = "2.0.12"
 url = "2.5.4"
 

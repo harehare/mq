@@ -3,6 +3,7 @@ import init, { Options, Diagnostic, DefinedValue } from "./mq_wasm";
 // Type definitions for WASM module
 interface WasmModule {
   run: (code: string, content: string, options: Options) => string;
+  toAst: (code: string) => string;
   format: (code: string) => string;
   diagnostics: (code: string) => readonly Diagnostic[];
   definedValues: (code: string) => readonly DefinedValue[];
@@ -22,6 +23,7 @@ async function initWasm(): Promise<WasmModule> {
 
       wasmModule = {
         run: wasmImport.run,
+        toAst: wasmImport.toAst,
         format: wasmImport.format,
         diagnostics: wasmImport.diagnostics,
         definedValues: wasmImport.definedValues,
@@ -51,6 +53,14 @@ export async function run(
     linkTitleStyle: "paren",
     ...options,
   });
+}
+
+/**
+ * Convert mq code to its AST (Abstract Syntax Tree) representation.
+ */
+export async function toAst(code: string): Promise<string> {
+  const wasm = await initWasm();
+  return await wasm.toAst(code);
 }
 
 /**

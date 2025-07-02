@@ -381,7 +381,7 @@ impl Cli {
             InputFormat::Mdx => mq_lang::parse_mdx_input(content)?,
             InputFormat::Text => mq_lang::parse_text_input(content)?,
             InputFormat::Html => mq_lang::parse_html_input(content)?,
-            InputFormat::Null => vec![mq_lang::Value::String("".to_string())],
+            InputFormat::Null => mq_lang::null_input(),
         };
 
         let runtime_values = if self.output.update {

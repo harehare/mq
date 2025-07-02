@@ -1,15 +1,16 @@
+use super::{IdentName, Program, TokenId};
+#[cfg(feature = "ast-json")]
+use crate::arena::ArenaId;
+use crate::{Token, arena::Arena, lexer, number::Number, range::Range};
+use compact_str::CompactString;
+#[cfg(feature = "ast-json")]
+use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
     rc::Rc,
 };
-
-use compact_str::CompactString;
-use smallvec::SmallVec;
-
-use crate::{Token, arena::Arena, lexer, number::Number, range::Range};
-
-use super::{IdentName, Program, TokenId};
 
 type Depth = u8;
 type Index = usize;
@@ -21,12 +22,32 @@ pub type Cond = (Option<Rc<Node>>, Rc<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 pub struct Node {
+    #[cfg_attr(
+        feature = "ast-json",
+        serde(skip_serializing, skip_deserializing, default = "default_token_id")
+    )]
     pub token_id: TokenId,
     pub expr: Rc<Expr>,
 }
 
+#[cfg(feature = "ast-json")]
+fn default_token_id() -> TokenId {
+    ArenaId::new(0)
+}
+
 impl Node {
+    #[cfg(feature = "ast-json")]
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    #[cfg(feature = "ast-json")]
+    pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json_str)
+    }
+
     pub fn range(&self, arena: Rc<Arena<Rc<Token>>>) -> Range {
         match &*self.expr {
             Expr::Def(_, _, program)
@@ -84,9 +105,14 @@ impl Node {
     }
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Ident {
     pub name: IdentName,
+    #[cfg_attr(
+        feature = "ast-json",
+        serde(skip_serializing_if = "Option::is_none", default)
+    )]
     pub token: Option<Rc<Token>>,
 }
 
@@ -127,6 +153,7 @@ impl Display for Ident {
     }
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Eq, Clone)]
 pub enum Selector {
     Blockquote,
@@ -160,6 +187,7 @@ pub enum Selector {
     MdxJsxFlowElement,
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq)]
 pub enum StringSegment {
     Text(String),
@@ -177,6 +205,7 @@ impl From<&lexer::token::StringSegment> for StringSegment {
     }
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Literal {
     String(String),
@@ -185,6 +214,7 @@ pub enum Literal {
     None,
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
     Call(Ident, Args, Optional),
@@ -205,12 +235,10 @@ pub enum Expr {
 }
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{Position, TokenKind, arena::ArenaId};
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
-
-    use crate::{Position, TokenKind, arena::ArenaId};
-
-    use super::*;
 
     fn create_token(range: Range) -> Rc<Token> {
         Rc::new(Token {

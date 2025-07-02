@@ -36,3 +36,10 @@ let (cst_nodes, errors) = mq_lang::parse_recovery(code);
 assert!(!errors.has_errors());
 assert!(!cst_nodes.is_empty());
 ```
+
+### Features
+
+- `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree)
+  to/from JSON format. This also enables the `Engine::eval_ast` method for direct
+  AST execution. When this feature is enabled, `serde` and `serde_json` dependencies
+  are included.
