@@ -1305,6 +1305,42 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         // markdown
         map.insert(
+            CompactString::new("attr"),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
+                [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
+                    let value = node.attr(attr);
+                    match value {
+                        Some(val) => Ok(RuntimeValue::String(val)),
+                        None => Ok(RuntimeValue::None),
+                    }
+                }
+                [a, b] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
+            CompactString::new("set_attr"),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
+                [
+                    RuntimeValue::Markdown(node, selector),
+                    RuntimeValue::String(attr),
+                    RuntimeValue::String(value),
+                ] => {
+                    let mut new_node = node.clone();
+                    new_node.set_attr(attr, value);
+                    Ok(RuntimeValue::Markdown(new_node, selector.clone()))
+                }
+                [a, b, c] => Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![a.clone(), b.clone(), c.clone()],
+                )),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
             CompactString::new("to_code"),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
@@ -2749,6 +2785,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Returns the absolute value of the given number.",
                 params: &["number"],
+            },
+        );
+        map.insert(
+            CompactString::new("attr"),
+            BuiltinFunctionDoc {
+                description: "Retrieves the value of the specified attribute from a markdown node.",
+                params: &["markdown", "attribute"],
+            },
+        );
+        map.insert(
+            CompactString::new("set_attr"),
+            BuiltinFunctionDoc {
+                description: "Sets the value of the specified attribute on a markdown node.",
+                params: &["markdown", "attribute", "value"],
             },
         );
         map.insert(
