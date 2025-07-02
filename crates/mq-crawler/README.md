@@ -52,12 +52,13 @@ Arguments:
   <URL>  The initial URL to start crawling from
 
 Options:
-  -o, --output <OUTPUT>            Optional path to an output DIRECTORY where markdown files will be saved. If not provided, output is printed to stdout
-  -c, --crawl-delay <CRAWL_DELAY>  Delay (in seconds) between crawl requests to avoid overloading servers [default: 1]
-      --robots-path <ROBOTS_PATH>  Optional path to a custom robots.txt file. If not provided, robots.txt will be fetched from the site
-  -m, --mq-query <MQ_QUERY>        Optional mq_lang query to process the crawled Markdown content
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -o, --output <OUTPUT>                Optional path to an output DIRECTORY where markdown files will be saved. If not provided, output is printed to stdout
+  -c, --crawl-delay <CRAWL_DELAY>      Delay (in seconds) between crawl requests to avoid overloading servers [default: 1]
+      --robots-path <ROBOTS_PATH>      Optional path to a custom robots.txt file. If not provided, robots.txt will be fetched from the site
+  -m, --mq-query <MQ_QUERY>            Optional mq_lang query to process the crawled Markdown content
+  -U, --webdriver-url <WEBDRIVER_URL>  Optional WebDriver URL for browser-based crawling (e.g., http://localhost:4444)
+  -h, --help                           Print help
+  -V, --version                        Print version
 ```
 
 ### Library Usage
