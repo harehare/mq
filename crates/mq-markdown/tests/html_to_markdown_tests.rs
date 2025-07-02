@@ -1231,6 +1231,118 @@ fn test_table_with_tfoot_ignored() {
     assert_conversion(html, expected);
 }
 
+// --- Strikethrough (s, strike, del) Tests ---
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_s_tag() {
+    assert_conversion("<s>strike</s>", "~~strike~~");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_strike_tag() {
+    assert_conversion("<strike>strike</strike>", "~~strike~~");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_del_tag() {
+    assert_conversion("<del>deleted</del>", "~~deleted~~");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_strikethrough_empty() {
+    assert_conversion("<s></s>", "");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_strikethrough_with_nested_inline() {
+    assert_conversion("<s><strong>bold strike</strong></s>", "~~**bold strike**~~");
+}
+
+// --- Keyboard Input (<kbd>) Tests ---
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_kbd_simple() {
+    assert_conversion("<kbd>Enter</kbd>", "<kbd>Enter</kbd>");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_kbd_multiple_keys() {
+    // HTML: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>
+    // This will be processed by convert_children_to_string for the parent element.
+    // If parent is <p>, then <p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>
+    // convert_children_to_string for the <p>'s children will yield:
+    // "<kbd>Ctrl</kbd>" + "+" + "<kbd>Alt</kbd>" + "+" + "<kbd>Del</kbd>"
+    assert_conversion("<p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd></p>", "<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_kbd_empty() {
+    assert_conversion("<kbd></kbd>", "<kbd></kbd>");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_kbd_with_nested_inline() {
+    assert_conversion("<kbd><em>File</em></kbd>", "<kbd>*File*</kbd>");
+}
+
+// --- Style (<style>) Tag Tests ---
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_style_tag_is_ignored() {
+    let html = "<style>body { font-size: 16px; }</style><p>Text</p>";
+    assert_conversion(html, "Text"); // Style tag should produce no output
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_style_tag_with_type_is_ignored() {
+    let html = "<style type=\"text/css\">/* A comment */ h1 { color: blue; }</style>Next";
+    assert_conversion(html, "Next");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_style_tag_empty_is_ignored() {
+    assert_conversion("<style></style><p>Content</p>", "Content");
+}
+
+// --- Underline (<u>) Tests ---
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_u_tag_simple() {
+    assert_conversion("<u>underlined</u>", "<u>underlined</u>");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_u_tag_empty() {
+    assert_conversion("<u></u>", "<u></u>");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_u_tag_with_nested_inline() {
+    assert_conversion("<u><em>italic underline</em></u>", "<u>*italic underline*</u>");
+}
+
+#[cfg(feature = "html-to-markdown")]
+#[test]
+fn test_u_tag_in_paragraph() {
+    assert_conversion("<p>This is <u>important</u>.</p>", "This is <u>important</u>.");
+}
+
+
 // --- Blockquote Tests ---
 
 #[cfg(feature = "html-to-markdown")]
