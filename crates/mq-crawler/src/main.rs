@@ -39,7 +39,7 @@ async fn main() {
         if let Some(url) = args.webdriver_url {
             mq_crawler::http_client::HttpClient::Fantoccini(
                 fantoccini::ClientBuilder::native()
-                    .connect(&url.to_string())
+                    .connect(url.as_ref())
                     .await
                     .expect("Failed to connect to WebDriver"),
             )
