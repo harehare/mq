@@ -1306,7 +1306,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         // markdown
         map.insert(
             CompactString::new("attr"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
                     let value = node.attr(attr);
                     match value {
@@ -1314,16 +1314,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         None => Ok(RuntimeValue::None),
                     }
                 }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
+                [a, ..] => Ok(a.clone()),
                 _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("set_attr"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(3), |_, _, args| match args.as_slice() {
                 [
                     RuntimeValue::Markdown(node, selector),
                     RuntimeValue::String(attr),
@@ -1333,10 +1330,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     new_node.set_attr(attr, value);
                     Ok(RuntimeValue::Markdown(new_node, selector.clone()))
                 }
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
+                [a, ..] => Ok(a.clone()),
                 _ => unreachable!(),
             }),
         );
