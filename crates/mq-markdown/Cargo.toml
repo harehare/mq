@@ -14,16 +14,19 @@ version = "0.2.7"
 itertools.workspace = true
 markdown = "1.0.0"
 miette.workspace = true
+scraper = {"0.18.1" , optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
-serde = {version = "1.0.219", features = ["derive"], optional = true}
 serde_json = {workspace = true, optional = true}
-serde_json = {version = "1.0.140", optional = true}
+serde_yaml = {version = "0.9", optional = true}
 
 [dev-dependencies]
 rstest = "0.25.0"
 
 [features]
+HEAD 
 default = ["std"]
-html-to-markdown = []
+html-to-markdown = ["dep:scraper", "dep:serde_yaml"]
 json = ["dep:serde", "dep:serde_json", "compact_str/serde"]
+json = ["dep:serde", "dep:serde_json", "compact_str/serde"] # Assuming this is a separate feature
+std = []
 std = []
