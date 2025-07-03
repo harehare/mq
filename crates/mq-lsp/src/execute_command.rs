@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
 use tower_lsp::jsonrpc::Result;
 
@@ -21,10 +21,39 @@ pub fn response(
             .collect::<Vec<_>>()
             .as_slice()
         {
-            [Some(command), Some(input), Some(input_format)] => {
-                execute(command, input, Some(input_format))
+            [Some(code), Some(input), Some(input_format)] => {
+                execute(code, input, Some(input_format))
             }
-            [Some(command), Some(input)] => execute(command, input, None),
+            [Some(code), Some(input)] => execute(code, input, None),
+            _ => Err(tower_lsp::jsonrpc::Error {
+                code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+                message: Cow::Owned("Invalid arguments".to_string()),
+                data: None,
+            }),
+        },
+        "mq/to_ast_json" => match params
+            .arguments
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            [Some(code)] => {
+                let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(1024)));
+                let program =
+                    mq_lang::parse(code, token_arena).map_err(|e| tower_lsp::jsonrpc::Error {
+                        code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+                        message: Cow::Owned(format!("Error: {}", e)),
+                        data: None,
+                    })?;
+                let ast_json =
+                    mq_lang::ast_to_json(&program).map_err(|e| tower_lsp::jsonrpc::Error {
+                        code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
+                        message: Cow::Owned(format!("Error: {}", e)),
+                        data: None,
+                    })?;
+                Ok(Some(serde_json::to_value(ast_json).unwrap()))
+            }
             _ => Err(tower_lsp::jsonrpc::Error {
                 code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
                 message: Cow::Owned("Invalid arguments".to_string()),
@@ -40,7 +69,7 @@ pub fn response(
 }
 
 fn execute(
-    query: &str,
+    code: &str,
     input: &str,
     input_format: Option<&str>,
 ) -> Result<Option<serde_json::Value>> {
@@ -67,7 +96,7 @@ fn execute(
     };
 
     engine.load_builtin_module();
-    let result = engine.eval(query, input.into_iter());
+    let result = engine.eval(code, input.into_iter());
 
     match result {
         Ok(values) => {
@@ -178,6 +207,75 @@ mod tests {
         if let Err(e) = response {
             assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InternalError);
             assert!(e.message.contains("Error:"));
+        }
+    }
+
+    #[test]
+    fn test_to_ast_json_with_valid_code() {
+        let code = "add(1, 2)";
+        let params = ExecuteCommandParams {
+            command: "mq/to_ast_json".to_string(),
+            arguments: vec![Value::String(code.to_string())],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_ok());
+        let value = response.unwrap();
+        assert!(value.is_some());
+        let json = value.unwrap();
+        assert!(json.to_string().contains("expr"));
+    }
+
+    #[test]
+    fn test_to_ast_json_with_invalid_code() {
+        let code = "add(";
+        let params = ExecuteCommandParams {
+            command: "mq/to_ast_json".to_string(),
+            arguments: vec![Value::String(code.to_string())],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InvalidParams);
+            assert!(e.message.contains("Error:"));
+        }
+    }
+
+    #[test]
+    fn test_to_ast_json_with_no_arguments() {
+        let params = ExecuteCommandParams {
+            command: "mq/to_ast_json".to_string(),
+            arguments: vec![],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InvalidParams);
+            assert_eq!(e.message, "No arguments provided");
+        }
+    }
+
+    #[test]
+    fn test_to_ast_json_with_extra_arguments() {
+        let params = ExecuteCommandParams {
+            command: "mq/to_ast_json".to_string(),
+            arguments: vec![
+                Value::String("add(1, 2)".to_string()),
+                Value::String("extra".to_string()),
+            ],
+            work_done_progress_params: Default::default(),
+        };
+
+        let response = response(params);
+        assert!(response.is_err());
+        if let Err(e) = response {
+            assert_eq!(e.code, tower_lsp::jsonrpc::ErrorCode::InvalidParams);
+            assert_eq!(e.message, "Invalid arguments");
         }
     }
 }
