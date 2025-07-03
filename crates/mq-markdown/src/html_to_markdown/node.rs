@@ -16,15 +16,3 @@ pub struct HtmlElement {
     pub attributes: HashMap<String, Option<String>>,
     pub children: Vec<HtmlNode>,
 }
-
-// Basic constructor for convenience
-#[cfg(feature = "html-to-markdown")]
-impl HtmlElement {
-    pub fn new(tag_name: &str, attributes: HashMap<String, Option<String>>, children: Vec<HtmlNode>) -> Self {
-        HtmlElement {
-            tag_name: tag_name.to_lowercase(), // Ensure tag names are consistent
-            attributes,
-            children,
-        }
-    }
-}

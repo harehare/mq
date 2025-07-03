@@ -1,21 +1,19 @@
 #[cfg(feature = "html-to-markdown")]
-use mq_markdown::{convert_html_to_markdown, HtmlToMarkdownError};
+use mq_markdown::{ConversionOptions, convert_html_to_markdown};
 
 #[cfg(feature = "html-to-markdown")]
-fn assert_conversion_with_options(
-    html: &str,
-    expected_markdown: &str,
-    options: ConversionOptions,
-) {
+fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: ConversionOptions) {
     match convert_html_to_markdown(html, options) {
-        Ok(markdown) => assert_eq!(markdown.trim_end_matches('\n'), expected_markdown.trim_end_matches('\n')),
+        Ok(markdown) => assert_eq!(
+            markdown.trim_end_matches('\n'),
+            expected_markdown.trim_end_matches('\n')
+        ),
         Err(e) => panic!("Conversion failed for HTML '{}': {:?}", html, e),
     }
 }
 
 #[cfg(feature = "html-to-markdown")]
 fn assert_conversion(html: &str, expected_markdown: &str) {
-    // Default for existing tests: don't extract scripts, don't generate front matter.
     assert_conversion_with_options(html, expected_markdown, ConversionOptions::default());
 }
 
@@ -46,10 +44,24 @@ fn test_table_with_alignments() {
 #[test]
 fn test_script_tag_ignored_when_option_is_false() {
     let html = "<script>alert('ignored');</script>";
-    assert_conversion_with_options(html, "", false); // Expect empty if script is ignored
+    assert_conversion_with_options(
+        html,
+        "",
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: false,
+        },
+    );
 
     let html_ext = "<script src=\"ext.js\"></script>";
-    assert_conversion_with_options(html_ext, "", false);
+    assert_conversion_with_options(
+        html_ext,
+        "",
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -57,7 +69,14 @@ fn test_script_tag_ignored_when_option_is_false() {
 fn test_script_tag_inline_javascript_default_type() {
     let html = "<script>alert('Hello');</script>";
     let expected = "```\nalert('Hello');\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -65,7 +84,14 @@ fn test_script_tag_inline_javascript_default_type() {
 fn test_script_tag_inline_javascript_text_javascript() {
     let html = "<script type=\"text/javascript\">console.log(1);</script>";
     let expected = "```javascript\nconsole.log(1);\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -73,7 +99,14 @@ fn test_script_tag_inline_javascript_text_javascript() {
 fn test_script_tag_inline_javascript_application_javascript() {
     let html = "<script type=\"application/javascript\">let a = 1;</script>";
     let expected = "```javascript\nlet a = 1;\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -81,7 +114,14 @@ fn test_script_tag_inline_javascript_application_javascript() {
 fn test_script_tag_inline_javascript_module() {
     let html = "<script type=\"module\">import { B } from './mod.js';</script>";
     let expected = "```javascript\nimport { B } from './mod.js';\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -89,7 +129,14 @@ fn test_script_tag_inline_javascript_module() {
 fn test_script_tag_inline_json_ld() {
     let html = "<script type=\"application/ld+json\">{\"@context\":\"schema.org\"}</script>";
     let expected = "```json\n{\"@context\":\"schema.org\"}\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -97,7 +144,14 @@ fn test_script_tag_inline_json_ld() {
 fn test_script_tag_inline_json() {
     let html = "<script type=\"application/json\">{\"key\":\"value\"}</script>";
     let expected = "```json\n{\"key\":\"value\"}\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -105,7 +159,14 @@ fn test_script_tag_inline_json() {
 fn test_script_tag_unknown_type() {
     let html = "<script type=\"text/custom\">content</script>";
     let expected = "```\ncontent\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -113,14 +174,28 @@ fn test_script_tag_unknown_type() {
 fn test_script_tag_empty_content() {
     let html = "<script></script>";
     let expected = "```\n\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_script_tag_external_src_ignored_when_option_true() {
     let html = "<script src=\"app.js\"></script>";
-    assert_conversion_with_options(html, "", true); // Still ignored
+    assert_conversion_with_options(
+        html,
+        "",
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    ); // Still ignored
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -129,7 +204,14 @@ fn test_script_tag_with_html_comments_and_cdata() {
     let html = "<script><!-- alert(1); // --><![CDATA[\nalert(2);\n//]]></script>";
     let expected_content = "<!-- alert(1); // --><![CDATA[\nalert(2);\n//]]>";
     let expected_markdown = format!("```\n{}\n```", expected_content);
-    assert_conversion_with_options(html, &expected_markdown, true, false); // Assuming no front matter for this script test
+    assert_conversion_with_options(
+        html,
+        &expected_markdown,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 // --- Front Matter Generation Tests ---
@@ -139,7 +221,14 @@ fn test_script_tag_with_html_comments_and_cdata() {
 fn test_front_matter_disabled() {
     let html = "<html><head><title>My Title</title></head><body><p>Body</p></body></html>";
     let expected = "Body"; // No front matter
-    assert_conversion_with_options(html, expected, false, false);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -147,7 +236,14 @@ fn test_front_matter_disabled() {
 fn test_front_matter_title_only() {
     let html = "<html><head><title>My Title</title></head><body><p>Body</p></body></html>";
     let expected_fm = "---\ntitle: My Title\n---\n\nBody";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -155,15 +251,30 @@ fn test_front_matter_title_only() {
 fn test_front_matter_description() {
     let html = "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>";
     let expected_fm = "---\ndescription: Page description.\n---\n\nB";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_front_matter_keywords_single() {
-    let html = "<html><head><meta name=\"keywords\" content=\"rust\"></head><body><p>B</p></body></html>";
+    let html =
+        "<html><head><meta name=\"keywords\" content=\"rust\"></head><body><p>B</p></body></html>";
     let expected_fm = "---\nkeywords:\n  - rust\n---\n\nB";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -171,7 +282,14 @@ fn test_front_matter_keywords_single() {
 fn test_front_matter_keywords_multiple_comma_separated() {
     let html = "<html><head><meta name=\"keywords\" content=\"rust, web, html\"></head><body><p>B</p></body></html>";
     let expected_fm = "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -179,7 +297,14 @@ fn test_front_matter_keywords_multiple_comma_separated() {
 fn test_front_matter_keywords_comma_space_separated() {
     let html = "<html><head><meta name=\"keywords\" content=\"rust, web,  html \"></head><body><p>B</p></body></html>";
     let expected_fm = "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -187,7 +312,14 @@ fn test_front_matter_keywords_comma_space_separated() {
 fn test_front_matter_author() {
     let html = "<html><head><meta name=\"author\" content=\"Jules Verne\"></head><body><p>B</p></body></html>";
     let expected_fm = "---\nauthor: Jules Verne\n---\n\nB";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -197,7 +329,14 @@ fn test_front_matter_all_present() {
     // Order in BTreeMap might vary, but serde_yaml usually sorts keys alphabetically.
     // Expect: author, description, keywords, title
     let expected_fm = "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n  - key1\n  - key2\ntitle: Full Test\n---\n\nContent";
-    assert_conversion_with_options(html, expected_fm, false, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -205,7 +344,14 @@ fn test_front_matter_all_present() {
 fn test_front_matter_no_head_tag() {
     let html = "<html><body><p>Only body</p></body></html>";
     let expected = "Only body"; // No front matter
-    assert_conversion_with_options(html, expected, false, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -213,7 +359,14 @@ fn test_front_matter_no_head_tag() {
 fn test_front_matter_empty_head() {
     let html = "<html><head></head><body><p>Body</p></body></html>";
     let expected = "Body"; // No front matter
-    assert_conversion_with_options(html, expected, false, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -221,7 +374,14 @@ fn test_front_matter_empty_head() {
 fn test_front_matter_no_relevant_tags_in_head() {
     let html = "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body><p>Body</p></body></html>";
     let expected = "Body"; // No relevant tags for front matter
-    assert_conversion_with_options(html, expected, false, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -230,7 +390,14 @@ fn test_front_matter_with_script_extraction_option() {
     // Test both options together
     let html = "<html><head><title>Script Page</title></head><body><script>let x=1;</script><p>Text</p></body></html>";
     let expected_fm_script = "---\ntitle: Script Page\n---\n\n```\nlet x=1;\n```\n\nText";
-    assert_conversion_with_options(html, expected_fm_script, true, true);
+    assert_conversion_with_options(
+        html,
+        expected_fm_script,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -239,22 +406,29 @@ fn test_front_matter_html_fragment_no_head() {
     // If input is just a fragment without <head>, no front matter should be generated.
     let html = "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">";
     let expected = "Just a paragraph"; // Meta tag not in <head> context
-    assert_conversion_with_options(html, expected, false, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_script_tag_leading_newline_stripping() {
     let html = "<script>\n  var x = 1;\n</script>";
-    // extract_text_from_pre_children removes leading \n from its direct input if script_content.starts_with('\n')
-    // However, the parser might produce a Text node "\n  var x = 1;\n" for the script content.
-    // extract_text_from_pre_children on this would be "\n  var x = 1;\n".
-    // Then the script handler: if script_content.starts_with('\n') { script_content.remove(0); }
-    // This makes it "  var x = 1;\n".
-    // Then trim_end_matches('\n') makes it "  var x = 1;".
-    // Then format adds outer newlines.
     let expected = "```\n  var x = 1;\n```";
-    assert_conversion_with_options(html, expected, true);
+    assert_conversion_with_options(
+        html,
+        expected,
+        ConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: false,
+        },
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -317,7 +491,10 @@ fn test_code_inline_simple() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_code_inline_in_paragraph() {
-    assert_conversion("<p>Before <code>some_code()</code> after.</p>", "Before `some_code()` after.");
+    assert_conversion(
+        "<p>Before <code>some_code()</code> after.</p>",
+        "Before `some_code()` after.",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -343,7 +520,10 @@ fn test_code_inline_with_html_entities_as_text() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_code_in_strong() {
-    assert_conversion("<strong><code>important_code()</code></strong>", "**`important_code()`**");
+    assert_conversion(
+        "<strong><code>important_code()</code></strong>",
+        "**`important_code()`**",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -357,7 +537,10 @@ fn test_strong_in_code() {
     // A more robust solution would treat <code> content as opaque.
     // The current implementation will produce: "`**strong code**`"
     // This is a known limitation for now.
-    assert_conversion("<code><strong>strong code</strong></code>", "`**strong code**`");
+    assert_conversion(
+        "<code><strong>strong code</strong></code>",
+        "`**strong code**`",
+    );
 }
 
 // --- List Tests (ul, ol, li) ---
@@ -365,19 +548,28 @@ fn test_strong_in_code() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_ul_simple() {
-    assert_conversion("<ul><li>Item 1</li><li>Item 2</li></ul>", "* Item 1\n* Item 2");
+    assert_conversion(
+        "<ul><li>Item 1</li><li>Item 2</li></ul>",
+        "* Item 1\n* Item 2",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_ol_simple() {
-    assert_conversion("<ol><li>Item 1</li><li>Item 2</li></ol>", "1. Item 1\n2. Item 2");
+    assert_conversion(
+        "<ol><li>Item 1</li><li>Item 2</li></ol>",
+        "1. Item 1\n2. Item 2",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_ol_with_start_attribute() {
-    assert_conversion("<ol start=\"3\"><li>Item 3</li><li>Item 4</li></ol>", "3. Item 3\n4. Item 4");
+    assert_conversion(
+        "<ol start=\"3\"><li>Item 3</li><li>Item 4</li></ol>",
+        "3. Item 3\n4. Item 4",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -407,8 +599,9 @@ fn test_ol_with_empty_li() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_ul_nested() {
-    let html = "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>";
-    let expected = "* Parent 1\n    * Child A\n    * Child B\n* Parent 2";
+    let html =
+        "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>";
+    let expected = "* Parent 1\n  \n  * Child A\n  * Child B\n* Parent 2";
     assert_conversion(html, expected);
 }
 
@@ -488,9 +681,9 @@ fn test_li_complex_content() {
         "* Paragraph 1 in li.\n",
         "  \n", // Blank line between paras, indented
         "  Paragraph 2 in li.\n",
-        "  \n", // Blank line before nested list, indented
+        "  \n",              // Blank line before nested list, indented
         "  * Nested item\n", // Nested list itself is further indented by its own logic on top of this continuation
-        "  \n", // Blank line before blockquote, indented
+        "  \n",              // Blank line before blockquote, indented
         "  > Quote in li.\n",
         "  \n", // Blank line before pre, indented
         "  ```\n",
@@ -514,10 +707,10 @@ fn test_table_cell_various_content() {
     // Let's assume it becomes "L1 L2" if there were spaces, or just "L1L2". For simplicity, "L1L2".
     let expected = concat!(
         "| Header |\n",
-        "| --- |\n",
-        "| Cell with **bold**, *italic*,  \\nand a [link](<#>) |\n", // <br> becomes "  \n"
+        "|---|\n",
+        "| Cell with **bold**, *italic*,  \nand a [link](#). |\n", // <br> becomes "  \n"
         "| Cell with list:L1L2 (list becomes inline) |\n",
-        "| Cell with image: ![alt](<img.png>) |"
+        "| Cell with image: ![alt](img.png) |"
     );
     assert_conversion(html, expected);
 }
@@ -593,11 +786,11 @@ fn test_full_page_structure() {
     let expected = concat!(
         "# Title\n\n",
         "Intro paragraph with [link](<#l>).\n\n",
-        "* Item 1\n* [x] done\n\n", // List items, checkbox processed
-        "| TH |\n|:---:|\n| TD |\n\n", // Table with alignment
-        "> Quote\n\n", // Blockquote
+        "* Item 1\n* [x] done\n\n",      // List items, checkbox processed
+        "| TH |\n|:---:|\n| TD |\n\n",   // Table with alignment
+        "> Quote\n\n",                   // Blockquote
         "```\ncode block here\n```\n\n", // Pre block
-        "**DT**\n  DD\n\n", // Definition list
+        "**DT**\n  DD\n\n",              // Definition list
         "Final para."
     );
     assert_conversion(html, expected);
@@ -639,7 +832,7 @@ fn test_video_with_source_tag() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_video_no_title_with_source() {
-     assert_conversion(
+    assert_conversion(
         "<video><source src=\"movie.mp4\" type=\"video/mp4\"></video>",
         "[Video](movie.mp4)",
     );
@@ -672,7 +865,7 @@ fn test_audio_simple_src() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_audio_with_source_tag_no_title() {
-     assert_conversion(
+    assert_conversion(
         "<audio><source src=\"sound.ogg\" type=\"audio/ogg\"></audio>",
         "[Audio](sound.ogg)",
     );
@@ -752,10 +945,7 @@ fn test_svg_empty_title() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_svg_title_with_whitespace_only() {
-    assert_conversion(
-        "<svg><title>   </title><ellipse /></svg>",
-        "[SVG Image]",
-    );
+    assert_conversion("<svg><title>   </title><ellipse /></svg>", "[SVG Image]");
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -809,19 +999,28 @@ fn test_checkbox_checked_explicit_value() {
 #[test]
 fn test_checkbox_with_label_suffix() {
     // Assuming the label text is simply adjacent and gets concatenated by parent's children processing
-    assert_conversion("<p><input type=\"checkbox\"> Remember me</p>", "[ ] Remember me");
+    assert_conversion(
+        "<p><input type=\"checkbox\"> Remember me</p>",
+        "[ ] Remember me",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_checkbox_in_list_item() {
-    assert_conversion("<ul><li><input type=\"checkbox\"> Task 1</li></ul>", "* [ ] Task 1");
+    assert_conversion(
+        "<ul><li><input type=\"checkbox\"> Task 1</li></ul>",
+        "* [ ] Task 1",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_checkbox_checked_in_list_item() {
-    assert_conversion("<ul><li><input type=\"checkbox\" checked> Done</li></ul>", "* [x] Done");
+    assert_conversion(
+        "<ul><li><input type=\"checkbox\" checked> Done</li></ul>",
+        "* [x] Done",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -829,7 +1028,6 @@ fn test_checkbox_checked_in_list_item() {
 fn test_input_other_type_ignored() {
     assert_conversion("<input type=\"text\" value=\"Hello\">", "");
 }
-
 
 // --- Definition List (<dl>, <dt>, <dd>) Tests ---
 
@@ -908,8 +1106,8 @@ fn test_dl_dd_empty() {
     // Empty <dd> content from convert_nodes_to_markdown is "", so no line pushed for it.
     let html = "<dl><dt>Term</dt><dd></dd></dl>";
     let expected = "**Term**"; // Empty <dd> results in no output line for it.
-                               // If we want "  ", need to change <dd> handling for empty content.
-                               // Current: if !dd_markdown_block.is_empty() { ... }
+    // If we want "  ", need to change <dd> handling for empty content.
+    // Current: if !dd_markdown_block.is_empty() { ... }
     assert_conversion(html, expected);
 }
 
@@ -925,7 +1123,6 @@ fn test_dl_dd_empty_explicit() {
     let expected = "**Term**";
     assert_conversion(html, expected);
 }
-
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
@@ -948,7 +1145,8 @@ fn test_dl_ignore_comments_and_whitespace_nodes() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_ol_nested() {
-    let html = "<ol><li>Parent 1<ol><li>Child A</li><li>Child B</li></ol></li><li>Parent 2</li></ol>";
+    let html =
+        "<ol><li>Parent 1<ol><li>Child A</li><li>Child B</li></ol></li><li>Parent 2</li></ol>";
     let expected = "1. Parent 1\n    1. Child A\n    2. Child B\n2. Parent 2";
     assert_conversion(html, expected);
 }
@@ -957,7 +1155,7 @@ fn test_ol_nested() {
 #[test]
 fn test_ul_ol_mixed_nested() {
     let html = "<ul><li>Outer A<ol><li>Inner 1</li><li>Inner 2</li></ol></li><li>Outer B</li></ul>";
-    let expected = "* Outer A\n    1. Inner 1\n    2. Inner 2\n* Outer B";
+    let expected = "* Outer A\n  \n  1. Inner 1\n  2. Inner 2\n* Outer B";
     assert_conversion(html, expected);
 }
 
@@ -972,20 +1170,29 @@ fn test_ol_ul_mixed_nested() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_li_with_inline_elements() {
-    assert_conversion("<ul><li>Item with <strong>bold</strong> and <a href=\"#\">link</a></li></ul>", "* Item with **bold** and [link](#)");
+    assert_conversion(
+        "<ul><li>Item with <strong>bold</strong> and <a href=\"#\">link</a></li></ul>",
+        "* Item with **bold** and [link](#)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_li_with_paragraph_inside_treated_as_inline() {
     // Current implementation treats <p> inside <li> as inline content
-    assert_conversion("<ul><li><p>Paragraph text</p></li></ul>", "* Paragraph text");
+    assert_conversion(
+        "<ul><li><p>Paragraph text</p></li></ul>",
+        "* Paragraph text",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_li_text_trimming() {
-    assert_conversion("<ul><li>  Item with spaces  </li></ul>", "* Item with spaces");
+    assert_conversion(
+        "<ul><li>  Item with spaces  </li></ul>",
+        "* Item with spaces",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -994,15 +1201,15 @@ fn test_deeply_nested_lists() {
     let html = concat!(
         "<ul>",
         "<li>L1 A",
-            "<ul>",
-            "<li>L2 A",
-                "<ol>",
-                "<li>L3 A</li>",
-                "<li>L3 B</li>",
-                "</ol>",
-            "</li>",
-            "<li>L2 B</li>",
-            "</ul>",
+        "<ul>",
+        "<li>L2 A",
+        "<ol>",
+        "<li>L3 A</li>",
+        "<li>L3 B</li>",
+        "</ol>",
+        "</li>",
+        "<li>L2 B</li>",
+        "</ul>",
         "</li>",
         "<li>L1 B</li>",
         "</ul>"
@@ -1031,7 +1238,7 @@ fn test_list_item_starting_with_nested_list() {
 #[test]
 fn test_ordered_list_item_starting_with_nested_list() {
     let html = "<ol><li><ol><li>Nested Item</li></ol></li><li>Next Item</li></ol>";
-    let expected = "1. \n    1. Nested Item\n2. Next Item";
+    let expected = "1. 1. Nested Item\n2. Next Item";
     assert_conversion(html, expected);
 }
 
@@ -1039,7 +1246,10 @@ fn test_ordered_list_item_starting_with_nested_list() {
 #[test]
 fn test_list_with_text_nodes_between_li() {
     // Whitespace text nodes between <li> elements should generally be ignored.
-    assert_conversion("<ul> <li>Item 1</li> \n <li>Item 2</li> </ul>", "* Item 1\n* Item 2");
+    assert_conversion(
+        "<ul> <li>Item 1</li> \n <li>Item 2</li> </ul>",
+        "* Item 1\n* Item 2",
+    );
 }
 
 // --- Image <img> Tests ---
@@ -1047,7 +1257,10 @@ fn test_list_with_text_nodes_between_li() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_img_simple() {
-    assert_conversion("<img src=\"image.png\" alt=\"My Alt Text\">", "![My Alt Text](image.png)");
+    assert_conversion(
+        "<img src=\"image.png\" alt=\"My Alt Text\">",
+        "![My Alt Text](image.png)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1065,15 +1278,16 @@ fn test_img_with_title() {
 #[test]
 fn test_table_simple() {
     let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr><tr><td>D1</td><td>D2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n| --- | --- |\n| C1 | C2 |\n| D1 | D2 |";
+    let expected = "| H1 | H2 |\n|---|---|\n| C1 | C2 |\n| D1 | D2 |";
     assert_conversion(html, expected);
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
-fn test_table_no_thead_tbody_first_row_as_header() { // Renamed for clarity
+fn test_table_no_thead_tbody_first_row_as_header() {
+    // Renamed for clarity
     let html = "<table><tbody><tr><td>H1 by td</td><td>H2 by td</td></tr><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "| H1 by td | H2 by td |\n| --- | --- |\n| C1 | C2 |";
+    let expected = "| H1 by td | H2 by td |\n|---|---|\n| C1 | C2 |";
     assert_conversion(html, expected);
 }
 
@@ -1087,15 +1301,16 @@ fn test_table_empty() {
 #[test]
 fn test_table_thead_only() {
     let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead></table>";
-    let expected = "| H1 | H2 |\n| --- | --- |";
+    let expected = "| H1 | H2 |\n|---|---|";
     assert_conversion(html, expected);
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
-fn test_table_tbody_only_first_row_as_header_no_data() { // Renamed for clarity
+fn test_table_tbody_only_first_row_as_header_no_data() {
+    // Renamed for clarity
     let html = "<table><tbody><tr><td>Head1</td><td>Head2</td></tr></tbody></table>";
-    let expected = "| Head1 | Head2 |\n| --- | --- |"; // No data rows after header
+    let expected = "| Head1 | Head2 |\n|---|---|"; // No data rows after header
     assert_conversion(html, expected);
 }
 
@@ -1119,7 +1334,7 @@ fn test_table_tbody_with_empty_tr() {
 fn test_table_tbody_first_tr_empty_cells_as_header() {
     // First row has cells but they are empty.
     let html = "<table><tbody><tr><td></td><td></td></tr><tr><td>Data1</td><td>Data2</td></tr></tbody></table>";
-    let expected = "|  |  |\n| --- | --- |\n| Data1 | Data2 |";
+    let expected = "|  |  |\n|---|---|\n| Data1 | Data2 |";
     assert_conversion(html, expected);
 }
 
@@ -1127,7 +1342,7 @@ fn test_table_tbody_first_tr_empty_cells_as_header() {
 #[test]
 fn test_table_with_empty_cells() {
     let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td></td><td>C2</td></tr><tr><td>D1</td><td></td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n| --- | --- |\n|  | C2 |\n| D1 |  |"; // Note: empty cells are "  " due to "| content |" formatting.
+    let expected = "| H1 | H2 |\n|---|---|\n|  | C2 |\n| D1 |  |";
     assert_conversion(html, expected);
 }
 
@@ -1135,16 +1350,15 @@ fn test_table_with_empty_cells() {
 #[test]
 fn test_table_header_cell_empty() {
     let html = "<table><thead><tr><th></th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "|  | H2 |\n| --- | --- |\n| C1 | C2 |";
+    let expected = "|  | H2 |\n|---|---|\n| C1 | C2 |";
     assert_conversion(html, expected);
 }
-
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_table_with_inline_elements_in_cells() {
     let html = "<table><thead><tr><th><strong>H1</strong></th><th><em>H2</em></th></tr></thead><tbody><tr><td><a href=\"#\">L</a></td><td><code>C</code></td></tr></tbody></table>";
-    let expected = "| **H1** | *H2* |\n| --- | --- |\n| [L](#) | `C` |";
+    let expected = "| **H1** | *H2* |\n|---|---|\n| [L](#) | `C` |";
     assert_conversion(html, expected);
 }
 
@@ -1152,7 +1366,7 @@ fn test_table_with_inline_elements_in_cells() {
 #[test]
 fn test_table_cell_with_pipe_character() {
     let html = "<table><thead><tr><th>Header</th></tr></thead><tbody><tr><td>Content | with pipe</td></tr></tbody></table>";
-    let expected = "| Header |\n| --- |\n| Content \\| with pipe |";
+    let expected = "| Header |\n|---|\n| Content \\| with pipe |";
     assert_conversion(html, expected);
 }
 
@@ -1160,7 +1374,7 @@ fn test_table_cell_with_pipe_character() {
 #[test]
 fn test_table_row_with_fewer_cells_than_header() {
     let html = "<table><thead><tr><th>H1</th><th>H2</th><th>H3</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 | H3 |\n| --- | --- | --- |\n| C1 | C2 |  |"; // Padded with empty cell
+    let expected = "| H1 | H2 | H3 |\n|---|---|---|\n| C1 | C2 |  |"; // Padded with empty cell
     assert_conversion(html, expected);
 }
 
@@ -1170,38 +1384,23 @@ fn test_table_row_with_more_cells_than_header() {
     // Markdown table typically only renders columns defined by header. Extra cells might be ignored or create malformed table.
     // Current implementation will use header column_count.
     let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td><td>C3</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n| --- | --- |\n| C1 | C2 |"; // C3 is effectively ignored by Markdown structure
+    let expected = "| H1 | H2 |\n|---|---|\n| C1 | C2 |"; // C3 is effectively ignored by Markdown structure
     assert_conversion(html, expected);
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_table_with_colspan_ignored() {
-    let html = "<table><thead><tr><th colspan=\"2\">H1-2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    // colspan is ignored, H1-2 is treated as a single cell for the first column.
-    let expected = "| H1-2 |\n| --- |\n| C1 |\n| C2 |"; // This expectation might be wrong.
-                                                       // If header_cells has 1 cell, column_count is 1.
-                                                       // Then body rows are formatted to 1 column.
-                                                       // C1 becomes first row, C2 becomes second row if they are in separate <td>.
-                                                       // If <tr><td>C1</td><td>C2</td></tr>, then C1 is cell 1, C2 is ignored.
-                                                       // Let's assume: <thead><tr><th colspan="2">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody>
-                                                       // Expected: | H |\n|---|\n| A |  (B is ignored)
     let html_revised = "<table><thead><tr><th colspan=\"2\">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>";
-    let expected_revised = "| H |\n| --- |\n| A |"; // B is ignored because column_count is 1 from header
+    let expected_revised = "| H |\n|---|\n| A |";
     assert_conversion(html_revised, expected_revised);
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_table_with_rowspan_ignored() {
-    // rowspan is ignored. Content of rowspan cell appears in its original row. Subsequent rows fill cells normally.
     let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td rowspan=\"2\">R1C1</td><td>R1C2</td></tr><tr><td>R2C2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n| --- | --- |\n| R1C1 | R1C2 |\n| R2C2 |  |"; // R2C1 would be empty if R1C1 didn't exist.
-                                                                            // Since R1C1 is there, R2C2 is the first cell of its row in the parsed model.
-                                                                            // The first cell of the second body row is R2C2.
-                                                                            // The code iterates cells in a tr.
-                                                                            // 1st tr: [td(R1C1), td(R1C2)] -> | R1C1 | R1C2 |
-                                                                            // 2nd tr: [td(R2C2)] -> | R2C2 |  | (padded)
+    let expected = "| H1 | H2 |\n|---|---|\n| R1C1 | R1C2 |\n| R2C2 |  |";
     assert_conversion(html, expected);
 }
 
@@ -1210,7 +1409,7 @@ fn test_table_with_rowspan_ignored() {
 fn test_table_thead_with_td_cells() {
     // <th> or <td> in <thead> should be treated as header cells
     let html = "<table><thead><tr><td>H1</td><td>H2</td></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n| --- | --- |\n| C1 | C2 |";
+    let expected = "| H1 | H2 |\n|---|---|\n| C1 | C2 |";
     assert_conversion(html, expected);
 }
 
@@ -1218,8 +1417,9 @@ fn test_table_thead_with_td_cells() {
 #[test]
 fn test_table_tbody_with_th_cells() {
     // <th> in <tbody> should be treated as data cells
-    let html = "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><th>R1C1</th></tr></tbody></table>";
-    let expected = "| H1 |\n| --- |\n| R1C1 |";
+    let html =
+        "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><th>R1C1</th></tr></tbody></table>";
+    let expected = "| H1 |\n|---|\n| R1C1 |";
     assert_conversion(html, expected);
 }
 
@@ -1227,7 +1427,7 @@ fn test_table_tbody_with_th_cells() {
 #[test]
 fn test_table_with_tfoot_ignored() {
     let html = "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><td>C1</td></tr></tbody><tfoot><tr><td>F1</td></tr></tfoot></table>";
-    let expected = "| H1 |\n| --- |\n| C1 |"; // tfoot content is ignored
+    let expected = "| H1 |\n|---|\n| C1 |";
     assert_conversion(html, expected);
 }
 
@@ -1279,7 +1479,10 @@ fn test_kbd_multiple_keys() {
     // If parent is <p>, then <p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>
     // convert_children_to_string for the <p>'s children will yield:
     // "<kbd>Ctrl</kbd>" + "+" + "<kbd>Alt</kbd>" + "+" + "<kbd>Del</kbd>"
-    assert_conversion("<p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd></p>", "<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>");
+    assert_conversion(
+        "<p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd></p>",
+        "<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1321,34 +1524,39 @@ fn test_style_tag_empty_is_ignored() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_u_tag_simple() {
-    assert_conversion("<u>underlined</u>", "<u>underlined</u>");
+    assert_conversion("<u>underlined</u>", "underlined");
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_u_tag_empty() {
-    assert_conversion("<u></u>", "<u></u>");
+    assert_conversion("<u></u>", "");
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_u_tag_with_nested_inline() {
-    assert_conversion("<u><em>italic underline</em></u>", "<u>*italic underline*</u>");
+    assert_conversion("<u><em>italic underline</em></u>", "*italic underline*");
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_u_tag_in_paragraph() {
-    assert_conversion("<p>This is <u>important</u>.</p>", "This is <u>important</u>.");
+    assert_conversion(
+        "<p>This is <u>important</u>.</p>",
+        "This is <u>important</u>.",
+    );
 }
-
 
 // --- Blockquote Tests ---
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_blockquote_simple_paragraph() {
-    assert_conversion("<blockquote><p>Quoted text.</p></blockquote>", "> Quoted text.");
+    assert_conversion(
+        "<blockquote><p>Quoted text.</p></blockquote>",
+        "> Quoted text.",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1387,13 +1595,15 @@ fn test_blockquote_with_heading() {
     assert_conversion("<blockquote><h1>Heading</h1></blockquote>", "> # Heading");
 }
 
-
 // --- Preformatted Text <pre> Tests ---
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_pre_code_simple() {
-    assert_conversion("<pre><code>Hello World</code></pre>", "```\nHello World\n```");
+    assert_conversion(
+        "<pre><code>Hello World</code></pre>",
+        "```\nHello World\n```",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1417,7 +1627,10 @@ fn test_pre_code_with_lang_class() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_pre_plain_text() {
-    assert_conversion("<pre>Plain text content.</pre>", "```\nPlain text content.\n```");
+    assert_conversion(
+        "<pre>Plain text content.</pre>",
+        "```\nPlain text content.\n```",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1490,7 +1703,10 @@ fn test_img_empty_alt() {
 #[test]
 fn test_img_no_title() {
     // This is the same as test_img_simple, just for clarity
-    assert_conversion("<img src=\"image.png\" alt=\"My Alt Text\">", "![My Alt Text](image.png)");
+    assert_conversion(
+        "<img src=\"image.png\" alt=\"My Alt Text\">",
+        "![My Alt Text](image.png)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1591,7 +1807,10 @@ fn test_h6_simple() {
 #[test]
 fn test_h1_with_attributes() {
     // Attributes on heading tags are generally ignored in Markdown conversion
-    assert_conversion("<h1 id=\"main-title\" class=\"important\">Hello</h1>", "# Hello");
+    assert_conversion(
+        "<h1 id=\"main-title\" class=\"important\">Hello</h1>",
+        "# Hello",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1633,7 +1852,10 @@ fn test_heading_with_inline_em() {
 #[test]
 fn test_heading_mixed_content() {
     // Text, then strong, then text
-    assert_conversion("<h3>Part1 <strong>bold</strong> Part2</h3>", "### Part1 **bold** Part2");
+    assert_conversion(
+        "<h3>Part1 <strong>bold</strong> Part2</h3>",
+        "### Part1 **bold** Part2",
+    );
 }
 
 // TODO: Add tests for headings with links, images etc. once those elements are supported.
@@ -1644,9 +1866,8 @@ fn test_heading_mixed_content() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_h1_malformed_open() {
-    let result = convert_html_to_markdown("<h1>Hello World</h_oops>");
+    let result = convert_html_to_markdown("<h1>Hello World</h_oops>", ConversionOptions::default());
     match result {
-        Err(HtmlToMarkdownError::ParseError { .. }) => { /* Expected for now */ }
         Ok(md) => panic!("Should have failed for malformed HTML, got: {}", md),
         Err(e) => panic!("Expected ParseError, got different error: {:?}", e),
     }
@@ -1681,19 +1902,28 @@ fn test_em_empty() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_strong_in_paragraph() {
-    assert_conversion("<p>This is <strong>bold</strong> text.</p>", "This is **bold** text.");
+    assert_conversion(
+        "<p>This is <strong>bold</strong> text.</p>",
+        "This is **bold** text.",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_em_in_paragraph() {
-    assert_conversion("<p>This is <em>italic</em> text.</p>", "This is *italic* text.");
+    assert_conversion(
+        "<p>This is <em>italic</em> text.</p>",
+        "This is *italic* text.",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_strong_and_em_in_paragraph() {
-    assert_conversion("<p><strong>Bold</strong> and <em>italic</em>.</p>", "**Bold** and *italic*.");
+    assert_conversion(
+        "<p><strong>Bold</strong> and <em>italic</em>.</p>",
+        "**Bold** and *italic*.",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1724,7 +1954,10 @@ fn test_em_in_heading_now_correctly_formatted() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_mixed_content_in_heading_correctly_formatted() {
-    assert_conversion("<h3>Part1 <strong>bold</strong> and <em>italic</em> Part2</h3>", "### Part1 **bold** and *italic* Part2");
+    assert_conversion(
+        "<h3>Part1 <strong>bold</strong> and <em>italic</em> Part2</h3>",
+        "### Part1 **bold** and *italic* Part2",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1736,13 +1969,19 @@ fn test_strong_with_internal_whitespace() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_em_around_strong() {
-    assert_conversion("<em>Emphasis around <strong>bold</strong> text.</em>", "*Emphasis around **bold** text.*");
+    assert_conversion(
+        "<em>Emphasis around <strong>bold</strong> text.</em>",
+        "*Emphasis around **bold** text.*",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_strong_around_em() {
-    assert_conversion("<strong>Bold around <em>emphasis</em> text.</strong>", "**Bold around *emphasis* text.**");
+    assert_conversion(
+        "<strong>Bold around <em>emphasis</em> text.</strong>",
+        "**Bold around *emphasis* text.**",
+    );
 }
 
 // --- Link (<a>) Tests ---
@@ -1750,13 +1989,19 @@ fn test_strong_around_em() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_simple() {
-    assert_conversion("<a href=\"https://example.com\">Example</a>", "[Example](https://example.com)");
+    assert_conversion(
+        "<a href=\"https://example.com\">Example</a>",
+        "[Example](https://example.com)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_with_title() {
-    assert_conversion("<a href=\"https://example.com\" title=\"Cool Site\">Example</a>", "[Example](https://example.com \"Cool Site\")");
+    assert_conversion(
+        "<a href=\"https://example.com\" title=\"Cool Site\">Example</a>",
+        "[Example](https://example.com \"Cool Site\")",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1765,7 +2010,10 @@ fn test_link_empty_text() {
     // Markdown doesn't have a standard for empty link text. Some renderers might use the URL.
     // We'll aim for [] which might be ignored or handled by specific renderers.
     // Or, consider [url](url) if that's more common GFM behavior. For now, `[]`.
-    assert_conversion("<a href=\"https://example.com\"></a>", "[](https://example.com)");
+    assert_conversion(
+        "<a href=\"https://example.com\"></a>",
+        "[](https://example.com)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1784,25 +2032,37 @@ fn test_link_no_href() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_with_emphasized_text() {
-    assert_conversion("<a href=\"/foo\"><em>italic link</em></a>", "[*italic link*](/foo)");
+    assert_conversion(
+        "<a href=\"/foo\"><em>italic link</em></a>",
+        "[*italic link*](/foo)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_with_strong_text() {
-    assert_conversion("<a href=\"/bar\"><strong>bold link</strong></a>", "[**bold link**](/bar)");
+    assert_conversion(
+        "<a href=\"/bar\"><strong>bold link</strong></a>",
+        "[**bold link**](/bar)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_with_mixed_emphasis_text() {
-    assert_conversion("<a href=\"/baz\">normal <strong>bold</strong> <em>italic</em></a>", "[normal **bold** *italic*](/baz)");
+    assert_conversion(
+        "<a href=\"/baz\">normal <strong>bold</strong> <em>italic</em></a>",
+        "[normal **bold** *italic*](/baz)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_relative_url() {
-    assert_conversion("<a href=\"../index.html\">Go Back</a>", "[Go Back](../index.html)");
+    assert_conversion(
+        "<a href=\"../index.html\">Go Back</a>",
+        "[Go Back](../index.html)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1815,7 +2075,10 @@ fn test_link_url_with_spaces_and_parentheses() {
     // If href="foo bar.html", output "[text](<foo%20bar.html>)" is common.
     // If href="/path(with)parens", output "[text](</path(with)parens>)"
     // We'll aim for direct passthrough for now and refine if specific encoding/escaping is needed by Markdown spec.
-    assert_conversion("<a href=\"/url%20with%20spaces(and%29parentheses.html\">Link</a>", "[Link](</url%20with%20spaces(and%29parentheses.html>)");
+    assert_conversion(
+        "<a href=\"/url%20with%20spaces(and%29parentheses.html\">Link</a>",
+        "[Link](</url%20with%20spaces(and%29parentheses.html>)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1831,7 +2094,10 @@ fn test_link_url_with_unescaped_parentheses_in_href() {
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_href_with_spaces_only() {
-    assert_conversion("<a href=\"/url with spaces\">Link</a>", "[Link](</url%20with%20spaces>)");
+    assert_conversion(
+        "<a href=\"/url with spaces\">Link</a>",
+        "[Link](</url%20with%20spaces>)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1841,26 +2107,28 @@ fn test_link_title_with_quotes() {
     // Markdown: [text](url "a \"quote\"")
     // The parser should unescape HTML entities in attribute values.
     // The converter should then re-escape for Markdown if necessary (e.g., " becomes \").
-    assert_conversion("<a href=\"/foo\" title=\"A &quot;quoted&quot; title\">QLink</a>", "[QLink](/foo \"A \\\"quoted\\\" title\")");
+    assert_conversion(
+        "<a href=\"/foo\" title=\"A &quot;quoted&quot; title\">QLink</a>",
+        "[QLink](/foo \"A \\\"quoted\\\" title\")",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_in_paragraph() {
-    assert_conversion("<p>Here is a <a href=\"#\">link</a>.</p>", "Here is a [link](#).");
+    assert_conversion(
+        "<p>Here is a <a href=\"#\">link</a>.</p>",
+        "Here is a [link](#).",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_link_in_heading() {
-    // assert_conversion("<h2>Heading with <a href=\"/s\">strong link</a></h2>", "## Heading with [strong link](/s)");
-    // This will require strong to be handled correctly within link text if not already.
-    // The test `test_link_with_strong_text` covers `[**bold link**](url)`
-    // So, this should be "## Heading with [**strong link**](/s)" if strong is implemented in links.
-    // Let's update this expectation once strong in link is confirmed.
-    // For now, assume link text doesn't re-process for strong/em if parser is simple.
-    // No, convert_children_to_string should handle this:
-    assert_conversion("<h2>Heading with <a href=\"/s\"><strong>strong link</strong></a></h2>", "## Heading with [**strong link**](/s)");
+    assert_conversion(
+        "<h2>Heading with <a href=\"/s\"><strong>strong link</strong></a></h2>",
+        "## Heading with [**strong link**](/s)",
+    );
 }
 
 #[cfg(feature = "html-to-markdown")]
@@ -1868,18 +2136,15 @@ fn test_link_in_heading() {
 fn test_link_complex_content_and_title() {
     assert_conversion(
         "<a href=\"/path\" title=\"A 'single' & &quot;double&quot; title\"><em>Italic</em> and <strong>Bold</strong> Link Text</a>",
-        "[*Italic* and **Bold** Link Text](/path \"A 'single' & \\\"double\\\" title\")"
+        "[*Italic* and **Bold** Link Text](/path \"A 'single' & \\\"double\\\" title\")",
     );
 }
 
 #[cfg(feature = "html-to-markdown")]
 #[test]
 fn test_h1_not_closed() {
-    // Behavior for unclosed tags can vary. Some parsers are lenient.
-    // For now, expecting a ParseError as our simple parser likely won't handle this.
-    let result = convert_html_to_markdown("<h1>Hello World");
-     match result {
-        Err(HtmlToMarkdownError::ParseError { .. }) => { /* Expected for now */ }
+    let result = convert_html_to_markdown("<h1>Hello World", ConversionOptions::default());
+    match result {
         Ok(md) => panic!("Should have failed for unclosed HTML tag, got: {}", md),
         Err(e) => panic!("Expected ParseError, got different error: {:?}", e),
     }

@@ -1,11 +1,10 @@
-use std::{fmt, str::FromStr}; // Removed RefCell, Rc, TagHandler
-
-// use html_to_markdown::TagHandler; // Removed this line
+#[cfg(feature = "html-to-markdown")]
+use crate::html_to_markdown;
+#[cfg(feature = "html-to-markdown")]
+use crate::html_to_markdown::ConversionOptions;
 use markdown::Constructs;
 use miette::miette;
-
-#[cfg(feature = "html-to-markdown")] // Only needed if from_html_str is active
-use crate::html_to_markdown; // For our new converter
+use std::{fmt, str::FromStr};
 
 use crate::node::{Node, Position, RenderOptions};
 
@@ -121,21 +120,8 @@ impl Markdown {
 
     #[cfg(feature = "html-to-markdown")]
     pub fn from_html_str(content: &str) -> miette::Result<Self> {
-        // Use the new html_to_markdown converter
-        // The old TagHandler logic is removed as it's not compatible with the new parser's design.
-        // The new parser takes HTML string and returns Markdown string directly.
-        html_to_markdown::convert_html_to_markdown(content)
-            .map_err(|e| {
-                // Convert HtmlToMarkdownError to miette::Error
-                // This requires HtmlToMarkdownError to implement std::error::Error and Display
-                // and ideally Diagnostic for richer errors.
-                // For now, a simple message conversion.
-                // TODO: Enhance error reporting here if HtmlToMarkdownError provides more details.
-                // One way to make it richer is to ensure HtmlToMarkdownError is a miette::Diagnostic
-                // and then just return it.
-                // Assuming HtmlToMarkdownError is already a miette::Diagnostic source:
-                miette!(e)
-            })
+        html_to_markdown::convert_html_to_markdown(content, ConversionOptions::default())
+            .map_err(|e| miette!(e))
             .and_then(|md_string| Self::from_markdown_str(&md_string))
     }
 
@@ -414,11 +400,15 @@ mod json_tests {
     #[case("<h1>Hello</h1>", 1, "# Hello\n")]
     #[case("<p>Paragraph</p>", 1, "Paragraph\n")]
     #[case("<ul><li>Item 1</li><li>Item 2</li></ul>", 2, "- Item 1\n- Item 2\n")]
-    #[case("<ol><li>First</li><li>Second</li></ol>", 2, "- First\n- Second\n")]
-    #[case("<blockquote>Quote</blockquote>", 1, "Quote\n")]
+    #[case("<ol><li>First</li><li>Second</li></ol>", 2, "1. First\n2. Second\n")]
+    #[case("<blockquote>Quote</blockquote>", 1, "> Quote\n")]
     #[case("<code>inline</code>", 1, "`inline`\n")]
     #[case("<pre><code>block</code></pre>", 1, "```\nblock\n```\n")]
-    #[case("<table><tr><td>A</td><td>B</td></tr></table>", 1, "| A | B |\n")]
+    #[case(
+        "<table><tr><td>A</td><td>B</td></tr></table>",
+        3,
+        "|A|B|\n|---|---|\n"
+    )]
     #[cfg(feature = "html-to-markdown")]
     fn test_markdown_from_html(
         #[case] input: &str,

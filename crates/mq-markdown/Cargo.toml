@@ -11,10 +11,13 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.7"
 
 [dependencies]
+compact_str.workspace = true
 itertools.workspace = true
 markdown = "1.0.0"
 miette.workspace = true
-scraper = {"0.18.1" , optional = true}
+html5ever = {version = "0.27.0", optional = true}
+markup5ever_rcdom = {version = "0.3.0", optional = true}
+tendril = {version = "0.4.3", optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
 serde_json = {workspace = true, optional = true}
 serde_yaml = {version = "0.9", optional = true}
@@ -23,10 +26,7 @@ serde_yaml = {version = "0.9", optional = true}
 rstest = "0.25.0"
 
 [features]
-HEAD 
 default = ["std"]
-html-to-markdown = ["dep:scraper", "dep:serde_yaml"]
-json = ["dep:serde", "dep:serde_json", "compact_str/serde"]
-json = ["dep:serde", "dep:serde_json", "compact_str/serde"] # Assuming this is a separate feature
-std = []
+html-to-markdown = ["dep:html5ever", "dep:markup5ever_rcdom", "dep:tendril", "dep:serde_yaml"]
+json = ["dep:serde", "dep:serde_json"]
 std = []
