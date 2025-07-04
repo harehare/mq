@@ -1,4 +1,3 @@
-#[cfg(feature = "html-to-markdown")]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ConversionOptions {
     pub extract_scripts_as_code_blocks: bool,

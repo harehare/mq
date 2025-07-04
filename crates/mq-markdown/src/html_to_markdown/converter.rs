@@ -1,11 +1,12 @@
-#[cfg(feature = "html-to-markdown")]
+use itertools::Itertools;
+
 use super::node::HtmlElement;
-#[cfg(feature = "html-to-markdown")]
 use super::node::HtmlNode;
-#[cfg(feature = "html-to-markdown")]
 use super::options::ConversionOptions;
 
-#[cfg(feature = "html-to-markdown")]
+type MarkdownInline = bool;
+type MarkdownBlock = (String, MarkdownInline);
+
 fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
     let mut text_content = String::new();
     for node in nodes {
@@ -24,7 +25,6 @@ fn extract_text_from_pre_children(nodes: &[HtmlNode]) -> String {
     text_content
 }
 
-#[cfg(feature = "html-to-markdown")]
 #[derive(PartialEq, Debug, Clone, Copy)]
 enum Alignment {
     Left,
@@ -33,7 +33,6 @@ enum Alignment {
     Default,
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn get_cell_alignment(element: &HtmlElement) -> Alignment {
     if let Some(Some(style_attr)) = element.attributes.get("style") {
         for part in style_attr.split(';') {
@@ -59,12 +58,10 @@ fn get_cell_alignment(element: &HtmlElement) -> Alignment {
     Alignment::Default
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn escape_table_cell_content(content: &str) -> String {
     content.replace("|", "\\|")
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result<String> {
     let mut header_cells: Vec<String> = Vec::new();
     let mut header_alignments: Vec<Alignment> = Vec::new();
@@ -196,7 +193,6 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
     Ok(markdown_table.trim_end_matches('\n').to_string())
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn process_url_for_markdown(url: &str) -> String {
     let processed_url = url.replace(" ", "%20");
     let needs_angle_brackets = url.is_empty()
@@ -210,7 +206,6 @@ fn process_url_for_markdown(url: &str) -> String {
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_heading_element(element: &HtmlElement) -> miette::Result<String> {
     let children_content_str = convert_children_to_string(&element.children)?;
     let marker_level = element.tag_name[1..].parse().unwrap_or(1);
@@ -221,17 +216,14 @@ fn handle_heading_element(element: &HtmlElement) -> miette::Result<String> {
     ))
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_paragraph_element(element: &HtmlElement) -> miette::Result<String> {
     convert_children_to_string(&element.children)
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_hr_element() -> miette::Result<String> {
     Ok("---".to_string())
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_list_element(
     element: &HtmlElement,
     options: ConversionOptions,
@@ -239,7 +231,6 @@ fn handle_list_element(
     convert_html_list_to_markdown(element, 0, options)
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_blockquote_element(
     element: &HtmlElement,
     options: ConversionOptions,
@@ -256,7 +247,6 @@ fn handle_blockquote_element(
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_pre_element(
     element: &HtmlElement,
     _options: ConversionOptions,
@@ -290,7 +280,6 @@ fn handle_pre_element(
     ))
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_table_element(
     element: &HtmlElement,
     _options: ConversionOptions,
@@ -298,7 +287,6 @@ fn handle_table_element(
     convert_html_table_to_markdown(element)
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<String> {
     let mut dl_content_parts = Vec::new();
     for child_node in &element.children {
@@ -334,7 +322,6 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_script_element(
     element: &HtmlElement,
     options: ConversionOptions,
@@ -362,7 +349,6 @@ fn handle_script_element(
             if script_content.starts_with('\n') {
                 script_content.remove(0);
             }
-            dbg!(&script_content);
             let final_content = script_content.trim_end_matches('\n');
             Ok(Some(format!(
                 "```{}\n{}\n```",
@@ -376,7 +362,6 @@ fn handle_script_element(
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Option<String>> {
     let tag_name = element.tag_name.as_str();
     let mut src_url: Option<String> = None;
@@ -451,7 +436,6 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn handle_svg_element(element: &HtmlElement) -> miette::Result<String> {
     let mut title_text: Option<String> = None;
     for child_node in &element.children {
@@ -473,7 +457,6 @@ fn handle_svg_element(element: &HtmlElement) -> miette::Result<String> {
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn convert_html_list_to_markdown(
     list_element: &HtmlElement,
     indent_level: usize,
@@ -533,10 +516,12 @@ fn convert_html_list_to_markdown(
             if !text_content.trim().is_empty() {}
         }
     }
-    Ok(markdown_items.join("\n"))
+    Ok(markdown_items
+        .iter()
+        .filter(|item| !item.trim().is_empty())
+        .join("\n"))
 }
 
-#[cfg(feature = "html-to-markdown")]
 pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> {
     let mut parts = Vec::new();
     for node in nodes {
@@ -632,81 +617,91 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
             HtmlNode::Comment(_) => {}
         }
     }
-    Ok(parts.join("").trim().to_string())
+    Ok(parts.join("").to_string())
 }
 
-#[cfg(feature = "html-to-markdown")]
 pub fn convert_nodes_to_markdown(
     nodes: &[HtmlNode],
     options: ConversionOptions,
 ) -> miette::Result<String> {
-    let mut markdown_blocks = Vec::new();
+    let mut markdown_blocks: Vec<MarkdownBlock> = Vec::new();
     for node in nodes {
         match node {
             HtmlNode::Text(text) => {
-                let trimmed_text = text.trim();
-                if !trimmed_text.is_empty() {
-                    markdown_blocks.push(trimmed_text.to_string());
+                if !text.trim().is_empty() {
+                    markdown_blocks.push((text.to_string(), true));
                 }
             }
             HtmlNode::Element(element) => {
                 match element.tag_name.as_str() {
+                    "html" | "head" | "body" => {
+                        let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
+
+                        if !markdown_block.is_empty() {
+                            markdown_blocks.push((markdown_block, false));
+                        }
+                    }
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                        markdown_blocks.push(handle_heading_element(element)?)
+                        markdown_blocks.push((handle_heading_element(element)?, false))
                     }
-                    "p" => markdown_blocks.push(handle_paragraph_element(element)?),
-                    "hr" => markdown_blocks.push(handle_hr_element()?),
-                    "ul" | "ol" => markdown_blocks.push(handle_list_element(element, options)?),
+                    "p" => markdown_blocks.push((handle_paragraph_element(element)?, false)),
+                    "hr" => markdown_blocks.push((handle_hr_element()?, false)),
+                    "ul" | "ol" => {
+                        markdown_blocks.push((handle_list_element(element, options)?, false))
+                    }
                     "blockquote" => {
-                        markdown_blocks.push(handle_blockquote_element(element, options)?)
+                        markdown_blocks.push((handle_blockquote_element(element, options)?, false))
                     }
-                    "pre" => markdown_blocks.push(handle_pre_element(element, options)?),
+                    "pre" => markdown_blocks.push((handle_pre_element(element, options)?, false)),
                     "table" => {
                         let table_md = handle_table_element(element, options)?;
                         if !table_md.is_empty() {
-                            markdown_blocks.push(table_md);
+                            markdown_blocks.push((table_md, false));
                         }
                     }
                     "dl" => {
                         let dl_md = handle_dl_element(element, options)?;
                         if !dl_md.is_empty() {
-                            markdown_blocks.push(dl_md);
+                            markdown_blocks.push((dl_md, false));
                         }
                     }
                     "script" => {
                         if let Some(script_md) = handle_script_element(element, options)? {
-                            markdown_blocks.push(script_md);
+                            markdown_blocks.push((script_md, false));
                         }
                     }
                     "style" => { /* Style tags are ignored */ }
                     "iframe" | "video" | "audio" | "embed" | "object" => {
                         if let Some(embed_md) = handle_embedded_content_element(element)? {
-                            markdown_blocks.push(embed_md);
+                            markdown_blocks.push((embed_md, false));
                         }
                     }
-                    "svg" => markdown_blocks.push(handle_svg_element(element)?),
+                    "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
                     "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s"
                     | "strike" | "del" | "kbd" => {
                         let inline_md =
                             convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
-                            markdown_blocks.push(inline_md.trim().to_string());
+                            markdown_blocks.push((inline_md.trim().to_string(), true));
                         }
                     }
                     _ => {
                         let children_content_str = convert_children_to_string(&element.children)?;
                         if !children_content_str.is_empty() {
-                            markdown_blocks.push(children_content_str);
+                            markdown_blocks.push((children_content_str, false));
                         }
                     }
                 }
             }
-            HtmlNode::Comment(_) => { /* Comments are ignored */ }
+            HtmlNode::Comment(_) => {}
         }
     }
+
     let mut result = String::new();
-    for (i, block_content) in markdown_blocks.iter().enumerate() {
-        if i > 0
+
+    for (i, (block_content, is_inline)) in markdown_blocks.iter().enumerate() {
+        if !is_inline
+            && i > 0
             && !block_content.is_empty()
             && !result.ends_with("\n\n")
             && !result.ends_with("```\n")
@@ -720,7 +715,9 @@ pub fn convert_nodes_to_markdown(
                 result.push_str("\n\n");
             }
         }
+
         result.push_str(block_content);
     }
+
     Ok(result)
 }

@@ -1,14 +1,9 @@
-#[cfg(feature = "html-to-markdown")]
 use super::node::{HtmlElement, HtmlNode};
-#[cfg(feature = "html-to-markdown")]
 use markup5ever_rcdom::{Node, NodeData};
-#[cfg(feature = "html-to-markdown")]
 use std::collections::HashMap;
-#[cfg(feature = "html-to-markdown")]
 use std::rc::Rc;
 
-#[cfg(feature = "html-to-markdown")]
-fn map_html5ever_node_to_html_node(node: &Rc<Node>) -> miette::Result<Option<HtmlNode>> {
+fn map_node_to_html_node(node: &Rc<Node>) -> miette::Result<Option<HtmlNode>> {
     match &node.data {
         NodeData::Text { contents } => {
             let text_content = contents.borrow().to_string();
@@ -27,7 +22,7 @@ fn map_html5ever_node_to_html_node(node: &Rc<Node>) -> miette::Result<Option<Htm
             // Convert children recursively
             let mut children = Vec::new();
             for child in node.children.borrow().iter() {
-                if let Some(html_node) = map_html5ever_node_to_html_node(child)? {
+                if let Some(html_node) = map_node_to_html_node(child)? {
                     children.push(html_node);
                 }
             }
@@ -45,11 +40,10 @@ fn map_html5ever_node_to_html_node(node: &Rc<Node>) -> miette::Result<Option<Htm
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
-pub fn map_html5ever_nodes_to_html_nodes(nodes: &[Rc<Node>]) -> miette::Result<Vec<HtmlNode>> {
+pub fn map_nodes_to_html_nodes(nodes: &[Rc<Node>]) -> miette::Result<Vec<HtmlNode>> {
     let mut html_nodes = Vec::new();
     for node in nodes {
-        match map_html5ever_node_to_html_node(node) {
+        match map_node_to_html_node(node) {
             Ok(Some(html_node)) => html_nodes.push(html_node),
             Ok(None) => {}
             Err(e) => return Err(e),

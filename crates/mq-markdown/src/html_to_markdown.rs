@@ -1,28 +1,17 @@
-#[cfg(feature = "html-to-markdown")]
+#![cfg(feature = "html-to-markdown")]
 pub mod converter;
-#[cfg(feature = "html-to-markdown")]
 pub mod node;
-#[cfg(feature = "html-to-markdown")]
 pub mod options;
-#[cfg(feature = "html-to-markdown")]
 pub mod parser;
 
-#[cfg(feature = "html-to-markdown")]
 use html5ever::parse_document;
-#[cfg(feature = "html-to-markdown")]
 use html5ever::tendril::TendrilSink;
-#[cfg(feature = "html-to-markdown")]
 use markup5ever_rcdom::{Node, NodeData, RcDom};
-#[cfg(feature = "html-to-markdown")]
 use miette::miette;
-#[cfg(feature = "html-to-markdown")]
 pub use options::ConversionOptions;
-#[cfg(feature = "html-to-markdown")]
 use std::collections::BTreeMap;
-#[cfg(feature = "html-to-markdown")]
 use std::rc::Rc;
 
-#[cfg(feature = "html-to-markdown")]
 fn find_element_by_tag_name(node: &Rc<Node>, tag_name: &str) -> Option<Rc<Node>> {
     match &node.data {
         NodeData::Element { name, .. } if name.local.to_lowercase() == tag_name => {
@@ -39,7 +28,6 @@ fn find_element_by_tag_name(node: &Rc<Node>, tag_name: &str) -> Option<Rc<Node>>
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn find_elements_by_tag_name(node: &Rc<Node>, tag_name: &str) -> Vec<Rc<Node>> {
     let mut results = Vec::new();
 
@@ -57,7 +45,6 @@ fn find_elements_by_tag_name(node: &Rc<Node>, tag_name: &str) -> Vec<Rc<Node>> {
     results
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn get_element_text_content(node: &Rc<Node>) -> String {
     let mut text = String::new();
 
@@ -76,7 +63,6 @@ fn get_element_text_content(node: &Rc<Node>) -> String {
     text
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn get_element_attribute(node: &Rc<Node>, attr_name: &str) -> Option<String> {
     match &node.data {
         NodeData::Element { attrs, .. } => {
@@ -91,7 +77,6 @@ fn get_element_attribute(node: &Rc<Node>, attr_name: &str) -> Option<String> {
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 fn extract_front_matter_from_head_ref(
     head_node: Option<Rc<Node>>,
 ) -> Option<BTreeMap<String, serde_yaml::Value>> {
@@ -156,7 +141,6 @@ fn extract_front_matter_from_head_ref(
     }
 }
 
-#[cfg(feature = "html-to-markdown")]
 pub fn convert_html_to_markdown(
     html_input: &str,
     options: ConversionOptions,
@@ -193,7 +177,7 @@ pub fn convert_html_to_markdown(
                             .trim_start_matches("---\n")
                             .trim_end_matches('\n')
                             .trim_end_matches("...");
-                        front_matter_str = format!("---\n{}---\n\n", content.trim());
+                        front_matter_str = format!("---\n{}\n---\n\n", content.trim());
                     }
                     Err(_) => {
                         return Err(miette!("YAML serialization failed"));
@@ -203,17 +187,8 @@ pub fn convert_html_to_markdown(
         }
     }
 
-    let nodes_for_markdown_conversion: Vec<node::HtmlNode>;
-
-    if let Some(body_node) = find_element_by_tag_name(&dom.document, "body") {
-        let body_children: Vec<Rc<Node>> = body_node.children.borrow().clone();
-        nodes_for_markdown_conversion = parser::map_html5ever_nodes_to_html_nodes(&body_children)?;
-    } else {
-        // If no body tag found, use the document children directly
-        let doc_children: Vec<Rc<Node>> = dom.document.children.borrow().clone();
-        nodes_for_markdown_conversion = parser::map_html5ever_nodes_to_html_nodes(&doc_children)?;
-    }
-
+    let doc_children: Vec<Rc<Node>> = dom.document.children.borrow().clone();
+    let nodes_for_markdown_conversion = parser::map_nodes_to_html_nodes(&doc_children)?;
     let body_markdown =
         converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, options)?;
 
