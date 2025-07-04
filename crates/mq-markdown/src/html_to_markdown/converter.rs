@@ -550,8 +550,12 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                                 .map(|title_str| format!(" \"{}\"", title_str.replace('"', "\\\"")))
                                 .unwrap_or_default();
                             let processed_href = process_url_for_markdown(href);
-                            parts
-                                .push(format!("[{}]({}{})", link_text, processed_href, title_part));
+                            parts.push(format!(
+                                "[{}]({}{})",
+                                link_text.replace("\n", "").trim(),
+                                processed_href,
+                                title_part
+                            ));
                         } else if !link_text.is_empty() {
                             parts.push(link_text);
                         }
@@ -634,7 +638,8 @@ pub fn convert_nodes_to_markdown(
             }
             HtmlNode::Element(element) => {
                 match element.tag_name.as_str() {
-                    "html" | "head" | "body" => {
+                    "html" | "head" | "header" | "footer" | "body" | "div" | "nav" | "main"
+                    | "article" | "section" | "hgroup" => {
                         let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
 
                         if !markdown_block.is_empty() {
@@ -678,7 +683,7 @@ pub fn convert_nodes_to_markdown(
                     }
                     "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
                     "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s"
-                    | "strike" | "del" | "kbd" => {
+                    | "strike" | "del" | "kbd" | "label" => {
                         let inline_md =
                             convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
@@ -716,7 +721,7 @@ pub fn convert_nodes_to_markdown(
             }
         }
 
-        result.push_str(block_content);
+        result.push_str(block_content.trim_start());
     }
 
     Ok(result)
