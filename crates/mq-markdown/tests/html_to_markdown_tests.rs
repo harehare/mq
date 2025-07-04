@@ -1,5 +1,7 @@
+#![recursion_limit = "256"]
 #![cfg(feature = "html-to-markdown")]
 use mq_markdown::{ConversionOptions, convert_html_to_markdown};
+use rstest::rstest;
 
 fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: ConversionOptions) {
     match convert_html_to_markdown(html, options) {
@@ -11,606 +13,348 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     }
 }
 
-fn assert_conversion(html: &str, expected_markdown: &str) {
-    assert_conversion_with_options(html, expected_markdown, ConversionOptions::default());
-}
-
-// --- <br> Tests ---
-
-#[test]
-fn test_table_with_alignments() {
-    let html = concat!(
+#[rstest]
+#[case::br_in_paragraph(
+    "<p>line1<br>line2</p>",
+    ConversionOptions::default(),
+    "line1  \nline2"
+)]
+#[case::br_multiple_in_paragraph(
+    "<p>line1<br><br>line2</p>",
+    ConversionOptions::default(),
+    "line1  \n  \nline2"
+)]
+#[case::br_standalone("<br>", ConversionOptions::default(), "\n")]
+#[case::table_with_alignments(
+    concat!(
         "<table><thead>",
         "<tr><th style=\"text-align:left\">Left</th>",
         "<th style=\"text-align:center\">Center</th>",
         "<th style=\"text-align:right\">Right</th>",
         "<th>Default</th></tr>",
         "</thead><tbody><tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></tbody></table>"
-    );
-    let expected = concat!(
-        "| Left | Center | Right | Default |\n",
-        "|:---|:---:|---:|---|\n", // Default is ---
-        "| 1 | 2 | 3 | 4 |"
-    );
-    assert_conversion(html, expected);
-}
-
-// --- <script> Tag Conversion Tests ---
-
-#[test]
-fn test_script_tag_ignored_when_option_is_false() {
-    let html = "<script>alert('ignored');</script>";
-    assert_conversion_with_options(
-        html,
-        "",
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: false,
-        },
-    );
-
-    let html_ext = "<script src=\"ext.js\"></script>";
-    assert_conversion_with_options(
-        html_ext,
-        "",
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_inline_javascript_default_type() {
-    let html = "<script>alert('Hello');</script>";
-    let expected = "```\nalert('Hello');\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_inline_javascript_text_javascript() {
-    let html = "<script type=\"text/javascript\">console.log(1);</script>";
-    let expected = "```javascript\nconsole.log(1);\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_inline_javascript_application_javascript() {
-    let html = "<script type=\"application/javascript\">let a = 1;</script>";
-    let expected = "```javascript\nlet a = 1;\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_inline_javascript_module() {
-    let html = "<script type=\"module\">import { B } from './mod.js';</script>";
-    let expected = "```javascript\nimport { B } from './mod.js';\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_inline_json_ld() {
-    let html = "<script type=\"application/ld+json\">{\"@context\":\"schema.org\"}</script>";
-    let expected = "```json\n{\"@context\":\"schema.org\"}\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_inline_json() {
-    let html = "<script type=\"application/json\">{\"key\":\"value\"}</script>";
-    let expected = "```json\n{\"key\":\"value\"}\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_unknown_type() {
-    let html = "<script type=\"text/custom\">content</script>";
-    let expected = "```\ncontent\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_empty_content() {
-    let html = "<script></script>";
-    let expected = "```\n\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_external_src_ignored_when_option_true() {
-    let html = "<script src=\"app.js\"></script>";
-    assert_conversion_with_options(
-        html,
-        "",
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    ); // Still ignored
-}
-
-#[test]
-fn test_script_tag_with_html_comments_and_cdata() {
-    let html = "<script><!-- alert(1); // --><![CDATA[\nalert(2);\n//]]></script>";
-    let expected_content = "<!-- alert(1); // --><![CDATA[\nalert(2);\n//]]>";
-    let expected_markdown = format!("```\n{}\n```", expected_content);
-    assert_conversion_with_options(
-        html,
-        &expected_markdown,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-// --- Front Matter Generation Tests ---
-
-#[test]
-fn test_front_matter_disabled() {
-    let html = "<html><head><title>My Title</title></head><body><p>Body</p></body></html>";
-    let expected = "My Title\n\nBody"; // No front matter
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_title_only() {
-    let html = "<html><head><title>My Title</title></head><body><p>Body</p></body></html>";
-    let expected_fm = "---\ntitle: My Title\n---\n\nMy Title\n\nBody";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_description() {
-    let html = "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>";
-    let expected_fm = "---\ndescription: Page description.\n---\n\nB";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_keywords_single() {
-    let html =
-        "<html><head><meta name=\"keywords\" content=\"rust\"></head><body><p>B</p></body></html>";
-    let expected_fm = "---\nkeywords:\n- rust\n---\n\nB";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_keywords_multiple_comma_separated() {
-    let html = "<html><head><meta name=\"keywords\" content=\"rust, web, html\"></head><body><p>B</p></body></html>";
-    let expected_fm = "---\nkeywords:\n- rust\n- web\n- html\n---\n\nB";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_keywords_comma_space_separated() {
-    let html = "<html><head><meta name=\"keywords\" content=\"rust, web,  html \"></head><body><p>B</p></body></html>";
-    let expected_fm = "---\nkeywords:\n- rust\n- web\n- html\n---\n\nB";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_author() {
-    let html = "<html><head><meta name=\"author\" content=\"Jules Verne\"></head><body><p>B</p></body></html>";
-    let expected_fm = "---\nauthor: Jules Verne\n---\n\nB";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_all_present() {
-    let html = "<html><head><title>Full Test</title><meta name=\"description\" content=\"Desc here\"><meta name=\"keywords\" content=\"key1,key2\"><meta name=\"author\" content=\"Author Name\"></head><body><p>Content</p></body></html>";
-    // Order in BTreeMap might vary, but serde_yaml usually sorts keys alphabetically.
-    // Expect: author, description, keywords, title
-    let expected_fm = "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nFull Test\n\nContent";
-    assert_conversion_with_options(
-        html,
-        expected_fm,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_no_head_tag() {
-    let html = "<html><body><p>Only body</p></body></html>";
-    let expected = "Only body"; // No front matter
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_empty_head() {
-    let html = "<html><head></head><body><p>Body</p></body></html>";
-    let expected = "Body"; // No front matter
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_no_relevant_tags_in_head() {
-    let html = "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body><p>Body</p></body></html>";
-    let expected = "Body"; // No relevant tags for front matter
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_with_script_extraction_option() {
-    // Test both options together
-    let html = "<html><head><title>Script Page</title></head><body><script>let x=1;</script><p>Text</p></body></html>";
-    let expected_fm_script =
-        "---\ntitle: Script Page\n---\n\nScript Page\n\n```\nlet x=1;\n```\n\nText";
-    assert_conversion_with_options(
-        html,
-        expected_fm_script,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_front_matter_html_fragment_no_head() {
-    // If input is just a fragment without <head>, no front matter should be generated.
-    let html = "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">";
-    let expected = "Just a paragraph"; // Meta tag not in <head> context
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: false,
-            generate_front_matter: true,
-        },
-    );
-}
-
-#[test]
-fn test_script_tag_leading_newline_stripping() {
-    let html = "<script>\n  var x = 1;\n</script>";
-    let expected = "```\n  var x = 1;\n```";
-    assert_conversion_with_options(
-        html,
-        expected,
-        ConversionOptions {
-            extract_scripts_as_code_blocks: true,
-            generate_front_matter: false,
-        },
-    );
-}
-
-#[test]
-fn test_table_with_align_attribute() {
-    let html = "<table><thead><tr><th align=\"right\">H1</th><th align=\"center\">H2</th></tr></thead><tbody><tr><td>c1</td><td>c2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n|---:|:---:|\n| c1 | c2 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_br_in_paragraph() {
-    assert_conversion("<p>line1<br>line2</p>", "line1  \nline2");
-}
-
-#[test]
-fn test_br_multiple_in_paragraph() {
-    assert_conversion("<p>line1<br><br>line2</p>", "line1  \n  \nline2");
-}
-
-#[test]
-fn test_br_standalone() {
-    // Standalone <br> converted to block-level representation if that's how parser handles it.
-    // Or it might be handled as an inline element that produces "  \n".
-    // If convert_nodes_to_markdown's default case pushes children_content_str ("  \n"), this is the result.
-    assert_conversion("<br>", "\n");
-}
-
-// --- <hr> Tests ---
-
-#[test]
-fn test_hr_simple() {
-    assert_conversion("<hr>", "---");
-}
-
-#[test]
-fn test_hr_with_attributes() {
-    assert_conversion("<hr class=\"fancy\" id=\"divider\">", "---");
-}
-
-#[test]
-fn test_hr_between_blocks() {
-    assert_conversion("<h1>Title</h1><hr><p>Text</p>", "# Title\n\n---\n\nText");
-}
-
-// --- Inline <code> Tests ---
-
-#[test]
-fn test_code_inline_simple() {
-    assert_conversion("<code>my_code</code>", "`my_code`");
-}
-
-#[test]
-fn test_code_inline_in_paragraph() {
-    assert_conversion(
-        "<p>Before <code>some_code()</code> after.</p>",
-        "Before `some_code()` after.",
-    );
-}
-
-#[test]
-fn test_code_inline_empty() {
-    assert_conversion("<code></code>", "``");
-}
-
-#[test]
-fn test_code_inline_with_internal_spaces_trimmed() {
-    // Current implementation of convert_children_to_string trims, so internal leading/trailing spaces are lost.
-    assert_conversion("<code>  spaced code  </code>", "`  spaced code  `");
-}
-
-#[test]
-fn test_code_inline_with_html_entities_as_text() {
-    // Assumes parser decodes entities like &lt; to < before converter sees it.
-    assert_conversion("<code>a < b > c & d</code>", "`a < b > c & d`");
-}
-
-#[test]
-fn test_code_in_strong() {
-    assert_conversion(
-        "<strong><code>important_code()</code></strong>",
-        "**`important_code()`**",
-    );
-}
-
-#[test]
-fn test_strong_in_code() {
-    // Markdown typically doesn't support formatting inside inline code blocks.
-    // So, <strong> inside <code> should be literal.
-    // convert_children_to_string for <code>'s children will process <strong>.
-    // This might result in "`**strong code**`" if not handled carefully.
-    // For now, let's assume simple text content for <code>.
-    // A more robust solution would treat <code> content as opaque.
-    // The current implementation will produce: "`**strong code**`"
-    // This is a known limitation for now.
-    assert_conversion(
-        "<code><strong>strong code</strong></code>",
-        "`**strong code**`",
-    );
-}
-
-// --- List Tests (ul, ol, li) ---
-
-#[test]
-fn test_ul_simple() {
-    assert_conversion(
-        "<ul><li>Item 1</li><li>Item 2</li></ul>",
-        "* Item 1\n* Item 2",
-    );
-}
-
-#[test]
-fn test_ol_simple() {
-    assert_conversion(
-        "<ol><li>Item 1</li><li>Item 2</li></ol>",
-        "1. Item 1\n2. Item 2",
-    );
-}
-
-#[test]
-fn test_ol_with_start_attribute() {
-    assert_conversion(
-        "<ol start=\"3\"><li>Item 3</li><li>Item 4</li></ol>",
-        "3. Item 3\n4. Item 4",
-    );
-}
-
-#[test]
-fn test_ul_empty() {
-    assert_conversion("<ul></ul>", ""); // Or perhaps a single "*" if list cannot be empty? Current impl likely ""
-}
-
-#[test]
-fn test_ol_empty() {
-    assert_conversion("<ol></ol>", ""); // Similar to ul_empty
-}
-
-#[test]
-fn test_ul_with_empty_li() {
-    assert_conversion("<ul><li></li><li>Item 2</li></ul>", "* \n* Item 2");
-}
-
-#[test]
-fn test_ol_with_empty_li() {
-    assert_conversion("<ol><li>Item 1</li><li></li></ol>", "1. Item 1\n2. ");
-}
-
-#[test]
-fn test_ul_nested() {
-    let html =
-        "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>";
-    let expected = "* Parent 1
-  * Child A
-  * Child B
-* Parent 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_li_with_multiple_paragraphs() {
-    let html = "<ul><li><p>First para.</p><p>Second para.</p></li></ul>";
-    let expected = "* First para.\n  Second para.";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_li_with_text_then_nested_list() {
-    let html = "<ul><li>Item text<ul><li>Nested 1</li><li>Nested 2</li></ul></li></ul>";
-    let expected = "* Item text
-  * Nested 1
-  * Nested 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_li_with_paragraph_then_nested_list() {
-    let html = "<ul><li><p>Item para</p><ul><li>Nested 1</li></ul></li></ul>";
-    let expected = "* Item para\n  * Nested 1";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_li_with_blockquote() {
-    let html = "<ul><li>Item text<blockquote><p>Quoted</p></blockquote></li></ul>";
-    let expected = "* Item text\n  > Quoted";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_li_with_pre_code() {
-    let html = "<ul><li>Item text<pre><code>code\nblock</code></pre></li></ul>";
-    let expected = "* Item text\n  ```\n  code\n  block\n  ```";
-    assert_conversion(html, expected);
-}
-
-// --- Embedded Content Tests (iframe, video, audio, embed, object) ---
-
-#[test]
-fn test_iframe_simple() {
-    assert_conversion(
-        "<iframe src=\"https://example.com/embed\" title=\"My Embed\"></iframe>",
-        "[My Embed](https://example.com/embed \"My Embed\")",
-    );
-}
-
-// --- Combination / Integration Tests ---
-
-#[test]
-fn test_li_complex_content() {
-    let html = concat!(
+    ),
+    ConversionOptions::default(),
+    "| Left | Center | Right | Default |\n|:---|:---:|---:|---|\n| 1 | 2 | 3 | 4 |"
+)]
+#[case::script_tag_ignored_when_option_is_false(
+    "<script>alert('ignored');</script>",
+    ConversionOptions::default(),
+    ""
+)]
+#[case::script_tag_ignored_when_option_is_false_external(
+    "<script src=\"ext.js\"></script>",
+    ConversionOptions::default(),
+    ""
+)]
+#[case::script_tag_inline_javascript_default_type(
+    "<script>alert('Hello');</script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```\nalert('Hello');\n```",
+)]
+#[case::script_tag_inline_javascript_text_javascript(
+    "<script type=\"text/javascript\">console.log(1);</script>",
+    ConversionOptions{
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```javascript\nconsole.log(1);\n```"
+)]
+#[case::script_tag_inline_javascript_application_javascript(
+    "<script type=\"application/javascript\">let a = 1;</script>",
+    ConversionOptions{
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```javascript\nlet a = 1;\n```"
+)]
+#[case::script_tag_inline_javascript_module(
+    "<script type=\"module\">import { B } from './mod.js';</script>",
+    ConversionOptions{
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```javascript\nimport { B } from './mod.js';\n```"
+)]
+#[case::script_tag_inline_json_ld(
+    "<script type=\"application/ld+json\">{\"@context\":\"schema.org\"}</script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```json\n{\"@context\":\"schema.org\"}\n```"
+)]
+#[case::script_tag_inline_json(
+    "<script type=\"application/json\">{\"key\":\"value\"}</script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```json\n{\"key\":\"value\"}\n```"
+)]
+#[case::script_tag_unknown_type(
+    "<script type=\"text/custom\">content</script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```\ncontent\n```"
+)]
+#[case::script_tag_empty_content(
+    "<script></script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```\n\n```"
+)]
+#[case::script_tag_external_src_ignored_when_option_true(
+    "<script src=\"app.js\"></script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    ""
+)]
+#[case::script_tag_with_html_comments_and_cdata(
+    "<script><!-- alert(1); // --><![CDATA[\nalert(2);\n//]]></script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    &format!("```\n{}\n```", "<!-- alert(1); // --><![CDATA[\nalert(2);\n//]]>")
+)]
+#[case::front_matter_disabled(
+    "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
+    ConversionOptions::default(),
+    "My Title\n\nBody"
+)]
+#[case::front_matter_title_only(
+    "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\ntitle: My Title\n---\n\nMy Title\n\nBody",
+)]
+#[case::front_matter_description(
+    "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\ndescription: Page description.\n---\n\nB",
+)]
+#[case::front_matter_keywords_single(
+    "<html><head><meta name=\"keywords\" content=\"rust\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nkeywords:\n- rust\n---\n\nB",
+)]
+#[case::front_matter_keywords_multiple_comma_separated(
+    "<html><head><meta name=\"keywords\" content=\"rust, web, html\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nkeywords:\n- rust\n- web\n- html\n---\n\nB",
+)]
+#[case::front_matter_keywords_comma_space_separated(
+    "<html><head><meta name=\"keywords\" content=\"rust, web,  html \"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nkeywords:\n- rust\n- web\n- html\n---\n\nB",
+)]
+#[case::front_matter_author(
+    "<html><head><meta name=\"author\" content=\"Jules Verne\"></head><body><p>B</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: Jules Verne\n---\n\nB",
+)]
+#[case::front_matter_all_present(
+    "<html><head><title>Full Test</title><meta name=\"description\" content=\"Desc here\"><meta name=\"keywords\" content=\"key1,key2\"><meta name=\"author\" content=\"Author Name\"></head><body><p>Content</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nFull Test\n\nContent",
+)]
+#[case::front_matter_no_head_tag(
+    "<html><body><p>Only body</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "Only body",
+)]
+#[case::front_matter_empty_head(
+    "<html><head></head><body><p>Body</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "Body",
+)]
+#[case::front_matter_no_relevant_tags_in_head(
+    "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body><p>Body</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "Body", // No relevant tags for front matter
+)]
+#[case::front_matter_with_script_extraction_option(
+    "<html><head><title>Script Page</title></head><body><script>let x=1;</script><p>Text</p></body></html>",
+    ConversionOptions {
+        generate_front_matter: true,
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "---\ntitle: Script Page\n---\n\nScript Page\n\n```\nlet x=1;\n```\n\nText",
+)]
+#[case::front_matter_html_fragment_no_head(
+    "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">",
+    ConversionOptions {
+        generate_front_matter: true,
+        ..ConversionOptions::default()
+    },
+    "Just a paragraph", // Meta tag not in <head> context
+)]
+#[case::script_tag_leading_newline_stripping(
+    "<script>\n  var x = 1;\n</script>",
+    ConversionOptions {
+        extract_scripts_as_code_blocks: true,
+        ..ConversionOptions::default()
+    },
+    "```\n  var x = 1;\n```",
+)]
+#[case::table_with_align_attribute(
+    "<table><thead><tr><th align=\"right\">H1</th><th align=\"center\">H2</th></tr></thead><tbody><tr><td>c1</td><td>c2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---:|:---:|\n| c1 | c2 |"
+)]
+#[case::br_in_paragraph(
+    "<p>line1<br>line2</p>",
+    ConversionOptions::default(),
+    "line1  \nline2"
+)]
+#[case::br_multiple_in_paragraph(
+    "<p>line1<br><br>line2</p>",
+    ConversionOptions::default(),
+    "line1  \n  \nline2"
+)]
+#[case::br_standalone("<br>", ConversionOptions::default(), "\n")]
+#[case::hr_simple("<hr>", ConversionOptions::default(), "---")]
+#[case::hr_with_attributes(
+    "<hr class=\"fancy\" id=\"divider\">",
+    ConversionOptions::default(),
+    "---"
+)]
+#[case::hr_between_blocks(
+    "<h1>Title</h1><hr><p>Text</p>",
+    ConversionOptions::default(),
+    "# Title\n\n---\n\nText"
+)]
+#[case::code_inline_simple("<code>my_code</code>", ConversionOptions::default(), "`my_code`")]
+#[case::code_inline_in_paragraph(
+    "<p>Before <code>some_code()</code> after.</p>",
+    ConversionOptions::default(),
+    "Before `some_code()` after."
+)]
+#[case::code_inline_empty("<code></code>", ConversionOptions::default(), "``")]
+#[case::code_inline_with_internal_spaces_trimmed(
+    "<code>  spaced code  </code>",
+    ConversionOptions::default(),
+    "`  spaced code  `"
+)]
+#[case::code_inline_with_html_entities_as_text(
+    "<code>a < b > c & d</code>",
+    ConversionOptions::default(),
+    "`a < b > c & d`"
+)]
+#[case::code_in_strong(
+    "<strong><code>important_code()</code></strong>",
+    ConversionOptions::default(),
+    "**`important_code()`**"
+)]
+#[case::strong_in_code(
+    "<code><strong>strong code</strong></code>",
+    ConversionOptions::default(),
+    "`**strong code**`"
+)]
+#[case::ul_simple(
+    "<ul><li>Item 1</li><li>Item 2</li></ul>",
+    ConversionOptions::default(),
+    "* Item 1\n* Item 2"
+)]
+#[case::ol_simple(
+    "<ol><li>Item 1</li><li>Item 2</li></ol>",
+    ConversionOptions::default(),
+    "1. Item 1\n2. Item 2"
+)]
+#[case::ol_with_start_attribute(
+    "<ol start=\"3\"><li>Item 3</li><li>Item 4</li></ol>",
+    ConversionOptions::default(),
+    "3. Item 3\n4. Item 4"
+)]
+#[case::ul_empty("<ul></ul>", ConversionOptions::default(), "")]
+#[case::ol_empty("<ol></ol>", ConversionOptions::default(), "")]
+#[case::ul_with_empty_li(
+    "<ul><li></li><li>Item 2</li></ul>",
+    ConversionOptions::default(),
+    "* \n* Item 2"
+)]
+#[case::ol_with_empty_li(
+    "<ol><li>Item 1</li><li></li></ol>",
+    ConversionOptions::default(),
+    "1. Item 1\n2. "
+)]
+#[case::ul_nested(
+    "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>",
+    ConversionOptions::default(),
+    "* Parent 1\n  * Child A\n  * Child B\n* Parent 2"
+)]
+#[case::li_with_multiple_paragraphs(
+    "<ul><li><p>First para.</p><p>Second para.</p></li></ul>",
+    ConversionOptions::default(),
+    "* First para.\n  Second para."
+)]
+#[case::li_with_text_then_nested_list(
+    "<ul><li>Item text<ul><li>Nested 1</li><li>Nested 2</li></ul></li></ul>",
+    ConversionOptions::default(),
+    "* Item text\n  * Nested 1\n  * Nested 2"
+)]
+#[case::li_with_paragraph_then_nested_list(
+    "<ul><li><p>Item para</p><ul><li>Nested 1</li></ul></li></ul>",
+    ConversionOptions::default(),
+    "* Item para\n  * Nested 1"
+)]
+#[case::li_with_blockquote(
+    "<ul><li>Item text<blockquote><p>Quoted</p></blockquote></li></ul>",
+    ConversionOptions::default(),
+    "* Item text\n  > Quoted"
+)]
+#[case::li_with_pre_code(
+    "<ul><li>Item text<pre><code>code\nblock</code></pre></li></ul>",
+    ConversionOptions::default(),
+    "* Item text\n  ```\n  code\n  block\n  ```"
+)]
+#[case::iframe_simple(
+    "<iframe src=\"https://example.com/embed\" title=\"My Embed\"></iframe>",
+    ConversionOptions::default(),
+    "[My Embed](https://example.com/embed \"My Embed\")"
+)]
+#[case::li_complex_content(
+    concat!(
         "<ul>",
         "  <li>",
         "    <p>Paragraph 1 in li.</p>",
@@ -624,52 +368,46 @@ fn test_li_complex_content() {
         "    <pre><code>Code in li.</code></pre>",
         "  </li>",
         "</ul>"
-    );
-    // Marker "* " (2 chars), continuation indent is 2 spaces.
-    let expected = concat!(
+    ),
+    ConversionOptions::default(),
+    concat!(
         "* Paragraph 1 in li.\n",
         "  Paragraph 2 in li.\n",
-        "  * Nested item\n", // Nested list itself is further indented by its own logic on top of this continuation
+        "  * Nested item\n",
         "  > Quote in li.\n",
         "  ```\n",
         "  Code in li.\n",
         "  ```"
-    );
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_cell_various_content() {
-    let html = concat!(
+    )
+)]
+#[case::table_cell_various_content(
+    concat!(
         "<table><thead><tr><th>Header</th></tr></thead><tbody>",
         "<tr><td>Cell with <strong>bold</strong>, <em>italic</em>,<br>and a <a href=\"#\">link</a>.</td></tr>",
         "<tr><td>Cell with list:<ul><li>L1</li><li>L2</li></ul> (list becomes inline)</td></tr>",
         "<tr><td>Cell with image: <img src=\"img.png\" alt=\"alt\"></td></tr>",
         "</tbody></table>"
-    );
-    // convert_children_to_string for <ul><li>L1</li><li>L2</li></ul> results in "L1L2" or similar.
-    // Let's assume it becomes "L1 L2" if there were spaces, or just "L1L2". For simplicity, "L1L2".
-    let expected = concat!(
+    ),
+    ConversionOptions::default(),
+    concat!(
         "| Header |\n",
         "|---|\n",
-        "| Cell with **bold**, *italic*,  \nand a [link](#). |\n", // <br> becomes "  \n"
+        "| Cell with **bold**, *italic*,  \nand a [link](#). |\n",
         "| Cell with list:L1L2 (list becomes inline) |\n",
         "| Cell with image: ![alt](img.png) |"
-    );
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_blockquote_complex_content() {
-    let html = concat!(
+    )
+)]
+#[case::blockquote_complex_content(
+    concat!(
         "<blockquote>",
         "  <p>Quote text.</p>",
         "  <ul><li>List in quote</li></ul>",
         "  <pre><code>Code in quote</code></pre>",
         "  <blockquote><p>Nested quote</p></blockquote>",
         "</blockquote>"
-    );
-    let expected = concat!(
+    ),
+    ConversionOptions::default(),
+    concat!(
         "> Quote text.\n",
         "> \n", // Blank line before list
         "> * List in quote\n",
@@ -679,13 +417,10 @@ fn test_blockquote_complex_content() {
         "> ```\n",
         "> \n", // Blank line before nested quote
         "> > Nested quote"
-    );
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dd_complex_content() {
-    let html = concat!(
+    )
+)]
+#[case::dd_complex_content(
+    concat!(
         "<dl>",
         "  <dt>Term</dt>",
         "  <dd>",
@@ -694,12 +429,9 @@ fn test_dd_complex_content() {
         "    <pre><code>Code in dd</code></pre>",
         "  </dd>",
         "</dl>"
-    );
-    // <dd> content is processed by convert_nodes_to_markdown, then each line indented by "  "
-    // convert_nodes_to_markdown for children of <dd> gives:
-    // "Para in dd.\n\n* List in dd\n\n```\nCode in dd\n```"
-    // Indenting this:
-    let expected = concat!(
+    ),
+    ConversionOptions::default(),
+    concat!(
         "**Term**\n",
         "  Para in dd.\n",
         "  \n",
@@ -708,13 +440,10 @@ fn test_dd_complex_content() {
         "  ```\n",
         "  Code in dd\n",
         "  ```"
-    );
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_full_page_structure() {
-    let html = concat!(
+    )
+)]
+#[case::full_page_structure(
+    concat!(
         "<h1>Title</h1>",
         "<p>Intro paragraph with <a href=\"#l\">link</a>.</p>",
         "<ul><li>Item 1</li><li>Item 2 <input type=\"checkbox\" checked> done</li></ul>",
@@ -723,8 +452,9 @@ fn test_full_page_structure() {
         "<pre><code>code block here</code></pre>",
         "<dl><dt>DT</dt><dd>DD</dd></dl>",
         "<p>Final para.</p>"
-    );
-    let expected = concat!(
+    ),
+    ConversionOptions::default(),
+    concat!(
         "# Title\n\n",
         "Intro paragraph with [link](#l).\n\n",
         "* Item 1\n* Item 2 [x] done\n\n", // List items, checkbox processed
@@ -733,373 +463,228 @@ fn test_full_page_structure() {
         "```\ncode block here\n```\n\n",   // Pre block
         "**DT**\n  DD\n\n",                // Definition list
         "Final para."
-    );
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_iframe_no_title() {
-    assert_conversion(
-        "<iframe src=\"https://example.com/embed\"></iframe>",
-        "[Embedded Iframe](https://example.com/embed)",
-    );
-}
-
-#[test]
-fn test_iframe_no_src() {
-    assert_conversion("<iframe title=\"My Embed\"></iframe>", "");
-}
-
-#[test]
-fn test_video_simple_src() {
-    assert_conversion(
-        "<video src=\"movie.mp4\" title=\"My Movie\"></video>",
-        "[My Movie](movie.mp4 \"My Movie\")",
-    );
-}
-
-#[test]
-fn test_video_with_source_tag() {
-    assert_conversion(
-        "<video title=\"Another Movie\"><source src=\"movie.ogg\" type=\"video/ogg\"><source src=\"movie.mp4\" type=\"video/mp4\"></video>",
-        "[Another Movie](movie.ogg \"Another Movie\")", // Takes first source
-    );
-}
-
-#[test]
-fn test_video_no_title_with_source() {
-    assert_conversion(
-        "<video><source src=\"movie.mp4\" type=\"video/mp4\"></video>",
-        "[Video](movie.mp4)",
-    );
-}
-
-#[test]
-fn test_video_with_poster() {
-    assert_conversion(
-        "<video src=\"movie.mp4\" title=\"My Movie\" poster=\"poster.jpg\"></video>",
-        "[My Movie](movie.mp4 \"My Movie\") (Poster: poster.jpg)",
-    );
-}
-
-#[test]
-fn test_video_no_src_no_source() {
-    assert_conversion("<video title=\"My Movie\"></video>", "");
-}
-
-#[test]
-fn test_audio_simple_src() {
-    assert_conversion(
-        "<audio src=\"sound.mp3\" title=\"My Sound\"></audio>",
-        "[My Sound](sound.mp3 \"My Sound\")",
-    );
-}
-
-#[test]
-fn test_audio_with_source_tag_no_title() {
-    assert_conversion(
-        "<audio><source src=\"sound.ogg\" type=\"audio/ogg\"></audio>",
-        "[Audio](sound.ogg)",
-    );
-}
-
-#[test]
-fn test_embed_simple() {
-    assert_conversion(
-        "<embed src=\"plugin.swf\" title=\"Flash Plugin\">",
-        "[Flash Plugin](plugin.swf \"Flash Plugin\")",
-    );
-}
-
-#[test]
-fn test_embed_no_title() {
-    assert_conversion(
-        "<embed src=\"plugin.swf\" type=\"application/x-shockwave-flash\">",
-        "[Embedded Content](plugin.swf)", // Type is not used for description in current impl
-    );
-}
-
-#[test]
-fn test_object_simple() {
-    assert_conversion(
-        "<object data=\"data.pdf\" title=\"PDF Document\"></object>",
-        "[PDF Document](data.pdf \"PDF Document\")",
-    );
-}
-
-#[test]
-fn test_object_no_title() {
-    assert_conversion(
-        "<object data=\"data.pdf\" type=\"application/pdf\"></object>",
-        "[Embedded Object](data.pdf)", // Type is not used for description
-    );
-}
-
-#[test]
-fn test_object_no_data() {
-    assert_conversion("<object title=\"My Object\"></object>", "");
-}
-
-// --- SVG Tests ---
-
-#[test]
-fn test_svg_with_title() {
-    assert_conversion(
-        "<svg><title>My Awesome Icon</title><circle cx=\"50\" cy=\"50\" r=\"40\" /></svg>",
-        "[SVG: My Awesome Icon]",
-    );
-}
-
-#[test]
-fn test_svg_no_title() {
-    assert_conversion(
-        "<svg><rect width=\"100\" height=\"100\" /></svg>",
-        "[SVG Image]",
-    );
-}
-
-#[test]
-fn test_svg_empty_title() {
-    assert_conversion(
-        "<svg><title></title><path d=\"...\" /></svg>",
-        "[SVG Image]",
-    );
-}
-
-#[test]
-fn test_svg_title_with_whitespace_only() {
-    assert_conversion("<svg><title>   </title><ellipse /></svg>", "[SVG Image]");
-}
-
-#[test]
-fn test_svg_empty_tag() {
-    assert_conversion("<svg></svg>", "[SVG Image]");
-}
-
-#[test]
-fn test_svg_title_with_inline_markup() {
-    // convert_children_to_string is used for title content, so markup might pass through
-    assert_conversion(
-        "<svg><title>An <em>important</em> icon</title><line /></svg>",
-        "[SVG: An *important* icon]",
-    );
-}
-
-#[test]
-fn test_svg_multiple_titles_uses_first() {
-    assert_conversion(
-        "<svg><title>First Title</title><title>Second Title</title><circle /></svg>",
-        "[SVG: First Title]",
-    );
-}
-
-// --- Checkbox (<input type="checkbox">) Tests ---
-
-#[test]
-fn test_checkbox_unchecked() {
-    assert_conversion("<input type=\"checkbox\">", "[ ]");
-}
-
-#[test]
-fn test_checkbox_checked() {
-    assert_conversion("<input type=\"checkbox\" checked>", "[x]");
-}
-
-#[test]
-fn test_checkbox_checked_explicit_value() {
-    assert_conversion("<input type=\"checkbox\" checked=\"checked\">", "[x]");
-}
-
-#[test]
-fn test_checkbox_with_label_suffix() {
-    // Assuming the label text is simply adjacent and gets concatenated by parent's children processing
-    assert_conversion(
-        "<p><input type=\"checkbox\">Remember me</p>",
-        "[ ] Remember me",
-    );
-}
-
-#[test]
-fn test_checkbox_in_list_item() {
-    assert_conversion(
-        "<ul><li><input type=\"checkbox\"> Task 1</li></ul>",
-        "* [ ] Task 1",
-    );
-}
-
-#[test]
-fn test_checkbox_checked_in_list_item() {
-    assert_conversion(
-        "<ul><li><input type=\"checkbox\" checked> Done</li></ul>",
-        "* [x] Done",
-    );
-}
-
-#[test]
-fn test_input_other_type_ignored() {
-    assert_conversion("<input type=\"text\" value=\"Hello\">", "");
-}
-
-// --- Definition List (<dl>, <dt>, <dd>) Tests ---
-
-#[test]
-fn test_dl_simple() {
-    let html = "<dl><dt>Term 1</dt><dd>Definition 1</dd></dl>";
-    let expected = "**Term 1**\n  Definition 1";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_multiple_pairs() {
-    let html = "<dl><dt>T1</dt><dd>D1</dd><dt>T2</dt><dd>D2</dd></dl>";
-    let expected = "**T1**\n  D1\n**T2**\n  D2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_one_dt_multiple_dd() {
-    let html = "<dl><dt>Term</dt><dd>Def 1</dd><dd>Def 2</dd></dl>";
-    let expected = "**Term**\n  Def 1\n  Def 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_with_inline_elements() {
-    let html = "<dl><dt><strong>Term</strong></dt><dd><em>Definition</em></dd></dl>";
-    let expected = "****Term****\n  *Definition*"; // convert_children_to_string handles inline, then dt wraps with **
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_dd_with_paragraph() {
-    // <dd><p>Para</p></dd> -> <dd>Para</dd> (p is stripped, content becomes inline for dd)
-    // then indented.
-    // If dd_markdown_block = convert_nodes_to_markdown(&dd_el.children,...) is used,
-    // and children is [<p>Para</p>], then dd_markdown_block = "Para".
-    // Then indented_dd_lines becomes "  Para".
-    let html = "<dl><dt>Term</dt><dd><p>Paragraph in definition.</p></dd></dl>";
-    let expected = "**Term**\n  Paragraph in definition.";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_dd_with_multiple_paragraphs() {
-    let html = "<dl><dt>T</dt><dd><p>P1</p><p>P2</p></dd></dl>";
-    // convert_nodes_to_markdown for <dd> children ([<p>P1</p>,<p>P2</p>]) gives "P1\n\nP2".
-    // Indenting this: "  P1\n  \n  P2"
-    let expected = "**T**\n  P1\n  \n  P2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_empty() {
-    assert_conversion("<dl></dl>", "");
-}
-
-#[test]
-fn test_dl_dt_empty() {
-    let html = "<dl><dt></dt><dd>Definition</dd></dl>";
-    let expected = "****\n  Definition"; // **""** becomes ****
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_dd_empty() {
-    // Empty <dd> content from convert_nodes_to_markdown is "", so no line pushed for it.
-    let html = "<dl><dt>Term</dt><dd></dd></dl>";
-    let expected = "**Term**"; // Empty <dd> results in no output line for it.
-    // If we want "  ", need to change <dd> handling for empty content.
-    // Current: if !dd_markdown_block.is_empty() { ... }
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_dd_empty_explicit() {
-    // To get an indented empty line, we might need <dd>&nbsp;</dd> or similar,
-    // or change logic for empty <dd>.
-    // For now, empty <dd> produces nothing for the dd part.
-    let html = "<dl><dt>Term</dt><dd> </dd></dl>"; // dd has only whitespace
-    // convert_nodes_to_markdown for " " children returns "" (due to trim).
-    // So, same as test_dl_dd_empty.
-    let expected = "**Term**";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_with_list_in_dd() {
-    let html = "<dl><dt>Topic</dt><dd><ul><li>Point 1</li><li>Point 2</li></ul></dd></dl>";
-    // convert_nodes_to_markdown for <ul> gives "* Point 1\n* Point 2"
-    // Indenting this: "  * Point 1\n  * Point 2"
-    let expected = "**Topic**\n  * Point 1\n  * Point 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_dl_ignore_comments_and_whitespace_nodes() {
-    let html = "<dl>\n  <!-- comment --> <dt>Term</dt> \n <dd>Def</dd> </dl>";
-    let expected = "**Term**\n  Def";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_ol_nested() {
-    let html =
-        "<ol><li>Parent 1<ol><li>Child A</li><li>Child B</li></ol></li><li>Parent 2</li></ol>";
-    let expected = "1. Parent 1
-   1. Child A
-   2. Child B
-2. Parent 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_ul_ol_mixed_nested() {
-    let html = "<ul><li>Outer A<ol><li>Inner 1</li><li>Inner 2</li></ol></li><li>Outer B</li></ul>";
-    let expected = "* Outer A
-  1. Inner 1
-  2. Inner 2
-* Outer B";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_ol_ul_mixed_nested() {
-    let html = "<ol><li>Outer 1<ul><li>Inner A</li><li>Inner B</li></ul></li><li>Outer 2</li></ol>";
-    let expected = "1. Outer 1
-   * Inner A
-   * Inner B
-2. Outer 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_li_with_inline_elements() {
-    assert_conversion(
-        "<ul><li>Item with <strong>bold</strong> and <a href=\"#\">link</a></li></ul>",
-        "* Item with **bold** and [link](#)",
-    );
-}
-
-#[test]
-fn test_li_with_paragraph_inside_treated_as_inline() {
-    // Current implementation treats <p> inside <li> as inline content
-    assert_conversion(
-        "<ul><li><p>Paragraph text</p></li></ul>",
-        "* Paragraph text",
-    );
-}
-
-#[test]
-fn test_li_text_trimming() {
-    assert_conversion(
-        "<ul><li>  Item with spaces  </li></ul>",
-        "*   Item with spaces  ",
-    );
-}
-
-#[test]
-fn test_deeply_nested_lists() {
-    let html = concat!(
+    )
+)]
+#[case::iframe_no_title(
+    "<iframe src=\"https://example.com/embed\"></iframe>",
+    ConversionOptions::default(),
+    "[Embedded Iframe](https://example.com/embed)"
+)]
+#[case::iframe_no_src(
+    "<iframe title=\"My Embed\"></iframe>",
+    ConversionOptions::default(),
+    ""
+)]
+#[case::video_simple_src(
+    "<video src=\"movie.mp4\" title=\"My Movie\"></video>",
+    ConversionOptions::default(),
+    "[My Movie](movie.mp4 \"My Movie\")"
+)]
+#[case::video_with_source_tag(
+    "<video title=\"Another Movie\"><source src=\"movie.ogg\" type=\"video/ogg\"><source src=\"movie.mp4\" type=\"video/mp4\"></video>",
+    ConversionOptions::default(),
+    "[Another Movie](movie.ogg \"Another Movie\")"
+)]
+#[case::video_no_title_with_source(
+    "<video><source src=\"movie.mp4\" type=\"video/mp4\"></video>",
+    ConversionOptions::default(),
+    "[Video](movie.mp4)"
+)]
+#[case::video_with_poster(
+    "<video src=\"movie.mp4\" title=\"My Movie\" poster=\"poster.jpg\"></video>",
+    ConversionOptions::default(),
+    "[My Movie](movie.mp4 \"My Movie\") (Poster: poster.jpg)"
+)]
+#[case::video_no_src_no_source(
+    "<video title=\"My Movie\"></video>",
+    ConversionOptions::default(),
+    ""
+)]
+#[case::audio_simple_src(
+    "<audio src=\"sound.mp3\" title=\"My Sound\"></audio>",
+    ConversionOptions::default(),
+    "[My Sound](sound.mp3 \"My Sound\")"
+)]
+#[case::audio_with_source_tag_no_title(
+    "<audio><source src=\"sound.ogg\" type=\"audio/ogg\"></audio>",
+    ConversionOptions::default(),
+    "[Audio](sound.ogg)"
+)]
+#[case::embed_simple(
+    "<embed src=\"plugin.swf\" title=\"Flash Plugin\">",
+    ConversionOptions::default(),
+    "[Flash Plugin](plugin.swf \"Flash Plugin\")"
+)]
+#[case::embed_no_title(
+    "<embed src=\"plugin.swf\" type=\"application/x-shockwave-flash\">",
+    ConversionOptions::default(),
+    "[Embedded Content](plugin.swf)"
+)]
+#[case::object_simple(
+    "<object data=\"data.pdf\" title=\"PDF Document\"></object>",
+    ConversionOptions::default(),
+    "[PDF Document](data.pdf \"PDF Document\")"
+)]
+#[case::object_no_title(
+    "<object data=\"data.pdf\" type=\"application/pdf\"></object>",
+    ConversionOptions::default(),
+    "[Embedded Object](data.pdf)"
+)]
+#[case::object_no_data(
+    "<object title=\"My Object\"></object>",
+    ConversionOptions::default(),
+    ""
+)]
+#[case::svg_with_title(
+    "<svg><title>My Awesome Icon</title><circle cx=\"50\" cy=\"50\" r=\"40\" /></svg>",
+    ConversionOptions::default(),
+    "[SVG: My Awesome Icon]"
+)]
+#[case::svg_no_title(
+    "<svg><rect width=\"100\" height=\"100\" /></svg>",
+    ConversionOptions::default(),
+    "[SVG Image]"
+)]
+#[case::svg_empty_title(
+    "<svg><title></title><path d=\"...\" /></svg>",
+    ConversionOptions::default(),
+    "[SVG Image]"
+)]
+#[case::svg_title_with_whitespace_only(
+    "<svg><title>   </title><ellipse /></svg>",
+    ConversionOptions::default(),
+    "[SVG Image]"
+)]
+#[case::svg_empty_tag("<svg></svg>", ConversionOptions::default(), "[SVG Image]")]
+#[case::svg_title_with_inline_markup(
+    "<svg><title>An <em>important</em> icon</title><line /></svg>",
+    ConversionOptions::default(),
+    "[SVG: An *important* icon]"
+)]
+#[case::svg_multiple_titles_uses_first(
+    "<svg><title>First Title</title><title>Second Title</title><circle /></svg>",
+    ConversionOptions::default(),
+    "[SVG: First Title]"
+)]
+#[case::checkbox_unchecked("<input type=\"checkbox\">", ConversionOptions::default(), "[ ]")]
+#[case::checkbox_checked(
+    "<input type=\"checkbox\" checked>",
+    ConversionOptions::default(),
+    "[x]"
+)]
+#[case::checkbox_checked_explicit_value(
+    "<input type=\"checkbox\" checked=\"checked\">",
+    ConversionOptions::default(),
+    "[x]"
+)]
+#[case::checkbox_with_label_suffix(
+    "<p><input type=\"checkbox\">Remember me</p>",
+    ConversionOptions::default(),
+    "[ ] Remember me"
+)]
+#[case::checkbox_in_list_item(
+    "<ul><li><input type=\"checkbox\"> Task 1</li></ul>",
+    ConversionOptions::default(),
+    "* [ ] Task 1"
+)]
+#[case::checkbox_checked_in_list_item(
+    "<ul><li><input type=\"checkbox\" checked> Done</li></ul>",
+    ConversionOptions::default(),
+    "* [x] Done"
+)]
+#[case::input_other_type_ignored(
+    "<input type=\"text\" value=\"Hello\">",
+    ConversionOptions::default(),
+    ""
+)]
+#[case::dl_simple(
+    "<dl><dt>Term 1</dt><dd>Definition 1</dd></dl>",
+    ConversionOptions::default(),
+    "**Term 1**\n  Definition 1"
+)]
+#[case::dl_multiple_pairs(
+    "<dl><dt>T1</dt><dd>D1</dd><dt>T2</dt><dd>D2</dd></dl>",
+    ConversionOptions::default(),
+    "**T1**\n  D1\n**T2**\n  D2"
+)]
+#[case::dl_one_dt_multiple_dd(
+    "<dl><dt>Term</dt><dd>Def 1</dd><dd>Def 2</dd></dl>",
+    ConversionOptions::default(),
+    "**Term**\n  Def 1\n  Def 2"
+)]
+#[case::dl_with_inline_elements(
+    "<dl><dt><strong>Term</strong></dt><dd><em>Definition</em></dd></dl>",
+    ConversionOptions::default(),
+    "****Term****\n  *Definition*"
+)]
+#[case::dl_dd_with_paragraph(
+    "<dl><dt>Term</dt><dd><p>Paragraph in definition.</p></dd></dl>",
+    ConversionOptions::default(),
+    "**Term**\n  Paragraph in definition."
+)]
+#[case::dl_dd_with_multiple_paragraphs(
+    "<dl><dt>T</dt><dd><p>P1</p><p>P2</p></dd></dl>",
+    ConversionOptions::default(),
+    "**T**\n  P1\n  \n  P2"
+)]
+#[case::dl_empty("<dl></dl>", ConversionOptions::default(), "")]
+#[case::dl_dt_empty(
+    "<dl><dt></dt><dd>Definition</dd></dl>",
+    ConversionOptions::default(),
+    "****\n  Definition"
+)]
+#[case::dl_dd_empty(
+    "<dl><dt>Term</dt><dd></dd></dl>",
+    ConversionOptions::default(),
+    "**Term**"
+)]
+#[case::dl_dd_empty_explicit(
+    "<dl><dt>Term</dt><dd> </dd></dl>",
+    ConversionOptions::default(),
+    "**Term**"
+)]
+#[case::dl_with_list_in_dd(
+    "<dl><dt>Topic</dt><dd><ul><li>Point 1</li><li>Point 2</li></ul></dd></dl>",
+    ConversionOptions::default(),
+    "**Topic**\n  * Point 1\n  * Point 2"
+)]
+#[case::dl_ignore_comments_and_whitespace_nodes(
+    "<dl>\n  <!-- comment --> <dt>Term</dt> \n <dd>Def</dd> </dl>",
+    ConversionOptions::default(),
+    "**Term**\n  Def"
+)]
+#[case::ol_nested(
+    "<ol><li>Parent 1<ol><li>Child A</li><li>Child B</li></ol></li><li>Parent 2</li></ol>",
+    ConversionOptions::default(),
+    "1. Parent 1\n   1. Child A\n   2. Child B\n2. Parent 2"
+)]
+#[case::ul_ol_mixed_nested(
+    "<ul><li>Outer A<ol><li>Inner 1</li><li>Inner 2</li></ol></li><li>Outer B</li></ul>",
+    ConversionOptions::default(),
+    "* Outer A\n  1. Inner 1\n  2. Inner 2\n* Outer B"
+)]
+#[case::ol_ul_mixed_nested(
+    "<ol><li>Outer 1<ul><li>Inner A</li><li>Inner B</li></ul></li><li>Outer 2</li></ol>",
+    ConversionOptions::default(),
+    "1. Outer 1\n   * Inner A\n   * Inner B\n2. Outer 2"
+)]
+#[case::li_with_inline_elements(
+    "<ul><li>Item with <strong>bold</strong> and <a href=\"#\">link</a></li></ul>",
+    ConversionOptions::default(),
+    "* Item with **bold** and [link](#)"
+)]
+#[case::li_with_paragraph_inside_treated_as_inline(
+    "<ul><li><p>Paragraph text</p></li></ul>",
+    ConversionOptions::default(),
+    "* Paragraph text"
+)]
+#[case::li_text_trimming(
+    "<ul><li>  Item with spaces  </li></ul>",
+    ConversionOptions::default(),
+    "*   Item with spaces  "
+)]
+#[case::deeply_nested_lists(
+    concat!(
         "<ul>",
         "<li>L1 A",
         "<ul>",
@@ -1114,566 +699,539 @@ fn test_deeply_nested_lists() {
         "</li>",
         "<li>L1 B</li>",
         "</ul>"
-    );
-    let expected = concat!(
+    ),
+    ConversionOptions::default(),
+    concat!(
         "* L1 A\n",
         "  * L2 A\n",
         "    1. L3 A\n",
         "    2. L3 B\n",
         "  * L2 B\n",
         "* L1 B"
-    );
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_list_item_starting_with_nested_list() {
-    let html = "<ul><li><ul><li>Nested Item</li></ul></li><li>Next Item</li></ul>";
-    // Expected: Parent li marker, then nested list.
-    let expected = "* * Nested Item\n* Next Item";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_ordered_list_item_starting_with_nested_list() {
-    let html = "<ol><li><ol><li>Nested Item</li></ol></li><li>Next Item</li></ol>";
-    let expected = "1. 1. Nested Item\n2. Next Item";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_list_with_text_nodes_between_li() {
-    // Whitespace text nodes between <li> elements should generally be ignored.
-    assert_conversion(
-        "<ul> <li>Item 1</li> \n <li>Item 2</li> </ul>",
-        "* Item 1\n* Item 2",
-    );
-}
-
-// --- Image <img> Tests ---
-
-#[test]
-fn test_img_simple() {
-    assert_conversion(
-        "<img src=\"image.png\" alt=\"My Alt Text\">",
-        "![My Alt Text](image.png)",
-    );
-}
-
-#[test]
-fn test_img_with_title() {
-    assert_conversion(
-        "<img src=\"image.jpg\" alt=\"Alt\" title=\"My Title\">",
-        "![Alt](image.jpg \"My Title\")",
-    );
-}
-
-// --- HTML Table Tests ---
-
-#[test]
-fn test_table_simple() {
-    let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr><tr><td>D1</td><td>D2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n|---|---|\n| C1 | C2 |\n| D1 | D2 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_no_thead_tbody_first_row_as_header() {
-    // Renamed for clarity
-    let html = "<table><tbody><tr><td>H1 by td</td><td>H2 by td</td></tr><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "| H1 by td | H2 by td |\n|---|---|\n| C1 | C2 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_empty() {
-    assert_conversion("<table></table>", "");
-}
-
-#[test]
-fn test_table_thead_only() {
-    let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead></table>";
-    let expected = "| H1 | H2 |\n|---|---|";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_tbody_only_first_row_as_header_no_data() {
-    // Renamed for clarity
-    let html = "<table><tbody><tr><td>Head1</td><td>Head2</td></tr></tbody></table>";
-    let expected = "| Head1 | Head2 |\n|---|---|"; // No data rows after header
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_tbody_empty() {
-    let html = "<table><tbody></tbody></table>";
-    assert_conversion(html, ""); // No header can be formed
-}
-
-#[test]
-fn test_table_tbody_with_empty_tr() {
-    // First row is <tr></tr>, so no header cells.
-    let html = "<table><tbody><tr></tr><tr><td>Data1</td><td>Data2</td></tr></tbody></table>";
-    assert_conversion(html, ""); // No header can be formed
-}
-
-#[test]
-fn test_table_tbody_first_tr_empty_cells_as_header() {
-    // First row has cells but they are empty.
-    let html = "<table><tbody><tr><td></td><td></td></tr><tr><td>Data1</td><td>Data2</td></tr></tbody></table>";
-    let expected = "|  |  |\n|---|---|\n| Data1 | Data2 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_with_empty_cells() {
-    let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td></td><td>C2</td></tr><tr><td>D1</td><td></td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n|---|---|\n|  | C2 |\n| D1 |  |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_header_cell_empty() {
-    let html = "<table><thead><tr><th></th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "|  | H2 |\n|---|---|\n| C1 | C2 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_with_inline_elements_in_cells() {
-    let html = "<table><thead><tr><th><strong>H1</strong></th><th><em>H2</em></th></tr></thead><tbody><tr><td><a href=\"#\">L</a></td><td><code>C</code></td></tr></tbody></table>";
-    let expected = "| **H1** | *H2* |\n|---|---|\n| [L](#) | `C` |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_cell_with_pipe_character() {
-    let html = "<table><thead><tr><th>Header</th></tr></thead><tbody><tr><td>Content | with pipe</td></tr></tbody></table>";
-    let expected = "| Header |\n|---|\n| Content \\| with pipe |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_row_with_fewer_cells_than_header() {
-    let html = "<table><thead><tr><th>H1</th><th>H2</th><th>H3</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 | H3 |\n|---|---|---|\n| C1 | C2 |  |"; // Padded with empty cell
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_row_with_more_cells_than_header() {
-    // Markdown table typically only renders columns defined by header. Extra cells might be ignored or create malformed table.
-    // Current implementation will use header column_count.
-    let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td><td>C3</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n|---|---|\n| C1 | C2 |"; // C3 is effectively ignored by Markdown structure
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_with_colspan_ignored() {
-    let html_revised = "<table><thead><tr><th colspan=\"2\">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>";
-    let expected_revised = "| H |\n|---|\n| A |";
-    assert_conversion(html_revised, expected_revised);
-}
-
-#[test]
-fn test_table_with_rowspan_ignored() {
-    let html = "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td rowspan=\"2\">R1C1</td><td>R1C2</td></tr><tr><td>R2C2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n|---|---|\n| R1C1 | R1C2 |\n| R2C2 |  |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_thead_with_td_cells() {
-    // <th> or <td> in <thead> should be treated as header cells
-    let html = "<table><thead><tr><td>H1</td><td>H2</td></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>";
-    let expected = "| H1 | H2 |\n|---|---|\n| C1 | C2 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_tbody_with_th_cells() {
-    // <th> in <tbody> should be treated as data cells
-    let html =
-        "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><th>R1C1</th></tr></tbody></table>";
-    let expected = "| H1 |\n|---|\n| R1C1 |";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_table_with_tfoot_ignored() {
-    let html = "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><td>C1</td></tr></tbody><tfoot><tr><td>F1</td></tr></tfoot></table>";
-    let expected = "| H1 |\n|---|\n| C1 |";
-    assert_conversion(html, expected);
-}
-
-// --- Strikethrough (s, strike, del) Tests ---
-
-#[test]
-fn test_s_tag() {
-    assert_conversion("<s>strike</s>", "~~strike~~");
-}
-
-#[test]
-fn test_strike_tag() {
-    assert_conversion("<strike>strike</strike>", "~~strike~~");
-}
-
-#[test]
-fn test_del_tag() {
-    assert_conversion("<del>deleted</del>", "~~deleted~~");
-}
-
-#[test]
-fn test_strikethrough_empty() {
-    assert_conversion("<s></s>", "");
-}
-
-#[test]
-fn test_strikethrough_with_nested_inline() {
-    assert_conversion("<s><strong>bold strike</strong></s>", "~~**bold strike**~~");
-}
-
-// --- Keyboard Input (<kbd>) Tests ---
-
-#[test]
-fn test_kbd_simple() {
-    assert_conversion("<kbd>Enter</kbd>", "<kbd>Enter</kbd>");
-}
-
-#[test]
-fn test_kbd_multiple_keys() {
-    // HTML: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>
-    // This will be processed by convert_children_to_string for the parent element.
-    // If parent is <p>, then <p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>
-    // convert_children_to_string for the <p>'s children will yield:
-    // "<kbd>Ctrl</kbd>" + "+" + "<kbd>Alt</kbd>" + "+" + "<kbd>Del</kbd>"
-    assert_conversion(
-        "<p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd></p>",
-        "<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>",
-    );
-}
-
-#[test]
-fn test_kbd_empty() {
-    assert_conversion("<kbd></kbd>", "<kbd></kbd>");
-}
-
-#[test]
-fn test_kbd_with_nested_inline() {
-    assert_conversion("<kbd><em>File</em></kbd>", "<kbd>*File*</kbd>");
-}
-
-// --- Style (<style>) Tag Tests ---
-
-#[test]
-fn test_style_tag_is_ignored() {
-    let html = "<style>body { font-size: 16px; }</style><p>Text</p>";
-    assert_conversion(html, "Text"); // Style tag should produce no output
-}
-
-#[test]
-fn test_style_tag_with_type_is_ignored() {
-    let html = "<style type=\"text/css\">/* A comment */ h1 { color: blue; }</style>Next";
-    assert_conversion(html, "Next");
-}
-
-#[test]
-fn test_style_tag_empty_is_ignored() {
-    assert_conversion("<style></style><p>Content</p>", "Content");
-}
-
-// --- Underline (<u>) Tests ---
-
-#[test]
-fn test_u_tag_simple() {
-    assert_conversion("<u>underlined</u>", "underlined");
-}
-
-#[test]
-fn test_u_tag_empty() {
-    assert_conversion("<u></u>", "");
-}
-
-#[test]
-fn test_u_tag_with_nested_inline() {
-    assert_conversion("<u><em>italic underline</em></u>", "*italic underline*");
-}
-
-#[test]
-fn test_u_tag_in_paragraph() {
-    assert_conversion(
-        "<p>This is <u>important</u>.</p>",
-        "This is <u>important</u>.",
-    );
-}
-
-// --- Blockquote Tests ---
-
-#[test]
-fn test_blockquote_simple_paragraph() {
-    assert_conversion(
-        "<blockquote><p>Quoted text.</p></blockquote>",
-        "> Quoted text.",
-    );
-}
-
-#[test]
-fn test_blockquote_multiple_paragraphs() {
-    let html = "<blockquote><p>First paragraph.</p><p>Second paragraph.</p></blockquote>";
-    let expected = "> First paragraph.\n> \n> Second paragraph.";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_blockquote_nested() {
-    let html = "<blockquote><p>Level 1</p><blockquote><p>Level 2</p></blockquote></blockquote>";
-    let expected = "> Level 1\n> \n> > Level 2"; // Assuming convert_nodes_to_markdown handles block separation for ">" line
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_blockquote_empty() {
-    assert_conversion("<blockquote></blockquote>", ">");
-}
-
-#[test]
-fn test_blockquote_with_list() {
-    let html = "<blockquote><ul><li>Item 1</li><li>Item 2</li></ul></blockquote>";
-    let expected = "> * Item 1\n> * Item 2";
-    assert_conversion(html, expected);
-}
-
-#[test]
-fn test_blockquote_with_heading() {
-    assert_conversion("<blockquote><h1>Heading</h1></blockquote>", "> # Heading");
-}
-
-// --- Preformatted Text <pre> Tests ---
-
-#[test]
-fn test_pre_code_simple() {
-    assert_conversion(
-        "<pre><code>Hello World</code></pre>",
-        "```\nHello World\n```",
-    );
-}
-
-#[test]
-fn test_pre_code_with_language_class() {
-    assert_conversion(
-        "<pre><code class=\"language-rust\">fn main() {}</code></pre>",
-        "```rust\nfn main() {}\n```",
-    );
-}
-
-#[test]
-fn test_pre_code_with_lang_class() {
-    assert_conversion(
-        "<pre><code class=\"lang-js\">console.log('hi');</code></pre>",
-        "```js\nconsole.log('hi');\n```",
-    );
-}
-
-#[test]
-fn test_pre_plain_text() {
-    assert_conversion(
-        "<pre>Plain text content.</pre>",
-        "```\nPlain text content.\n```",
-    );
-}
-
-#[test]
-fn test_pre_with_html_entities() {
-    assert_conversion(
-        "<pre><code>&lt;div&gt; &amp; &quot; &#39; &lt;/div&gt;</code></pre>",
-        "```\n<div> & \" ' </div>\n```",
-    );
-}
-
-#[test]
-fn test_pre_empty() {
-    assert_conversion("<pre></pre>", "```\n\n```");
-}
-
-#[test]
-fn test_pre_code_empty() {
-    assert_conversion("<pre><code></code></pre>", "```\n\n```");
-}
-
-#[test]
-fn test_pre_leading_newline_stripping() {
-    // A single leading newline immediately after <pre> or <code> should be stripped.
-    assert_conversion("<pre>\nCode here</pre>", "```\nCode here\n```");
-    assert_conversion("<pre><code>\nCode here</code></pre>", "```\nCode here\n```");
-}
-
-#[test]
-fn test_pre_trailing_newline_handling() {
-    // Trailing newlines in the content are usually preserved up to the closing ```
-    // Current impl uses trim_end_matches('\n') on content.
-    assert_conversion("<pre>Code here\n</pre>", "```\nCode here\n```"); // trim_end_matches('\n') removes it
-    assert_conversion("<pre>Code here\n\n</pre>", "```\nCode here\n```"); // trim_end_matches('\n') removes both
-}
-
-#[test]
-fn test_pre_with_br_tags() {
-    // extract_text_from_pre_children converts <br> to \n
-    assert_conversion("<pre>Line1<br>Line2</pre>", "```\nLine1\nLine2\n```");
-}
-
-#[test]
-fn test_pre_code_with_multiple_classes() {
-    assert_conversion(
-        "<pre><code class=\"foo language-python bar\">print('hello')</code></pre>",
-        "```python\nprint('hello')\n```",
-    );
-}
-
-#[test]
-fn test_img_no_alt() {
-    assert_conversion("<img src=\"foo.gif\">", "![](foo.gif)");
-}
-
-#[test]
-fn test_img_empty_alt() {
-    assert_conversion("<img src=\"bar.jpeg\" alt=\"\">", "![](bar.jpeg)");
-}
-
-#[test]
-fn test_img_no_title() {
-    // This is the same as test_img_simple, just for clarity
-    assert_conversion(
-        "<img src=\"image.png\" alt=\"My Alt Text\">",
-        "![My Alt Text](image.png)",
-    );
-}
-
-#[test]
-fn test_img_empty_title() {
-    assert_conversion(
-        "<img src=\"image.png\" alt=\"Alt Text\" title=\"\">",
-        "![Alt Text](image.png)",
-    );
-}
-
-#[test]
-fn test_img_no_src() {
-    // src is essential. If missing, the tag should be ignored or result in empty string.
-    assert_conversion("<img alt=\"Alt Text\">", "");
-}
-
-#[test]
-fn test_img_empty_src() {
-    assert_conversion("<img src=\"\" alt=\"Alt Text\">", "");
-}
-
-#[test]
-fn test_img_in_paragraph() {
-    assert_conversion(
-        "<p>Some text <img src=\"i.png\" alt=\"inline\"> and more text.</p>",
-        "Some text ![inline](i.png) and more text.",
-    );
-}
-
-#[test]
-fn test_img_title_with_quotes() {
-    assert_conversion(
-        "<img src=\"a.png\" alt=\"alt\" title=\"A title with &quot;quotes&quot; inside\">",
-        "![alt](a.png \"A title with \\\"quotes\\\" inside\")",
-    );
-}
-
-#[test]
-fn test_img_all_attributes_empty_except_src() {
-    assert_conversion("<img src=\"b.png\" alt=\"\" title=\"\">", "![](b.png)");
-}
-
-#[test]
-fn test_img_url_with_special_chars() {
-    assert_conversion(
-        "<img src=\"images/my image (new).jpg\" alt=\"special\">",
-        "![special](<images/my%20image%20(new).jpg>)",
-    );
-}
-
-#[test]
-fn test_h1_simple() {
-    assert_conversion("<h1>Hello World</h1>", "# Hello World");
-}
-
-#[test]
-fn test_h2_simple() {
-    assert_conversion("<h2>Hello World</h2>", "## Hello World");
-}
-
-#[test]
-fn test_h3_simple() {
-    assert_conversion("<h3>Hello World</h3>", "### Hello World");
-}
-
-#[test]
-fn test_h4_simple() {
-    assert_conversion("<h4>Hello World</h4>", "#### Hello World");
-}
-
-#[test]
-fn test_h5_simple() {
-    assert_conversion("<h5>Hello World</h5>", "##### Hello World");
-}
-
-#[test]
-fn test_h6_simple() {
-    assert_conversion("<h6>Hello World</h6>", "###### Hello World");
-}
-
-#[test]
-fn test_h1_with_attributes() {
-    // Attributes on heading tags are generally ignored in Markdown conversion
-    assert_conversion(
-        "<h1 id=\"main-title\" class=\"important\">Hello</h1>",
-        "# Hello",
-    );
-}
-
-#[test]
-fn test_h2_empty() {
-    assert_conversion("<h2></h2>", "## "); // Or just "##" - common practice is a space after #
-}
-
-#[test]
-fn test_h3_with_whitespace() {
-    assert_conversion("<h3>  Spaced Out  </h3>", "###   Spaced Out  ");
-}
-
-#[test]
-fn test_multiple_headings() {
-    assert_conversion("<h1>First</h1><h2>Second</h2>", "# First\n\n## Second");
-}
-
-#[test]
-fn test_heading_with_inline_strong() {
-    // This test will initially fail as <strong> is not yet handled by parser/converter
-    // We will implement <strong> and <em> handling later.
-    // For now, the text content might be extracted, or it might fail parsing depending on implementation.
-    // Let's assume for now it extracts text content, and we'll refine when strong/em is added.
-    assert_conversion("<h1>Hello <strong>World</strong></h1>", "# Hello **World**");
-}
-
-#[test]
-fn test_heading_with_inline_em() {
-    // Similar to strong, this will be refined later.
-    assert_conversion("<h2>Hello <em>World</em></h2>", "## Hello *World*");
-}
-
-#[test]
-fn test_heading_mixed_content() {
-    // Text, then strong, then text
-    assert_conversion(
-        "<h3>Part1 <strong>bold</strong> Part2</h3>",
-        "### Part1 **bold** Part2",
-    );
+    )
+)]
+#[case::list_item_starting_with_nested_list(
+    "<ul><li><ul><li>Nested Item</li></ul></li><li>Next Item</li></ul>",
+    ConversionOptions::default(),
+    "* * Nested Item\n* Next Item"
+)]
+#[case::ordered_list_item_starting_with_nested_list(
+    "<ol><li><ol><li>Nested Item</li></ol></li><li>Next Item</li></ol>",
+    ConversionOptions::default(),
+    "1. 1. Nested Item\n2. Next Item"
+)]
+#[case::list_with_text_nodes_between_li(
+    "<ul> <li>Item 1</li> \n <li>Item 2</li> </ul>",
+    ConversionOptions::default(),
+    "* Item 1\n* Item 2"
+)]
+#[case::img_simple(
+    "<img src=\"image.png\" alt=\"My Alt Text\">",
+    ConversionOptions::default(),
+    "![My Alt Text](image.png)"
+)]
+#[case::img_with_title(
+    "<img src=\"image.jpg\" alt=\"Alt\" title=\"My Title\">",
+    ConversionOptions::default(),
+    "![Alt](image.jpg \"My Title\")"
+)]
+#[case::table_no_thead_tbody_first_row_as_header(
+    "<table><tbody><tr><td>H1 by td</td><td>H2 by td</td></tr><tr><td>C1</td><td>C2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 by td | H2 by td |\n|---|---|\n| C1 | C2 |"
+)]
+#[case::table_empty("<table></table>", ConversionOptions::default(), "")]
+#[case::table_thead_only(
+    "<table><thead><tr><th>H1</th><th>H2</th></tr></thead></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|"
+)]
+#[case::table_tbody_only_first_row_as_header_no_data(
+    "<table><tbody><tr><td>Head1</td><td>Head2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| Head1 | Head2 |\n|---|---|"
+)]
+#[case::table_simple(
+    "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr><tr><td>D1</td><td>D2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|\n| C1 | C2 |\n| D1 | D2 |"
+)]
+#[case::table_tbody_empty(
+    "<table><tbody></tbody></table>",
+    ConversionOptions::default(),
+    "" // No header can be formed
+)]
+#[case::table_tbody_with_empty_tr(
+    "<table><tbody><tr></tr><tr><td>Data1</td><td>Data2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "" // No header can be formed
+)]
+#[case::table_tbody_first_tr_empty_cells_as_header(
+    "<table><tbody><tr><td></td><td></td></tr><tr><td>Data1</td><td>Data2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "|  |  |\n|---|---|\n| Data1 | Data2 |"
+)]
+#[case::table_with_empty_cells(
+    "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td></td><td>C2</td></tr><tr><td>D1</td><td></td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|\n|  | C2 |\n| D1 |  |"
+)]
+#[case::table_header_cell_empty(
+    "<table><thead><tr><th></th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "|  | H2 |\n|---|---|\n| C1 | C2 |"
+)]
+#[case::table_with_inline_elements_in_cells(
+    "<table><thead><tr><th><strong>H1</strong></th><th><em>H2</em></th></tr></thead><tbody><tr><td><a href=\"#\">L</a></td><td><code>C</code></td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| **H1** | *H2* |\n|---|---|\n| [L](#) | `C` |"
+)]
+#[case::table_cell_with_pipe_character(
+    "<table><thead><tr><th>Header</th></tr></thead><tbody><tr><td>Content | with pipe</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| Header |\n|---|\n| Content \\| with pipe |"
+)]
+#[case::table_row_with_fewer_cells_than_header(
+    "<table><thead><tr><th>H1</th><th>H2</th><th>H3</th></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 | H3 |\n|---|---|---|\n| C1 | C2 |  |"
+)]
+#[case::table_row_with_more_cells_than_header(
+    "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td>C1</td><td>C2</td><td>C3</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|\n| C1 | C2 |"
+)]
+#[case::table_with_colspan_ignored(
+    "<table><thead><tr><th colspan=\"2\">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| A |"
+)]
+#[case::table_with_rowspan_ignored(
+    "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td rowspan=\"2\">R1C1</td><td>R1C2</td></tr><tr><td>R2C2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|\n| R1C1 | R1C2 |\n| R2C2 |  |"
+)]
+#[case::table_thead_with_td_cells(
+    "<table><thead><tr><td>H1</td><td>H2</td></tr></thead><tbody><tr><td>C1</td><td>C2</td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 | H2 |\n|---|---|\n| C1 | C2 |"
+)]
+#[case::table_tbody_with_th_cells(
+    "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><th>R1C1</th></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H1 |\n|---|\n| R1C1 |"
+)]
+#[case::table_with_tfoot_ignored(
+    "<table><thead><tr><th>H1</th></tr></thead><tbody><tr><td>C1</td></tr></tbody><tfoot><tr><td>F1</td></tr></tfoot></table>",
+    ConversionOptions::default(),
+    "| H1 |\n|---|\n| C1 |"
+)]
+#[case::s_tag("<s>strike</s>", ConversionOptions::default(), "~~strike~~")]
+#[case::strike_tag("<strike>strike</strike>", ConversionOptions::default(), "~~strike~~")]
+#[case::del_tag("<del>deleted</del>", ConversionOptions::default(), "~~deleted~~")]
+#[case::strikethrough_empty("<s></s>", ConversionOptions::default(), "")]
+#[case::strikethrough_with_nested_inline(
+    "<s><strong>bold strike</strong></s>",
+    ConversionOptions::default(),
+    "~~**bold strike**~~"
+)]
+#[case::kbd_simple("<kbd>Enter</kbd>", ConversionOptions::default(), "<kbd>Enter</kbd>")]
+#[case::kbd_multiple_keys(
+    "<p><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd></p>",
+    ConversionOptions::default(),
+    "<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>"
+)]
+#[case::kbd_empty("<kbd></kbd>", ConversionOptions::default(), "<kbd></kbd>")]
+#[case::kbd_with_nested_inline(
+    "<kbd><em>File</em></kbd>",
+    ConversionOptions::default(),
+    "<kbd>*File*</kbd>"
+)]
+#[case::style_tag_is_ignored(
+    "<style>body { font-size: 16px; }</style><p>Text</p>",
+    ConversionOptions::default(),
+    "Text"
+)]
+#[case::style_tag_with_type_is_ignored(
+    "<style type=\"text/css\">/* A comment */ h1 { color: blue; }</style>Next",
+    ConversionOptions::default(),
+    "Next"
+)]
+#[case::style_tag_empty_is_ignored(
+    "<style></style><p>Content</p>",
+    ConversionOptions::default(),
+    "Content"
+)]
+#[case::u_tag_simple("<u>underlined</u>", ConversionOptions::default(), "underlined")]
+#[case::u_tag_empty("<u></u>", ConversionOptions::default(), "")]
+#[case::u_tag_with_nested_inline(
+    "<u><em>italic underline</em></u>",
+    ConversionOptions::default(),
+    "*italic underline*"
+)]
+#[case::u_tag_in_paragraph(
+    "<p>This is <u>important</u>.</p>",
+    ConversionOptions::default(),
+    "This is <u>important</u>."
+)]
+#[case::blockquote_simple_paragraph(
+    "<blockquote><p>Quoted text.</p></blockquote>",
+    ConversionOptions::default(),
+    "> Quoted text."
+)]
+#[case::blockquote_multiple_paragraphs(
+    "<blockquote><p>First paragraph.</p><p>Second paragraph.</p></blockquote>",
+    ConversionOptions::default(),
+    "> First paragraph.\n> \n> Second paragraph."
+)]
+#[case::blockquote_nested(
+    "<blockquote><p>Level 1</p><blockquote><p>Level 2</p></blockquote></blockquote>",
+    ConversionOptions::default(),
+    "> Level 1\n> \n> > Level 2"
+)]
+#[case::blockquote_empty("<blockquote></blockquote>", ConversionOptions::default(), ">")]
+#[case::blockquote_with_list(
+    "<blockquote><ul><li>Item 1</li><li>Item 2</li></ul></blockquote>",
+    ConversionOptions::default(),
+    "> * Item 1\n> * Item 2"
+)]
+#[case::blockquote_with_heading(
+    "<blockquote><h1>Heading</h1></blockquote>",
+    ConversionOptions::default(),
+    "> # Heading"
+)]
+#[case::pre_code_simple(
+    "<pre><code>Hello World</code></pre>",
+    ConversionOptions::default(),
+    "```\nHello World\n```"
+)]
+#[case::pre_code_with_language_class(
+    "<pre><code class=\"language-rust\">fn main() {}</code></pre>",
+    ConversionOptions::default(),
+    "```rust\nfn main() {}\n```"
+)]
+#[case::pre_code_with_lang_class(
+    "<pre><code class=\"lang-js\">console.log('hi');</code></pre>",
+    ConversionOptions::default(),
+    "```js\nconsole.log('hi');\n```"
+)]
+#[case::pre_plain_text(
+    "<pre>Plain text content.</pre>",
+    ConversionOptions::default(),
+    "```\nPlain text content.\n```"
+)]
+#[case::pre_with_html_entities(
+    "<pre><code>&lt;div&gt; &amp; &quot; &#39; &lt;/div&gt;</code></pre>",
+    ConversionOptions::default(),
+    "```\n<div> & \" ' </div>\n```"
+)]
+#[case::pre_empty("<pre></pre>", ConversionOptions::default(), "```\n\n```")]
+#[case::pre_code_empty("<pre><code></code></pre>", ConversionOptions::default(), "```\n\n```")]
+#[case::pre_leading_newline_stripping_1(
+    "<pre>\nCode here</pre>",
+    ConversionOptions::default(),
+    "```\nCode here\n```"
+)]
+#[case::pre_leading_newline_stripping_2(
+    "<pre><code>\nCode here</code></pre>",
+    ConversionOptions::default(),
+    "```\nCode here\n```"
+)]
+#[case::pre_trailing_newline_handling_1(
+    "<pre>Code here\n</pre>",
+    ConversionOptions::default(),
+    "```\nCode here\n```"
+)]
+#[case::pre_trailing_newline_handling_2(
+    "<pre>Code here\n\n</pre>",
+    ConversionOptions::default(),
+    "```\nCode here\n```"
+)]
+#[case::pre_with_br_tags(
+    "<pre>Line1<br>Line2</pre>",
+    ConversionOptions::default(),
+    "```\nLine1\nLine2\n```"
+)]
+#[case::pre_code_with_multiple_classes(
+    "<pre><code class=\"foo language-python bar\">print('hello')</code></pre>",
+    ConversionOptions::default(),
+    "```python\nprint('hello')\n```"
+)]
+#[case::img_no_alt("<img src=\"foo.gif\">", ConversionOptions::default(), "![](foo.gif)")]
+#[case::img_empty_alt(
+    "<img src=\"bar.jpeg\" alt=\"\">",
+    ConversionOptions::default(),
+    "![](bar.jpeg)"
+)]
+#[case::img_no_title(
+    "<img src=\"image.png\" alt=\"My Alt Text\">",
+    ConversionOptions::default(),
+    "![My Alt Text](image.png)"
+)]
+#[case::img_empty_title(
+    "<img src=\"image.png\" alt=\"Alt Text\" title=\"\">",
+    ConversionOptions::default(),
+    "![Alt Text](image.png)"
+)]
+#[case::img_no_src("<img alt=\"Alt Text\">", ConversionOptions::default(), "")]
+#[case::img_empty_src("<img src=\"\" alt=\"Alt Text\">", ConversionOptions::default(), "")]
+#[case::img_in_paragraph(
+    "<p>Some text <img src=\"i.png\" alt=\"inline\"> and more text.</p>",
+    ConversionOptions::default(),
+    "Some text ![inline](i.png) and more text."
+)]
+#[case::img_title_with_quotes(
+    "<img src=\"a.png\" alt=\"alt\" title=\"A title with &quot;quotes&quot; inside\">",
+    ConversionOptions::default(),
+    "![alt](a.png \"A title with \\\"quotes\\\" inside\")"
+)]
+#[case::img_all_attributes_empty_except_src(
+    "<img src=\"b.png\" alt=\"\" title=\"\">",
+    ConversionOptions::default(),
+    "![](b.png)"
+)]
+#[case::img_url_with_special_chars(
+    "<img src=\"images/my image (new).jpg\" alt=\"special\">",
+    ConversionOptions::default(),
+    "![special](<images/my%20image%20(new).jpg>)"
+)]
+#[case::h1_simple("<h1>Hello World</h1>", ConversionOptions::default(), "# Hello World")]
+#[case::h2_simple("<h2>Hello World</h2>", ConversionOptions::default(), "## Hello World")]
+#[case::h3_simple(
+    "<h3>Hello World</h3>",
+    ConversionOptions::default(),
+    "### Hello World"
+)]
+#[case::h4_simple(
+    "<h4>Hello World</h4>",
+    ConversionOptions::default(),
+    "#### Hello World"
+)]
+#[case::h5_simple(
+    "<h5>Hello World</h5>",
+    ConversionOptions::default(),
+    "##### Hello World"
+)]
+#[case::h6_simple(
+    "<h6>Hello World</h6>",
+    ConversionOptions::default(),
+    "###### Hello World"
+)]
+#[case::h1_with_attributes(
+    "<h1 id=\"main-title\" class=\"important\">Hello</h1>",
+    ConversionOptions::default(),
+    "# Hello"
+)]
+#[case::h2_empty("<h2></h2>", ConversionOptions::default(), "## ")] // Or just "##" - common practice is a space after #
+#[case::h3_with_whitespace(
+    "<h3>  Spaced Out  </h3>",
+    ConversionOptions::default(),
+    "###   Spaced Out  "
+)]
+#[case::multiple_headings(
+    "<h1>First</h1><h2>Second</h2>",
+    ConversionOptions::default(),
+    "# First\n\n## Second"
+)]
+#[case::heading_with_inline_strong(
+    "<h1>Hello <strong>World</strong></h1>",
+    ConversionOptions::default(),
+    "# Hello **World**"
+)]
+#[case::heading_with_inline_em(
+    "<h2>Hello <em>World</em></h2>",
+    ConversionOptions::default(),
+    "## Hello *World*"
+)]
+#[case::heading_mixed_content(
+    "<h3>Part1 <strong>bold</strong> Part2</h3>",
+    ConversionOptions::default(),
+    "### Part1 **bold** Part2"
+)]
+#[case::h1_malformed_open(
+    "<h1>Hello World</h_oops>",
+    ConversionOptions::default(),
+    "# Hello World"
+)]
+#[case::strong_simple("<strong>Hello</strong>", ConversionOptions::default(), "**Hello**")]
+#[case::em_simple("<em>World</em>", ConversionOptions::default(), "*World*")]
+#[case::strong_with_attributes(
+    "<strong class=\"bold\">Text</strong>",
+    ConversionOptions::default(),
+    "**Text**"
+)]
+#[case::em_empty("<em></em>", ConversionOptions::default(), "")]
+#[case::strong_in_paragraph(
+    "<p>This is <strong>bold</strong> text.</p>",
+    ConversionOptions::default(),
+    "This is **bold** text."
+)]
+#[case::em_in_paragraph(
+    "<p>This is <em>italic</em> text.</p>",
+    ConversionOptions::default(),
+    "This is *italic* text."
+)]
+#[case::strong_and_em_in_paragraph(
+    "<p><strong>Bold</strong> and <em>italic</em>.</p>",
+    ConversionOptions::default(),
+    "**Bold** and *italic*."
+)]
+#[case::nested_strong_em(
+    "<strong><em>Bold Italic</em></strong>",
+    ConversionOptions::default(),
+    "***Bold Italic***"
+)]
+#[case::nested_em_strong(
+    "<em><strong>Italic Bold</strong></em>",
+    ConversionOptions::default(),
+    "***Italic Bold***"
+)]
+#[case::strong_in_heading_now_correctly_formatted(
+    "<h1>Hello <strong>World</strong></h1>",
+    ConversionOptions::default(),
+    "# Hello **World**"
+)]
+#[case::em_in_heading_now_correctly_formatted(
+    "<h2>Hello <em>World</em></h2>",
+    ConversionOptions::default(),
+    "## Hello *World*"
+)]
+#[case::mixed_content_in_heading_correctly_formatted(
+    "<h3>Part1 <strong>bold</strong> and <em>italic</em> Part2</h3>",
+    ConversionOptions::default(),
+    "### Part1 **bold** and *italic* Part2"
+)]
+#[case::strong_with_internal_whitespace(
+    "<strong>  spaced  </strong>",
+    ConversionOptions::default(),
+    "**  spaced  **"
+)]
+#[case::em_around_strong(
+    "<em>Emphasis around <strong>bold</strong> text.</em>",
+    ConversionOptions::default(),
+    "*Emphasis around **bold** text.*"
+)]
+#[case::strong_around_em(
+    "<strong>Bold around <em>emphasis</em> text.</strong>",
+    ConversionOptions::default(),
+    "**Bold around *emphasis* text.**"
+)]
+// --- Link (<a>) Tests ---
+#[case::link_simple(
+    "<a href=\"https://example.com\">Example</a>",
+    ConversionOptions::default(),
+    "[Example](https://example.com)"
+)]
+#[case::link_with_title(
+    "<a href=\"https://example.com\" title=\"Cool Site\">Example</a>",
+    ConversionOptions::default(),
+    "[Example](https://example.com \"Cool Site\")"
+)]
+#[case::link_empty_text(
+    "<a href=\"https://example.com\"></a>",
+    ConversionOptions::default(),
+    "[](https://example.com)"
+)]
+#[case::link_href_empty_processed("<a href=\"\"></a>", ConversionOptions::default(), "[](<>)")]
+#[case::link_no_href(
+    "<a name=\"anchor\">Anchor Text</a>",
+    ConversionOptions::default(),
+    "Anchor Text"
+)]
+#[case::link_with_emphasized_text(
+    "<a href=\"/foo\"><em>italic link</em></a>",
+    ConversionOptions::default(),
+    "[*italic link*](/foo)"
+)]
+#[case::link_with_strong_text(
+    "<a href=\"/bar\"><strong>bold link</strong></a>",
+    ConversionOptions::default(),
+    "[**bold link**](/bar)"
+)]
+#[case::link_with_mixed_emphasis_text(
+    "<a href=\"/baz\">normal <strong>bold</strong> <em>italic</em></a>",
+    ConversionOptions::default(),
+    "[normal **bold** *italic*](/baz)"
+)]
+#[case::link_relative_url(
+    "<a href=\"../index.html\">Go Back</a>",
+    ConversionOptions::default(),
+    "[Go Back](../index.html)"
+)]
+#[case::link_url_with_spaces_and_parentheses(
+    "<a href=\"/url%20with%20spaces(and%29parentheses.html\">Link</a>",
+    ConversionOptions::default(),
+    "[Link](</url%20with%20spaces(and%29parentheses.html>)"
+)]
+#[case::link_url_with_unescaped_parentheses_in_href(
+    "<a href=\"/a(b)c\">text</a>",
+    ConversionOptions::default(),
+    "[text](</a(b)c>)"
+)]
+#[case::link_href_with_spaces_only(
+    "<a href=\"/url with spaces\">Link</a>",
+    ConversionOptions::default(),
+    "[Link](</url%20with%20spaces>)"
+)]
+#[case::link_title_with_quotes(
+    "<a href=\"/foo\" title=\"A &quot;quoted&quot; title\">QLink</a>",
+    ConversionOptions::default(),
+    "[QLink](/foo \"A \\\"quoted\\\" title\")"
+)]
+#[case::link_in_paragraph(
+    "<p>Here is a <a href=\"#\">link</a>.</p>",
+    ConversionOptions::default(),
+    "Here is a [link](#)."
+)]
+#[case::link_in_heading(
+    "<h2>Heading with <a href=\"/s\"><strong>strong link</strong></a></h2>",
+    ConversionOptions::default(),
+    "## Heading with [**strong link**](/s)"
+)]
+#[case::link_complex_content_and_title(
+    "<a href=\"/path\" title=\"A 'single' & &quot;double&quot; title\"><em>Italic</em> and <strong>Bold</strong> Link Text</a>",
+    ConversionOptions::default(),
+    "[*Italic* and **Bold** Link Text](/path \"A 'single' & \\\"double\\\" title\")"
+)]
+#[case::h1_not_closed("<h1>Hello World", ConversionOptions::default(), "# Hello World")]
+#[case::use_title_as_h1_true(
+    "<html><head><title>My Document</title></head><body><p>Body text</p></body></html>",
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# My Document\n\nBody text"
+)]
+#[case::use_title_as_h1_true_with_no_body(
+    "<html><head><title>Only Title</title></head><body></body></html>",
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "# Only Title"
+)]
+#[case::use_title_as_h1_true_with_no_title(
+    "<html><head></head><body><p>Body only</p></body></html>",
+    ConversionOptions {
+        use_title_as_h1: true,
+        ..ConversionOptions::default()
+    },
+    "Body only"
+)]
+#[case::use_title_as_h1_false(
+    "<html><head><title>My Document</title></head><body><p>Body text</p></body></html>",
+    ConversionOptions {
+        use_title_as_h1: false,
+        ..ConversionOptions::default()
+    },
+    "My Document\n\nBody text"
+)]
+fn test_html_to_markdown(
+    #[case] html: &str,
+    #[case] options: ConversionOptions,
+    #[case] expected: &str,
+) {
+    assert_conversion_with_options(html, expected, options);
 }
 
 // TODO: Add tests for headings with links, images etc. once those elements are supported.
@@ -1681,251 +1239,3 @@ fn test_heading_mixed_content() {
 // Test for parsing error on malformed heading (illustrative, might need adjustment based on parser behavior)
 // At this stage, the generic "parsing not yet fully implemented" error is expected for unhandled valid tags,
 // but malformed tags might also trigger it or a more specific error once the parser is more developed.
-
-#[test]
-fn test_h1_malformed_open() {
-    assert!(
-        convert_html_to_markdown("<h1>Hello World</h_oops>", ConversionOptions::default()).is_ok()
-    );
-}
-
-// --- Strong and Emphasis Tests ---
-
-#[test]
-fn test_strong_simple() {
-    assert_conversion("<strong>Hello</strong>", "**Hello**");
-}
-
-#[test]
-fn test_em_simple() {
-    assert_conversion("<em>World</em>", "*World*");
-}
-
-#[test]
-fn test_strong_with_attributes() {
-    assert_conversion("<strong class=\"bold\">Text</strong>", "**Text**");
-}
-
-#[test]
-fn test_em_empty() {
-    assert_conversion("<em></em>", ""); // Empty emphasis should probably result in empty string
-}
-
-#[test]
-fn test_strong_in_paragraph() {
-    assert_conversion(
-        "<p>This is <strong>bold</strong> text.</p>",
-        "This is **bold** text.",
-    );
-}
-
-#[test]
-fn test_em_in_paragraph() {
-    assert_conversion(
-        "<p>This is <em>italic</em> text.</p>",
-        "This is *italic* text.",
-    );
-}
-
-#[test]
-fn test_strong_and_em_in_paragraph() {
-    assert_conversion(
-        "<p><strong>Bold</strong> and <em>italic</em>.</p>",
-        "**Bold** and *italic*.",
-    );
-}
-
-#[test]
-fn test_nested_strong_em() {
-    assert_conversion("<strong><em>Bold Italic</em></strong>", "***Bold Italic***");
-}
-
-#[test]
-fn test_nested_em_strong() {
-    // Markdown doesn't distinguish em>strong vs strong>em, usually renders same (typically ***text***)
-    assert_conversion("<em><strong>Italic Bold</strong></em>", "***Italic Bold***");
-}
-
-#[test]
-fn test_strong_in_heading_now_correctly_formatted() {
-    assert_conversion("<h1>Hello <strong>World</strong></h1>", "# Hello **World**");
-}
-
-#[test]
-fn test_em_in_heading_now_correctly_formatted() {
-    assert_conversion("<h2>Hello <em>World</em></h2>", "## Hello *World*");
-}
-
-#[test]
-fn test_mixed_content_in_heading_correctly_formatted() {
-    assert_conversion(
-        "<h3>Part1 <strong>bold</strong> and <em>italic</em> Part2</h3>",
-        "### Part1 **bold** and *italic* Part2",
-    );
-}
-
-#[test]
-fn test_strong_with_internal_whitespace() {
-    assert_conversion("<strong>  spaced  </strong>", "**  spaced  **");
-}
-
-#[test]
-fn test_em_around_strong() {
-    assert_conversion(
-        "<em>Emphasis around <strong>bold</strong> text.</em>",
-        "*Emphasis around **bold** text.*",
-    );
-}
-
-#[test]
-fn test_strong_around_em() {
-    assert_conversion(
-        "<strong>Bold around <em>emphasis</em> text.</strong>",
-        "**Bold around *emphasis* text.**",
-    );
-}
-
-// --- Link (<a>) Tests ---
-
-#[test]
-fn test_link_simple() {
-    assert_conversion(
-        "<a href=\"https://example.com\">Example</a>",
-        "[Example](https://example.com)",
-    );
-}
-
-#[test]
-fn test_link_with_title() {
-    assert_conversion(
-        "<a href=\"https://example.com\" title=\"Cool Site\">Example</a>",
-        "[Example](https://example.com \"Cool Site\")",
-    );
-}
-
-#[test]
-fn test_link_empty_text() {
-    // Markdown doesn't have a standard for empty link text. Some renderers might use the URL.
-    // We'll aim for [] which might be ignored or handled by specific renderers.
-    // Or, consider [url](url) if that's more common GFM behavior. For now, `[]`.
-    assert_conversion(
-        "<a href=\"https://example.com\"></a>",
-        "[](https://example.com)",
-    );
-}
-
-#[test]
-fn test_link_href_empty_processed() {
-    assert_conversion("<a href=\"\">empty href</a>", "[empty href](<>)");
-}
-
-#[test]
-fn test_link_no_href() {
-    // Anchor link without href should just render the text content.
-    assert_conversion("<a name=\"anchor\">Anchor Text</a>", "Anchor Text");
-}
-
-#[test]
-fn test_link_with_emphasized_text() {
-    assert_conversion(
-        "<a href=\"/foo\"><em>italic link</em></a>",
-        "[*italic link*](/foo)",
-    );
-}
-
-#[test]
-fn test_link_with_strong_text() {
-    assert_conversion(
-        "<a href=\"/bar\"><strong>bold link</strong></a>",
-        "[**bold link**](/bar)",
-    );
-}
-
-#[test]
-fn test_link_with_mixed_emphasis_text() {
-    assert_conversion(
-        "<a href=\"/baz\">normal <strong>bold</strong> <em>italic</em></a>",
-        "[normal **bold** *italic*](/baz)",
-    );
-}
-
-#[test]
-fn test_link_relative_url() {
-    assert_conversion(
-        "<a href=\"../index.html\">Go Back</a>",
-        "[Go Back](../index.html)",
-    );
-}
-
-#[test]
-fn test_link_url_with_spaces_and_parentheses() {
-    // HTML href usually has spaces URL-encoded as %20.
-    // Markdown link destination can have spaces if URL-encoded, or sometimes if surrounded by <>.
-    // Parentheses in URL for Markdown need to be balanced or URL enclosed in <>.
-    // For simplicity, assume valid, possibly encoded URLs in href.
-    // If href="foo bar.html", output "[text](<foo%20bar.html>)" is common.
-    // If href="/path(with)parens", output "[text](</path(with)parens>)"
-    // We'll aim for direct passthrough for now and refine if specific encoding/escaping is needed by Markdown spec.
-    assert_conversion(
-        "<a href=\"/url%20with%20spaces(and%29parentheses.html\">Link</a>",
-        "[Link](</url%20with%20spaces(and%29parentheses.html>)",
-    );
-}
-
-#[test]
-fn test_link_url_with_unescaped_parentheses_in_href() {
-    // Markdown requires parentheses in URL to be escaped or the URL enclosed in <>
-    // For now, we will assume the parser provides the href as is, and converter might need to handle this.
-    // Let's test a simple case. If href="/a(b)c", output could be "[text](</a(b)c>)" which is fine for many renderers,
-    // or ideally "[text](</a(b)c>)" or "[text](/a\(b\)c)".
-    assert_conversion("<a href=\"/a(b)c\">text</a>", "[text](</a(b)c>)");
-}
-
-#[test]
-fn test_link_href_with_spaces_only() {
-    assert_conversion(
-        "<a href=\"/url with spaces\">Link</a>",
-        "[Link](</url%20with%20spaces>)",
-    );
-}
-
-#[test]
-fn test_link_title_with_quotes() {
-    // HTML: <a href="url" title="a &quot;quote&quot;">text</a>
-    // Markdown: [text](url "a \"quote\"")
-    // The parser should unescape HTML entities in attribute values.
-    // The converter should then re-escape for Markdown if necessary (e.g., " becomes \").
-    assert_conversion(
-        "<a href=\"/foo\" title=\"A &quot;quoted&quot; title\">QLink</a>",
-        "[QLink](/foo \"A \\\"quoted\\\" title\")",
-    );
-}
-
-#[test]
-fn test_link_in_paragraph() {
-    assert_conversion(
-        "<p>Here is a <a href=\"#\">link</a>.</p>",
-        "Here is a [link](#).",
-    );
-}
-
-#[test]
-fn test_link_in_heading() {
-    assert_conversion(
-        "<h2>Heading with <a href=\"/s\"><strong>strong link</strong></a></h2>",
-        "## Heading with [**strong link**](/s)",
-    );
-}
-
-#[test]
-fn test_link_complex_content_and_title() {
-    assert_conversion(
-        "<a href=\"/path\" title=\"A 'single' & &quot;double&quot; title\"><em>Italic</em> and <strong>Bold</strong> Link Text</a>",
-        "[*Italic* and **Bold** Link Text](/path \"A 'single' & \\\"double\\\" title\")",
-    );
-}
-
-#[test]
-fn test_h1_not_closed() {
-    assert!(convert_html_to_markdown("<h1>Hello World", ConversionOptions::default()).is_ok());
-}

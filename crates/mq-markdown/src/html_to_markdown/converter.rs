@@ -654,6 +654,12 @@ pub fn convert_nodes_to_markdown(
                     "ul" | "ol" => {
                         markdown_blocks.push((handle_list_element(element, options)?, false))
                     }
+                    "title" if options.use_title_as_h1 => {
+                        let children_content_str = convert_children_to_string(&element.children)?;
+                        if !children_content_str.is_empty() {
+                            markdown_blocks.push((format!("# {}", children_content_str), false));
+                        }
+                    }
                     "blockquote" => {
                         markdown_blocks.push((handle_blockquote_element(element, options)?, false))
                     }
@@ -721,7 +727,11 @@ pub fn convert_nodes_to_markdown(
             }
         }
 
-        result.push_str(block_content.trim_start());
+        result.push_str(if *is_inline {
+            block_content
+        } else {
+            block_content.trim_start()
+        });
     }
 
     Ok(result)
