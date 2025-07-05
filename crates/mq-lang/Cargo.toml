@@ -19,7 +19,7 @@ compact_str.workspace = true
 dirs.workspace = true
 itertools.workspace = true
 miette.workspace = true
-mq-markdown.workspace = true
+mq-markdown = {workspace = true, features = ["html-to-markdown"]}
 nom = {version = "8.0.0"}
 nom_locate = "5.0.0"
 percent-encoding = "2.3.1"

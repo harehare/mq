@@ -12,17 +12,20 @@ version = "0.2.7"
 
 [dependencies]
 compact_str.workspace = true
-html_to_markdown = "0.1.0"
+html5ever = {version = "0.27.0", optional = true}
 itertools.workspace = true
 markdown = "1.0.0"
-miette = {version = "7.6.0"}
+markup5ever_rcdom = {version = "0.3.0", optional = true}
+miette.workspace = true
 serde = {workspace = true, features = ["derive"], optional = true}
 serde_json = {workspace = true, optional = true}
+serde_yaml = {version = "0.9", optional = true}
 
 [dev-dependencies]
 rstest = "0.25.0"
 
 [features]
 default = ["std"]
-json = ["dep:serde", "dep:serde_json", "compact_str/serde"]
+html-to-markdown = ["dep:html5ever", "dep:markup5ever_rcdom", "dep:serde_yaml"]
+json = ["dep:serde", "dep:serde_json"]
 std = []

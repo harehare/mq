@@ -59,6 +59,26 @@
 //! - Consider using `CompactString` for memory-efficient string storage
 //! - Position information can be omitted to reduce memory usage
 //!
+//! ## HTML to Markdown (optional feature)
+//!
+//! When the `html-to-markdown` feature is enabled, this crate can also convert HTML to Markdown.
+//!
+//! ```rust,ignore
+//! // This example requires the `html-to-markdown` feature.
+//! // Add `mq-markdown = { version = "...", features = ["html-to-markdown"] }` to your Cargo.toml.
+//! # #[cfg(feature = "html-to-markdown")]
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use mq_markdown::convert_html_to_markdown;
+//!
+//! let html = "<p>Hello <strong>world</strong>!</p>";
+//! let markdown = convert_html_to_markdown(html)?;
+//! assert_eq!(markdown, "Hello **world**!");
+//! # Ok(())
+//! # }
+//! # #[cfg(not(feature = "html-to-markdown"))]
+//! # fn main() {}
+//! ```
+mod html_to_markdown;
 mod markdown;
 mod node;
 pub use markdown::{Markdown, to_html};
@@ -70,6 +90,9 @@ pub use node::{
     Title, TitleSurroundStyle, Toml, Url, UrlSurroundStyle, Yaml,
 };
 
+#[cfg(feature = "html-to-markdown")]
+pub use html_to_markdown::{ConversionOptions, convert_html_to_markdown};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +102,39 @@ mod tests {
         let markdown = "# Hello, world!";
         let html = to_html(markdown);
         assert_eq!(html, "<h1>Hello, world!</h1>");
+    }
+
+    #[cfg(feature = "html-to-markdown")]
+    #[test]
+    fn test_html_to_markdown_simple_paragraph() {
+        let html = "<p>Hello world</p>";
+        match convert_html_to_markdown(html, ConversionOptions::default()) {
+            Ok(markdown) => assert_eq!(markdown.trim(), "Hello world"),
+            Err(e) => panic!("HTML to Markdown conversion failed: {:?}", e),
+        }
+    }
+
+    #[cfg(feature = "html-to-markdown")]
+    #[test]
+    fn test_html_to_markdown_empty_input() {
+        let html = "";
+        match convert_html_to_markdown(html, ConversionOptions::default()) {
+            Ok(markdown) => assert_eq!(markdown, ""),
+            Err(e) => panic!(
+                "HTML to Markdown conversion failed for empty input: {:?}",
+                e
+            ),
+        }
+    }
+
+    #[cfg(feature = "html-to-markdown")]
+    #[test]
+    fn test_html_to_markdown_div_element() {
+        // Test that div elements are properly handled
+        let html = "<div>Content in div</div>";
+        let result = convert_html_to_markdown(html, ConversionOptions::default());
+        assert!(result.is_ok());
+        let markdown = result.unwrap();
+        assert_eq!(markdown.trim(), "Content in div");
     }
 }
