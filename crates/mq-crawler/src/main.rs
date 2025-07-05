@@ -1,4 +1,5 @@
 use clap::Parser;
+use fantoccini::wd::TimeoutConfiguration;
 use mq_crawler::crawler::Crawler;
 use url::Url;
 
@@ -7,19 +8,31 @@ use url::Url;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
+    /// Delay (in seconds) between crawl requests to avoid overloading servers.
+    #[clap(short = 'd', long, default_value_t = 0.5)]
+    crawl_delay: f64,
+    /// Number of concurrent workers for parallel processing.
+    #[clap(short = 'c', long, default_value_t = 1)]
+    concurrency: usize,
+    /// Timeout (in seconds) for implicit waits (element finding).
+    #[clap(long, default_value_t = 5.0)]
+    implicit_timeout: f64,
+    /// Optional mq_lang query to process the crawled Markdown content.
+    #[clap(short, long)]
+    mq_query: Option<String>,
+    /// Timeout (in seconds) for loading a single page.
+    #[clap(long, default_value_t = 30.0)]
+    page_load_timeout: f64,
     /// Optional path to an output DIRECTORY where markdown files will be saved.
     /// If not provided, output is printed to stdout.
     #[clap(short, long)]
     output: Option<String>,
-    /// Delay (in seconds) between crawl requests to avoid overloading servers.
-    #[clap(short, long, default_value_t = 1.0)]
-    crawl_delay: f64,
     /// Optional path to a custom robots.txt file. If not provided, robots.txt will be fetched from the site.
     #[clap(long)]
     robots_path: Option<String>,
-    /// Optional mq_lang query to process the crawled Markdown content.
-    #[clap(short, long)]
-    mq_query: Option<String>,
+    /// Timeout (in seconds) for executing scripts on the page.
+    #[clap(long, default_value_t = 10.0)]
+    script_timeout: f64,
     /// The initial URL to start crawling from.
     #[clap(required = true)]
     url: Url,
@@ -35,22 +48,36 @@ async fn main() {
 
     tracing::info!("Initializing crawler for URL: {}", args.url);
 
+    let client = if let Some(url) = args.webdriver_url {
+        mq_crawler::http_client::HttpClient::Fantoccini({
+            let fantoccini_client = fantoccini::ClientBuilder::native()
+                .connect(url.as_ref())
+                .await
+                .expect("Failed to connect to WebDriver");
+
+            fantoccini_client
+                .update_timeouts(TimeoutConfiguration::new(
+                    Some(std::time::Duration::from_secs_f64(args.script_timeout)),
+                    Some(std::time::Duration::from_secs_f64(args.page_load_timeout)),
+                    Some(std::time::Duration::from_secs_f64(args.implicit_timeout)),
+                ))
+                .await
+                .expect("Failed to set timeouts on Fantoccini client");
+
+            fantoccini_client
+        })
+    } else {
+        mq_crawler::http_client::HttpClient::new_reqwest().unwrap()
+    };
+
     match Crawler::new(
-        if let Some(url) = args.webdriver_url {
-            mq_crawler::http_client::HttpClient::Fantoccini(
-                fantoccini::ClientBuilder::native()
-                    .connect(url.as_ref())
-                    .await
-                    .expect("Failed to connect to WebDriver"),
-            )
-        } else {
-            mq_crawler::http_client::HttpClient::new_reqwest().unwrap()
-        },
+        client,
         args.url.clone(),
         args.crawl_delay,
         args.robots_path.clone(),
         args.mq_query.clone(),
         args.output,
+        args.concurrency,
     )
     .await
     {
