@@ -10,6 +10,7 @@
 |`arrays`| Returns array if input is array, None otherwise|`a`|arrays(a)|
 |`assert`| Verifies that a condition is true and raises an error if it's false.|`cond`|assert(cond)|
 |`assert`|Asserts that two values are equal, returns the value if true, otherwise raises an error.|`value1`, `value2`|assert(value1, value2)|
+|`attr`|Retrieves the value of the specified attribute from a markdown node.|`markdown`, `attribute`|attr(markdown, attribute)|
 |`base64`|Encodes the given string to base64.|`input`|base64(input)|
 |`base64d`|Decodes the given base64 string.|`input`|base64d(input)|
 |`booleans`| Returns boolean if input is boolean, None otherwise|`b`|booleans(b)|
@@ -125,6 +126,7 @@
 |`sections`| Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.|`md_nodes`, `level`|sections(md_nodes, level)|
 |`select`| Returns value if condition is true, None otherwise|`v`, `f`|select(v, f)|
 |`set`|Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.|`dict`, `key`, `value`|set(dict, key, value)|
+|`set_attr`|Sets the value of the specified attribute on a markdown node.|`markdown`, `attribute`, `value`|set_attr(markdown, attribute, value)|
 |`set_check`|Creates a markdown list node with the given checked state.|`list`, `checked`|set_check(list, checked)|
 |`set_code_block_lang`|Sets the language of a markdown code block node.|`code_block`, `language`|set_code_block_lang(code_block, language)|
 |`set_list_ordered`|Sets the ordered property of a markdown list node.|`list`, `ordered`|set_list_ordered(list, ordered)|
