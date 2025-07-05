@@ -1,5 +1,6 @@
 use crate::http_client::HttpClient;
 use crate::robots::RobotsTxt;
+use futures::stream::StreamExt;
 use miette::miette;
 use scraper::{Html, Selector};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -8,6 +9,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fs, io};
+use tokio::sync::{Mutex, RwLock};
+use tokio::time::sleep;
 use url::Url;
 
 #[derive(Debug, Default)]
@@ -104,17 +107,17 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
 
 pub struct Crawler {
     http_client: HttpClient,
-    to_visit: VecDeque<Url>,
-    visited: HashSet<Url>,
-    robots_cache: HashMap<String, Arc<RobotsTxt>>,
+    to_visit: Arc<Mutex<VecDeque<Url>>>,
+    visited: Arc<RwLock<HashSet<Url>>>,
+    robots_cache: Arc<RwLock<HashMap<String, Arc<RobotsTxt>>>>,
     crawl_delay: Duration,
-    mq_engine: mq_lang::Engine,
     mq_query: String,
     user_agent: String,
     output_path: Option<String>,
     initial_domain: String, // To keep crawls within the starting domain
     custom_robots_path: Option<String>, // Store custom robots path
-    result: CrawlResult,
+    result: Arc<Mutex<CrawlResult>>,
+    concurrency: usize,
 }
 
 impl Crawler {
@@ -125,6 +128,7 @@ impl Crawler {
         custom_robots_path: Option<String>, // Accept from CLI args
         mq_query: Option<String>,
         output_path: Option<String>,
+        concurrency: usize,
     ) -> Result<Self, String> {
         let initial_domain = start_url
             .domain()
@@ -135,32 +139,34 @@ impl Crawler {
         let mut to_visit = VecDeque::new();
         to_visit.push_back(start_url.clone());
 
-        let mut mq_engine = mq_lang::Engine::default();
-        mq_engine.load_builtin_module();
-
         Ok(Self {
             http_client,
-            to_visit,
-            visited: HashSet::new(),
-            robots_cache: HashMap::new(),
+            to_visit: Arc::new(Mutex::new(to_visit)),
+            visited: Arc::new(RwLock::new(HashSet::new())),
+            robots_cache: Arc::new(RwLock::new(HashMap::new())),
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
-            mq_engine,
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
             initial_domain,
             custom_robots_path,
-            result: CrawlResult::default(),
+            result: Arc::new(Mutex::new(CrawlResult::default())),
+            concurrency: concurrency.max(1),
         })
     }
 
-    async fn get_or_fetch_robots(&mut self, url_to_check: &Url) -> Result<Arc<RobotsTxt>, String> {
+    async fn get_or_fetch_robots(&self, url_to_check: &Url) -> Result<Arc<RobotsTxt>, String> {
         let domain = url_to_check
             .domain()
             .ok_or_else(|| "URL has no domain".to_string())?
             .to_string();
-        if let Some(robots) = self.robots_cache.get(&domain) {
-            return Ok(robots.clone());
+
+        // Check if we already have this domain's robots cached
+        {
+            let cache = self.robots_cache.read().await;
+            if let Some(robots) = cache.get(&domain) {
+                return Ok(robots.clone());
+            }
         }
 
         // Use the stored custom_robots_path
@@ -171,17 +177,26 @@ impl Crawler {
         )
         .await?;
         let arc_robots = Arc::new(robots);
-        self.robots_cache.insert(domain.clone(), arc_robots.clone());
+
+        // Cache the result
+        {
+            let mut cache = self.robots_cache.write().await;
+            cache.insert(domain.clone(), arc_robots.clone());
+        }
+
         Ok(arc_robots)
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
         // Record start time
-        self.result.start_time = Some(Instant::now());
+        {
+            let mut result = self.result.lock().await;
+            result.start_time = Some(Instant::now());
+        }
 
         let mut startup_info = format!(
-            "Crawler run initiated. User-Agent: '{}'. Initial domain: '{}'. Crawl delay: {:?}.",
-            self.user_agent, self.initial_domain, self.crawl_delay
+            "Crawler run initiated. User-Agent: '{}'. Initial domain: '{}'. Crawl delay: {:?}. Concurrency: {}.",
+            self.user_agent, self.initial_domain, self.crawl_delay, self.concurrency
         );
         if let Some(ref path) = self.custom_robots_path {
             startup_info.push_str(&format!(" Custom robots.txt path: '{}'.", path));
@@ -193,98 +208,229 @@ impl Crawler {
         }
         tracing::info!("{}", startup_info);
 
-        while let Some(current_url) = self.to_visit.pop_front() {
-            if self.visited.contains(&current_url) {
-                tracing::debug!("Skipping already visited URL: {}", current_url);
+        if self.concurrency == 1 {
+            self.run_sequential().await
+        } else {
+            self.run_parallel().await
+        }
+    }
+
+    async fn run_sequential(&mut self) -> Result<(), String> {
+        loop {
+            let current_url = {
+                let mut queue = self.to_visit.lock().await;
+                queue.pop_front()
+            };
+
+            let Some(current_url) = current_url else {
+                break;
+            };
+
+            if self.should_skip_url(&current_url).await {
                 continue;
             }
 
-            if current_url
-                .domain()
-                .is_none_or(|d| d != self.initial_domain)
-            {
-                tracing::info!("Skipping URL from different domain: {}", current_url);
-                continue;
-            }
-
-            tracing::info!("Processing URL: {}", current_url);
-
-            let robots_rules = self.get_or_fetch_robots(&current_url).await?;
-
-            if !robots_rules.is_allowed(&current_url, &self.user_agent) {
-                tracing::warn!("Skipping URL disallowed by robots.txt: {}", current_url);
-                self.visited.insert(current_url);
-                self.result.pages_skipped_robots += 1;
-                continue;
-            }
-
-            match self.http_client.fetch(current_url.clone()).await {
-                Ok(html_content) => {
-                    let input = mq_lang::parse_html_input(&html_content)
-                        .map_err(|e| format!("Failed to parse HTML: {}", e))?;
-
-                    tracing::info!("Applying mq query to content from {}", current_url);
-
-                    match self
-                        .mq_engine
-                        .eval(&self.mq_query, input.into_iter())
-                        .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
-                    {
-                        Ok(values) => {
-                            self.output_markdown(
-                                &current_url,
-                                &mq_markdown::Markdown::new(
-                                    values
-                                        .into_iter()
-                                        .map(|value| match value {
-                                            mq_lang::Value::Markdown(node) => node.clone(),
-                                            _ => value.to_string().into(),
-                                        })
-                                        .collect(),
-                                )
-                                .to_string(),
-                            )?;
-                        }
-                        Err(e) => {
-                            let error_string = format!("{:?}", e);
-                            tracing::error!(
-                                "Error running mq query on content from {}: {}. Original markdown will be used.",
-                                current_url,
-                                error_string.chars().take(200).collect::<String>()
-                            );
-                        }
-                    }
-
-                    let new_links = extract_links(&html_content, &current_url);
-                    self.result.links_discovered += new_links.len();
-                    for link in new_links {
-                        if !self.visited.contains(&link)
-                            && !self.to_visit.contains(&link)
-                            && link.domain().is_some_and(|d| d == self.initial_domain)
-                        {
-                            self.to_visit.push_back(link);
-                        }
-                    }
-                    self.result.pages_crawled += 1;
-                }
-                Err(e) => {
-                    tracing::error!("Failed to fetch URL {}: {}", current_url, e);
-                    self.result.pages_failed += 1;
-                }
-            }
-
-            self.visited.insert(current_url);
-            tokio::time::sleep(self.crawl_delay).await;
+            self.process_url(current_url).await;
+            sleep(self.crawl_delay).await;
         }
 
+        self.finalize_crawl().await;
+        Ok(())
+    }
+
+    async fn run_parallel(&mut self) -> Result<(), String> {
+        while !self.to_visit.lock().await.is_empty() {
+            // Collect up to `concurrency` URLs for processing
+            let mut urls_to_process = Vec::new();
+            {
+                let mut queue = self.to_visit.lock().await;
+                for _ in 0..self.concurrency {
+                    if let Some(url) = queue.pop_front() {
+                        urls_to_process.push(url);
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            if urls_to_process.is_empty() {
+                break;
+            }
+
+            // Filter out URLs that should be skipped
+            let mut valid_urls = Vec::new();
+            for url in urls_to_process {
+                if !self.should_skip_url(&url).await {
+                    valid_urls.push(url);
+                }
+            }
+
+            // Process URLs concurrently using futures stream
+            let futures: Vec<_> = valid_urls
+                .into_iter()
+                .map(|url| self.process_url(url))
+                .collect();
+
+            futures::stream::iter(futures)
+                .buffer_unordered(self.concurrency)
+                .collect::<Vec<_>>()
+                .await;
+
+            // Apply crawl delay after processing batch
+            sleep(self.crawl_delay).await;
+        }
+
+        self.finalize_crawl().await;
+        Ok(())
+    }
+
+    async fn should_skip_url(&self, url: &Url) -> bool {
+        // Check if already visited
+        {
+            let visited = self.visited.read().await;
+            if visited.contains(url) {
+                tracing::debug!("Skipping already visited URL: {}", url);
+                return true;
+            }
+        }
+
+        // Check domain
+        if url.domain().is_none_or(|d| d != self.initial_domain) {
+            tracing::info!("Skipping URL from different domain: {}", url);
+            return true;
+        }
+
+        false
+    }
+
+    async fn process_url(&self, current_url: Url) {
+        tracing::info!("Processing URL: {}", current_url);
+
+        let robots_rules = match self.get_or_fetch_robots(&current_url).await {
+            Ok(rules) => rules,
+            Err(e) => {
+                tracing::error!("Failed to fetch robots.txt for {}: {}", current_url, e);
+                return;
+            }
+        };
+
+        if !robots_rules.is_allowed(&current_url, &self.user_agent) {
+            tracing::warn!("Skipping URL disallowed by robots.txt: {}", current_url);
+            {
+                let mut visited = self.visited.write().await;
+                visited.insert(current_url.clone());
+            }
+            {
+                let mut result = self.result.lock().await;
+                result.pages_skipped_robots += 1;
+            }
+            return;
+        }
+
+        match self.http_client.fetch(current_url.clone()).await {
+            Ok(html_content) => {
+                let input = match mq_lang::parse_html_input(&html_content) {
+                    Ok(input) => input,
+                    Err(e) => {
+                        tracing::error!("Failed to parse HTML from {}: {}", current_url, e);
+                        {
+                            let mut result = self.result.lock().await;
+                            result.pages_failed += 1;
+                        }
+                        return;
+                    }
+                };
+
+                tracing::info!("Applying mq query to content from {}", current_url);
+
+                // Create a new engine for this thread
+                let mut mq_engine = mq_lang::Engine::default();
+                mq_engine.load_builtin_module();
+
+                match mq_engine
+                    .eval(&self.mq_query, input.into_iter())
+                    .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
+                {
+                    Ok(values) => {
+                        if let Err(e) = self.output_markdown(
+                            &current_url,
+                            &mq_markdown::Markdown::new(
+                                values
+                                    .into_iter()
+                                    .map(|value| match value {
+                                        mq_lang::Value::Markdown(node) => node.clone(),
+                                        _ => value.to_string().into(),
+                                    })
+                                    .collect(),
+                            )
+                            .to_string(),
+                        ) {
+                            tracing::error!("Failed to output markdown for {}: {}", current_url, e);
+                        }
+                    }
+                    Err(e) => {
+                        let error_string = format!("{:?}", e);
+                        tracing::error!(
+                            "Error running mq query on content from {}: {}. Original markdown will be used.",
+                            current_url,
+                            error_string.chars().take(200).collect::<String>()
+                        );
+                    }
+                }
+
+                let new_links = extract_links(&html_content, &current_url);
+                {
+                    let mut result = self.result.lock().await;
+                    result.links_discovered += new_links.len();
+                }
+
+                {
+                    let mut to_visit = self.to_visit.lock().await;
+                    let visited = self.visited.read().await;
+                    for link in new_links {
+                        if !visited.contains(&link)
+                            && !to_visit.contains(&link)
+                            && link.domain().is_some_and(|d| d == self.initial_domain)
+                        {
+                            to_visit.push_back(link);
+                        }
+                    }
+                }
+
+                {
+                    let mut result = self.result.lock().await;
+                    result.pages_crawled += 1;
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch URL {}: {}", current_url, e);
+                {
+                    let mut result = self.result.lock().await;
+                    result.pages_failed += 1;
+                }
+            }
+        }
+
+        {
+            let mut visited = self.visited.write().await;
+            visited.insert(current_url);
+        }
+    }
+
+    async fn finalize_crawl(&self) {
         // Record end time and final statistics
-        self.result.end_time = Some(Instant::now());
-        self.result.total_pages_visited = self.visited.len();
+        {
+            let mut result = self.result.lock().await;
+            result.end_time = Some(Instant::now());
+            let visited_len = self.visited.read().await.len();
+            result.total_pages_visited = visited_len;
+        }
 
         // Write statistics to stderr
-        self.result.write_stats_to_stderr();
-
-        Ok(())
+        {
+            let result = self.result.lock().await;
+            result.write_stats_to_stderr();
+        }
     }
 
     fn output_markdown(&self, url: &Url, markdown: &str) -> Result<(), String> {
