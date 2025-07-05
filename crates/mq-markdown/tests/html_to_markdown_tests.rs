@@ -274,7 +274,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::code_inline_with_internal_spaces_trimmed(
     "<code>  spaced code  </code>",
     ConversionOptions::default(),
-    "`  spaced code  `"
+    "` spaced code `"
 )]
 #[case::code_inline_with_html_entities_as_text(
     "<code>a < b > c & d</code>",
@@ -595,7 +595,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::input_other_type_ignored(
     "<input type=\"text\" value=\"Hello\">",
     ConversionOptions::default(),
-    ""
+    "Hello"
 )]
 #[case::dl_simple(
     "<dl><dt>Term 1</dt><dd>Definition 1</dd></dl>",
@@ -1026,7 +1026,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::h3_with_whitespace(
     "<h3>  Spaced Out  </h3>",
     ConversionOptions::default(),
-    "###   Spaced Out  "
+    "###  Spaced Out "
 )]
 #[case::multiple_headings(
     "<h1>First</h1><h2>Second</h2>",
@@ -1104,7 +1104,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::strong_with_internal_whitespace(
     "<strong>  spaced  </strong>",
     ConversionOptions::default(),
-    "**  spaced  **"
+    "** spaced **"
 )]
 #[case::em_around_strong(
     "<em>Emphasis around <strong>bold</strong> text.</em>",

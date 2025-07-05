@@ -526,7 +526,21 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
     let mut parts = Vec::new();
     for node in nodes {
         match node {
-            HtmlNode::Text(text) => parts.push(text.clone()),
+            HtmlNode::Text(text) => {
+                let trimmed = text.trim_start_matches('\n').trim_end_matches('\n');
+                let trimmed = if trimmed.starts_with(" ") {
+                    format!(" {}", trimmed.trim_start())
+                } else {
+                    trimmed.to_owned()
+                };
+                let trimmed = if trimmed.ends_with(" ") {
+                    format!("{} ", trimmed.trim_end())
+                } else {
+                    trimmed.to_owned()
+                };
+
+                parts.push(trimmed.to_string());
+            }
             HtmlNode::Element(element) => {
                 let link_text = convert_children_to_string(&element.children)?;
                 match element.tag_name.as_str() {
@@ -596,12 +610,27 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     }
                     "input" => {
                         if let Some(Some(type_attr)) = element.attributes.get("type") {
-                            if type_attr.to_lowercase() == "checkbox" {
-                                if element.attributes.contains_key("checked") {
-                                    parts.push("[x] ".to_string());
-                                } else {
-                                    parts.push("[ ] ".to_string());
+                            match type_attr.to_lowercase().as_str() {
+                                "checkbox" | "radio" => {
+                                    if element.attributes.contains_key("checked") {
+                                        parts.push("[x] ".to_string());
+                                    } else {
+                                        parts.push("[ ] ".to_string());
+                                    }
                                 }
+                                "text" | "number" | "button" | "url" | "email" => {
+                                    if element.attributes.contains_key("value") {
+                                        parts.push(
+                                            element
+                                                .attributes
+                                                .get("value")
+                                                .cloned()
+                                                .unwrap()
+                                                .unwrap_or_default(),
+                                        );
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -689,7 +718,7 @@ pub fn convert_nodes_to_markdown(
                     }
                     "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
                     "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s"
-                    | "strike" | "del" | "kbd" | "label" => {
+                    | "strike" | "del" | "kbd" => {
                         let inline_md =
                             convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
