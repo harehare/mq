@@ -145,7 +145,7 @@ mod tests {
                 })
                 .await;
 
-            let http_client = HttpClient::new_reqwest().unwrap();
+            let http_client = HttpClient::new_reqwest(30.0).unwrap();
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
             let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
 
@@ -168,7 +168,7 @@ mod tests {
                 })
                 .await;
 
-            let http_client = HttpClient::new_reqwest().unwrap();
+            let http_client = HttpClient::new_reqwest(30.0).unwrap();
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
             let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
 
@@ -192,7 +192,7 @@ mod tests {
                 })
                 .await;
 
-            let http_client = HttpClient::new_reqwest().unwrap();
+            let http_client = HttpClient::new_reqwest(30.0).unwrap();
             let custom_url = format!("http://{}/custom-robots.txt", server.address());
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
             let robots = RobotsTxt::fetch(&http_client, &url, Some(&custom_url))
@@ -210,7 +210,7 @@ mod tests {
         init_tracing();
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let http_client = HttpClient::new_reqwest().unwrap();
+            let http_client = HttpClient::new_reqwest(30.0).unwrap();
             let url = Url::parse("http://example.com").unwrap();
             let result = RobotsTxt::fetch(&http_client, &url, Some("/not/a/url")).await;
             assert!(result.is_err());

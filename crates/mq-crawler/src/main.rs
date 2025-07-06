@@ -95,7 +95,7 @@ async fn main() {
             fantoccini_client
         })
     } else {
-        mq_crawler::http_client::HttpClient::new_reqwest().unwrap()
+        mq_crawler::http_client::HttpClient::new_reqwest(args.page_load_timeout).unwrap()
     };
 
     match Crawler::new(
