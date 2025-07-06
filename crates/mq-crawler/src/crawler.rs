@@ -118,9 +118,11 @@ pub struct Crawler {
     custom_robots_path: Option<String>, // Store custom robots path
     result: Arc<Mutex<CrawlResult>>,
     concurrency: usize,
+    conversion_options: mq_markdown::ConversionOptions,
 }
 
 impl Crawler {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         http_client: HttpClient,
         start_url: Url,
@@ -129,6 +131,7 @@ impl Crawler {
         mq_query: Option<String>,
         output_path: Option<String>,
         concurrency: usize,
+        conversion_options: mq_markdown::ConversionOptions,
     ) -> Result<Self, String> {
         let initial_domain = start_url
             .domain()
@@ -152,6 +155,7 @@ impl Crawler {
             custom_robots_path,
             result: Arc::new(Mutex::new(CrawlResult::default())),
             concurrency: concurrency.max(1),
+            conversion_options,
         })
     }
 
@@ -329,7 +333,10 @@ impl Crawler {
 
         match self.http_client.fetch(current_url.clone()).await {
             Ok(html_content) => {
-                let input = match mq_lang::parse_html_input(&html_content) {
+                let input = match mq_lang::parse_html_input_with_options(
+                    &html_content,
+                    self.conversion_options,
+                ) {
                     Ok(input) => input,
                     Err(e) => {
                         tracing::error!("Failed to parse HTML from {}: {}", current_url, e);

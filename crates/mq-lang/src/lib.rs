@@ -165,6 +165,14 @@ pub fn parse_html_input(input: &str) -> miette::Result<Vec<Value>> {
     Ok(html.nodes.into_iter().map(Value::from).collect())
 }
 
+pub fn parse_html_input_with_options(
+    input: &str,
+    options: mq_markdown::ConversionOptions,
+) -> miette::Result<Vec<Value>> {
+    let html = mq_markdown::Markdown::from_html_str_with_options(input, options)?;
+    Ok(html.nodes.into_iter().map(Value::from).collect())
+}
+
 /// Parses a Markdown string and returns an iterator over `Value` nodes.
 pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
     let md = mq_markdown::Markdown::from_markdown_str(input)?;
@@ -295,5 +303,54 @@ mod tests {
         assert!(result.is_ok());
         let values: Vec<Value> = result.unwrap();
         assert!(!values.is_empty());
+    }
+
+    #[test]
+    fn test_parse_html_input_with_options() {
+        let input = r#"<html>
+      <head>
+        <title>Title</title>
+        <meta name="description" content="This is a test meta description.">
+        <script>let foo = 'bar'</script>
+      </head>
+      <body>
+        <p>Some text.</p>
+      </body>
+    </html>"#;
+        let result = parse_html_input_with_options(
+            input,
+            mq_markdown::ConversionOptions {
+                extract_scripts_as_code_blocks: true,
+                generate_front_matter: true,
+                use_title_as_h1: true,
+            },
+        );
+        assert!(result.is_ok());
+        assert_eq!(
+            mq_markdown::Markdown::new(
+                result
+                    .unwrap()
+                    .iter()
+                    .map(|value| match value {
+                        Value::Markdown(node) => node.clone(),
+                        _ => value.to_string().into(),
+                    })
+                    .collect()
+            )
+            .to_string(),
+            "---
+description: This is a test meta description.
+title: Title
+---
+
+# Title
+
+```
+let foo = 'bar'
+```
+
+Some text.
+"
+        );
     }
 }
