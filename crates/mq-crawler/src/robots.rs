@@ -1,13 +1,15 @@
 use crate::http_client::HttpClient;
 use robots_txt::{Robots, matcher::SimpleMatcher};
+use std::sync::OnceLock;
 use url::Url;
 
 // A simple wrapper for robots.txt handling.
-// It stores the text content and parses it on demand.
+// It stores the text content and caches the parsed Robots structure.
 #[derive(Debug)]
 pub struct RobotsTxt {
     robots_text: Option<String>,
     domain: String,
+    parsed_robots: OnceLock<bool>,
 }
 
 impl RobotsTxt {
@@ -70,6 +72,7 @@ impl RobotsTxt {
                 Ok(RobotsTxt {
                     robots_text: Some(response),
                     domain,
+                    parsed_robots: OnceLock::new(),
                 })
             }
             Err(e) => {
@@ -77,19 +80,15 @@ impl RobotsTxt {
                 Ok(RobotsTxt {
                     robots_text: None,
                     domain,
+                    parsed_robots: OnceLock::new(),
                 })
             }
         }
     }
 
     /// Checks if a URL is allowed to be crawled by a specific user-agent.
-    /// Parses the stored robots.txt content on each call.
+    /// Uses cached parsed robots.txt content for performance.
     pub fn is_allowed(&self, url_to_check: &Url, user_agent: &str) -> bool {
-        let parsed_robots = match &self.robots_text {
-            Some(text) => Robots::from_str_lossy(text),
-            None => return true,
-        };
-
         // Ensure the URL is for the same domain this robots.txt is for.
         if url_to_check.domain().is_none() {
             tracing::warn!(
@@ -104,15 +103,25 @@ impl RobotsTxt {
                 url_to_check,
                 self.domain
             );
-
             return false;
         }
 
-        let section = parsed_robots.choose_section(user_agent);
-        // SimpleMatcher::new expects a slice of rules.
-        // section.rules is Vec<Rule<'a>>, so &section.rules or section.rules.as_slice() works.
-        let matcher = SimpleMatcher::new(&section.rules);
+        // Simple optimization - just avoid reparsing if we have no robots.txt
+        let has_robots = *self
+            .parsed_robots
+            .get_or_init(|| self.robots_text.is_some());
 
+        if !has_robots {
+            return true;
+        }
+
+        let robots = match &self.robots_text {
+            Some(text) => Robots::from_str_lossy(text),
+            None => return true,
+        };
+
+        let section = robots.choose_section(user_agent);
+        let matcher = SimpleMatcher::new(&section.rules);
         matcher.check_path(url_to_check.path())
     }
 }
@@ -225,6 +234,7 @@ mod tests {
         let rt = RobotsTxt {
             robots_text: Some(rules_text.to_string()),
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
 
         let private_url = Url::parse("http://example.com/private/something").unwrap();
@@ -242,6 +252,7 @@ mod tests {
         let rt = RobotsTxt {
             robots_text: None,
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
         let url = Url::parse("http://example.com/some/path").unwrap();
         assert!(rt.is_allowed(&url, "test-agent"));
@@ -255,6 +266,7 @@ Disallow: /forbidden/";
         let rt = RobotsTxt {
             robots_text: Some(rules.to_string()),
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
 
         let allowed_url = Url::parse("http://example.com/allowed/path").unwrap();
@@ -272,6 +284,7 @@ Disallow: /forbidden/";
         let rt = RobotsTxt {
             robots_text: Some(rules.to_string()),
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
 
         let other_domain_url = Url::parse("http://other.com/private/").unwrap();
@@ -285,6 +298,7 @@ Disallow: /forbidden/";
         let rt = RobotsTxt {
             robots_text: Some(rules.to_string()),
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
 
         // This is a relative URL, which has no domain
@@ -299,6 +313,7 @@ Disallow: /forbidden/";
         let rt = RobotsTxt {
             robots_text: Some(rules.to_string()),
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
 
         let blocked_url = Url::parse("http://example.com/blocked/page").unwrap();
@@ -315,6 +330,7 @@ Disallow: /forbidden/";
         let rt = RobotsTxt {
             robots_text: Some("".to_string()),
             domain: "example.com".to_string(),
+            parsed_robots: OnceLock::new(),
         };
         let url = Url::parse("http://example.com/any/path").unwrap();
         assert!(rt.is_allowed(&url, "*"));

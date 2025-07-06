@@ -22,15 +22,16 @@ impl Default for HttpClient {
 }
 
 impl HttpClient {
-    /// Create a new reqwest-based HTTP client
+    /// Create a new reqwest-based HTTP client optimized for single-domain crawling
     pub fn new_reqwest(timeout: f64) -> Result<Self, String> {
         let client = ReqwestClient::builder()
             .user_agent(format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE")))
-            .pool_max_idle_per_host(10)
-            .pool_idle_timeout(Duration::from_secs(30))
+            // Optimize for single-domain crawling
+            .pool_max_idle_per_host(3)
+            .pool_idle_timeout(Duration::from_secs(90))
             .timeout(Duration::from_secs(timeout as u64))
             .connect_timeout(Duration::from_secs(10))
-            .tcp_keepalive(Duration::from_secs(60))
+            .tcp_keepalive(Duration::from_secs(120))
             .build()
             .map_err(|e| format!("Failed to build reqwest client: {}", e))?;
         Ok(Self::Reqwest(client))
