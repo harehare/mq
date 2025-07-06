@@ -76,11 +76,11 @@ fn sanitize_filename_component(component: &str, max_len: usize) -> String {
 
 // Replace the placeholder extract_links function with this:
 fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
-    let mut found_urls = Vec::new();
     if html_content.is_empty() {
-        return found_urls;
+        return Vec::new();
     }
 
+    let mut found_urls = Vec::new();
     let document = Html::parse_document(html_content);
     let link_selector = Selector::parse("a[href]").expect("Failed to parse 'a[href]' selector"); // Should not panic with valid selector
 
