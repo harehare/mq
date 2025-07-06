@@ -39,6 +39,34 @@ struct CliArgs {
     /// Optional WebDriver URL for browser-based crawling (e.g., http://localhost:4444).
     #[clap(short = 'U', long, value_name = "WEBDRIVER_URL")]
     webdriver_url: Option<Url>,
+    #[clap(flatten)]
+    pub conversion: ConversionArgs,
+}
+
+/// Options for Markdown conversion.
+#[derive(Debug, Clone, clap::Args)]
+pub struct ConversionArgs {
+    /// Extract <script> tags as code blocks in Markdown
+    #[clap(
+        long,
+        help = "Extract <script> tags as code blocks in Markdown",
+        default_value_t = false
+    )]
+    pub extract_scripts_as_code_blocks: bool,
+    /// Generate YAML front matter from page metadata
+    #[clap(
+        long,
+        help = "Generate YAML front matter from page metadata",
+        default_value_t = false
+    )]
+    pub generate_front_matter: bool,
+    /// Use the HTML <title> as the first H1 in Markdown
+    #[clap(
+        long,
+        help = "Use the HTML <title> as the first H1 in Markdown",
+        default_value_t = false
+    )]
+    pub use_title_as_h1: bool,
 }
 
 #[tokio::main]
@@ -78,6 +106,11 @@ async fn main() {
         args.mq_query.clone(),
         args.output,
         args.concurrency,
+        mq_markdown::ConversionOptions {
+            extract_scripts_as_code_blocks: args.conversion.extract_scripts_as_code_blocks,
+            generate_front_matter: args.conversion.generate_front_matter,
+            use_title_as_h1: args.conversion.use_title_as_h1,
+        },
     )
     .await
     {
