@@ -120,7 +120,15 @@ impl Markdown {
 
     #[cfg(feature = "html-to-markdown")]
     pub fn from_html_str(content: &str) -> miette::Result<Self> {
-        html_to_markdown::convert_html_to_markdown(content, ConversionOptions::default())
+        Self::from_html_str_with_options(content, ConversionOptions::default())
+    }
+
+    #[cfg(feature = "html-to-markdown")]
+    pub fn from_html_str_with_options(
+        content: &str,
+        options: ConversionOptions,
+    ) -> miette::Result<Self> {
+        html_to_markdown::convert_html_to_markdown(content, options)
             .map_err(|e| miette!(e))
             .and_then(|md_string| Self::from_markdown_str(&md_string))
     }
