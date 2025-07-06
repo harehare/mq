@@ -122,6 +122,7 @@ pub struct Crawler {
 }
 
 impl Crawler {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         http_client: HttpClient,
         start_url: Url,
@@ -334,7 +335,7 @@ impl Crawler {
             Ok(html_content) => {
                 let input = match mq_lang::parse_html_input_with_options(
                     &html_content,
-                    self.conversion_options.clone(),
+                    self.conversion_options,
                 ) {
                     Ok(input) => input,
                     Err(e) => {
