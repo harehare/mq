@@ -244,7 +244,7 @@ impl Crawler {
                 }
             }
 
-            let futures: Vec<_> = valid_urls
+            let futures = valid_urls
                 .into_iter()
                 .map(|url| {
                     let crawler = self.clone();
@@ -252,7 +252,7 @@ impl Crawler {
                         crawler.process_url(url).await;
                     })
                 })
-                .collect();
+                .collect::<Vec<_>>();
 
             futures::stream::iter(futures)
                 .buffer_unordered(self.concurrency)
@@ -302,48 +302,65 @@ impl Crawler {
             Ok(html_content) => {
                 tracing::info!("Applying mq query to content from {}", current_url);
 
-                match Self::execute_query(&self.mq_query, &html_content, self.conversion_options)
-                    .map_err(|e| {
-                        tracing::error!("Error executing mq query on {}: {}", current_url, e);
-                        e.to_string()
-                    }) {
-                    Ok(md) => {
-                        if let Err(e) = self.output_markdown(&current_url, &md) {
-                            tracing::error!("Failed to output markdown for {}: {}", current_url, e);
+                let query = self.mq_query.clone();
+                let html_content_clone = html_content.clone();
+                let conversion_options = self.conversion_options;
+                let current_url_clone = current_url.clone();
+                let self_clone = self.clone();
+                let new_links = tokio::task::spawn_blocking(move || {
+                    let output_result = Self::execute_query(&query, &html_content_clone, conversion_options);
+                    match output_result {
+                        Ok(md) => {
+                            if let Err(e) = self_clone.output_markdown(&current_url_clone, &md) {
+                                tracing::error!(
+                                    "Failed to output markdown for {}: {}",
+                                    current_url_clone,
+                                    e
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            let error_string = format!("{:?}", e);
+                            tracing::error!(
+                                "Error running mq query on content from {}: {}. Original markdown will be used.",
+                                current_url_clone,
+                                error_string.chars().take(200).collect::<String>()
+                            );
+                        }
+                    }
+                    extract_links(&html_content, &current_url_clone)
+                })
+                .await;
+
+                match new_links {
+                    Ok(new_links) => {
+                        {
+                            let mut result = self.result.lock().await;
+                            result.links_discovered += new_links.len();
+                            result.pages_crawled += 1;
+                        }
+
+                        {
+                            let mut to_visit = self.to_visit.lock().await;
+                            let visited = self.visited.read().await;
+                            for link in new_links {
+                                if !visited.contains(&link)
+                                    && !to_visit.contains(&link)
+                                    && link.domain().is_some_and(|d| d == self.initial_domain)
+                                {
+                                    to_visit.push_back(link);
+                                }
+                            }
                         }
                     }
                     Err(e) => {
-                        let error_string = format!("{:?}", e);
                         tracing::error!(
-                            "Error running mq query on content from {}: {}. Original markdown will be used.",
+                            "Failed to execute mq query on content from {}: {}",
                             current_url,
-                            error_string.chars().take(200).collect::<String>()
+                            e
                         );
+                        return;
                     }
-                }
-
-                let new_links = extract_links(&html_content, &current_url);
-                {
-                    let mut result = self.result.lock().await;
-                    result.links_discovered += new_links.len();
-                }
-
-                {
-                    let mut to_visit = self.to_visit.lock().await;
-                    let visited = self.visited.read().await;
-                    for link in new_links {
-                        if !visited.contains(&link)
-                            && !to_visit.contains(&link)
-                            && link.domain().is_some_and(|d| d == self.initial_domain)
-                        {
-                            to_visit.push_back(link);
-                        }
-                    }
-                }
-
-                {
-                    let mut result = self.result.lock().await;
-                    result.pages_crawled += 1;
                 }
             }
             Err(e) => {
