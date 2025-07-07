@@ -269,6 +269,8 @@ export const Playground = () => {
         : null;
     })()
   );
+  const [activeTab, setActiveTab] = useState<"output" | "ast">("output");
+  const [astResult, setAstResult] = useState("");
 
   useEffect(() => {
     if (window.location.hash) {
@@ -322,6 +324,7 @@ export const Playground = () => {
       return;
     }
     setResult("Running...");
+    setAstResult("");
 
     try {
       setResult(
@@ -345,6 +348,20 @@ export const Playground = () => {
     linkUrlStyle,
     linkTitleStyle,
   ]);
+
+  const handleGenerateAst = useCallback(async () => {
+    if (!code) {
+      return;
+    }
+    setAstResult("Generating AST...");
+
+    try {
+      const ast = await mq.toAst(code);
+      setAstResult(JSON.stringify(JSON.parse(ast), null, "  "));
+    } catch (e) {
+      setAstResult((e as Error).toString());
+    }
+  }, [code]);
 
   const handleFormat = useCallback(async () => {
     if (!code) {
@@ -814,83 +831,108 @@ export const Playground = () => {
         </div>
         <div className="right-panel">
           <div className="editor-header output">
-            <h2>Output</h2>
+            <div className="tab-container">
+              <button
+                className={`tab ${activeTab === "output" ? "active" : ""}`}
+                onClick={() => setActiveTab("output")}
+              >
+                Output
+              </button>
+              <button
+                className={`tab ${activeTab === "ast" ? "active" : ""}`}
+                onClick={() => setActiveTab("ast")}
+              >
+                AST
+              </button>
+            </div>
             {!isEmbed && (
               <div className="editor-actions">
-                <label className="label">
-                  <div
-                    style={{
-                      marginRight: "4px",
-                    }}
-                  >
-                    List Style:
-                  </div>
-                  <select className="dropdown" onChange={handleChangeListStyle}>
-                    <option value="dash">-</option>
-                    <option value="star">*</option>
-                    <option value="plus">+</option>
-                  </select>
-                </label>
-                <label className="label">
-                  <div
-                    style={{
-                      marginRight: "4px",
-                    }}
-                  >
-                    URL Style:
-                  </div>
-                  <select
-                    className="dropdown"
-                    onChange={handleChangeLinkUrlStyle}
-                  >
-                    <option value="none">None</option>
-                    <option value="angle">Angle</option>
-                  </select>
-                </label>
-                <label className="label">
-                  <div
-                    style={{
-                      marginRight: "4px",
-                    }}
-                  >
-                    Title Style:
-                  </div>
-                  <select
-                    className="dropdown"
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const linkTitleStyle =
-                        value === "none"
-                          ? null
-                          : (value as mq.Options["linkTitleStyle"]);
-                      setLinkTitleStyle(linkTitleStyle);
-                    }}
-                  >
-                    <option value="none">None</option>
-                    <option value="double">Double</option>
-                    <option value="single">Single</option>
-                    <option value="paren">Paren</option>
-                  </select>
-                </label>
-                <div>
-                  <label className="label">
-                    <input
-                      type="checkbox"
-                      checked={isUpdate}
-                      onChange={(e) => setIsUpdate(e.target.checked)}
-                      style={{
-                        marginRight: "5px",
-                        cursor: "pointer",
-                      }}
-                    />
-                    <div>Update Markdown</div>
-                  </label>
-                </div>
+                {activeTab === "output" && (
+                  <>
+                    <label className="label">
+                      <div
+                        style={{
+                          marginRight: "4px",
+                        }}
+                      >
+                        List Style:
+                      </div>
+                      <select
+                        className="dropdown"
+                        onChange={handleChangeListStyle}
+                      >
+                        <option value="dash">-</option>
+                        <option value="star">*</option>
+                        <option value="plus">+</option>
+                      </select>
+                    </label>
+                    <label className="label">
+                      <div
+                        style={{
+                          marginRight: "4px",
+                        }}
+                      >
+                        URL Style:
+                      </div>
+                      <select
+                        className="dropdown"
+                        onChange={handleChangeLinkUrlStyle}
+                      >
+                        <option value="none">None</option>
+                        <option value="angle">Angle</option>
+                      </select>
+                    </label>
+                    <label className="label">
+                      <div
+                        style={{
+                          marginRight: "4px",
+                        }}
+                      >
+                        Title Style:
+                      </div>
+                      <select
+                        className="dropdown"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const linkTitleStyle =
+                            value === "none"
+                              ? null
+                              : (value as mq.Options["linkTitleStyle"]);
+                          setLinkTitleStyle(linkTitleStyle);
+                        }}
+                      >
+                        <option value="none">None</option>
+                        <option value="double">Double</option>
+                        <option value="single">Single</option>
+                        <option value="paren">Paren</option>
+                      </select>
+                    </label>
+                    <div>
+                      <label className="label">
+                        <input
+                          type="checkbox"
+                          checked={isUpdate}
+                          onChange={(e) => setIsUpdate(e.target.checked)}
+                          style={{
+                            marginRight: "5px",
+                            cursor: "pointer",
+                          }}
+                        />
+                        <div>Update Markdown</div>
+                      </label>
+                    </div>
+                  </>
+                )}
+                {activeTab === "ast" && (
+                  <button className="button" onClick={handleGenerateAst}>
+                    Generate AST
+                  </button>
+                )}
               </div>
             )}
           </div>
           <div className="editor-content result-container">
-            {
+            {activeTab === "output" && (
               <Editor
                 height="100%"
                 defaultLanguage="markdown"
@@ -906,7 +948,24 @@ export const Playground = () => {
                 }}
                 theme="mq-base"
               />
-            }
+            )}
+            {activeTab === "ast" && (
+              <Editor
+                height="100%"
+                defaultLanguage="json"
+                defaultValue={`Click "Generate AST" button to display AST`}
+                value={astResult}
+                options={{
+                  readOnly: true,
+                  domReadOnly: true,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 12,
+                  automaticLayout: true,
+                }}
+                theme="mq-base"
+              />
+            )}
           </div>
         </div>
       </div>
