@@ -6,6 +6,14 @@ use futures::stream::StreamExt;
 use miette::miette;
 use mq_markdown::ConversionOptions;
 use scraper::{Html, Selector};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default)]
+pub enum OutputFormat {
+    #[default]
+    Text,
+    Json,
+}
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
@@ -26,6 +34,16 @@ pub struct CrawlResult {
     pub total_pages_visited: usize,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CrawlResultStats {
+    pub pages_crawled: usize,
+    pub pages_skipped_robots: usize,
+    pub pages_failed: usize,
+    pub links_discovered: usize,
+    pub total_pages_visited: usize,
+    pub duration_secs: Option<f64>,
+}
+
 impl CrawlResult {
     pub fn duration(&self) -> Option<Duration> {
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
@@ -35,25 +53,46 @@ impl CrawlResult {
         }
     }
 
-    pub fn write_stats_to_stderr(&self) {
+    pub fn to_stats(&self) -> CrawlResultStats {
+        CrawlResultStats {
+            pages_crawled: self.pages_crawled,
+            pages_skipped_robots: self.pages_skipped_robots,
+            pages_failed: self.pages_failed,
+            links_discovered: self.links_discovered,
+            total_pages_visited: self.total_pages_visited,
+            duration_secs: self.duration().map(|d| d.as_secs_f64()),
+        }
+    }
+
+    pub fn write_stats_to_stderr(&self, format: &OutputFormat) {
         let stderr = io::stderr();
         let mut handle = stderr.lock();
 
-        let _ = writeln!(handle, "\n=== Crawl Statistics ===");
-        let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
-        let _ = writeln!(
-            handle,
-            "Pages skipped (robots.txt): {}",
-            self.pages_skipped_robots
-        );
-        let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
-        let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
-        let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
+        match format {
+            OutputFormat::Text => {
+                let _ = writeln!(handle, "\n=== Crawl Statistics ===");
+                let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
+                let _ = writeln!(
+                    handle,
+                    "Pages skipped (robots.txt): {}",
+                    self.pages_skipped_robots
+                );
+                let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
+                let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
+                let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
 
-        if let Some(duration) = self.duration() {
-            let _ = writeln!(handle, "Total duration: {:.2}s", duration.as_secs_f64());
+                if let Some(duration) = self.duration() {
+                    let _ = writeln!(handle, "Total duration: {:.2}s", duration.as_secs_f64());
+                }
+                let _ = writeln!(handle, "========================\n");
+            }
+            OutputFormat::Json => {
+                let stats = self.to_stats();
+                if let Ok(json) = serde_json::to_string_pretty(&stats) {
+                    let _ = writeln!(handle, "{}", json);
+                }
+            }
         }
-        let _ = writeln!(handle, "========================\n");
     }
 }
 
@@ -113,6 +152,7 @@ pub struct Crawler {
     crawl_delay: Duration,
     custom_robots_path: Option<String>, // Store custom robots path
     concurrency: usize,
+    format: OutputFormat,
     http_client: HttpClient,
     initial_domain: String, // To keep crawls within the starting domain
     mq_query: String,
@@ -134,6 +174,7 @@ impl Crawler {
         mq_query: Option<String>,
         output_path: Option<String>,
         concurrency: usize,
+        format: OutputFormat,
         conversion_options: mq_markdown::ConversionOptions,
     ) -> Result<Self, String> {
         let initial_domain = start_url
@@ -158,6 +199,7 @@ impl Crawler {
             custom_robots_path,
             result: Arc::new(RwLock::new(CrawlResult::default())),
             concurrency: concurrency.max(1),
+            format,
             conversion_options,
         })
     }
@@ -234,10 +276,13 @@ impl Crawler {
     async fn run_parallel(&mut self) -> Result<(), String> {
         while !self.to_visit.is_empty() {
             // Collect up to `concurrency` URLs for processing
-            let mut urls_to_process = Vec::new();
-            {
-                while let Some(url) = self.to_visit.pop() {
+            let mut urls_to_process = Vec::with_capacity(self.concurrency);
+
+            while urls_to_process.len() < self.concurrency {
+                if let Some(url) = self.to_visit.pop() {
                     urls_to_process.push(url);
+                } else {
+                    break;
                 }
             }
 
@@ -247,13 +292,12 @@ impl Crawler {
 
             // Filter out URLs that should be skipped and mark as visited atomically
             let mut valid_urls = Vec::with_capacity(self.concurrency);
-            {
-                for url in urls_to_process {
-                    if !self.should_skip_url_without_visited_check(&url)
-                        && self.visited.insert(url.clone())
-                    {
-                        valid_urls.push(url);
-                    }
+
+            for url in urls_to_process {
+                if !self.should_skip_url_without_visited_check(&url)
+                    && self.visited.insert(url.clone())
+                {
+                    valid_urls.push(url);
                 }
             }
 
@@ -422,7 +466,7 @@ impl Crawler {
         // Write statistics to stderr
         {
             let result = self.result.read().await;
-            result.write_stats_to_stderr();
+            result.write_stats_to_stderr(&self.format);
         }
     }
 

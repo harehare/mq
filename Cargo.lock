@@ -2565,6 +2565,8 @@ dependencies = [
  "robots_txt",
  "rstest",
  "scraper",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

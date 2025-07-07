@@ -3,6 +3,22 @@ use fantoccini::wd::TimeoutConfiguration;
 use mq_crawler::crawler::Crawler;
 use url::Url;
 
+#[derive(Clone, Debug, Default, clap::ValueEnum)]
+enum OutputFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Text => write!(f, "text"),
+            OutputFormat::Json => write!(f, "json"),
+        }
+    }
+}
+
 /// A simple web crawler that fetches HTML, converts it to Markdown,
 /// and optionally processes it with an mq_lang script.
 #[derive(Parser, Debug)]
@@ -18,7 +34,7 @@ struct CliArgs {
     #[clap(long, default_value_t = 5.0)]
     implicit_timeout: f64,
     /// Optional mq_lang query to process the crawled Markdown content.
-    #[clap(short, long)]
+    #[clap(short = 'q', long)]
     mq_query: Option<String>,
     /// Timeout (in seconds) for loading a single page.
     #[clap(long, default_value_t = 30.0)]
@@ -39,6 +55,9 @@ struct CliArgs {
     /// Optional WebDriver URL for browser-based crawling (e.g., http://localhost:4444).
     #[clap(short = 'U', long, value_name = "WEBDRIVER_URL")]
     webdriver_url: Option<Url>,
+    /// Output format for results and statistics
+    #[clap(short = 'f', long, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
     #[clap(flatten)]
     pub conversion: ConversionArgs,
 }
@@ -98,6 +117,11 @@ async fn main() {
         mq_crawler::http_client::HttpClient::new_reqwest(args.page_load_timeout).unwrap()
     };
 
+    let format = match args.format {
+        OutputFormat::Text => mq_crawler::crawler::OutputFormat::Text,
+        OutputFormat::Json => mq_crawler::crawler::OutputFormat::Json,
+    };
+
     match Crawler::new(
         client,
         args.url.clone(),
@@ -106,6 +130,7 @@ async fn main() {
         args.mq_query.clone(),
         args.output,
         args.concurrency,
+        format,
         mq_markdown::ConversionOptions {
             extract_scripts_as_code_blocks: args.conversion.extract_scripts_as_code_blocks,
             generate_front_matter: args.conversion.generate_front_matter,
