@@ -9,7 +9,7 @@ use url::Url;
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
     /// Delay (in seconds) between crawl requests to avoid overloading servers.
-    #[clap(short = 'd', long, default_value_t = 0.5)]
+    #[clap(short = 'd', long, default_value_t = 1.0)]
     crawl_delay: f64,
     /// Number of concurrent workers for parallel processing.
     #[clap(short = 'c', long, default_value_t = 1)]

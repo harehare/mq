@@ -263,6 +263,8 @@ impl Crawler {
                     let crawler = self.clone();
                     tokio::task::spawn(async move {
                         crawler.process_url(url).await;
+                        // Apply crawl delay after processing batch
+                        sleep(crawler.crawl_delay).await;
                     })
                 })
                 .collect::<Vec<_>>();
@@ -271,9 +273,6 @@ impl Crawler {
                 .buffer_unordered(self.concurrency)
                 .collect::<Vec<_>>()
                 .await;
-
-            // Apply crawl delay after processing batch
-            sleep(self.crawl_delay).await;
         }
 
         self.finalize_crawl().await;
