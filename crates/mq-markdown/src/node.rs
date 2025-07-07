@@ -1667,11 +1667,11 @@ impl Node {
                 _ => None,
             },
             Node::Html(Html { value, .. }) => match attr {
-                "value" => Some(value.clone()),
+                "value" | "text" => Some(value.clone()),
                 _ => None,
             },
             Node::Text(Text { value, .. }) => match attr {
-                "value" => Some(value.clone()),
+                "value" | "text" => Some(value.clone()),
                 _ => None,
             },
             Node::Code(Code {
@@ -1681,30 +1681,30 @@ impl Node {
                 fence,
                 ..
             }) => match attr {
-                "value" => Some(value.clone()),
+                "value" | "text" => Some(value.clone()),
                 "lang" => lang.clone(),
                 "meta" => meta.clone(),
                 "fence" => Some(fence.to_string()),
                 _ => None,
             },
             Node::CodeInline(CodeInline { value, .. }) => match attr {
-                "value" => Some(value.to_string()),
+                "value" | "text" => Some(value.to_string()),
                 _ => None,
             },
             Node::MathInline(MathInline { value, .. }) => match attr {
-                "value" => Some(value.to_string()),
+                "value" | "text" => Some(value.to_string()),
                 _ => None,
             },
             Node::Math(Math { value, .. }) => match attr {
-                "value" => Some(value.clone()),
+                "value" | "text" => Some(value.clone()),
                 _ => None,
             },
             Node::Yaml(Yaml { value, .. }) => match attr {
-                "value" => Some(value.clone()),
+                "value" | "text" => Some(value.clone()),
                 _ => None,
             },
             Node::Toml(Toml { value, .. }) => match attr {
-                "value" => Some(value.clone()),
+                "value" | "text" => Some(value.clone()),
                 _ => None,
             },
             Node::Image(Image {
@@ -1792,15 +1792,15 @@ impl Node {
                 _ => None,
             },
             Node::MdxFlowExpression(MdxFlowExpression { value, .. }) => match attr {
-                "value" => Some(value.to_string()),
+                "value" | "text" => Some(value.to_string()),
                 _ => None,
             },
             Node::MdxTextExpression(MdxTextExpression { value, .. }) => match attr {
-                "value" => Some(value.to_string()),
+                "value" | "text" => Some(value.to_string()),
                 _ => None,
             },
             Node::MdxJsEsm(MdxJsEsm { value, .. }) => match attr {
-                "value" => Some(value.to_string()),
+                "value" | "text" => Some(value.to_string()),
                 _ => None,
             },
             Node::MdxJsxFlowElement(MdxJsxFlowElement { name, .. }) => match attr {
