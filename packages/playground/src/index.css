@@ -254,3 +254,30 @@ body {
   user-select: none;
   color: var(--text-color);
 }
+
+.tab-container {
+  display: flex;
+  gap: 0;
+}
+
+.tab {
+  background-color: transparent;
+  border: none;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  cursor: pointer;
+  color: var(--light-color);
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.tab.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+  background-color: rgba(255, 255, 255, 0.05);
+}

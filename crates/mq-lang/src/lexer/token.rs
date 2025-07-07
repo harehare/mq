@@ -3,6 +3,8 @@ use std::fmt::{self, Display, Formatter};
 use compact_str::CompactString;
 use itertools::Itertools;
 
+#[cfg(feature = "ast-json")]
+use crate::ArenaId;
 use crate::{eval::module::ModuleId, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
@@ -23,11 +25,20 @@ impl Display for StringSegment {
     }
 }
 
+#[cfg(feature = "ast-json")]
+fn default_module_id() -> ModuleId {
+    ArenaId::new(0)
+}
+
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Token {
     pub range: Range,
     pub kind: TokenKind,
+    #[cfg_attr(
+        feature = "ast-json",
+        serde(skip_serializing, skip_deserializing, default = "default_module_id")
+    )]
     pub module_id: ModuleId,
 }
 

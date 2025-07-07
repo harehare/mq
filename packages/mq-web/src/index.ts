@@ -12,7 +12,7 @@
  */
 
 // Re-export everything from core and types
-export { run, format, diagnostics, definedValues } from "./core.js";
+export { run, format, diagnostics, definedValues, toAst } from "./core.js";
 
 export type {
   Options,
