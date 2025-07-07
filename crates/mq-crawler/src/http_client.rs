@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::Client as ReqwestClient;
 use url::Url;
 
@@ -20,10 +22,16 @@ impl Default for HttpClient {
 }
 
 impl HttpClient {
-    /// Create a new reqwest-based HTTP client
-    pub fn new_reqwest() -> Result<Self, String> {
+    /// Create a new reqwest-based HTTP client optimized for single-domain crawling
+    pub fn new_reqwest(timeout: f64) -> Result<Self, String> {
         let client = ReqwestClient::builder()
             .user_agent(format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE")))
+            // Optimize for single-domain crawling
+            .pool_max_idle_per_host(3)
+            .pool_idle_timeout(Duration::from_secs(90))
+            .timeout(Duration::from_secs(timeout as u64))
+            .connect_timeout(Duration::from_secs(10))
+            .tcp_keepalive(Duration::from_secs(120))
             .build()
             .map_err(|e| format!("Failed to build reqwest client: {}", e))?;
         Ok(Self::Reqwest(client))
@@ -83,7 +91,7 @@ mod tests {
 
     #[test]
     fn test_new_reqwest_client() {
-        let client = HttpClient::new_reqwest().unwrap();
+        let client = HttpClient::new_reqwest(30.0).unwrap();
         assert!(matches!(client, HttpClient::Reqwest(_)));
     }
 }

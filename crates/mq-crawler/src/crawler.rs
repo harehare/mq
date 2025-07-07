@@ -1,15 +1,25 @@
 use crate::http_client::HttpClient;
 use crate::robots::RobotsTxt;
+use crossbeam::queue::SegQueue;
+use dashmap::{DashMap, DashSet};
 use futures::stream::StreamExt;
 use miette::miette;
+use mq_markdown::ConversionOptions;
 use scraper::{Html, Selector};
-use std::collections::{HashMap, HashSet, VecDeque};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default)]
+pub enum OutputFormat {
+    #[default]
+    Text,
+    Json,
+}
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fs, io};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 use url::Url;
 
@@ -24,6 +34,16 @@ pub struct CrawlResult {
     pub total_pages_visited: usize,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CrawlResultStats {
+    pub pages_crawled: usize,
+    pub pages_skipped_robots: usize,
+    pub pages_failed: usize,
+    pub links_discovered: usize,
+    pub total_pages_visited: usize,
+    pub duration_secs: Option<f64>,
+}
+
 impl CrawlResult {
     pub fn duration(&self) -> Option<Duration> {
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
@@ -33,25 +53,46 @@ impl CrawlResult {
         }
     }
 
-    pub fn write_stats_to_stderr(&self) {
+    pub fn to_stats(&self) -> CrawlResultStats {
+        CrawlResultStats {
+            pages_crawled: self.pages_crawled,
+            pages_skipped_robots: self.pages_skipped_robots,
+            pages_failed: self.pages_failed,
+            links_discovered: self.links_discovered,
+            total_pages_visited: self.total_pages_visited,
+            duration_secs: self.duration().map(|d| d.as_secs_f64()),
+        }
+    }
+
+    pub fn write_stats_to_stderr(&self, format: &OutputFormat) {
         let stderr = io::stderr();
         let mut handle = stderr.lock();
 
-        let _ = writeln!(handle, "\n=== Crawl Statistics ===");
-        let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
-        let _ = writeln!(
-            handle,
-            "Pages skipped (robots.txt): {}",
-            self.pages_skipped_robots
-        );
-        let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
-        let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
-        let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
+        match format {
+            OutputFormat::Text => {
+                let _ = writeln!(handle, "\n=== Crawl Statistics ===");
+                let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
+                let _ = writeln!(
+                    handle,
+                    "Pages skipped (robots.txt): {}",
+                    self.pages_skipped_robots
+                );
+                let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
+                let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
+                let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
 
-        if let Some(duration) = self.duration() {
-            let _ = writeln!(handle, "Total duration: {:.2}s", duration.as_secs_f64());
+                if let Some(duration) = self.duration() {
+                    let _ = writeln!(handle, "Total duration: {:.2}s", duration.as_secs_f64());
+                }
+                let _ = writeln!(handle, "========================\n");
+            }
+            OutputFormat::Json => {
+                let stats = self.to_stats();
+                if let Ok(json) = serde_json::to_string_pretty(&stats) {
+                    let _ = writeln!(handle, "{}", json);
+                }
+            }
         }
-        let _ = writeln!(handle, "========================\n");
     }
 }
 
@@ -74,11 +115,11 @@ fn sanitize_filename_component(component: &str, max_len: usize) -> String {
 
 // Replace the placeholder extract_links function with this:
 fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
-    let mut found_urls = Vec::new();
     if html_content.is_empty() {
-        return found_urls;
+        return Vec::new();
     }
 
+    let mut found_urls = Vec::new();
     let document = Html::parse_document(html_content);
     let link_selector = Selector::parse("a[href]").expect("Failed to parse 'a[href]' selector"); // Should not panic with valid selector
 
@@ -105,20 +146,22 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
     found_urls
 }
 
+#[derive(Debug, Clone)]
 pub struct Crawler {
-    http_client: HttpClient,
-    to_visit: Arc<Mutex<VecDeque<Url>>>,
-    visited: Arc<RwLock<HashSet<Url>>>,
-    robots_cache: Arc<RwLock<HashMap<String, Arc<RobotsTxt>>>>,
-    crawl_delay: Duration,
-    mq_query: String,
-    user_agent: String,
-    output_path: Option<String>,
-    initial_domain: String, // To keep crawls within the starting domain
-    custom_robots_path: Option<String>, // Store custom robots path
-    result: Arc<Mutex<CrawlResult>>,
-    concurrency: usize,
     conversion_options: mq_markdown::ConversionOptions,
+    crawl_delay: Duration,
+    custom_robots_path: Option<String>, // Store custom robots path
+    concurrency: usize,
+    format: OutputFormat,
+    http_client: HttpClient,
+    initial_domain: String, // To keep crawls within the starting domain
+    mq_query: String,
+    output_path: Option<String>,
+    result: Arc<RwLock<CrawlResult>>,
+    robots_cache: Arc<DashMap<String, Arc<RobotsTxt>>>,
+    to_visit: Arc<SegQueue<Url>>,
+    user_agent: String,
+    visited: Arc<DashSet<Url>>,
 }
 
 impl Crawler {
@@ -131,6 +174,7 @@ impl Crawler {
         mq_query: Option<String>,
         output_path: Option<String>,
         concurrency: usize,
+        format: OutputFormat,
         conversion_options: mq_markdown::ConversionOptions,
     ) -> Result<Self, String> {
         let initial_domain = start_url
@@ -139,22 +183,23 @@ impl Crawler {
             .to_string();
         let user_agent = format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE"));
 
-        let mut to_visit = VecDeque::new();
-        to_visit.push_back(start_url.clone());
+        let to_visit = SegQueue::new();
+        to_visit.push(start_url.clone());
 
         Ok(Self {
             http_client,
-            to_visit: Arc::new(Mutex::new(to_visit)),
-            visited: Arc::new(RwLock::new(HashSet::new())),
-            robots_cache: Arc::new(RwLock::new(HashMap::new())),
+            to_visit: Arc::new(to_visit),
+            visited: Arc::new(DashSet::new()),
+            robots_cache: Arc::new(DashMap::new()),
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
             initial_domain,
             custom_robots_path,
-            result: Arc::new(Mutex::new(CrawlResult::default())),
+            result: Arc::new(RwLock::new(CrawlResult::default())),
             concurrency: concurrency.max(1),
+            format,
             conversion_options,
         })
     }
@@ -167,8 +212,7 @@ impl Crawler {
 
         // Check if we already have this domain's robots cached
         {
-            let cache = self.robots_cache.read().await;
-            if let Some(robots) = cache.get(&domain) {
+            if let Some(robots) = self.robots_cache.get(&domain) {
                 return Ok(robots.clone());
             }
         }
@@ -183,18 +227,14 @@ impl Crawler {
         let arc_robots = Arc::new(robots);
 
         // Cache the result
-        {
-            let mut cache = self.robots_cache.write().await;
-            cache.insert(domain.clone(), arc_robots.clone());
-        }
-
+        self.robots_cache.insert(domain.clone(), arc_robots.clone());
         Ok(arc_robots)
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
         // Record start time
         {
-            let mut result = self.result.lock().await;
+            let mut result = self.result.write().await;
             result.start_time = Some(Instant::now());
         }
 
@@ -212,48 +252,37 @@ impl Crawler {
         }
         tracing::info!("{}", startup_info);
 
-        if self.concurrency == 1 {
-            self.run_sequential().await
-        } else {
-            self.run_parallel().await
-        }
-    }
-
-    async fn run_sequential(&mut self) -> Result<(), String> {
-        loop {
-            let current_url = {
-                let mut queue = self.to_visit.lock().await;
-                queue.pop_front()
-            };
-
-            let Some(current_url) = current_url else {
-                break;
-            };
-
-            if self.should_skip_url(&current_url).await {
-                continue;
+        if let Some(ref output_dir_str) = self.output_path {
+            let output_dir = Path::new(output_dir_str);
+            if !output_dir.exists() {
+                fs::create_dir_all(output_dir).map_err(|e| {
+                    format!(
+                        "Failed to create output directory '{}': {}",
+                        output_dir_str, e
+                    )
+                })?;
+                tracing::info!("Created output directory: {:?}", output_dir);
+            } else if !output_dir.is_dir() {
+                return Err(format!(
+                    "Specified output path '{}' exists but is not a directory.",
+                    output_dir_str
+                ));
             }
-
-            self.process_url(current_url).await;
-            sleep(self.crawl_delay).await;
         }
 
-        self.finalize_crawl().await;
-        Ok(())
+        self.run_parallel().await
     }
 
     async fn run_parallel(&mut self) -> Result<(), String> {
-        while !self.to_visit.lock().await.is_empty() {
+        while !self.to_visit.is_empty() {
             // Collect up to `concurrency` URLs for processing
-            let mut urls_to_process = Vec::new();
-            {
-                let mut queue = self.to_visit.lock().await;
-                for _ in 0..self.concurrency {
-                    if let Some(url) = queue.pop_front() {
-                        urls_to_process.push(url);
-                    } else {
-                        break;
-                    }
+            let mut urls_to_process = Vec::with_capacity(self.concurrency);
+
+            while urls_to_process.len() < self.concurrency {
+                if let Some(url) = self.to_visit.pop() {
+                    urls_to_process.push(url);
+                } else {
+                    break;
                 }
             }
 
@@ -261,43 +290,40 @@ impl Crawler {
                 break;
             }
 
-            // Filter out URLs that should be skipped
-            let mut valid_urls = Vec::new();
+            // Filter out URLs that should be skipped and mark as visited atomically
+            let mut valid_urls = Vec::with_capacity(self.concurrency);
+
             for url in urls_to_process {
-                if !self.should_skip_url(&url).await {
+                if !self.should_skip_url_without_visited_check(&url)
+                    && self.visited.insert(url.clone())
+                {
                     valid_urls.push(url);
                 }
             }
 
-            // Process URLs concurrently using futures stream
-            let futures: Vec<_> = valid_urls
+            let futures = valid_urls
                 .into_iter()
-                .map(|url| self.process_url(url))
-                .collect();
+                .map(|url| {
+                    let crawler = self.clone();
+                    tokio::task::spawn(async move {
+                        crawler.process_url(url).await;
+                        // Apply crawl delay after processing batch
+                        sleep(crawler.crawl_delay).await;
+                    })
+                })
+                .collect::<Vec<_>>();
 
             futures::stream::iter(futures)
                 .buffer_unordered(self.concurrency)
                 .collect::<Vec<_>>()
                 .await;
-
-            // Apply crawl delay after processing batch
-            sleep(self.crawl_delay).await;
         }
 
         self.finalize_crawl().await;
         Ok(())
     }
 
-    async fn should_skip_url(&self, url: &Url) -> bool {
-        // Check if already visited
-        {
-            let visited = self.visited.read().await;
-            if visited.contains(url) {
-                tracing::debug!("Skipping already visited URL: {}", url);
-                return true;
-            }
-        }
-
+    fn should_skip_url_without_visited_check(&self, url: &Url) -> bool {
         // Check domain
         if url.domain().is_none_or(|d| d != self.initial_domain) {
             tracing::info!("Skipping URL from different domain: {}", url);
@@ -310,6 +336,7 @@ impl Crawler {
     async fn process_url(&self, current_url: Url) {
         tracing::info!("Processing URL: {}", current_url);
 
+        // URL is already marked as visited in run_parallel, no need to check again
         let robots_rules = match self.get_or_fetch_robots(&current_url).await {
             Ok(rules) => rules,
             Err(e) => {
@@ -321,11 +348,7 @@ impl Crawler {
         if !robots_rules.is_allowed(&current_url, &self.user_agent) {
             tracing::warn!("Skipping URL disallowed by robots.txt: {}", current_url);
             {
-                let mut visited = self.visited.write().await;
-                visited.insert(current_url.clone());
-            }
-            {
-                let mut result = self.result.lock().await;
+                let mut result = self.result.write().await;
                 result.pages_skipped_robots += 1;
             }
             return;
@@ -333,110 +356,117 @@ impl Crawler {
 
         match self.http_client.fetch(current_url.clone()).await {
             Ok(html_content) => {
-                let input = match mq_lang::parse_html_input_with_options(
-                    &html_content,
-                    self.conversion_options,
-                ) {
-                    Ok(input) => input,
-                    Err(e) => {
-                        tracing::error!("Failed to parse HTML from {}: {}", current_url, e);
-                        {
-                            let mut result = self.result.lock().await;
-                            result.pages_failed += 1;
-                        }
-                        return;
-                    }
-                };
-
                 tracing::info!("Applying mq query to content from {}", current_url);
 
-                // Create a new engine for this thread
-                let mut mq_engine = mq_lang::Engine::default();
-                mq_engine.load_builtin_module();
+                let query = self.mq_query.clone();
+                let html_content_clone = html_content.clone();
+                let conversion_options = self.conversion_options;
+                let current_url_clone = current_url.clone();
+                let self_clone = self.clone();
+                let new_links = tokio::task::spawn_blocking(move || {
+                    if let Err(e) =
+                        Self::execute_query(&query, &html_content_clone, conversion_options).map(
+                            |md| {
+                                if let Err(e) =
+                                    self_clone.output_markdown(&current_url_clone, md.as_str())
+                                {
+                                    tracing::error!(
+                                        "Failed to output markdown for {}: {}",
+                                        current_url_clone,
+                                        e
+                                    );
+                                }
+                            },
+                        )
+                    {
+                        tracing::error!(
+                            "Failed to execute mq query on content from {}: {}",
+                            current_url_clone,
+                            e
+                        );
+                    }
 
-                match mq_engine
-                    .eval(&self.mq_query, input.into_iter())
-                    .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
-                {
-                    Ok(values) => {
-                        if let Err(e) = self.output_markdown(
-                            &current_url,
-                            &mq_markdown::Markdown::new(
-                                values
-                                    .into_iter()
-                                    .map(|value| match value {
-                                        mq_lang::Value::Markdown(node) => node.clone(),
-                                        _ => value.to_string().into(),
-                                    })
-                                    .collect(),
-                            )
-                            .to_string(),
-                        ) {
-                            tracing::error!("Failed to output markdown for {}: {}", current_url, e);
+                    extract_links(&html_content, &current_url_clone)
+                })
+                .await;
+
+                match new_links {
+                    Ok(new_links) => {
+                        {
+                            let mut result = self.result.write().await;
+                            result.links_discovered += new_links.len();
+                            result.pages_crawled += 1;
+                        }
+
+                        {
+                            for link in new_links {
+                                if !self.visited.contains(&link)
+                                    && link.domain().is_some_and(|d| d == self.initial_domain)
+                                {
+                                    self.to_visit.push(link);
+                                }
+                            }
                         }
                     }
                     Err(e) => {
-                        let error_string = format!("{:?}", e);
                         tracing::error!(
-                            "Error running mq query on content from {}: {}. Original markdown will be used.",
+                            "Failed to execute mq query on content from {}: {}",
                             current_url,
-                            error_string.chars().take(200).collect::<String>()
+                            e
                         );
                     }
-                }
-
-                let new_links = extract_links(&html_content, &current_url);
-                {
-                    let mut result = self.result.lock().await;
-                    result.links_discovered += new_links.len();
-                }
-
-                {
-                    let mut to_visit = self.to_visit.lock().await;
-                    let visited = self.visited.read().await;
-                    for link in new_links {
-                        if !visited.contains(&link)
-                            && !to_visit.contains(&link)
-                            && link.domain().is_some_and(|d| d == self.initial_domain)
-                        {
-                            to_visit.push_back(link);
-                        }
-                    }
-                }
-
-                {
-                    let mut result = self.result.lock().await;
-                    result.pages_crawled += 1;
                 }
             }
             Err(e) => {
                 tracing::error!("Failed to fetch URL {}: {}", current_url, e);
                 {
-                    let mut result = self.result.lock().await;
+                    let mut result = self.result.write().await;
                     result.pages_failed += 1;
                 }
             }
         }
+    }
 
+    fn execute_query(
+        query: &str,
+        input: &str,
+        conversion_options: ConversionOptions,
+    ) -> miette::Result<String> {
+        let input = mq_lang::parse_html_input_with_options(input, conversion_options)?;
+        let mut mq_engine = mq_lang::Engine::default();
+        mq_engine.load_builtin_module();
+
+        match mq_engine
+            .eval(query, input.into_iter())
+            .map_err(|e| miette!(format!("Error evaluating mq query: {}", e)))
         {
-            let mut visited = self.visited.write().await;
-            visited.insert(current_url);
+            Ok(values) => Ok(mq_markdown::Markdown::new(
+                values
+                    .into_iter()
+                    .map(|value| match value {
+                        mq_lang::Value::Markdown(node) => node.clone(),
+                        _ => value.to_string().into(),
+                    })
+                    .collect(),
+            )
+            .to_string()),
+            Err(e) => Err(miette!(e)),
         }
     }
 
     async fn finalize_crawl(&self) {
         // Record end time and final statistics
         {
-            let mut result = self.result.lock().await;
+            let mut result = self.result.write().await;
             result.end_time = Some(Instant::now());
-            let visited_len = self.visited.read().await.len();
+            let visited_len = self.visited.len();
             result.total_pages_visited = visited_len;
         }
 
         // Write statistics to stderr
         {
-            let result = self.result.lock().await;
-            result.write_stats_to_stderr();
+            let result = self.result.read().await;
+            result.write_stats_to_stderr(&self.format);
         }
     }
 
@@ -457,23 +487,7 @@ impl Crawler {
             };
 
             let filename = format!("{}_{}.md", sane_domain, sane_path);
-
             let output_dir = Path::new(output_dir_str);
-            if !output_dir.exists() {
-                fs::create_dir_all(output_dir).map_err(|e| {
-                    format!(
-                        "Failed to create output directory '{}': {}",
-                        output_dir_str, e
-                    )
-                })?;
-                tracing::info!("Created output directory: {:?}", output_dir);
-            } else if !output_dir.is_dir() {
-                return Err(format!(
-                    "Specified output path '{}' exists but is not a directory.",
-                    output_dir_str
-                ));
-            }
-
             let output_file_path = output_dir.join(&filename);
             tracing::info!("Saving markdown for {} to: {:?}", url, output_file_path);
 
