@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use miette::miette;
 use rmcp::{
     Error as McpError, ServerHandler, ServiceExt,
@@ -18,18 +16,10 @@ pub struct Server {
 
 #[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
 struct Query {
-    #[schemars(description = "The markdown file to process")]
-    markdown_file: PathBuf,
+    #[schemars(description = "The HTML to process")]
+    html: String,
     #[schemars(description = "The mq query to execute")]
-    query: String,
-}
-
-#[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
-struct AstQuery {
-    #[schemars(description = "The markdown file to process")]
-    markdown_file: PathBuf,
-    #[schemars(description = "The mq query AST to execute")]
-    ast_json: String,
+    query: Option<String>,
 }
 
 #[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
@@ -64,41 +54,27 @@ impl Server {
         })
     }
 
-    #[tool(description = "Execute mq query on markdown content.")]
-    fn execute(&self, Parameters(query): Parameters<Query>) -> McpResult {
-        self.execute_query(&query.markdown_file, &query.query)
-    }
-
-    #[tool(description = "Execute mq query on AST JSON.")]
-    fn execute_from_ast(
-        &self,
-        Parameters(query): Parameters<AstQuery>,
-    ) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Executes an mq query on the provided HTML content and returns the result as Markdown."
+    )]
+    fn html_to_markdown(&self, Parameters(Query { html, query }): Parameters<Query>) -> McpResult {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
-        let markdown_content = std::fs::read_to_string(query.markdown_file).map_err(|e| {
-            McpError::invalid_request(
-                "Failed to read markdown file",
+        let markdown = mq_markdown::Markdown::from_html_str(&html).map_err(|e| {
+            McpError::parse_error(
+                "Failed to parse markdown",
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
-
         let values = engine
-            .eval_ast(
-                serde_json::from_str(&query.ast_json).map_err(|e| {
-                    McpError::parse_error(
-                        "Failed to parse AST JSON",
-                        Some(serde_json::Value::String(e.to_string())),
-                    )
-                })?,
-                mq_lang::parse_markdown_input(&markdown_content)
-                    .unwrap()
-                    .into_iter(),
+            .eval(
+                &query.unwrap_or("identity()".to_string()),
+                markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
             )
             .map_err(|e| {
                 McpError::invalid_request(
-                    "Failed to execute code on AST",
+                    "Failed to query",
                     Some(serde_json::Value::String(e.to_string())),
                 )
             })?;
@@ -209,49 +185,6 @@ impl Server {
 
         Ok(CallToolResult::success(vec![Content::text(functions_json)]))
     }
-
-    fn execute_query(&self, markdown_file: &PathBuf, query: &str) -> McpResult {
-        let mut engine = mq_lang::Engine::default();
-        engine.load_builtin_module();
-
-        let markdown_content = std::fs::read_to_string(markdown_file).map_err(|e| {
-            McpError::invalid_request(
-                "Failed to read markdown file",
-                Some(serde_json::Value::String(e.to_string())),
-            )
-        })?;
-        let markdown =
-            mq_markdown::Markdown::from_markdown_str(&markdown_content).map_err(|e| {
-                McpError::parse_error(
-                    "Failed to parse markdown",
-                    Some(serde_json::Value::String(e.to_string())),
-                )
-            })?;
-        let values = engine
-            .eval(
-                query,
-                markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
-            )
-            .map_err(|e| {
-                McpError::invalid_request(
-                    "Failed to query",
-                    Some(serde_json::Value::String(e.to_string())),
-                )
-            })?;
-
-        Ok(CallToolResult::success(
-            values
-                .into_iter()
-                .filter_map(|value| {
-                    if value.is_none() || value.is_empty() {
-                        None
-                    } else {
-                        Some(Content::text(value.to_string()))
-                    }
-                })
-                .collect::<Vec<_>>(),
-        ))
-    }
 }
 
 #[tool_handler]
@@ -284,30 +217,17 @@ pub async fn start() -> miette::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
     use super::*;
 
     #[tokio::test]
     async fn test_execute_code() {
-        let (_, temp_file_path) = mq_test::create_file(
-            "test_execute_code.md",
-            "# Test Heading\n\nThis is a test paragraph.\n\n- Item 1\n- Item 2",
-        );
-
-        mq_test::defer! {
-            if temp_file_path.clone().exists() {
-                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
-            }
-        }
-
         let server = Server::new().expect("Failed to create server");
         let query = Query {
-            markdown_file: temp_file_path.clone(),
-            query: ".h1".to_string(),
+            html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
+            query: Some(".h1".to_string()),
         };
 
-        let result = server.execute(Parameters(query)).unwrap();
+        let result = server.html_to_markdown(Parameters(query)).unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
         assert_eq!(
@@ -320,64 +240,12 @@ mod tests {
         );
 
         let query = Query {
-            markdown_file: temp_file_path.clone(),
-            query: "a".to_string(),
+            html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
+            query: Some("a".to_string()),
         };
 
-        let result = server.execute(Parameters(query));
+        let result = server.html_to_markdown(Parameters(query));
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_execute_ast() {
-        let server = Server::new().expect("Failed to create server");
-
-        let (_, temp_file_path) = mq_test::create_file(
-            "test_execute_ast.md",
-            "# Test Heading\n\nThis is a test paragraph.\n\n- Item 1\n- Item 2",
-        );
-
-        mq_test::defer! {
-            if temp_file_path.clone().exists() {
-                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
-            }
-        }
-
-        // Generate AST JSON from markdown
-        let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
-
-        let query = AstQuery {
-            markdown_file: temp_file_path.clone(),
-            ast_json: mq_lang::parse(".h", token_arena)
-                .map(|json| serde_json::to_string(&json).unwrap())
-                .unwrap(),
-        };
-
-        let result = server.execute_from_ast(Parameters(query));
-        match result {
-            Ok(result) => {
-                if result.is_error.unwrap_or_default() {
-                    println!("Error result: {:?}", result.content);
-                    panic!("Query resulted in error");
-                }
-            }
-            Err(e) => {
-                println!("Failed to execute query: {:?}", e);
-                panic!("Query execution failed");
-            }
-        }
-
-        // Generate AST JSON from markdown
-        let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
-
-        let query = AstQuery {
-            markdown_file: temp_file_path.clone(),
-            ast_json: mq_lang::parse("a", token_arena)
-                .map(|json| serde_json::to_string(&json).unwrap())
-                .unwrap(),
-        };
-
-        assert!(server.execute_from_ast(Parameters(query)).is_err());
     }
 
     #[tokio::test]
