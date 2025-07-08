@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use miette::miette;
 use rmcp::{
     Error as McpError, ServerHandler, ServiceExt,
@@ -11,16 +13,16 @@ pub struct Server;
 
 #[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
 struct Query {
-    #[schemars(description = "The markdown content to process")]
-    content: String,
+    #[schemars(description = "The markdown file to process")]
+    markdown_file: PathBuf,
     #[schemars(description = "The mq query to execute")]
     query: String,
 }
 
 #[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
 struct AstQuery {
-    #[schemars(description = "The markdown content to process")]
-    content: String,
+    #[schemars(description = "The markdown file to process")]
+    markdown_file: PathBuf,
     #[schemars(description = "The mq query AST to execute")]
     ast_json: String,
 }
@@ -58,7 +60,7 @@ impl Server {
         #[schemars(description = "Execution query")]
         query: Query,
     ) -> Result<CallToolResult, McpError> {
-        self.execute_query(&query.content, &query.query)
+        self.execute_query(&query.markdown_file, &query.query)
     }
 
     #[tool(description = "Execute mq query on AST JSON.")]
@@ -71,6 +73,13 @@ impl Server {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
+        let markdown_content = std::fs::read_to_string(query.markdown_file).map_err(|e| {
+            McpError::invalid_request(
+                "Failed to read markdown file",
+                Some(serde_json::Value::String(e.to_string())),
+            )
+        })?;
+
         let values = engine
             .eval_ast(
                 serde_json::from_str(&query.ast_json).map_err(|e| {
@@ -79,7 +88,7 @@ impl Server {
                         Some(serde_json::Value::String(e.to_string())),
                     )
                 })?,
-                mq_lang::parse_markdown_input(&query.content)
+                mq_lang::parse_markdown_input(&markdown_content)
                     .unwrap()
                     .into_iter(),
             )
@@ -199,16 +208,27 @@ impl Server {
         Ok(CallToolResult::success(vec![Content::text(functions_json)]))
     }
 
-    fn execute_query(&self, markdown: &str, query: &str) -> Result<CallToolResult, McpError> {
+    fn execute_query(
+        &self,
+        markdown_file: &PathBuf,
+        query: &str,
+    ) -> Result<CallToolResult, McpError> {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
-        let markdown = mq_markdown::Markdown::from_markdown_str(markdown).map_err(|e| {
-            McpError::parse_error(
-                "Failed to parse markdown",
+        let markdown_content = std::fs::read_to_string(markdown_file).map_err(|e| {
+            McpError::invalid_request(
+                "Failed to read markdown file",
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
+        let markdown =
+            mq_markdown::Markdown::from_markdown_str(&markdown_content).map_err(|e| {
+                McpError::parse_error(
+                    "Failed to parse markdown",
+                    Some(serde_json::Value::String(e.to_string())),
+                )
+            })?;
         let values = engine
             .eval(
                 query,
@@ -272,10 +292,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_code() {
+        let (_, temp_file_path) = mq_test::create_file(
+            "test_execute_code.md",
+            "# Test Heading\n\nThis is a test paragraph.\n\n- Item 1\n- Item 2",
+        );
+
+        mq_test::defer! {
+            if temp_file_path.clone().exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
         let server = Server;
         let query = Query {
-            content: "# Test Heading\n\nThis is a test paragraph.\n\n- Item 1\n- Item 2"
-                .to_string(),
+            markdown_file: temp_file_path.clone(),
             query: ".h1".to_string(),
         };
 
@@ -292,8 +322,7 @@ mod tests {
         );
 
         let query = Query {
-            content: "# Test Heading\n\nThis is a test paragraph.\n\n- Item 1\n- Item 2"
-                .to_string(),
+            markdown_file: temp_file_path.clone(),
             query: "a".to_string(),
         };
 
@@ -305,12 +334,22 @@ mod tests {
     async fn test_execute_ast() {
         let server = Server;
 
+        let (_, temp_file_path) = mq_test::create_file(
+            "test_execute_ast.md",
+            "# Test Heading\n\nThis is a test paragraph.\n\n- Item 1\n- Item 2",
+        );
+
+        mq_test::defer! {
+            if temp_file_path.clone().exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
         // Generate AST JSON from markdown
-        let content = "# Test Heading\n\nThis is a test paragraph.".to_string();
         let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
 
         let query = AstQuery {
-            content,
+            markdown_file: temp_file_path.clone(),
             ast_json: mq_lang::parse(".h", token_arena)
                 .map(|json| serde_json::to_string(&json).unwrap())
                 .unwrap(),
@@ -331,11 +370,10 @@ mod tests {
         }
 
         // Generate AST JSON from markdown
-        let content = "# Test Heading\n\nThis is a test paragraph.".to_string();
         let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
 
         let query = AstQuery {
-            content,
+            markdown_file: temp_file_path.clone(),
             ast_json: mq_lang::parse("a", token_arena)
                 .map(|json| serde_json::to_string(&json).unwrap())
                 .unwrap(),
