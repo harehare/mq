@@ -2681,6 +2681,7 @@ name = "mq-mcp"
 version = "0.2.8"
 dependencies = [
  "miette",
+ "mq-hir",
  "mq-lang",
  "mq-markdown",
  "mq-test",

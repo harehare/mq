@@ -27,5 +27,5 @@ rstest = "0.25.0"
 [features]
 default = ["std"]
 html-to-markdown = ["dep:html5ever", "dep:markup5ever_rcdom", "dep:serde_yaml"]
-json = ["dep:serde", "dep:serde_json"]
+json = ["dep:serde", "dep:serde_json", "compact_str/serde"]
 std = []

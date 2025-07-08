@@ -6,4 +6,5 @@ ignore:
   - "crates/mq-repl/src/repl.rs"
   - "crates/mq-tui/tests/tests.rs"
   - "crates/mq-wasm"
+  - "crates/mq-mcp"
   - "crates/mq-web-api"

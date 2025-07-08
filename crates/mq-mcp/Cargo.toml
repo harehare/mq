@@ -7,8 +7,9 @@ version = "0.2.8"
 
 [dependencies]
 miette.workspace = true
-mq-lang.workspace = true
-mq-markdown.workspace = true
+mq-hir.workspace = true
+mq-lang = {workspace = true, features = ["ast-json"]}
+mq-markdown = {workspace = true, features = ["json"]}
 rmcp = {version = "0.1.5", features = ["server"]}
 serde = {workspace = true, features = ["derive"]}
 serde_json.workspace = true
