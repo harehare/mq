@@ -1826,10 +1826,10 @@ impl Node {
             Node::Footnote(f) if attr == "ident" => {
                 f.ident = value.to_string();
             }
-            Node::Html(h) if attr == "value" => {
+            Node::Html(h) if attr == "value" || attr == "text" => {
                 h.value = value.to_string();
             }
-            Node::Text(t) if attr == "value" => {
+            Node::Text(t) if attr == "value" || attr == "text" => {
                 t.value = value.to_string();
             }
             Node::Code(c) => match attr {
@@ -1855,19 +1855,19 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::CodeInline(ci) if attr == "value" => {
+            Node::CodeInline(ci) if attr == "value" || attr == "text" => {
                 ci.value = value.into();
             }
-            Node::MathInline(mi) if attr == "value" => {
+            Node::MathInline(mi) if attr == "value" || attr == "text" => {
                 mi.value = value.into();
             }
-            Node::Math(m) if attr == "value" => {
+            Node::Math(m) if attr == "value" || attr == "text" => {
                 m.value = value.to_string();
             }
-            Node::Yaml(y) if attr == "value" => {
+            Node::Yaml(y) if attr == "value" || attr == "text" => {
                 y.value = value.to_string();
             }
-            Node::Toml(t) if attr == "value" => {
+            Node::Toml(t) if attr == "value" || attr == "text" => {
                 t.value = value.to_string();
             }
             Node::Image(i) => match attr {
@@ -2023,16 +2023,16 @@ impl Node {
                     })
                     .collect();
             }
-            Node::MdxFlowExpression(m) if attr == "value" => {
+            Node::MdxFlowExpression(m) if attr == "value" || attr == "text" => {
                 m.value = value.into();
             }
-            Node::MdxTextExpression(m) if attr == "value" => {
+            Node::MdxTextExpression(m) if attr == "value" || attr == "text" => {
                 m.value = value.into();
             }
-            Node::MdxJsEsm(m) if attr == "value" => {
+            Node::MdxJsEsm(m) if attr == "value" || attr == "text" => {
                 m.value = value.into();
             }
-            Node::MdxJsEsm(m) if attr == "value" => {
+            Node::MdxJsEsm(m) if attr == "value" || attr == "text" => {
                 m.value = value.into();
             }
             Node::MdxJsxFlowElement(m) if attr == "name" => {
