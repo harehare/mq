@@ -3,13 +3,18 @@ use std::path::PathBuf;
 use miette::miette;
 use rmcp::{
     Error as McpError, ServerHandler, ServiceExt,
+    handler::server::tool::{Parameters, ToolRouter},
     model::{CallToolResult, Content, ProtocolVersion, ServerCapabilities, ServerInfo},
-    schemars, tool,
+    schemars, tool, tool_handler, tool_router,
 };
 use tokio::io::{stdin, stdout};
 
+type McpResult = Result<CallToolResult, McpError>;
+
 #[derive(Debug, Clone, Default)]
-pub struct Server;
+pub struct Server {
+    pub tool_router: ToolRouter<Self>,
+}
 
 #[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
 struct Query {
@@ -51,24 +56,23 @@ struct SelectorInfo {
     params: Vec<String>,
 }
 
-#[tool(tool_box)]
+#[tool_router]
 impl Server {
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            tool_router: Self::tool_router(),
+        })
+    }
+
     #[tool(description = "Execute mq query on markdown content.")]
-    fn execute(
-        &self,
-        #[tool(aggr)]
-        #[schemars(description = "Execution query")]
-        query: Query,
-    ) -> Result<CallToolResult, McpError> {
+    fn execute(&self, Parameters(query): Parameters<Query>) -> McpResult {
         self.execute_query(&query.markdown_file, &query.query)
     }
 
     #[tool(description = "Execute mq query on AST JSON.")]
     fn execute_from_ast(
         &self,
-        #[tool(aggr)]
-        #[schemars(description = "Execution query")]
-        query: AstQuery,
+        Parameters(query): Parameters<AstQuery>,
     ) -> Result<CallToolResult, McpError> {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
@@ -116,10 +120,8 @@ impl Server {
     #[tool(description = "Get available functions and selectors that can be used in mq query.")]
     fn get_available_functions_and_selectors(
         &self,
-        #[tool(aggr)]
-        #[schemars(description = "User defined query")]
-        user_query: Option<String>,
-    ) -> Result<CallToolResult, McpError> {
+        Parameters(user_query): Parameters<Option<String>>,
+    ) -> McpResult {
         let mut hir = mq_hir::Hir::default();
 
         if let Some(query) = user_query {
@@ -208,11 +210,7 @@ impl Server {
         Ok(CallToolResult::success(vec![Content::text(functions_json)]))
     }
 
-    fn execute_query(
-        &self,
-        markdown_file: &PathBuf,
-        query: &str,
-    ) -> Result<CallToolResult, McpError> {
+    fn execute_query(&self, markdown_file: &PathBuf, query: &str) -> McpResult {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
@@ -256,7 +254,7 @@ impl Server {
     }
 }
 
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -276,7 +274,7 @@ impl ServerHandler for Server {
 
 pub async fn start() -> miette::Result<()> {
     let transport = (stdin(), stdout());
-    let server = Server;
+    let server = Server::new().expect("Failed to create server");
 
     let service = server.serve(transport).await.map_err(|e| miette!(e))?;
     service.waiting().await.map_err(|e| miette!(e))?;
@@ -303,13 +301,13 @@ mod tests {
             }
         }
 
-        let server = Server;
+        let server = Server::new().expect("Failed to create server");
         let query = Query {
             markdown_file: temp_file_path.clone(),
             query: ".h1".to_string(),
         };
 
-        let result = server.execute(query).unwrap();
+        let result = server.execute(Parameters(query)).unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
         assert_eq!(
@@ -326,13 +324,13 @@ mod tests {
             query: "a".to_string(),
         };
 
-        let result = server.execute(query);
+        let result = server.execute(Parameters(query));
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_execute_ast() {
-        let server = Server;
+        let server = Server::new().expect("Failed to create server");
 
         let (_, temp_file_path) = mq_test::create_file(
             "test_execute_ast.md",
@@ -355,7 +353,7 @@ mod tests {
                 .unwrap(),
         };
 
-        let result = server.execute_from_ast(query);
+        let result = server.execute_from_ast(Parameters(query));
         match result {
             Ok(result) => {
                 if result.is_error.unwrap_or_default() {
@@ -379,19 +377,21 @@ mod tests {
                 .unwrap(),
         };
 
-        assert!(server.execute_from_ast(query).is_err());
+        assert!(server.execute_from_ast(Parameters(query)).is_err());
     }
 
     #[tokio::test]
     async fn test_get_available_functions() {
-        let server = Server;
-        let result = server.get_available_functions_and_selectors(None).unwrap();
+        let server = Server::new().expect("Failed to create server");
+        let result = server
+            .get_available_functions_and_selectors(Parameters(None))
+            .unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
 
-        let server = Server;
+        let server = Server::new().expect("Failed to create server");
         let result = server
-            .get_available_functions_and_selectors(Some("def var(): 1;".to_string()))
+            .get_available_functions_and_selectors(Parameters(Some("def var(): 1;".to_string())))
             .unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
