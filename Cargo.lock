@@ -2686,6 +2686,7 @@ dependencies = [
  "mq-markdown",
  "mq-test",
  "rmcp",
+ "rstest",
  "serde",
  "serde_json",
  "tokio",

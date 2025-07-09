@@ -6,7 +6,6 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router,
 };
 use tokio::io::{stdin, stdout};
-
 type McpResult = Result<CallToolResult, McpError>;
 
 #[derive(Debug, Clone, Default)]
@@ -15,11 +14,23 @@ pub struct Server {
 }
 
 #[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
-struct Query {
+struct QueryForHtml {
     #[schemars(description = "The HTML to process")]
     html: String,
-    #[schemars(description = "The mq query to execute")]
+    #[schemars(
+        description = "The mq query to execute. You can use selectors and functions listed in the `available_selectors` and `available_functions` tools."
+    )]
     query: Option<String>,
+}
+
+#[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
+struct QueryForMarkdown {
+    #[schemars(description = "The markdown to process")]
+    markdown: String,
+    #[schemars(
+        description = "The mq query to execute. You can use selectors and functions listed in the `available_selectors` and `available_functions` tools."
+    )]
+    query: String,
 }
 
 #[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
@@ -32,8 +43,6 @@ struct FunctionInfo {
     params: Vec<String>,
     #[schemars(description = "Whether this is a built-in function")]
     is_builtin: bool,
-    #[schemars(description = "Usage examples showing how to use this function")]
-    examples: Vec<String>,
 }
 
 #[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
@@ -57,13 +66,16 @@ impl Server {
     #[tool(
         description = "Executes an mq query on the provided HTML content and returns the result as Markdown."
     )]
-    fn html_to_markdown(&self, Parameters(Query { html, query }): Parameters<Query>) -> McpResult {
+    fn html_to_markdown(
+        &self,
+        Parameters(QueryForHtml { html, query }): Parameters<QueryForHtml>,
+    ) -> McpResult {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
         let markdown = mq_markdown::Markdown::from_html_str(&html).map_err(|e| {
             McpError::parse_error(
-                "Failed to parse markdown",
+                "Failed to parse html",
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
@@ -93,19 +105,50 @@ impl Server {
         ))
     }
 
-    #[tool(description = "Get available functions and selectors that can be used in mq query.")]
-    fn get_available_functions_and_selectors(
+    #[tool(description = "Extract from markdown content.")]
+    fn extract_markdown(
         &self,
-        Parameters(user_query): Parameters<Option<String>>,
-    ) -> McpResult {
-        let mut hir = mq_hir::Hir::default();
+        Parameters(QueryForMarkdown { markdown, query }): Parameters<QueryForMarkdown>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut engine = mq_lang::Engine::default();
+        engine.load_builtin_module();
 
-        if let Some(query) = user_query {
-            hir.add_code(None, &query);
-        }
+        let markdown = mq_markdown::Markdown::from_html_str(&markdown).map_err(|e| {
+            McpError::parse_error(
+                "Failed to parse markdown",
+                Some(serde_json::Value::String(e.to_string())),
+            )
+        })?;
+        let values = engine
+            .eval(
+                &query,
+                markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
+            )
+            .map_err(|e| {
+                McpError::invalid_request(
+                    "Failed to query",
+                    Some(serde_json::Value::String(e.to_string())),
+                )
+            })?;
 
+        Ok(CallToolResult::success(
+            values
+                .into_iter()
+                .filter_map(|value| {
+                    if value.is_none() || value.is_empty() {
+                        None
+                    } else {
+                        Some(Content::text(value.to_string()))
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    #[tool(description = "Get available selectors that can be used in mq query.")]
+    fn available_functions(&self) -> McpResult {
+        let hir = mq_hir::Hir::default();
         let mut functions = Vec::with_capacity(256);
-        let mut selectors = Vec::with_capacity(256);
 
         // Get built-in functions
         for (name, builtin_doc) in hir.builtin.functions.iter() {
@@ -114,11 +157,6 @@ impl Server {
                 description: builtin_doc.description.to_string(),
                 params: builtin_doc.params.iter().map(|p| p.to_string()).collect(),
                 is_builtin: true,
-                examples: vec![
-                    r#"select(or(.[], .code, .h)) | upcase() | add(" Hello World")"#.to_string(),
-                    r#"select(not(.code))"#.to_string(),
-                    r#".code("js")"#.to_string(),
-                ],
             });
         }
 
@@ -129,39 +167,31 @@ impl Server {
                 description: builtin_doc.description.to_string(),
                 params: builtin_doc.params.iter().map(|p| p.to_string()).collect(),
                 is_builtin: true,
-                examples: vec![
-                    r#"select(or(.[], .code, .h)) | upcase() | add(" Hello World")"#.to_string(),
-                    r#"select(not(.code))"#.to_string(),
-                    r#".code("js")"#.to_string(),
-                ],
             });
         }
 
-        // Get user-defined functions from symbols
-        for (_id, symbol) in hir.symbols() {
-            if let mq_hir::SymbolKind::Function(params) = &symbol.kind {
-                if let Some(name) = &symbol.value {
-                    let doc = symbol
-                        .doc
-                        .iter()
-                        .map(|(_, doc)| doc.clone())
-                        .collect::<Vec<_>>()
-                        .join("\n");
+        let output = serde_json::json!({
+            "functions": functions,
+            "examples": vec![
+                r#"select(or(.[], .code, .h)) | upcase() | add(" Hello World")"#.to_string(),
+                r#"select(not(.code))"#.to_string(),
+                r#".code("js")"#.to_string(),
+            ],
+        });
+        let functions_json = serde_json::to_string(&output).map_err(|e| {
+            McpError::invalid_request(
+                "Failed to serialize functions and selectors",
+                Some(serde_json::Value::String(e.to_string())),
+            )
+        })?;
 
-                    functions.push(FunctionInfo {
-                        name: name.to_string(),
-                        description: if doc.is_empty() {
-                            "User-defined function".to_string()
-                        } else {
-                            doc
-                        },
-                        params: params.iter().map(|p| p.to_string()).collect(),
-                        is_builtin: false,
-                        examples: vec![],
-                    });
-                }
-            }
-        }
+        Ok(CallToolResult::success(vec![Content::text(functions_json)]))
+    }
+
+    #[tool(description = "Get available selectors that can be used in mq query.")]
+    fn available_selectors(&self) -> McpResult {
+        let hir = mq_hir::Hir::default();
+        let mut selectors = Vec::with_capacity(256);
 
         // Get selectors
         for (name, selector_doc) in hir.builtin.selectors.iter() {
@@ -173,17 +203,16 @@ impl Server {
         }
 
         let output = serde_json::json!({
-            "functions": functions,
             "selectors": selectors,
         });
-        let functions_json = serde_json::to_string(&output).map_err(|e| {
+        let selectors_json = serde_json::to_string(&output).map_err(|e| {
             McpError::invalid_request(
-                "Failed to serialize functions and selectors",
+                "Failed to serialize selectors",
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
 
-        Ok(CallToolResult::success(vec![Content::text(functions_json)]))
+        Ok(CallToolResult::success(vec![Content::text(selectors_json)]))
     }
 }
 
@@ -218,50 +247,164 @@ pub async fn start() -> miette::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[tokio::test]
-    async fn test_execute_code() {
-        let server = Server::new().expect("Failed to create server");
-        let query = Query {
+    #[rstest]
+    #[case(
+        QueryForHtml {
             html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
             query: Some(".h1".to_string()),
-        };
-
-        let result = server.html_to_markdown(Parameters(query)).unwrap();
-        assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.len(), 1);
-        assert_eq!(
-            result.content[0]
-                .raw
-                .as_text()
-                .map(|t| t.text.clone())
-                .unwrap_or_default(),
-            "# Test Heading"
-        );
-
-        let query = Query {
+        },
+        Ok("# Test Heading")
+    )]
+    #[case(
+        QueryForHtml {
             html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
-            query: Some("a".to_string()),
-        };
-
+            query: Some(".text".to_string()),
+        },
+        Ok("Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
+            query: None,
+        },
+        Ok("# Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading".to_string(), // malformed HTML
+            query: Some(".h1".to_string()),
+        },
+        Ok("# Test Heading")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading</h1>".to_string(),
+            query: Some("not_a_function(".to_string()), // invalid query
+        },
+        Err("Failed to query")
+    )]
+    fn test_html_to_markdown(
+        #[case] query: QueryForHtml,
+        #[case] expected: Result<&'static str, &'static str>,
+    ) {
+        let server = Server::new().expect("Failed to create server");
         let result = server.html_to_markdown(Parameters(query));
-        assert!(result.is_err());
+        match expected {
+            Ok(expected_text) => {
+                let result = result.expect("Expected Ok result");
+                assert!(!result.is_error.unwrap_or_default());
+                let actual = result
+                    .content
+                    .iter()
+                    .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                assert_eq!(actual, expected_text);
+            }
+            Err(expected_err) => {
+                let err = result.expect_err("Expected error result");
+                let msg = format!("{err}");
+                assert!(
+                    msg.contains(expected_err),
+                    "Error message '{msg}' does not contain expected '{expected_err}'"
+                );
+            }
+        }
     }
 
-    #[tokio::test]
-    async fn test_get_available_functions() {
+    #[rstest]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading".to_string(),
+            query: ".h1".to_string(),
+        },
+        Ok("# Test Heading")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading\n\nThis is a test paragraph.".to_string(),
+            query: ".text".to_string(),
+        },
+        Ok("Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading\n\nThis is a test paragraph.".to_string(),
+            query: "identity()".to_string(),
+        },
+        Ok("# Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading".to_string(),
+            query: "not_a_function(".to_string(), // invalid query
+        },
+        Err("Failed to query")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "".to_string(),
+            query: ".h1".to_string(),
+        },
+        Ok("")
+    )]
+    fn test_extract_markdown(
+        #[case] query: QueryForMarkdown,
+        #[case] expected: Result<&'static str, &'static str>,
+    ) {
         let server = Server::new().expect("Failed to create server");
-        let result = server
-            .get_available_functions_and_selectors(Parameters(None))
-            .unwrap();
-        assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.len(), 1);
+        let result = server.extract_markdown(Parameters(query));
+        match expected {
+            Ok(expected_text) => {
+                let result = result.expect("Expected Ok result");
+                assert!(!result.is_error.unwrap_or_default());
+                let actual = result
+                    .content
+                    .iter()
+                    .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                assert_eq!(actual, expected_text);
+            }
+            Err(expected_err) => {
+                let err = result.expect_err("Expected error result");
+                let msg = format!("{err}");
+                assert!(
+                    msg.contains(expected_err),
+                    "Error message '{msg}' does not contain expected '{expected_err}'"
+                );
+            }
+        }
+    }
 
+    #[test]
+    fn test_available_functions() {
         let server = Server::new().expect("Failed to create server");
-        let result = server
-            .get_available_functions_and_selectors(Parameters(Some("def var(): 1;".to_string())))
-            .unwrap();
+        let result = server.available_functions().unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
+    }
+
+    #[test]
+    fn test_available_selectors() {
+        let server = Server::new().expect("Failed to create server");
+        let result = server.available_selectors().unwrap();
+        assert!(!result.is_error.unwrap_or_default());
+        assert_eq!(result.content.len(), 1);
+    }
+
+    #[test]
+    fn test_get_info() {
+        let server = Server::new().expect("Failed to create server");
+        let info = server.get_info();
+        assert_eq!(info.protocol_version, ProtocolVersion::V_2024_11_05);
+        assert!(info.instructions.is_some());
+        let instructions = info.instructions.unwrap();
+        assert!(
+            instructions.contains("mq is a tool for processing markdown content"),
+            "Instructions should mention mq"
+        );
     }
 }
