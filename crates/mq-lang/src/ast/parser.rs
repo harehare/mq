@@ -994,7 +994,48 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_selector(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+    /// Parse a selector with an attribute suffix and convert it to an attr() function call
+    fn parse_selector_with_attribute(
+        &mut self,
+        token: Rc<Token>,
+        attr_pos: usize,
+    ) -> Result<Rc<Node>, ParseError> {
+        if let TokenKind::Selector(selector) = &token.kind {
+            let base_selector = &selector[..attr_pos];
+            let attribute = &selector[attr_pos + 1..]; // Skip the dot
+
+            // Create a new token for the base selector
+            let base_token = Rc::new(Token {
+                range: token.range.clone(),
+                kind: TokenKind::Selector(CompactString::new(base_selector)),
+                module_id: token.module_id,
+            });
+
+            // Parse the base selector recursively
+            let base_node = self.parse_selector_direct(base_token)?;
+
+            // Create the attribute string literal
+            let attr_literal = Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Literal(Literal::String(attribute.to_string()))),
+            });
+
+            // Create the attr() function call
+            Ok(Rc::new(Node {
+                token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("attr", Some(Rc::clone(&token))),
+                    smallvec![base_node, attr_literal],
+                    false,
+                )),
+            }))
+        } else {
+            Err(ParseError::UnexpectedToken((*token).clone()))
+        }
+    }
+
+    /// Parse a selector without checking for attributes (to avoid infinite recursion)
+    fn parse_selector_direct(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         if let TokenKind::Selector(selector) = &token.kind {
             match selector.as_str() {
                 // Handles heading selectors like `.h` or `.h(level)`.
@@ -1077,9 +1118,7 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::LinkRef)),
                 })),
-                // Handles list selectors like `.list` or `.list(index)`, and `.list.checked` or `.list.checked(index)`.
-                ".list.checked" => self.parse_selector_list_args(Rc::clone(&token), true),
-                ".list" => self.parse_selector_list_args(Rc::clone(&token), false),
+                ".list" => self.parse_selector_list_args(Rc::clone(&token)),
                 ".toml" => Ok(Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Toml)),
@@ -1132,6 +1171,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_selector(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        if let TokenKind::Selector(selector) = &token.kind {
+            // Check if the selector has an attribute suffix (e.g., ".h.text")
+            if let Some(attr_pos) = selector[1..].find('.').map(|pos| pos + 1) {
+                return self.parse_selector_with_attribute(token, attr_pos);
+            }
+
+            // Use the direct parser for normal selectors
+            self.parse_selector_direct(token)
+        } else {
+            Err(ParseError::InsufficientTokens((*token).clone()))
+        }
+    }
+
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
     // Example: .[0][1] or .[0]
     fn parse_selector_table_args(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -1167,29 +1220,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Parses arguments for list selectors like `.list(index)` or `.list.checked(index)`.
-    // The `checked` parameter distinguishes between `.list` and `.list.checked`.
-    // Example: .list(0) or .list.checked(1)
-    fn parse_selector_list_args(
-        &mut self,
-        token: Rc<Token>,
-        checked: bool,
-    ) -> Result<Rc<Node>, ParseError> {
+    fn parse_selector_list_args(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         if let Ok(i) = self.parse_int_arg(Rc::clone(&token)) {
             Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                expr: Rc::new(Expr::Selector(Selector::List(
-                    Some(i as usize),
-                    if checked { Some(true) } else { None },
-                ))),
+                expr: Rc::new(Expr::Selector(Selector::List(Some(i as usize), None))),
             }))
         } else {
             Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                expr: Rc::new(Expr::Selector(Selector::List(
-                    None,
-                    if checked { Some(true) } else { None },
-                ))),
+                expr: Rc::new(Expr::Selector(Selector::List(None, None))),
             }))
         }
     }
@@ -2268,18 +2308,6 @@ mod tests {
         Ok(vec![Rc::new(Node {
             token_id: 8.into(),
             expr: Rc::new(Expr::Selector(Selector::Table(Some(1), Some(2)))),
-        })]))]
-    #[case::list_checked_selector(
-        vec![
-            token(TokenKind::Selector(CompactString::new(".list.checked"))),
-            token(TokenKind::LParen),
-            token(TokenKind::NumberLiteral(3.into())),
-            token(TokenKind::RParen),
-            token(TokenKind::Eof),
-        ],
-        Ok(vec![Rc::new(Node {
-            token_id: 2.into(),
-            expr: Rc::new(Expr::Selector(Selector::List(Some(3), Some(true)))),
         })]))]
     #[case::foreach_error(
         vec![
@@ -3618,6 +3646,48 @@ mod tests {
                             token(TokenKind::Eof)
                         ],
                         Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
+    #[case::attr_h_text(
+        vec![
+            token(TokenKind::Selector(".h.text".into())),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 3.into(),
+                expr: Rc::new(Expr::Call(Ident::new_with_token("attr", Some(Rc::new(token(TokenKind::Selector(".h.text".into()))))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Selector(Selector::Heading(None))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("text".to_owned()))),
+                        }),
+
+                    ],
+                    false,
+                ))})]))]
+    #[case::attr(
+        vec![
+            token(TokenKind::Selector(".list.checked".into())),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 3.into(),
+                expr: Rc::new(Expr::Call(Ident::new_with_token("attr", Some(Rc::new(token(TokenKind::Selector(".list.checked".into()))))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Selector(Selector::List(None, None))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("checked".to_owned()))),
+                        }),
+
+                    ],
+                    false,
+                ))})]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
@@ -3663,7 +3733,6 @@ mod tests {
     #[case::math_inline(".math_inline", Selector::InlineMath)]
     #[case::link(".link", Selector::Link)]
     #[case::link_ref(".link_ref", Selector::LinkRef)]
-    #[case::list_checked(".list.checked", Selector::List(None, Some(true)))]
     #[case::list(".list", Selector::List(None, None))]
     #[case::toml(".toml", Selector::Toml)]
     #[case::strong(".strong", Selector::Strong)]
@@ -3713,7 +3782,6 @@ mod tests {
     #[case(".code", "rust", Selector::Code(Some(CompactString::new("rust"))))]
     #[case(".h", "2", Selector::Heading(Some(2)))]
     #[case(".list", "3", Selector::List(Some(3), None))]
-    #[case(".list.checked", "4", Selector::List(Some(4), Some(true)))]
     fn test_parse_selector_with_args(
         #[case] selector_str: &str,
         #[case] arg: &str,
@@ -3978,6 +4046,80 @@ mod tests {
                         panic!(
                             "Expected String literal in argument, got {:?}",
                             args[0].expr
+                        );
+                    }
+                } else {
+                    panic!("Expected Call expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[rstest]
+    #[case::h_text(".h.text", "h", "text")]
+    #[case::h1_text(".h1.text", "h1", "text")]
+    #[case::code_html(".code.html", "code", "html")]
+    #[case::text_markdown(".text.markdown", "text", "markdown")]
+    fn test_parse_selector_with_attribute(
+        #[case] selector_str: &str,
+        #[case] base_selector: &str,
+        #[case] attribute: &str,
+    ) {
+        let arena = Arena::new(10);
+        let token = Rc::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Selector(CompactString::new(selector_str)),
+            module_id: 1.into(),
+        });
+
+        let tokens = [
+            Rc::clone(&token),
+            Rc::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Call(ident, args, _) = &*program[0].expr {
+                    // Should be transformed to attr(base_selector, "attribute")
+                    assert_eq!(ident.name, "attr");
+                    assert_eq!(args.len(), 2);
+
+                    // First argument should be the base selector
+                    if let Expr::Selector(selector) = &*args[0].expr {
+                        match base_selector {
+                            "h" => assert_eq!(*selector, Selector::Heading(None)),
+                            "h1" => assert_eq!(*selector, Selector::Heading(Some(1))),
+                            "code" => assert_eq!(*selector, Selector::Code(None)),
+                            "text" => assert_eq!(*selector, Selector::Text),
+                            _ => panic!("Unexpected base selector: {}", base_selector),
+                        }
+                    } else {
+                        panic!(
+                            "Expected Selector expression in first argument, got {:?}",
+                            args[0].expr
+                        );
+                    }
+
+                    // Second argument should be the attribute string
+                    if let Expr::Literal(Literal::String(attr_str)) = &*args[1].expr {
+                        assert_eq!(attr_str, attribute);
+                    } else {
+                        panic!(
+                            "Expected String literal in second argument, got {:?}",
+                            args[1].expr
                         );
                     }
                 } else {
