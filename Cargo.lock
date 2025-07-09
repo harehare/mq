@@ -2665,7 +2665,7 @@ name = "mq-markdown"
 version = "0.2.8"
 dependencies = [
  "compact_str 0.9.0",
- "html5ever 0.27.0",
+ "html5ever 0.29.1",
  "itertools 0.14.0",
  "markdown",
  "markup5ever_rcdom",
