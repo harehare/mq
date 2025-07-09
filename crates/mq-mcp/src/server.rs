@@ -18,7 +18,7 @@ struct QueryForHtml {
     #[schemars(description = "The HTML to process")]
     html: String,
     #[schemars(
-        description = "The mq query to execute. You can use selectors and functions listed in the `available_selectors` and `available_functions` tools."
+        description = "The mq query to execute. Selectors and functions listed in the available_selectors and available_functions tools can be used."
     )]
     query: Option<String>,
 }
@@ -28,7 +28,7 @@ struct QueryForMarkdown {
     #[schemars(description = "The markdown to process")]
     markdown: String,
     #[schemars(
-        description = "The mq query to execute. You can use selectors and functions listed in the `available_selectors` and `available_functions` tools."
+        description = "The mq query to execute. Selectors and functions listed in the available_selectors and available_functions tools can be used ."
     )]
     query: String,
 }
@@ -64,7 +64,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Executes an mq query on the provided HTML content and returns the result as Markdown."
+        description = "Executes an mq query on the provided HTML content and returns the result as Markdown. Selectors and functions listed in the available_selectors and available_functions tools can be used."
     )]
     fn html_to_markdown(
         &self,
@@ -105,7 +105,9 @@ impl Server {
         ))
     }
 
-    #[tool(description = "Extract from markdown content.")]
+    #[tool(
+        description = "Extract from markdown content. Selectors and functions listed in the available_selectors and available_functions tools can be used."
+    )]
     fn extract_markdown(
         &self,
         Parameters(QueryForMarkdown { markdown, query }): Parameters<QueryForMarkdown>,
