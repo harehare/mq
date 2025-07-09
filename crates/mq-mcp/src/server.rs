@@ -180,12 +180,7 @@ impl Server {
                 r#".code("js")"#.to_string(),
             ],
         });
-        let functions_json = serde_json::to_string(&output).map_err(|e| {
-            McpError::invalid_request(
-                "Failed to serialize functions and selectors",
-                Some(serde_json::Value::String(e.to_string())),
-            )
-        })?;
+        let functions_json = serde_json::to_string(&output).expect("Failed to serialize functions");
 
         Ok(CallToolResult::success(vec![Content::text(functions_json)]))
     }
@@ -207,12 +202,7 @@ impl Server {
         let output = serde_json::json!({
             "selectors": selectors,
         });
-        let selectors_json = serde_json::to_string(&output).map_err(|e| {
-            McpError::invalid_request(
-                "Failed to serialize selectors",
-                Some(serde_json::Value::String(e.to_string())),
-            )
-        })?;
+        let selectors_json = serde_json::to_string(&output).expect("Failed to serialize selectors");
 
         Ok(CallToolResult::success(vec![Content::text(selectors_json)]))
     }
