@@ -1,220 +1,87 @@
-use std::{fmt::Display, fs, path::PathBuf};
-
 use miette::miette;
 use rmcp::{
     Error as McpError, ServerHandler, ServiceExt,
+    handler::server::tool::{Parameters, ToolRouter},
     model::{CallToolResult, Content, ProtocolVersion, ServerCapabilities, ServerInfo},
-    schemars, tool,
+    schemars, tool, tool_handler, tool_router,
 };
 use tokio::io::{stdin, stdout};
+type McpResult = Result<CallToolResult, McpError>;
 
 #[derive(Debug, Clone, Default)]
-pub struct Server;
-
-#[derive(Debug, rmcp::serde::Deserialize, rmcp::serde::Serialize, schemars::JsonSchema)]
-pub enum Selector {
-    #[schemars(description = "Extract level 1 headings (h1) from markdown content.")]
-    Heading1,
-    #[schemars(description = "Extract level 2 headings (h2) from markdown content.")]
-    Heading2,
-    #[schemars(description = "Extract level 3 headings (h3) from markdown content.")]
-    Heading3,
-    #[schemars(description = "Extract level 4 headings (h4) from markdown content.")]
-    Heading4,
-    #[schemars(description = "Extract level 5 headings (h5) from markdown content.")]
-    Heading5,
-    #[schemars(description = "Extract list items from markdown content.")]
-    List,
-    #[schemars(description = "Extract checked list items from markdown content.")]
-    CheckedList,
-    #[schemars(description = "Extract table from markdown content.")]
-    Table,
-    #[schemars(description = "Extract code blocks from markdown content.")]
-    Code,
-    #[schemars(description = "Extract inline code from markdown content.")]
-    InlineCode,
-    #[schemars(description = "Extract math blocks from markdown content.")]
-    Math,
-    #[schemars(description = "Extract inline math from markdown content.")]
-    InlineMath,
-    #[schemars(description = "Extract HTML blocks from markdown content.")]
-    Html,
-    #[schemars(description = "Extract YAML frontmatter from markdown content.")]
-    Yaml,
-    #[schemars(description = "Extract TOML frontmatter from markdown content.")]
-    Toml,
-    #[schemars(description = "Extract blockquotes from markdown content.")]
-    Blockquote,
-    #[schemars(description = "Extract image references from markdown content.")]
-    Image,
-    #[schemars(description = "Extract link references from markdown content.")]
-    Link,
-    #[schemars(description = "Extract emphasis (italic) text from markdown content.")]
-    Emphasis,
-    #[schemars(description = "Extract strong emphasis (bold) text from markdown content.")]
-    Strong,
-    #[schemars(description = "Extract delete (strikethrough) from markdown content.")]
-    Delete,
-    #[schemars(description = "Extract horizontal rules from markdown content.")]
-    HorizontalRule,
-    #[schemars(description = "Extract footnote references from markdown content.")]
-    FootnoteReference,
-    #[schemars(description = "Extract all text content from markdown, ignoring formatting.")]
-    Text,
-}
-
-impl Display for Selector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Selector::Heading1 => write!(f, ".h1"),
-            Selector::Heading2 => write!(f, ".h2"),
-            Selector::Heading3 => write!(f, ".h3"),
-            Selector::Heading4 => write!(f, ".h4"),
-            Selector::Heading5 => write!(f, ".h5"),
-            Selector::List => write!(f, ".[]"),
-            Selector::CheckedList => write!(f, ".list.checked"),
-            Selector::Table => write!(f, ".[][]"),
-            Selector::Code => write!(f, ".code"),
-            Selector::InlineCode => write!(f, ".code_inline"),
-            Selector::Math => write!(f, ".math"),
-            Selector::InlineMath => write!(f, ".math_inline"),
-            Selector::Html => write!(f, ".html"),
-            Selector::Yaml => write!(f, ".yaml"),
-            Selector::Toml => write!(f, ".toml"),
-            Selector::Blockquote => write!(f, ".blockquote"),
-            Selector::Image => write!(f, ".image"),
-            Selector::Link => write!(f, ".link"),
-            Selector::Emphasis => write!(f, ".emphasis"),
-            Selector::Strong => write!(f, ".strong"),
-            Selector::Delete => write!(f, ".delete"),
-            Selector::HorizontalRule => write!(f, ".horizontal_rule"),
-            Selector::FootnoteReference => write!(f, ".footnote_ref"),
-            Selector::Text => write!(f, ".text"),
-        }
-    }
-}
-
-#[derive(Debug, rmcp::serde::Deserialize, rmcp::serde::Serialize, schemars::JsonSchema)]
-pub enum Function {
-    #[schemars(description = "Checks if string contains a substring.")]
-    Contains(String),
-    #[schemars(description = "Checks if the given string starts with the specified substring.")]
-    StartsWith(String),
-    #[schemars(description = "Checks if the given string ends with the specified substring.")]
-    EndsWith(String),
-    #[schemars(description = "Tests if string matches a pattern.")]
-    Test(String),
-    #[schemars(description = "Converts the given markdown string to HTML.")]
-    ToHtml(String),
-    #[schemars(description = "Converts the given markdown string to plain text.")]
-    ToText(String),
-    #[schemars(description = "Replaces all occurrences of a substring with another string.")]
-    Replace(String, String),
-}
-
-impl Display for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Function::Contains(s) => write!(f, r#"select(contains("{}"))"#, s),
-            Function::StartsWith(s) => write!(f, r#"select(starts_with("{}"))"#, s),
-            Function::EndsWith(s) => write!(f, r#"select(ends_with("{}"))"#, s),
-            Function::Test(s) => write!(f, r#"select(test("{}"))"#, s),
-            Function::ToHtml(s) => write!(f, r#"to_html("{}")"#, s),
-            Function::ToText(s) => write!(f, r#"to_text("{}")"#, s),
-            Function::Replace(pattern, replacement) => {
-                write!(f, r#"replace("{}", "{}")"#, pattern, replacement)
-            }
-        }
-    }
+pub struct Server {
+    pub tool_router: ToolRouter<Self>,
 }
 
 #[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
-struct Query {
-    #[schemars(description = "The markdown file to extract from")]
-    file_path: PathBuf,
+struct QueryForHtml {
+    #[schemars(description = "The HTML to process")]
+    html: String,
     #[schemars(
-        description = "List of selectors to extract specific elements from markdown content"
+        description = "The mq query to execute. Selectors and functions listed in the available_selectors and available_functions tools can be used."
     )]
-    selectors: Vec<Selector>,
-    #[schemars(
-        description = "List of functions to filter or transform the extracted markdown elements"
-    )]
-    functions: Vec<Function>,
+    query: Option<String>,
 }
 
-impl Display for Query {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let selectors = self
-            .selectors
-            .iter()
-            .map(|query| query.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let functions = if self.functions.is_empty() {
-            "".to_string()
-        } else {
-            format!(
-                " | {}",
-                self.functions
-                    .iter()
-                    .map(|func| func.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" | ")
-            )
-        };
-
-        if self.selectors.len() > 1 {
-            write!(f, "select(or({})){}", selectors, functions)
-        } else {
-            write!(f, "select({}){}", selectors, functions)
-        }
-    }
+#[derive(Debug, rmcp::serde::Deserialize, schemars::JsonSchema)]
+struct QueryForMarkdown {
+    #[schemars(description = "The markdown to process")]
+    markdown: String,
+    #[schemars(
+        description = "The mq query to execute. Selectors and functions listed in the available_selectors and available_functions tools can be used ."
+    )]
+    query: String,
 }
 
-#[tool(tool_box)]
+#[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
+struct FunctionInfo {
+    #[schemars(description = "The function name")]
+    name: String,
+    #[schemars(description = "The function description")]
+    description: String,
+    #[schemars(description = "The function parameters")]
+    params: Vec<String>,
+    #[schemars(description = "Whether this is a built-in function")]
+    is_builtin: bool,
+}
+
+#[derive(Debug, rmcp::serde::Serialize, rmcp::serde::Deserialize, schemars::JsonSchema)]
+struct SelectorInfo {
+    #[schemars(description = "The function name")]
+    name: String,
+    #[schemars(description = "The function description")]
+    description: String,
+    #[schemars(description = "The function parameters")]
+    params: Vec<String>,
+}
+
+#[tool_router]
 impl Server {
-    #[tool(description = "Extract from markdown content.")]
-    fn extract_from_markdown(
-        &self,
-        #[tool(aggr)]
-        #[schemars(description = "Query to extract specific elements from markdown content")]
-        query: Query,
-    ) -> Result<CallToolResult, McpError> {
-        if query.selectors.is_empty() {
-            return Err(McpError::invalid_request(
-                "No selector provided",
-                Some(serde_json::Value::String(
-                    "Queries cannot be empty".to_string(),
-                )),
-            ));
-        }
-
-        let read_file: String = fs::read_to_string(&query.file_path)
-            .map_err(|e| McpError::resource_not_found(e.to_string(), None))?;
-
-        self.execute_query(&read_file, query.to_string().as_str())
-            .map_err(|e| {
-                McpError::invalid_request(
-                    "Failed to execute query",
-                    Some(serde_json::Value::String(e.to_string())),
-                )
-            })
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            tool_router: Self::tool_router(),
+        })
     }
 
-    fn execute_query(&self, markdown: &str, query: &str) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Executes an mq query on the provided HTML content and returns the result as Markdown. Selectors and functions listed in the available_selectors and available_functions tools can be used."
+    )]
+    fn html_to_markdown(
+        &self,
+        Parameters(QueryForHtml { html, query }): Parameters<QueryForHtml>,
+    ) -> McpResult {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
-        let markdown = mq_markdown::Markdown::from_markdown_str(markdown).map_err(|e| {
+        let markdown = mq_markdown::Markdown::from_html_str(&html).map_err(|e| {
             McpError::parse_error(
-                "Failed to parse markdown",
+                "Failed to parse html",
                 Some(serde_json::Value::String(e.to_string())),
             )
         })?;
         let values = engine
             .eval(
-                query,
+                &query.unwrap_or("identity()".to_string()),
                 markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
             )
             .map_err(|e| {
@@ -237,9 +104,111 @@ impl Server {
                 .collect::<Vec<_>>(),
         ))
     }
+
+    #[tool(
+        description = "Extract from markdown content. Selectors and functions listed in the available_selectors and available_functions tools can be used."
+    )]
+    fn extract_markdown(
+        &self,
+        Parameters(QueryForMarkdown { markdown, query }): Parameters<QueryForMarkdown>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut engine = mq_lang::Engine::default();
+        engine.load_builtin_module();
+
+        let markdown = mq_markdown::Markdown::from_html_str(&markdown).map_err(|e| {
+            McpError::parse_error(
+                "Failed to parse markdown",
+                Some(serde_json::Value::String(e.to_string())),
+            )
+        })?;
+        let values = engine
+            .eval(
+                &query,
+                markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
+            )
+            .map_err(|e| {
+                McpError::invalid_request(
+                    "Failed to query",
+                    Some(serde_json::Value::String(e.to_string())),
+                )
+            })?;
+
+        Ok(CallToolResult::success(
+            values
+                .into_iter()
+                .filter_map(|value| {
+                    if value.is_none() || value.is_empty() {
+                        None
+                    } else {
+                        Some(Content::text(value.to_string()))
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    #[tool(description = "Get available selectors that can be used in mq query.")]
+    fn available_functions(&self) -> McpResult {
+        let hir = mq_hir::Hir::default();
+        let mut functions = Vec::with_capacity(256);
+
+        // Get built-in functions
+        for (name, builtin_doc) in hir.builtin.functions.iter() {
+            functions.push(FunctionInfo {
+                name: name.to_string(),
+                description: builtin_doc.description.to_string(),
+                params: builtin_doc.params.iter().map(|p| p.to_string()).collect(),
+                is_builtin: true,
+            });
+        }
+
+        // Get internal functions
+        for (name, builtin_doc) in hir.builtin.internal_functions.iter() {
+            functions.push(FunctionInfo {
+                name: name.to_string(),
+                description: builtin_doc.description.to_string(),
+                params: builtin_doc.params.iter().map(|p| p.to_string()).collect(),
+                is_builtin: true,
+            });
+        }
+
+        let output = serde_json::json!({
+            "functions": functions,
+            "examples": vec![
+                r#"select(or(.[], .code, .h)) | upcase() | add(" Hello World")"#.to_string(),
+                r#"select(not(.code))"#.to_string(),
+                r#".code("js")"#.to_string(),
+            ],
+        });
+        let functions_json = serde_json::to_string(&output).expect("Failed to serialize functions");
+
+        Ok(CallToolResult::success(vec![Content::text(functions_json)]))
+    }
+
+    #[tool(description = "Get available selectors that can be used in mq query.")]
+    fn available_selectors(&self) -> McpResult {
+        let hir = mq_hir::Hir::default();
+        let mut selectors = Vec::with_capacity(256);
+
+        // Get selectors
+        for (name, selector_doc) in hir.builtin.selectors.iter() {
+            selectors.push(SelectorInfo {
+                name: name.to_string(),
+                description: selector_doc.description.to_string(),
+                params: selector_doc.params.iter().map(|p| p.to_string()).collect(),
+            });
+        }
+
+        let output = serde_json::json!({
+            "selectors": selectors,
+        });
+        let selectors_json = serde_json::to_string(&output).expect("Failed to serialize selectors");
+
+        Ok(CallToolResult::success(vec![Content::text(selectors_json)]))
+    }
 }
 
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -259,7 +228,7 @@ impl ServerHandler for Server {
 
 pub async fn start() -> miette::Result<()> {
     let transport = (stdin(), stdout());
-    let server = Server;
+    let server = Server::new().expect("Failed to create server");
 
     let service = server.serve(transport).await.map_err(|e| miette!(e))?;
     service.waiting().await.map_err(|e| miette!(e))?;
@@ -270,219 +239,164 @@ pub async fn start() -> miette::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_query_display() {
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![],
-            functions: vec![],
-        };
-        assert_eq!(query.to_string(), "select()");
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![Selector::Heading1],
-            functions: vec![],
-        };
-        assert_eq!(query.to_string(), "select(.h1)");
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![Selector::Heading1, Selector::Heading2],
-            functions: vec![],
-        };
-        assert_eq!(query.to_string(), "select(or(.h1, .h2))");
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![
-                Selector::Heading1,
-                Selector::Heading2,
-                Selector::Heading3,
-                Selector::Heading4,
-                Selector::Heading5,
-                Selector::List,
-                Selector::CheckedList,
-                Selector::Table,
-                Selector::Code,
-                Selector::InlineCode,
-                Selector::Math,
-                Selector::InlineMath,
-                Selector::Html,
-                Selector::Yaml,
-                Selector::Toml,
-                Selector::Blockquote,
-                Selector::Image,
-                Selector::Link,
-                Selector::Emphasis,
-                Selector::Strong,
-                Selector::Delete,
-                Selector::HorizontalRule,
-                Selector::FootnoteReference,
-                Selector::Text,
-            ],
-            functions: vec![],
-        };
-        assert_eq!(
-            query.to_string(),
-            "select(or(.h1, .h2, .h3, .h4, .h5, .[], .list.checked, .[][], .code, .code_inline, .math, .math_inline, .html, .yaml, .toml, .blockquote, .image, .link, .emphasis, .strong, .delete, .horizontal_rule, .footnote_ref, .text))"
-        );
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![Selector::Heading1],
-            functions: vec![Function::Contains("test".to_string())],
-        };
-        assert_eq!(
-            query.to_string(),
-            "select(.h1) | select(contains(\"test\"))"
-        );
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![Selector::Heading1],
-            functions: vec![
-                Function::Contains("test".to_string()),
-                Function::StartsWith("start".to_string()),
-            ],
-        };
-        assert_eq!(
-            query.to_string(),
-            "select(.h1) | select(contains(\"test\")) | select(starts_with(\"start\"))"
-        );
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![Selector::Heading1],
-            functions: vec![
-                Function::Contains("contains".to_string()),
-                Function::StartsWith("starts".to_string()),
-                Function::EndsWith("ends".to_string()),
-                Function::Test("test.*".to_string()),
-                Function::ToHtml("<b>html</b>".to_string()),
-                Function::ToText("text".to_string()),
-                Function::Replace("pattern".to_string(), "replacement".to_string()),
-            ],
-        };
-        assert_eq!(
-            query.to_string(),
-            r#"select(.h1) | select(contains("contains")) | select(starts_with("starts")) | select(ends_with("ends")) | select(test("test.*")) | to_html("<b>html</b>") | to_text("text") | replace("pattern", "replacement")"#
-        );
-
-        let query = Query {
-            file_path: PathBuf::from("test.md"),
-            selectors: vec![Selector::Heading1, Selector::Code, Selector::List],
-            functions: vec![
-                Function::Contains("code".to_string()),
-                Function::EndsWith("end".to_string()),
-            ],
-        };
-        assert_eq!(
-            query.to_string(),
-            "select(or(.h1, .code, .[])) | select(contains(\"code\")) | select(ends_with(\"end\"))"
-        );
+    #[rstest]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
+            query: Some(".h1".to_string()),
+        },
+        Ok("# Test Heading")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
+            query: Some(".text".to_string()),
+        },
+        Ok("Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading</h1><p>This is a test paragraph.</p>".to_string(),
+            query: None,
+        },
+        Ok("# Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading".to_string(), // malformed HTML
+            query: Some(".h1".to_string()),
+        },
+        Ok("# Test Heading")
+    )]
+    #[case(
+        QueryForHtml {
+            html: "<h1>Test Heading</h1>".to_string(),
+            query: Some("not_a_function(".to_string()), // invalid query
+        },
+        Err("Failed to query")
+    )]
+    fn test_html_to_markdown(
+        #[case] query: QueryForHtml,
+        #[case] expected: Result<&'static str, &'static str>,
+    ) {
+        let server = Server::new().expect("Failed to create server");
+        let result = server.html_to_markdown(Parameters(query));
+        match expected {
+            Ok(expected_text) => {
+                let result = result.expect("Expected Ok result");
+                assert!(!result.is_error.unwrap_or_default());
+                let actual = result
+                    .content
+                    .iter()
+                    .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                assert_eq!(actual, expected_text);
+            }
+            Err(expected_err) => {
+                let err = result.expect_err("Expected error result");
+                let msg = format!("{err}");
+                assert!(
+                    msg.contains(expected_err),
+                    "Error message '{msg}' does not contain expected '{expected_err}'"
+                );
+            }
+        }
     }
 
-    #[tokio::test]
-    async fn test_extract_from_markdown() {
-        let (_, temp_file_path) = mq_test::create_file(
-            "test1.md",
-            "# Heading 1\n\n## Heading 2\n\n- List item 1\n- List item 2\n\n```rust\nfn main() {{}}\n```\n",
-        );
+    #[rstest]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading".to_string(),
+            query: ".h1".to_string(),
+        },
+        Ok("# Test Heading")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading\n\nThis is a test paragraph.".to_string(),
+            query: ".text".to_string(),
+        },
+        Ok("Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading\n\nThis is a test paragraph.".to_string(),
+            query: "identity()".to_string(),
+        },
+        Ok("# Test Heading\n\nThis is a test paragraph.")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "# Test Heading".to_string(),
+            query: "not_a_function(".to_string(), // invalid query
+        },
+        Err("Failed to query")
+    )]
+    #[case(
+        QueryForMarkdown {
+            markdown: "".to_string(),
+            query: ".h1".to_string(),
+        },
+        Ok("")
+    )]
+    fn test_extract_markdown(
+        #[case] query: QueryForMarkdown,
+        #[case] expected: Result<&'static str, &'static str>,
+    ) {
+        let server = Server::new().expect("Failed to create server");
+        let result = server.extract_markdown(Parameters(query));
+        match expected {
+            Ok(expected_text) => {
+                let result = result.expect("Expected Ok result");
+                assert!(!result.is_error.unwrap_or_default());
+                let actual = result
+                    .content
+                    .iter()
+                    .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                assert_eq!(actual, expected_text);
+            }
+            Err(expected_err) => {
+                let err = result.expect_err("Expected error result");
+                let msg = format!("{err}");
+                assert!(
+                    msg.contains(expected_err),
+                    "Error message '{msg}' does not contain expected '{expected_err}'"
+                );
+            }
+        }
+    }
 
-        let server = Server;
-
-        let query = Query {
-            file_path: temp_file_path.to_path_buf(),
-            selectors: vec![Selector::Heading1],
-            functions: vec![],
-        };
-        let result = server.extract_from_markdown(query).unwrap();
+    #[test]
+    fn test_available_functions() {
+        let server = Server::new().expect("Failed to create server");
+        let result = server.available_functions().unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
-        assert_eq!(
-            result.content[0]
-                .raw
-                .as_text()
-                .map(|t| t.text.clone())
-                .unwrap_or_default(),
-            "# Heading 1"
-        );
+    }
 
-        let query = Query {
-            file_path: temp_file_path.to_path_buf(),
-            selectors: vec![Selector::Heading1, Selector::Heading2],
-            functions: vec![],
-        };
-        let result = server.extract_from_markdown(query).unwrap();
-        assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.len(), 2);
-        assert_eq!(
-            result.content[0]
-                .raw
-                .as_text()
-                .map(|t| t.text.clone())
-                .unwrap_or_default(),
-            "# Heading 1"
-        );
-        assert_eq!(
-            result.content[1]
-                .raw
-                .as_text()
-                .map(|t| t.text.clone())
-                .unwrap_or_default(),
-            "## Heading 2"
-        );
-
-        let query = Query {
-            file_path: temp_file_path.to_path_buf(),
-            selectors: vec![Selector::List],
-            functions: vec![Function::Contains("item 2".to_string())],
-        };
-        let result = server.extract_from_markdown(query).unwrap();
+    #[test]
+    fn test_available_selectors() {
+        let server = Server::new().expect("Failed to create server");
+        let result = server.available_selectors().unwrap();
         assert!(!result.is_error.unwrap_or_default());
         assert_eq!(result.content.len(), 1);
-        assert_eq!(
-            result.content[0]
-                .raw
-                .as_text()
-                .map(|t| t.text.clone())
-                .unwrap_or_default(),
-            "- List item 2"
+    }
+
+    #[test]
+    fn test_get_info() {
+        let server = Server::new().expect("Failed to create server");
+        let info = server.get_info();
+        assert_eq!(info.protocol_version, ProtocolVersion::V_2024_11_05);
+        assert!(info.instructions.is_some());
+        let instructions = info.instructions.unwrap();
+        assert!(
+            instructions.contains("mq is a tool for processing markdown content"),
+            "Instructions should mention mq"
         );
-
-        let query = Query {
-            file_path: temp_file_path.to_path_buf(),
-            selectors: vec![Selector::Code],
-            functions: vec![],
-        };
-        let result = server.extract_from_markdown(query).unwrap();
-        assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.len(), 1);
-        assert_eq!(
-            result.content[0]
-                .raw
-                .as_text()
-                .map(|t| t.text.clone())
-                .unwrap_or_default(),
-            "```rust\nfn main() {{}}\n```"
-        );
-
-        let query = Query {
-            file_path: temp_file_path.to_path_buf(),
-            selectors: vec![],
-            functions: vec![],
-        };
-        let result = server.extract_from_markdown(query);
-        assert!(result.is_err());
-
-        let query = Query {
-            file_path: PathBuf::from("/non/existent/path"),
-            selectors: vec![Selector::Heading1],
-            functions: vec![],
-        };
-        let result = server.extract_from_markdown(query);
-        assert!(result.is_err());
     }
 }
