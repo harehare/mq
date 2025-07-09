@@ -1510,6 +1510,14 @@ fn engine() -> Engine {
 #[case::dict_literal_trailing_comma(r#"let d = {"a":1, "b":2,} | len(d)"#,
             vec![Value::Number(0.into())],
             Ok(vec![Value::Number(2.into())].into()))]
+#[case::selector_attr(".code.lang",
+            vec![
+              Value::Markdown(mq_markdown::Node::Code(mq_markdown::Code{ lang: Some("rust".to_string()), meta: None, fence: true, value: "value".to_string(),  position: None })),
+            ],
+            Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+              value: "rust".to_string(),
+              position: None,
+            }))].into()))]
 fn test_eval(
     mut engine: Engine,
     #[case] program: &str,

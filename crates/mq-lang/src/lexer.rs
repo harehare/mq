@@ -388,7 +388,7 @@ fn ident(input: Span) -> IResult<Span, Token> {
     map(
         recognize(pair(
             alt((alpha1, tag("_"), tag(MARKDOWN))),
-            many0(alt((alphanumeric1, tag("_"), tag("-"), tag("#"), tag("*")))),
+            many0(alt((alphanumeric1, tag("_"), tag("-"), tag("."), tag("*")))),
         )),
         |span: Span| match *span.fragment() {
             "true" => {
@@ -528,12 +528,12 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 16} }, kind: TokenKind::NumberLiteral(10.into()), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 16}, end: Position {line: 1, column: 17} }, kind: TokenKind::RParen, module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 17}, end: Position {line: 1, column: 17} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
-    #[case("or(.##, .**)",
+    #[case("or(.h1, .**)",
         Options::default(),
         Ok(vec![
           Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::Ident(CompactString::new("or")), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::LParen, module_id: 1.into()},
-          Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 7} }, kind: TokenKind::Selector(CompactString::new(".##")), module_id: 1.into()},
+          Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 7} }, kind: TokenKind::Selector(CompactString::new(".h1")), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 8} }, kind: TokenKind::Comma, module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 9}, end: Position {line: 1, column: 12} }, kind: TokenKind::Selector(CompactString::new(".**")), module_id: 1.into()},
           Token{range: Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 13} }, kind: TokenKind::RParen, module_id: 1.into()},
@@ -743,6 +743,21 @@ mod tests {
                 Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 12} }, kind: TokenKind::Ident(CompactString::new("value")), module_id: 1.into()},
                 Token{range: Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 13} }, kind: TokenKind::RBrace, module_id: 1.into()},
                 Token{range: Range { start: Position {line: 1, column: 13}, end: Position {line: 1, column: 13} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::selector_with_dot_h_text(".h.text",
+            Options::default(),
+            Ok(vec![
+                    Token {
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 8 } },
+                        kind: TokenKind::Selector(CompactString::new(".h.text")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 8 }, end: Position { line: 1, column: 8 } },
+                        kind: TokenKind::Eof,
+                        module_id: 1.into(),
+                    }
+                ])
+            )]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
