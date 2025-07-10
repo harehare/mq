@@ -137,8 +137,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -198,6 +198,10 @@ Here's a basic example of how to use `mq`:
 ```sh
 # code
 $ mq '.code | select(contains("name"))'
+# Extracts the language name from code blocks.
+$ mq '.code.lang'
+# Extracts the url from link.
+$ mq '.link.url'
 # table
 $ mq '.[][] | select(contains("name"))'
 # list or header

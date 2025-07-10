@@ -1,14 +1,5 @@
 # Example
 
-under preparation
-
-## Hello world
-
-```js
-# Hello world
-select(or(.[], .code, .h)) | upcase() | add(" Hello World")
-```
-
 ## Markdown TOC
 
 ```js
@@ -56,6 +47,18 @@ select(not(.code))
 
 ```python
 select(is_mdx())
+```
+
+## Extracts the language name from code blocks
+
+```js
+.code.lang
+```
+
+## Extracts the url from link
+
+```js
+.link.url
 ```
 
 ## Custom function
