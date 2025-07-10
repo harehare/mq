@@ -7,6 +7,7 @@
   - [Playground](start/playground.md)
   - [TUI](start/tui.md)
   - [Web crawler](start/crawler.md)
+  - [MCP](start/mcp.md)
   - [Example](start/example.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)
