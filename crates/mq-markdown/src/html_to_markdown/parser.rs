@@ -1,27 +1,25 @@
 use super::node::{HtmlElement, HtmlNode};
-use markup5ever_rcdom::{Node, NodeData};
+use ego_tree;
+use scraper::Node;
 use std::collections::HashMap;
-use std::rc::Rc;
 
-fn map_node_to_html_node(node: &Rc<Node>) -> miette::Result<Option<HtmlNode>> {
-    match &node.data {
-        NodeData::Text { contents } => {
-            let text_content = contents.borrow().to_string();
+fn map_node_to_html_node(node_ref: ego_tree::NodeRef<Node>) -> miette::Result<Option<HtmlNode>> {
+    match node_ref.value() {
+        Node::Text(text) => {
+            let text_content = text.text.to_string();
             Ok(Some(HtmlNode::Text(text_content)))
         }
-        NodeData::Element { name, attrs, .. } => {
-            let tag_name = name.local.to_lowercase();
+        Node::Element(element) => {
+            let tag_name = element.name().to_lowercase();
             let mut attributes = HashMap::new();
 
-            for attr in attrs.borrow().iter() {
-                let attr_name = attr.name.local.to_string();
-                let attr_value = attr.value.to_string();
-                attributes.insert(attr_name, Some(attr_value));
+            for (attr_name, attr_value) in element.attrs() {
+                attributes.insert(attr_name.to_string(), Some(attr_value.to_string()));
             }
 
             // Convert children recursively
             let mut children = Vec::new();
-            for child in node.children.borrow().iter() {
+            for child in node_ref.children() {
                 if let Some(html_node) = map_node_to_html_node(child)? {
                     children.push(html_node);
                 }
@@ -33,14 +31,14 @@ fn map_node_to_html_node(node: &Rc<Node>) -> miette::Result<Option<HtmlNode>> {
                 children,
             })))
         }
-        NodeData::Comment { contents } => Ok(Some(HtmlNode::Comment(contents.to_string()))),
-        NodeData::Document | NodeData::Doctype { .. } | NodeData::ProcessingInstruction { .. } => {
-            Ok(None)
-        }
+        Node::Comment(comment) => Ok(Some(HtmlNode::Comment(comment.comment.to_string()))),
+        _ => Ok(None),
     }
 }
 
-pub fn map_nodes_to_html_nodes(nodes: &[Rc<Node>]) -> miette::Result<Vec<HtmlNode>> {
+pub fn map_nodes_to_html_nodes(
+    nodes: Vec<ego_tree::NodeRef<Node>>,
+) -> miette::Result<Vec<HtmlNode>> {
     let mut html_nodes = Vec::new();
     for node in nodes {
         match map_node_to_html_node(node) {
