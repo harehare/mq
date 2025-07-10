@@ -948,6 +948,7 @@ process();"#,
     #[case::range_operator_with_spaces("1 .. 1", "1..1")]
     #[case::range_operator_with_variables("x..y", "x..y")]
     #[case::range_operator_with_string(r#""1" .. "2""#, r#""1".."2""#)]
+    #[case::selector_attr(".code.lang", ".code.lang")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

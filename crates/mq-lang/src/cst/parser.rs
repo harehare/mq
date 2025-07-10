@@ -803,7 +803,7 @@ impl<'a> Parser<'a> {
                 range: _,
                 kind: TokenKind::Selector(s),
                 ..
-            } if s == ".code" || s == ".list.checked" || s == ".list" => {
+            } if s == ".h" || s == ".code" || s == ".list" => {
                 let token = match self.tokens.peek() {
                     Some(token) => Arc::clone(token),
                     None => return Err(ParseError::UnexpectedEOFDetected),
@@ -2482,6 +2482,24 @@ mod tests {
                             children: Vec::new(),
                         }),
                     ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::selector4(
+        vec![
+            Arc::new(token(TokenKind::Selector(".list.checked".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Selector,
+                    token: Some(Arc::new(token(TokenKind::Selector(".list.checked".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
                 }),
             ],
             ErrorReporter::default()
