@@ -1662,8 +1662,12 @@ impl Node {
     // Returns the value of the specified attribute as a string, if present.
     pub fn attr(&self, attr: &str) -> Option<String> {
         match self {
-            Node::Footnote(Footnote { ident, .. }) => match attr {
+            Node::Footnote(Footnote { ident, values, .. }) => match attr {
                 "ident" => Some(ident.clone()),
+                "value" | "text" => Some(Self::values_to_string(
+                    values.clone(),
+                    &RenderOptions::default(),
+                )),
                 _ => None,
             },
             Node::Html(Html { value, .. }) => match attr {
@@ -1751,8 +1755,12 @@ impl Node {
                 "label" => label.clone(),
                 _ => None,
             },
-            Node::Heading(Heading { depth, .. }) => match attr {
+            Node::Heading(Heading { depth, values, .. }) => match attr {
                 "depth" => Some(depth.to_string()),
+                "value" | "text" => Some(Self::values_to_string(
+                    values.clone(),
+                    &RenderOptions::default(),
+                )),
                 _ => None,
             },
             Node::List(List {
@@ -1760,12 +1768,17 @@ impl Node {
                 level,
                 ordered,
                 checked,
+                values,
                 ..
             }) => match attr {
                 "index" => Some(index.to_string()),
                 "level" => Some(level.to_string()),
                 "ordered" => Some(ordered.to_string()),
                 "checked" => checked.map(|c| c.to_string()),
+                "value" | "text" => Some(Self::values_to_string(
+                    values.clone(),
+                    &RenderOptions::default(),
+                )),
                 _ => None,
             },
             Node::TableCell(TableCell {
@@ -1773,12 +1786,17 @@ impl Node {
                 row,
                 last_cell_in_row,
                 last_cell_of_in_table,
+                values,
                 ..
             }) => match attr {
                 "column" => Some(column.to_string()),
                 "row" => Some(row.to_string()),
                 "last_cell_in_row" => Some(last_cell_in_row.to_string()),
                 "last_cell_of_in_table" => Some(last_cell_of_in_table.to_string()),
+                "value" | "text" => Some(Self::values_to_string(
+                    values.clone(),
+                    &RenderOptions::default(),
+                )),
                 _ => None,
             },
             Node::TableHeader(TableHeader { align, .. }) => match attr {
@@ -4045,6 +4063,54 @@ mod tests {
     #[case(Node::Break(Break{position: None}), "value", None)]
     #[case(Node::HorizontalRule(HorizontalRule{position: None}), "value", None)]
     #[case(Node::Fragment(Fragment{values: Vec::new()}), "value", None)]
+    #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), "value", Some("heading text".to_string()))]
+    #[case(Node::Heading(Heading{depth: 2, values: vec![], position: None}), "value", Some("".to_string()))]
+    #[case(Node::Heading(Heading{depth: 3, values: vec![
+        Node::Text(Text{value: "first".to_string(), position: None}),
+        Node::Text(Text{value: "second".to_string(), position: None}),
+    ], position: None}), "value", Some("firstsecond".to_string()))]
+    #[case(
+        Node::List(List {
+            index: 0,
+            level: 1,
+            checked: None,
+            ordered: false,
+            values: vec![
+                Node::Text(Text { value: "item1".to_string(), position: None }),
+                Node::Text(Text { value: "item2".to_string(), position: None }),
+            ],
+            position: None,
+        }),
+        "value",
+        Some("item1item2".to_string())
+    )]
+    #[case(
+        Node::TableCell(TableCell {
+            column: 1,
+            row: 2,
+            last_cell_in_row: false,
+            last_cell_of_in_table: false,
+            values: vec![Node::Text(Text {
+                value: "cell_value".to_string(),
+                position: None,
+            })],
+            position: None,
+        }),
+        "value",
+        Some("cell_value".to_string())
+    )]
+    #[case(
+        Node::Footnote(Footnote {
+            ident: "id".to_string(),
+            values: vec![Node::Text(Text {
+                value: "footnote value".to_string(),
+                position: None,
+            })],
+            position: None,
+        }),
+        "value",
+        Some("footnote value".to_string())
+    )]
     #[case(Node::Empty, "value", None)]
     fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<String>) {
         assert_eq!(node.attr(attr), expected);
