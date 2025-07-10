@@ -184,6 +184,58 @@ body {
   background-color: transparent;
 }
 
+/* Tablet breakpoint - maintains horizontal layout */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .editor-header {
+    height: auto;
+    min-height: 32px;
+    padding: 4px 2px;
+  }
+
+  .editor-actions {
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 2px;
+  }
+
+  .dropdown {
+    padding: 4px 8px;
+    font-size: 12px;
+    margin-right: 4px;
+  }
+
+  .button {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .run-button {
+    padding: 4px 12px;
+    font-weight: 700;
+  }
+
+  .label {
+    font-size: 12px;
+    margin-left: 2px;
+  }
+
+  .label div {
+    white-space: nowrap;
+  }
+
+  .editor-header h2 {
+    font-size: 0.75rem;
+  }
+
+  .editor-header.code,
+  .editor-header.output {
+    height: auto;
+    min-height: 40px;
+  }
+}
+
+/* Mobile breakpoint - stacks vertically */
 @media (max-width: 768px) {
 
   .left-panel,
@@ -219,9 +271,6 @@ body {
 
   .editor-actions {
     justify-content: flex-start;
-  }
-
-  .editor-actions {
     flex-wrap: wrap;
     padding: 2px;
   }
