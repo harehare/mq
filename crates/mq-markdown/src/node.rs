@@ -1727,9 +1727,15 @@ impl Node {
                 "label" => label.clone(),
                 _ => None,
             },
-            Node::Link(Link { url, title, .. }) => match attr {
+            Node::Link(Link {
+                url, title, values, ..
+            }) => match attr {
                 "url" => Some(url.as_str().to_string()),
                 "title" => title.as_ref().map(|t| t.to_value()),
+                "value" | "text" => Some(Self::values_to_string(
+                    values.clone(),
+                    &RenderOptions::default(),
+                )),
                 _ => None,
             },
             Node::LinkRef(LinkRef { ident, label, .. }) => match attr {
@@ -4110,6 +4116,19 @@ mod tests {
         }),
         "value",
         Some("footnote value".to_string())
+    )]
+    #[case(
+        Node::Link(Link {
+            url: Url::new("https://example.com".to_string()),
+            title: Some(Title::new("Example".to_string())),
+            values: vec![Node::Text(Text {
+                value: "link text".to_string(),
+                position: None,
+            })],
+            position: None,
+        }),
+        "value",
+        Some("link text".to_string())
     )]
     #[case(Node::Empty, "value", None)]
     fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<String>) {
