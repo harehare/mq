@@ -7,6 +7,7 @@ pub mod parser;
 use miette::miette;
 pub use options::ConversionOptions;
 use scraper::Html;
+use scraper::Selector;
 use std::collections::BTreeMap;
 
 fn find_element_by_tag_name<'a>(html: &'a Html, tag_name: &str) -> Option<scraper::ElementRef<'a>> {
@@ -21,11 +22,9 @@ fn find_element_by_tag_name<'a>(html: &'a Html, tag_name: &str) -> Option<scrape
 fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, serde_yaml::Value>> {
     // First, find the <head> element
     let head_element = find_element_by_tag_name(html, "head")?;
-
     let mut fm_map = BTreeMap::new();
 
     // Extract <title> only from within <head>
-    use scraper::Selector;
     if let Ok(title_selector) = Selector::parse("title") {
         if let Some(title_node) = head_element.select(&title_selector).next() {
             let title_str = title_node.text().collect::<String>().trim().to_string();
