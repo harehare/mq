@@ -1,7 +1,7 @@
 use super::node::{HtmlElement, HtmlNode};
 use ego_tree;
+use rustc_hash::FxHashMap;
 use scraper::Node;
-use std::collections::HashMap;
 
 fn map_node_to_html_node(node_ref: ego_tree::NodeRef<Node>) -> miette::Result<Option<HtmlNode>> {
     match node_ref.value() {
@@ -11,7 +11,7 @@ fn map_node_to_html_node(node_ref: ego_tree::NodeRef<Node>) -> miette::Result<Op
         }
         Node::Element(element) => {
             let tag_name = element.name().to_lowercase();
-            let mut attributes = HashMap::new();
+            let mut attributes = FxHashMap::default();
 
             for (attr_name, attr_value) in element.attrs() {
                 attributes.insert(attr_name.to_string(), Some(attr_value.to_string()));

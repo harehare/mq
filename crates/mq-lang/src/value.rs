@@ -685,4 +685,25 @@ mod tests {
             r#"{"outer_key": {"key": "value"}}"#
         );
     }
+
+    #[rstest]
+    #[case(Value::Number(Number::from(42.0)), true)]
+    #[case(Value::Bool(true), false)]
+    #[case(Value::String("test".to_string()), false)]
+    #[case(Value::Array(vec![]), false)]
+    #[case(Value::None, false)]
+    #[case(Value::Dict(BTreeMap::new()), false)]
+    fn test_value_is_number(#[case] value: Value, #[case] expected: bool) {
+        assert_eq!(value.is_number(), expected);
+    }
+
+    #[rstest]
+    #[case(Value::Function(SmallVec::new(), Vec::new()), true)]
+    #[case(Value::NativeFunction(AstIdent::new("native_fn")), false)]
+    #[case(Value::Number(Number::from(1.0)), false)]
+    #[case(Value::String("test".to_string()), false)]
+    #[case(Value::None, false)]
+    fn test_value_is_function(#[case] value: Value, #[case] expected: bool) {
+        assert_eq!(value.is_function(), expected);
+    }
 }

@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use miette::miette;
 
 use super::node::HtmlElement;
 use super::node::HtmlNode;
@@ -486,8 +487,6 @@ fn convert_html_list_to_markdown(
                         m
                     }
                     _ => {
-                        use miette::miette;
-
                         return Err(miette!(
                             "Unexpected list tag name: {}",
                             list_element.tag_name,
@@ -764,4 +763,122 @@ pub fn convert_nodes_to_markdown(
     }
 
     Ok(result)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use rustc_hash::FxHashMap;
+    fn text_node(text: &str) -> HtmlNode {
+        HtmlNode::Text(text.to_string())
+    }
+
+    fn element_node(tag: &str, children: Vec<HtmlNode>) -> HtmlNode {
+        HtmlNode::Element(HtmlElement {
+            tag_name: tag.to_string(),
+            attributes: FxHashMap::default(),
+            children,
+        })
+    }
+
+    #[rstest]
+    #[case(
+        vec![element_node("p", vec![text_node("Hello, world!")])],
+        "Hello, world!"
+    )]
+    #[case(
+        vec![element_node("h2", vec![text_node("Title")])],
+        "## Title"
+    )]
+    #[case(
+        vec![element_node(
+            "p",
+            vec![
+                element_node("strong", vec![text_node("Bold")]),
+                text_node(" and "),
+                element_node("em", vec![text_node("Italic")]),
+            ],
+        )],
+        "**Bold** and *Italic*"
+    )]
+    #[case(
+        {
+            let mut node = element_node("a", vec![text_node("link")]);
+            if let HtmlNode::Element(ref mut el) = node {
+                el.attributes.insert("href".to_string(), Some("https://example.com".to_string()));
+            }
+            vec![node]
+        },
+        "[link](https://example.com)"
+    )]
+    #[case(
+        vec![element_node(
+            "ul",
+            vec![
+                element_node("li", vec![text_node("Item 1")]),
+                element_node("li", vec![text_node("Item 2")]),
+            ],
+        )],
+        "* Item 1\n* Item 2"
+    )]
+    #[case(
+        vec![element_node(
+            "ol",
+            vec![
+                element_node("li", vec![text_node("First")]),
+                element_node("li", vec![text_node("Second")]),
+            ],
+        )],
+        "1. First\n2. Second"
+    )]
+    #[case(
+        vec![element_node(
+            "pre",
+            vec![element_node("code", vec![text_node("let x = 1;")])],
+        )],
+        "```\nlet x = 1;\n```"
+    )]
+    #[case(
+        {
+            let th = element_node("th", vec![text_node("Header")]);
+            let td = element_node("td", vec![text_node("Cell")]);
+            let tr_head = element_node("tr", vec![th]);
+            let tr_body = element_node("tr", vec![td]);
+            let thead = element_node("thead", vec![tr_head]);
+            let tbody = element_node("tbody", vec![tr_body]);
+            let table = HtmlNode::Element(HtmlElement {
+                tag_name: "table".to_string(),
+                attributes: FxHashMap::default(),
+                children: vec![thead, tbody],
+            });
+            vec![table]
+        },
+        "| Header |\n|---|\n| Cell |"
+    )]
+    #[case(
+        vec![element_node(
+            "blockquote",
+            vec![element_node("p", vec![text_node("Quote")])],
+        )],
+        "> Quote"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("src".to_string(), Some("img.png".to_string()));
+            attrs.insert("alt".to_string(), Some("alt text".to_string()));
+            let img = HtmlNode::Element(HtmlElement {
+                tag_name: "img".to_string(),
+                attributes: attrs,
+                children: vec![],
+            });
+            vec![img]
+        },
+        "![alt text](img.png)"
+    )]
+    fn test_convert_nodes_to_markdown_param(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
+        let md = convert_nodes_to_markdown(&nodes, ConversionOptions::default()).unwrap();
+        let md_trimmed = md.trim();
+        assert_eq!(md_trimmed, expected);
+    }
 }

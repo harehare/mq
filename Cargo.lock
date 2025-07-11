@@ -2630,6 +2630,7 @@ dependencies = [
  "markdown",
  "miette",
  "rstest",
+ "rustc-hash",
  "scraper",
  "serde",
  "serde_json",

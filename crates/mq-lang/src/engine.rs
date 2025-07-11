@@ -345,4 +345,24 @@ mod tests {
         let values = result.unwrap();
         assert_eq!(values.len(), 1);
     }
+
+    #[cfg(feature = "ast-json")]
+    #[test]
+    fn test_eval_ast() {
+        use crate::{AstExpr, AstLiteral, AstNode};
+
+        let mut engine = Engine::default();
+        engine.load_builtin_module();
+
+        let program = vec![Rc::new(AstNode {
+            token_id: crate::arena::ArenaId::new(1),
+            expr: Rc::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+        })];
+
+        let result = engine.eval_ast(program, crate::null_input().into_iter());
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], "hello".to_string().into());
+    }
 }
