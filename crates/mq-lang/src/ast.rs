@@ -34,3 +34,30 @@ pub fn ast_from_json(json: &str) -> miette::Result<Program> {
     serde_json::from_str(json)
         .map_err(|e| miette::miette!("Failed to deserialize AST from JSON: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "ast-json")]
+    use super::*;
+
+    #[cfg(feature = "ast-json")]
+    #[test]
+    fn test_ast_to_json_and_from_json_roundtrip() {
+        use crate::{AstExpr, AstIdent};
+
+        let ident = Rc::new(Node {
+            token_id: TokenId::new(1),
+            expr: Rc::new(AstExpr::Ident(AstIdent::new("foo"))),
+        });
+        let program = vec![ident.clone()];
+
+        let json = ast_to_json(&program).expect("Serialization should succeed");
+        let deserialized = ast_from_json(&json).expect("Deserialization should succeed");
+
+        assert_eq!(deserialized.len(), 1);
+        match &*deserialized[0].expr {
+            AstExpr::Ident(name) => assert_eq!(name.name, "foo"),
+            _ => panic!("Expected Ident node"),
+        }
+    }
+}

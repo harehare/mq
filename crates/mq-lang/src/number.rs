@@ -244,9 +244,28 @@ mod tests {
     #[case(0.0, true)]
     #[case(0.1, false)]
     #[case(-0.0, true)]
-    #[case(1e-16, true)] // エプシロンより小さい値
+    #[case(1e-16, true)]
     fn test_is_zero(#[case] value: f64, #[case] expected: bool) {
         let num = Number::new(value);
         assert_eq!(num.is_zero(), expected);
+    }
+
+    #[rstest]
+    #[case(5.0, 5.0)]
+    #[case(-5.0, 5.0)]
+    #[case(0.0, 0.0)]
+    #[case(-0.0, 0.0)]
+    #[case(1e-16, 1e-16)]
+    #[case(-1e-16, 1e-16)]
+    fn test_abs(#[case] input: f64, #[case] expected: f64) {
+        let num = Number::new(input);
+        let abs_num = num.abs();
+        assert!(
+            (abs_num.value() - expected).abs() < f64::EPSILON,
+            "abs({}) = {}, expected {}",
+            input,
+            abs_num.value(),
+            expected
+        );
     }
 }
