@@ -37,6 +37,7 @@ pub fn ast_from_json(json: &str) -> miette::Result<Program> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "ast-json")]
     use super::*;
 
     #[cfg(feature = "ast-json")]
