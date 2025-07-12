@@ -125,6 +125,7 @@ impl Formatter {
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
+            mq_lang::CstNodeKind::Env => self.append_env(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Nodes => self.format_nodes(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Selector => {
                 self.format_selector(&node, indent_level_consider_new_line)
@@ -472,6 +473,18 @@ impl Formatter {
     fn append_indent(&mut self, level: usize) {
         self.output
             .push_str(&" ".repeat(level * self.config.indent_width));
+    }
+
+    fn append_env(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Env,
+            token: Some(token),
+            ..
+        } = &**node
+        {
+            self.append_indent(indent_level);
+            self.output.push_str(&token.to_string());
+        }
     }
 
     fn append_literal(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
@@ -949,6 +962,7 @@ process();"#,
     #[case::range_operator_with_variables("x..y", "x..y")]
     #[case::range_operator_with_string(r#""1" .. "2""#, r#""1".."2""#)]
     #[case::selector_attr(".code.lang", ".code.lang")]
+    #[case::env("let ENV = $env", "let ENV = $env")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

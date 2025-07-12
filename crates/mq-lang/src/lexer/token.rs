@@ -108,7 +108,7 @@ impl Display for TokenKind {
             TokenKind::Def => write!(f, "def"),
             TokenKind::Elif => write!(f, "elif"),
             TokenKind::Else => write!(f, "else"),
-            TokenKind::Env(env) => write!(f, "{}", env),
+            TokenKind::Env(env) => write!(f, "${}", env),
             TokenKind::Eof => write!(f, ""),
             TokenKind::Equal => write!(f, "="),
             TokenKind::EqEq => write!(f, "=="),
