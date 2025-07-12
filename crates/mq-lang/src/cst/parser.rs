@@ -418,7 +418,7 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::None,
                     ..
-                } => self.parse_literal(leading_trivia),
+                } => self.parse_node(NodeKind::Literal, leading_trivia),
                 Token {
                     range: _,
                     kind: TokenKind::InterpolatedString(_),
@@ -439,6 +439,11 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Nodes,
                     ..
                 } if root => self.parse_nodes(leading_trivia),
+                Token {
+                    range: _,
+                    kind: TokenKind::Env(_),
+                    ..
+                } => self.parse_node(NodeKind::Env, leading_trivia),
                 Token {
                     range: _,
                     kind: TokenKind::Eof,
@@ -948,12 +953,16 @@ impl<'a> Parser<'a> {
         Ok(Arc::new(node))
     }
 
-    fn parse_literal(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+    fn parse_node(
+        &mut self,
+        node_kind: NodeKind,
+        leading_trivia: Vec<Trivia>,
+    ) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
 
         Ok(Arc::new(Node {
-            kind: NodeKind::Literal,
+            kind: node_kind,
             token: Some(Arc::clone(token.unwrap())),
             leading_trivia,
             trailing_trivia,

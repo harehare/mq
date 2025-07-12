@@ -81,6 +81,7 @@ pub enum NodeKind {
     Call,
     Def,
     Dict,
+    Env,
     Eof,
     Elif,
     Else,
