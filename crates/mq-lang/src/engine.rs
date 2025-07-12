@@ -166,12 +166,10 @@ impl Engine {
     /// ```
     ///
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
-        let program = parse(code, Rc::clone(&self.token_arena))?;
-        let program = if self.options.optimize {
-            Optimizer::new().optimize(&program)
-        } else {
-            program
-        };
+        let mut program = parse(code, Rc::clone(&self.token_arena))?;
+        if self.options.optimize {
+            Optimizer::new().optimize(&mut program);
+        }
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
             .map(|values| {
@@ -219,14 +217,12 @@ impl Engine {
     #[cfg(feature = "ast-json")]
     pub fn eval_ast<I: Iterator<Item = Value>>(
         &mut self,
-        program: crate::ast::Program,
+        mut program: crate::ast::Program,
         input: I,
     ) -> MqResult {
-        let program = if self.options.optimize {
-            Optimizer::new().optimize(&program)
-        } else {
-            program
-        };
+        if self.options.optimize {
+            Optimizer::new().optimize(&mut program)
+        }
 
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
