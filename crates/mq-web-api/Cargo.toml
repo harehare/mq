@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "mq-web-api"
-version = "0.1.0"
+version = "0.2.9"
 
 [dependencies]
 miette = {workspace = true}
@@ -12,8 +12,8 @@ serde_json.workspace = true
 url = {workspace = true}
 utoipa = {version = "5.4", features = ["preserve_order"]}
 worker = "0.6.0"
-
 # https://github.com/rustwasm/wasm-pack/issues/1247
+
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
 
