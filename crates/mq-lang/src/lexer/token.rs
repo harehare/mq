@@ -92,6 +92,12 @@ pub enum TokenKind {
     LBrace,
 }
 
+impl Token {
+    pub fn is_eof(&self) -> bool {
+        matches!(self.kind, TokenKind::Eof)
+    }
+}
+
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.kind)
