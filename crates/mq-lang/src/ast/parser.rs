@@ -203,11 +203,11 @@ impl<'a> Parser<'a> {
         loop {
             match self.tokens.peek() {
                 Some(token) if token.kind == TokenKind::RBrace => {
-                    self.tokens.next(); // Consume RBrace
+                    self.tokens.next();
                     break;
                 }
                 None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                _ => {} // Continue parsing key-value pair
+                _ => {}
             }
 
             // Parse key
@@ -272,11 +272,8 @@ impl<'a> Parser<'a> {
                     self.tokens.next(); // Consume RBrace
                     break;
                 }
-                Some(token) if token.kind == TokenKind::Eof => {
-                    return Err(ParseError::UnexpectedEOFDetected(self.module_id));
-                }
                 Some(token) => {
-                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                    return Err(ParseError::ExpectedClosingBrace((***token).clone()));
                 }
                 None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             }
@@ -942,10 +939,9 @@ impl<'a> Parser<'a> {
                         kind: TokenKind::RParen,
                         module_id: _,
                     }) => break,
-                    Some(_) => {
-                        return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                    Some(_) | None => {
+                        return Err(ParseError::ExpectedClosingParen((**token).clone()));
                     }
-                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
                 },
                 Token {
                     range: _,
@@ -969,11 +965,7 @@ impl<'a> Parser<'a> {
 
             if let Some(token) = self.tokens.peek() {
                 if !matches!(token.kind, TokenKind::RParen | TokenKind::Comma) {
-                    if matches!(token.kind, TokenKind::Eof) {
-                        return Err(ParseError::UnexpectedEOFDetected(self.module_id));
-                    } else {
-                        return Err(ParseError::UnexpectedToken((***token).clone()));
-                    }
+                    return Err(ParseError::ExpectedClosingParen((***token).clone()));
                 }
             }
         }
@@ -3626,7 +3618,7 @@ mod tests {
                             token(TokenKind::NumberLiteral(1.into())),
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                        Err(ParseError::ExpectedClosingBrace(token(TokenKind::Eof))))]
     #[case::dict_missing_colon(
                         vec![
                             token(TokenKind::LBrace),
