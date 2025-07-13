@@ -92,6 +92,9 @@ impl Optimizer {
                     }
                 }
             }
+            ast::Expr::Paren(node) => {
+                Self::collect_used_identifiers_in_node(node, used_idents);
+            }
             ast::Expr::Literal(_)
             | ast::Expr::Selector(_)
             | ast::Expr::Nodes
@@ -207,6 +210,9 @@ impl Optimizer {
                 for node in program {
                     self.optimize_node(node);
                 }
+            }
+            ast::Expr::Paren(expr) => {
+                self.optimize_node(expr);
             }
             _ => {}
         }
