@@ -178,6 +178,7 @@ define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
 define_token_parser!(let_, "let ", TokenKind::Let);
+define_token_parser!(asterisk, "*", TokenKind::Asterisk);
 define_token_parser!(minus, "-", TokenKind::Minus);
 define_token_parser!(slash, "/", TokenKind::Slash);
 define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
@@ -210,7 +211,7 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
 
 fn binary_op(input: Span) -> IResult<Span, Token> {
     alt((
-        eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, slash, percent, range_op,
+        eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, asterisk, slash, percent, range_op,
     ))
     .parse(input)
 }

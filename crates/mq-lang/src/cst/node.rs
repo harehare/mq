@@ -108,6 +108,7 @@ pub enum BinaryOp {
     NotEqual,
     Plus,
     Minus,
+    Multiplication,
     Division,
     Modulo,
     Lt,

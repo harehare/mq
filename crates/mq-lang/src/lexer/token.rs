@@ -45,6 +45,7 @@ pub struct Token {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum TokenKind {
+    Asterisk,
     BoolLiteral(bool),
     Colon,
     Comma,
@@ -110,6 +111,7 @@ impl Display for Token {
 impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
+            TokenKind::Asterisk => write!(f, "*"),
             TokenKind::BoolLiteral(b) => write!(f, "{}", b),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Comma => write!(f, ","),
