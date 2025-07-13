@@ -268,6 +268,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::NeEq
                     | TokenKind::Plus
                     | TokenKind::Minus
+                    | TokenKind::Slash
                     | TokenKind::Lt
                     | TokenKind::Lte
                     | TokenKind::Gt
@@ -298,6 +299,11 @@ impl<'a> Parser<'a> {
                             kind: TokenKind::Minus,
                             ..
                         } => NodeKind::BinaryOp(BinaryOp::Minus),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Slash,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Division),
                         Token {
                             range: _,
                             kind: TokenKind::Lt,
@@ -3774,6 +3780,76 @@ mod tests {
                 Arc::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::RangeOp),
                     token: Some(Arc::new(token(TokenKind::RangeOp))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::minus(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Minus)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Minus),
+                    token: Some(Arc::new(token(TokenKind::Minus))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::division(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Slash)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Division),
+                    token: Some(Arc::new(token(TokenKind::Slash))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![

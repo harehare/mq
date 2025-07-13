@@ -179,6 +179,7 @@ define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
 define_token_parser!(let_, "let ", TokenKind::Let);
 define_token_parser!(minus, "-", TokenKind::Minus);
+define_token_parser!(slash, "/", TokenKind::Slash);
 define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
 define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(none, "None", TokenKind::None);
@@ -200,8 +201,15 @@ define_token_parser!(gte, ">=", TokenKind::Gte);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket, r_bracket, eq_eq,
-        ne_eq, lte, gte, lt, gt, equal, plus, minus, pipe, question, range_op,
+        l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket, r_bracket, pipe,
+        question,
+    ))
+    .parse(input)
+}
+
+fn binary_op(input: Span) -> IResult<Span, Token> {
+    alt((
+        eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, slash, range_op,
     ))
     .parse(input)
 }
@@ -453,7 +461,16 @@ fn env(input: Span) -> IResult<Span, Token> {
 }
 
 fn token(input: Span) -> IResult<Span, Token> {
-    alt((inline_comment, keywords, env, literals, punctuations, ident)).parse(input)
+    alt((
+        inline_comment,
+        keywords,
+        env,
+        literals,
+        punctuations,
+        binary_op,
+        ident,
+    ))
+    .parse(input)
 }
 
 fn token_include_spaces(input: Span) -> IResult<Span, Token> {
@@ -466,6 +483,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         env,
         literals,
         punctuations,
+        binary_op,
         ident,
     ))
     .parse(input)
