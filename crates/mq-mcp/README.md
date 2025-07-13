@@ -1,55 +1,59 @@
-<div align="center">
-    <img src="https://mqlang.org/assets/logo.svg" style="width: 128px; height: 128px; margin-right: 10px;"/>
-</div>
-
 # mq-mcp
 
-The `mq-mcp` crate provides the MCP functionality for the `mq`, a jq-like processor for Markdown files. It handles the evaluation and execution of commands against Markdown documents.
+Model Context Protocol (MCP) server implementation for mq. This crate provides an MCP server that allows AI assistants to process Markdown and HTML content using mq's query language.
 
-## Features
+## Implementation
 
-- **Markdown Extraction**: Extract specific elements from markdown files using various selectors
-- **Element Selectors**: Support for various markdown elements like headings, lists, code blocks, etc.
-- **Query Functions**: Filter and transform extracted content with functions like contains, startsWith, etc.
+The server implements four MCP tools:
 
-### Supported Selectors
+- `html_to_markdown`: Converts HTML to Markdown and executes mq queries
+- `extract_markdown`: Executes mq queries on Markdown content  
+- `available_functions`: Returns available functions for mq queries
+- `available_selectors`: Returns available selectors for mq queries
 
-The server supports extracting various markdown elements including:
+### Tool Parameters
 
-- Headings (h1-h5)
-- Lists (regular and checked)
-- Code blocks (regular and inline)
-- Tables
-- Math expressions
-- HTML blocks
-- Frontmatter (YAML/TOML)
-- Blockquotes
-- Links and images
-- Formatting (emphasis, strong, strikethrough)
-- And more
+#### html_to_markdown
+- `html` (string): HTML content to process
+- `query` (optional string): mq query to execute
 
-### Query Functions
+#### extract_markdown  
+- `markdown` (string): Markdown content to process
+- `query` (string): mq query to execute
 
-Extracted content can be further processed with functions:
+#### available_functions
+No parameters. Returns JSON with function names, descriptions, parameters, and example queries.
 
-- `contains`: Check if content contains a substring
-- `startsWith`/`endsWith`: Test if content starts or ends with specific text
-- `test`: Use pattern matching against content
-- `toHtml`: Convert markdown to HTML
-- `replace`: Replace substrings within content
+#### available_selectors
+No parameters. Returns JSON with selector names, descriptions, and parameters.
 
-## Usage
+## Configuration
 
-### VS Code
+### Claude Desktop
 
-To use `mq-mcp` with Visual Studio Code, add the following configuration to your `.vscode/settings.json`:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mq-mcp": {
+      "command": "/path/to/mq",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### VS Code with MCP Extension
+
+Add to `.vscode/settings.json`:
 
 ```json
 {
   "mcp": {
     "servers": {
       "mq-mcp": {
-        "type": "stdio",
+        "type": "stdio", 
         "command": "/path/to/mq",
         "args": ["mcp"]
       }
@@ -58,24 +62,7 @@ To use `mq-mcp` with Visual Studio Code, add the following configuration to your
 }
 ```
 
-Replace `/path/to/mq-mcp` with the actual path to your `mq-mcp` binary.
-
-### Claude
-
-For integrating with Claude:
-
-```json
-{
-  "mcpServers": {
-    "mcp": {
-      "mq-mcp": {
-        "command": "/path/to/mq",
-        "args": ["mcp"]
-      }
-    }
-  }
-}
-```
+Replace `/path/to/mq` with the actual path to your mq binary.
 
 ## License
 
