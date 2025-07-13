@@ -186,11 +186,34 @@ impl<'a> Parser<'a> {
             TokenKind::NumberLiteral(_) => self.parse_literal(token),
             TokenKind::LBracket => self.parse_array(token),
             TokenKind::LBrace => self.parse_dict(token),
+            TokenKind::LParen => self.parse_paren(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
+    }
+
+    fn parse_paren(&mut self, lparen_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let token_id = self
+            .token_arena
+            .borrow_mut()
+            .alloc(Rc::clone(&lparen_token));
+        let expr_token = match self.tokens.next() {
+            Some(t) => t,
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        let expr_node = self.parse_expr(Rc::clone(expr_token))?;
+
+        self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::RParen)
+        })?;
+
+        Ok(Rc::new(Node {
+            token_id,
+            expr: Rc::new(Expr::Paren(expr_node)),
+        }))
     }
 
     fn parse_dict(&mut self, lbrace_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -3680,6 +3703,38 @@ mod tests {
                     ],
                     false,
                 ))})]))]
+    #[case::paren(
+        vec![
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Plus),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::RParen),
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Paren(
+                    Rc::new(Node {
+                        token_id: 2.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 3.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                )),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

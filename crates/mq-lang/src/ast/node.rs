@@ -90,6 +90,7 @@ impl Node {
                     arena[self.token_id].range.clone()
                 }
             }
+            Expr::Paren(node) => node.range(Rc::clone(&arena)),
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -232,6 +233,7 @@ pub enum Expr {
     Include(Literal),
     Self_,
     Nodes,
+    Paren(Rc<Node>),
 }
 #[cfg(test)]
 mod tests {

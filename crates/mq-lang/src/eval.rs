@@ -362,6 +362,7 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Paren(expr) => self.eval_expr(runtime_value, Rc::clone(expr), env),
         }
     }
 
