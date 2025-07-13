@@ -121,6 +121,9 @@ impl<'a> Parser<'a> {
                 TokenKind::EqEq
                     | TokenKind::NeEq
                     | TokenKind::Plus
+                    | TokenKind::Minus
+                    | TokenKind::Slash
+                    | TokenKind::Percent
                     | TokenKind::Lt
                     | TokenKind::Lte
                     | TokenKind::Gt
@@ -143,6 +146,9 @@ impl<'a> Parser<'a> {
                     TokenKind::EqEq => "eq",
                     TokenKind::NeEq => "ne",
                     TokenKind::Plus => "add",
+                    TokenKind::Minus => "sub",
+                    TokenKind::Slash => "div",
+                    TokenKind::Percent => "mod",
                     TokenKind::Lt => "lt",
                     TokenKind::Lte => "lte",
                     TokenKind::Gt => "gt",
@@ -412,6 +418,9 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Minus)
+            | Some(TokenKind::Slash)
+            | Some(TokenKind::Percent)
             | Some(TokenKind::Lt)
             | Some(TokenKind::Lte)
             | Some(TokenKind::Gt)
@@ -449,6 +458,9 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::EqEq)
                     | Some(TokenKind::NeEq)
                     | Some(TokenKind::Plus)
+                    | Some(TokenKind::Minus)
+                    | Some(TokenKind::Slash)
+                    | Some(TokenKind::Percent)
                     | Some(TokenKind::Lt)
                     | Some(TokenKind::Lte)
                     | Some(TokenKind::Gt)
@@ -480,6 +492,9 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Minus)
+            | Some(TokenKind::Slash)
+            | Some(TokenKind::Percent)
             | Some(TokenKind::Lt)
             | Some(TokenKind::Lte)
             | Some(TokenKind::Gt)
@@ -3735,6 +3750,143 @@ mod tests {
                 )),
             })
         ]))]
+    #[case::minus_simple(
+        vec![
+            token(TokenKind::NumberLiteral(5.into())),
+            token(TokenKind::Minus),
+            token(TokenKind::NumberLiteral(3.into())),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("sub", Some(Rc::new(token(TokenKind::Minus)))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
+    #[case::minus_with_identifiers(
+        vec![
+            token(TokenKind::Ident(CompactString::new("a"))),
+            token(TokenKind::Minus),
+            token(TokenKind::Ident(CompactString::new("b"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("sub", Some(Rc::new(token(TokenKind::Minus)))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
+    #[case::slash_simple(
+        vec![
+            token(TokenKind::NumberLiteral(6.into())),
+            token(TokenKind::Slash),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("div", Some(Rc::new(token(TokenKind::Slash)))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(6.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
+    #[case::percent_simple(
+            vec![
+                token(TokenKind::NumberLiteral(10.into())),
+                token(TokenKind::Percent),
+                token(TokenKind::NumberLiteral(3.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("mod", Some(Rc::new(token(TokenKind::Percent)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Number(10.into()))),
+                            }),
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::percent_with_identifiers(
+            vec![
+                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::Percent),
+                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("mod", Some(Rc::new(token(TokenKind::Percent)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                            }),
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::percent_error_missing_rhs(
+            vec![
+                token(TokenKind::NumberLiteral(10.into())),
+                token(TokenKind::Percent),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
