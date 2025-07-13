@@ -185,6 +185,7 @@ define_token_parser!(nodes, "nodes", TokenKind::Nodes);
 define_token_parser!(none, "None", TokenKind::None);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
+define_token_parser!(percent, "%", TokenKind::Percent);
 define_token_parser!(question, "?", TokenKind::Question);
 define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
@@ -209,7 +210,7 @@ fn punctuations(input: Span) -> IResult<Span, Token> {
 
 fn binary_op(input: Span) -> IResult<Span, Token> {
     alt((
-        eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, slash, range_op,
+        eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, slash, percent, range_op,
     ))
     .parse(input)
 }

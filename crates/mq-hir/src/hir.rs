@@ -1031,6 +1031,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::plus("1 + 2", "+", SymbolKind::BinaryOp)]
     #[case::minus("1 - 2", "-", SymbolKind::BinaryOp)]
     #[case::div("1 / 2", "/", SymbolKind::BinaryOp)]
+    #[case::mod_("1 % 2", "%", SymbolKind::BinaryOp)]
     #[case::lt("1 < 2", "<", SymbolKind::BinaryOp)]
     #[case::lte("1 <= 2", "<=", SymbolKind::BinaryOp)]
     #[case::gt("1 > 2", ">", SymbolKind::BinaryOp)]

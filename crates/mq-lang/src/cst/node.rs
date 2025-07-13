@@ -109,6 +109,7 @@ pub enum BinaryOp {
     Plus,
     Minus,
     Division,
+    Modulo,
     Lt,
     Lte,
     Gt,
