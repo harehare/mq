@@ -121,6 +121,7 @@ impl<'a> Parser<'a> {
                 TokenKind::EqEq
                     | TokenKind::NeEq
                     | TokenKind::Plus
+                    | TokenKind::Minus
                     | TokenKind::Lt
                     | TokenKind::Lte
                     | TokenKind::Gt
@@ -143,6 +144,7 @@ impl<'a> Parser<'a> {
                     TokenKind::EqEq => "eq",
                     TokenKind::NeEq => "ne",
                     TokenKind::Plus => "add",
+                    TokenKind::Minus => "sub",
                     TokenKind::Lt => "lt",
                     TokenKind::Lte => "lte",
                     TokenKind::Gt => "gt",
@@ -412,6 +414,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Minus)
             | Some(TokenKind::Lt)
             | Some(TokenKind::Lte)
             | Some(TokenKind::Gt)
@@ -449,6 +452,7 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::EqEq)
                     | Some(TokenKind::NeEq)
                     | Some(TokenKind::Plus)
+                    | Some(TokenKind::Minus)
                     | Some(TokenKind::Lt)
                     | Some(TokenKind::Lte)
                     | Some(TokenKind::Gt)
@@ -480,6 +484,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Minus)
             | Some(TokenKind::Lt)
             | Some(TokenKind::Lte)
             | Some(TokenKind::Gt)
@@ -3732,6 +3737,58 @@ mod tests {
                             false,
                         )),
                     })
+                )),
+            })
+        ]))]
+    #[case::minus_simple(
+        vec![
+            token(TokenKind::NumberLiteral(5.into())),
+            token(TokenKind::Minus),
+            token(TokenKind::NumberLiteral(3.into())),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("sub", Some(Rc::new(token(TokenKind::Minus)))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
+    #[case::minus_with_identifiers(
+        vec![
+            token(TokenKind::Ident(CompactString::new("a"))),
+            token(TokenKind::Minus),
+            token(TokenKind::Ident(CompactString::new("b"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("sub", Some(Rc::new(token(TokenKind::Minus)))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                        }),
+                    ],
+                    false,
                 )),
             })
         ]))]

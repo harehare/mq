@@ -267,6 +267,7 @@ impl<'a> Parser<'a> {
                 TokenKind::EqEq
                     | TokenKind::NeEq
                     | TokenKind::Plus
+                    | TokenKind::Minus
                     | TokenKind::Lt
                     | TokenKind::Lte
                     | TokenKind::Gt
@@ -292,6 +293,11 @@ impl<'a> Parser<'a> {
                             kind: TokenKind::Plus,
                             ..
                         } => NodeKind::BinaryOp(BinaryOp::Plus),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Minus,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Minus),
                         Token {
                             range: _,
                             kind: TokenKind::Lt,

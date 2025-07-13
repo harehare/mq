@@ -107,6 +107,7 @@ pub enum BinaryOp {
     Equal,
     NotEqual,
     Plus,
+    Minus,
     Lt,
     Lte,
     Gt,
