@@ -8,11 +8,7 @@
 | `.h3`                   | Selects a heading node with the 3 depth.                        | None            | `.h3`                   |
 | `.h4`                   | Selects a heading node with the 4 depth.                        | None            | `.h4`                   |
 | `.h5`                   | Selects a heading node with the 5 depth.                        | None            | `.h5`                   |
-| `.#`                    | Selects a heading node with the 1 depth.                        | None            | `.#`                    |
-| `.##`                   | Selects a heading node with the 2 depth.                        | None            | `.##`                   |
-| `.###`                  | Selects a heading node with the 3 depth.                        | None            | `.###`                  |
-| `.####`                 | Selects a heading node with the 4 depth.                        | None            | `.####`                 |
-| `.#####`                | Selects a heading node with the 5 depth.                        | None            | `.#####`                |
+| `.h6`                   | Selects a heading node with the 6 depth.                        | None            | `.h6`                   |
 | `.code`                 | Selects a code block node with the specified language.          | `lang`          | `.code "rust"`          |
 | `.code_inline`          | Selects an inline code node.                                    | None            | `.code_inline`          |
 | `.inline_math`          | Selects an inline math node.                                    | None            | `.inline_math`          |
