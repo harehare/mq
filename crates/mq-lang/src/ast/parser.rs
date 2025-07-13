@@ -121,6 +121,7 @@ impl<'a> Parser<'a> {
                 TokenKind::EqEq
                     | TokenKind::NeEq
                     | TokenKind::Plus
+                    | TokenKind::Asterisk
                     | TokenKind::Minus
                     | TokenKind::Slash
                     | TokenKind::Percent
@@ -149,6 +150,7 @@ impl<'a> Parser<'a> {
                     TokenKind::Minus => "sub",
                     TokenKind::Slash => "div",
                     TokenKind::Percent => "mod",
+                    TokenKind::Asterisk => "mul",
                     TokenKind::Lt => "lt",
                     TokenKind::Lte => "lte",
                     TokenKind::Gt => "gt",
@@ -418,6 +420,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Asterisk)
             | Some(TokenKind::Minus)
             | Some(TokenKind::Slash)
             | Some(TokenKind::Percent)
@@ -458,6 +461,7 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::EqEq)
                     | Some(TokenKind::NeEq)
                     | Some(TokenKind::Plus)
+                    | Some(TokenKind::Asterisk)
                     | Some(TokenKind::Minus)
                     | Some(TokenKind::Slash)
                     | Some(TokenKind::Percent)
@@ -492,6 +496,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::EqEq)
             | Some(TokenKind::NeEq)
             | Some(TokenKind::Plus)
+            | Some(TokenKind::Asterisk)
             | Some(TokenKind::Minus)
             | Some(TokenKind::Slash)
             | Some(TokenKind::Percent)
@@ -3884,6 +3889,65 @@ mod tests {
             vec![
                 token(TokenKind::NumberLiteral(10.into())),
                 token(TokenKind::Percent),
+                token(TokenKind::Eof)
+            ],
+            Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::mul_simple(
+            vec![
+                token(TokenKind::NumberLiteral(3.into())),
+                token(TokenKind::Asterisk),
+                token(TokenKind::NumberLiteral(4.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                            }),
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Number(4.into()))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::mul_with_identifiers(
+            vec![
+                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::Asterisk),
+                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 0.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                            }),
+                            Rc::new(Node {
+                                token_id: 2.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::mul_error_missing_rhs(
+            vec![
+                token(TokenKind::NumberLiteral(5.into())),
+                token(TokenKind::Asterisk),
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]

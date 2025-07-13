@@ -270,6 +270,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::Minus
                     | TokenKind::Percent
                     | TokenKind::Slash
+                    | TokenKind::Asterisk
                     | TokenKind::Lt
                     | TokenKind::Lte
                     | TokenKind::Gt
@@ -300,6 +301,11 @@ impl<'a> Parser<'a> {
                             kind: TokenKind::Minus,
                             ..
                         } => NodeKind::BinaryOp(BinaryOp::Minus),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Asterisk,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Multiplication),
                         Token {
                             range: _,
                             kind: TokenKind::Slash,
@@ -3892,6 +3898,41 @@ mod tests {
                 Arc::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::Modulo),
                     token: Some(Arc::new(token(TokenKind::Percent))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::multiplication(
+        vec![
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Asterisk)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Multiplication),
+                    token: Some(Arc::new(token(TokenKind::Asterisk))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
