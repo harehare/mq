@@ -1762,7 +1762,7 @@ impl Node {
                 _ => None,
             },
             Node::Heading(Heading { depth, values, .. }) => match attr {
-                "depth" => Some(depth.to_string()),
+                "depth" | "level" => Some(depth.to_string()),
                 "value" | "text" => Some(Self::values_to_string(
                     values.clone(),
                     &RenderOptions::default(),
