@@ -264,18 +264,20 @@ impl<'a> Parser<'a> {
             let peeked_token = &**peeked_token_rc;
             if matches!(
                 peeked_token.kind,
-                TokenKind::EqEq
-                    | TokenKind::NeEq
-                    | TokenKind::Plus
-                    | TokenKind::Minus
-                    | TokenKind::Percent
-                    | TokenKind::Slash
+                TokenKind::And
                     | TokenKind::Asterisk
+                    | TokenKind::EqEq
+                    | TokenKind::Gte
+                    | TokenKind::Gt
                     | TokenKind::Lt
                     | TokenKind::Lte
-                    | TokenKind::Gt
-                    | TokenKind::Gte
+                    | TokenKind::Minus
+                    | TokenKind::NeEq
+                    | TokenKind::Or
+                    | TokenKind::Percent
+                    | TokenKind::Plus
                     | TokenKind::RangeOp
+                    | TokenKind::Slash
             ) {
                 let leading_trivia = self.parse_leading_trivia();
                 let operator_token = self.tokens.next().unwrap();
@@ -283,24 +285,9 @@ impl<'a> Parser<'a> {
                     kind: match &**operator_token {
                         Token {
                             range: _,
-                            kind: TokenKind::EqEq,
+                            kind: TokenKind::And,
                             ..
-                        } => NodeKind::BinaryOp(BinaryOp::Equal),
-                        Token {
-                            range: _,
-                            kind: TokenKind::NeEq,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::NotEqual),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Plus,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Plus),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Minus,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Minus),
+                        } => NodeKind::BinaryOp(BinaryOp::And),
                         Token {
                             range: _,
                             kind: TokenKind::Asterisk,
@@ -308,31 +295,9 @@ impl<'a> Parser<'a> {
                         } => NodeKind::BinaryOp(BinaryOp::Multiplication),
                         Token {
                             range: _,
-                            kind: TokenKind::Slash,
+                            kind: TokenKind::EqEq,
                             ..
-                        } => NodeKind::BinaryOp(BinaryOp::Division),
-
-                        Token {
-                            range: _,
-                            kind: TokenKind::Percent,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Modulo),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Lt,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Lt),
-
-                        Token {
-                            range: _,
-                            kind: TokenKind::Lte,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Lte),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Gt,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Gt),
+                        } => NodeKind::BinaryOp(BinaryOp::Equal),
                         Token {
                             range: _,
                             kind: TokenKind::Gte,
@@ -340,9 +305,54 @@ impl<'a> Parser<'a> {
                         } => NodeKind::BinaryOp(BinaryOp::Gte),
                         Token {
                             range: _,
+                            kind: TokenKind::Gt,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Gt),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Lte,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Lte),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Lt,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Lt),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Minus,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Minus),
+                        Token {
+                            range: _,
+                            kind: TokenKind::NeEq,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::NotEqual),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Or,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Or),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Percent,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Modulo),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Plus,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Plus),
+                        Token {
+                            range: _,
                             kind: TokenKind::RangeOp,
                             ..
                         } => NodeKind::BinaryOp(BinaryOp::RangeOp),
+                        Token {
+                            range: _,
+                            kind: TokenKind::Slash,
+                            ..
+                        } => NodeKind::BinaryOp(BinaryOp::Division),
                         _ => unreachable!(),
                     },
                     token: Some(Arc::clone(operator_token)),

@@ -94,6 +94,8 @@ pub enum TokenKind {
     While,
     LParen,
     LBrace,
+    And,
+    Or,
 }
 
 impl Token {
@@ -111,6 +113,8 @@ impl Display for Token {
 impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
+            TokenKind::And => write!(f, "&&"),
+            TokenKind::Or => write!(f, "||"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::BoolLiteral(b) => write!(f, "{}", b),
             TokenKind::Colon => write!(f, ":"),

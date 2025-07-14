@@ -200,11 +200,13 @@ define_token_parser!(lt, "<", TokenKind::Lt);
 define_token_parser!(lte, "<=", TokenKind::Lte);
 define_token_parser!(gt, ">", TokenKind::Gt);
 define_token_parser!(gte, ">=", TokenKind::Gte);
+define_token_parser!(and, "&&", TokenKind::And);
+define_token_parser!(or, "||", TokenKind::Or);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket, r_bracket, pipe,
-        question,
+        and, or, l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket,
+        r_bracket, pipe, question,
     ))
     .parse(input)
 }

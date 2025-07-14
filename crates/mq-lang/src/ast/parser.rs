@@ -118,18 +118,20 @@ impl<'a> Parser<'a> {
             let peeked_token = &**peeked_token_rc;
             if matches!(
                 peeked_token.kind,
-                TokenKind::EqEq
-                    | TokenKind::NeEq
-                    | TokenKind::Plus
+                TokenKind::And
                     | TokenKind::Asterisk
-                    | TokenKind::Minus
-                    | TokenKind::Slash
-                    | TokenKind::Percent
-                    | TokenKind::Lt
-                    | TokenKind::Lte
-                    | TokenKind::Gt
+                    | TokenKind::EqEq
                     | TokenKind::Gte
+                    | TokenKind::Gt
+                    | TokenKind::Lte
+                    | TokenKind::Lt
+                    | TokenKind::Minus
+                    | TokenKind::NeEq
+                    | TokenKind::Or
+                    | TokenKind::Percent
+                    | TokenKind::Plus
                     | TokenKind::RangeOp
+                    | TokenKind::Slash
             ) {
                 let operator_token = self.tokens.next().unwrap();
                 let operator_token_id = self
@@ -144,18 +146,20 @@ impl<'a> Parser<'a> {
                 let rhs = self.parse_primary_expr(Rc::clone(next_expr_token))?;
 
                 let function_name = match peeked_token.kind {
-                    TokenKind::EqEq => "eq",
-                    TokenKind::NeEq => "ne",
-                    TokenKind::Plus => "add",
-                    TokenKind::Minus => "sub",
-                    TokenKind::Slash => "div",
-                    TokenKind::Percent => "mod",
+                    TokenKind::And => "and",
                     TokenKind::Asterisk => "mul",
-                    TokenKind::Lt => "lt",
-                    TokenKind::Lte => "lte",
-                    TokenKind::Gt => "gt",
+                    TokenKind::EqEq => "eq",
                     TokenKind::Gte => "gte",
+                    TokenKind::Gt => "gt",
+                    TokenKind::Lte => "lte",
+                    TokenKind::Lt => "lt",
+                    TokenKind::Minus => "sub",
+                    TokenKind::NeEq => "ne",
+                    TokenKind::Or => "or",
+                    TokenKind::Percent => "mod",
+                    TokenKind::Plus => "add",
                     TokenKind::RangeOp => "range",
+                    TokenKind::Slash => "div",
                     _ => unreachable!(),
                 };
 
@@ -430,6 +434,8 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Gte)
             | Some(TokenKind::RangeOp)
             | Some(TokenKind::RBrace)
+            | Some(TokenKind::And)
+            | Some(TokenKind::Or)
             | None => Ok(literal_node),
             Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
         }
@@ -470,6 +476,8 @@ impl<'a> Parser<'a> {
                     | Some(TokenKind::Gt)
                     | Some(TokenKind::Gte)
                     | Some(TokenKind::RangeOp)
+                    | Some(TokenKind::And)
+                    | Some(TokenKind::Or)
                     | Some(TokenKind::RBrace)
                     | Some(TokenKind::RBracket)
                     | Some(TokenKind::Comment(_))
@@ -505,6 +513,8 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::Gt)
             | Some(TokenKind::Gte)
             | Some(TokenKind::RangeOp)
+            | Some(TokenKind::And)
+            | Some(TokenKind::Or)
             | Some(TokenKind::RBrace)
             | Some(TokenKind::RBracket)
             | Some(TokenKind::Comment(_))

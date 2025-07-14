@@ -963,6 +963,10 @@ process();"#,
     #[case::range_operator_with_string(r#""1" .. "2""#, r#""1".."2""#)]
     #[case::selector_attr(".code.lang", ".code.lang")]
     #[case::env("let ENV = $env", "let ENV = $env")]
+    #[case::mul("1 * 1", "1 * 1")]
+    #[case::mul("1 / 1", "1 / 1")]
+    #[case::and("true && false", "true && false")]
+    #[case::or("true || false", "true || false")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
