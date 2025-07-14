@@ -78,13 +78,14 @@ pub struct Node {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     Array,
+    BinaryOp(BinaryOp),
     Call,
     Def,
     Dict,
-    Env,
-    Eof,
     Elif,
     Else,
+    Env,
+    Eof,
     Fn,
     Foreach,
     Ident,
@@ -99,22 +100,23 @@ pub enum NodeKind {
     Token,
     Until,
     While,
-    BinaryOp(BinaryOp),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
-    Equal,
-    NotEqual,
-    Plus,
-    Minus,
-    Multiplication,
+    And,
     Division,
-    Modulo,
-    Lt,
-    Lte,
+    Equal,
     Gt,
     Gte,
+    Lt,
+    Lte,
+    Minus,
+    Modulo,
+    Multiplication,
+    NotEqual,
+    Or,
+    Plus,
     RangeOp,
 }
 
