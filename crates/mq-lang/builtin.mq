@@ -27,7 +27,7 @@ def contains(haystack, needle):
   if (is_dict(haystack)):
     not(is_none(get(haystack, needle)))
   else:
-    ne(index(haystack, needle), -1);
+    index(haystack, needle) != -1;
 
 # Removes prefix string from input if it exists
 def ltrimstr(s, left):
