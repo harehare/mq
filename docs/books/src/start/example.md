@@ -4,19 +4,9 @@
 
 ```js
 .h
-| let link = to_link(add("#", to_text(self)), to_text(self), "")
-| if (is_h1()):
-  to_md_list(link, 1)
-elif (is_h2()):
-  to_md_list(link, 2)
-elif (is_h3()):
-  to_md_list(link, 3)
-elif (is_h4()):
-  to_md_list(link, 4)
-elif (is_h5()):
-  to_md_list(link, 5)
-else:
-  None
+| let link = to_link("#" + to_text(self), to_text(self), "")
+| let level = .h.depth
+| if (not(is_none(level))): to_md_list(link, to_number(level))
 ```
 
 ## Exclude code

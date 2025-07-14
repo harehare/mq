@@ -26,14 +26,14 @@ const EXAMPLES: {
   {
     name: "Hello World",
     code: `# Hello world
-select(or(.[], .code, .h)) | upcase() | add(" Hello World")?`,
-    markdown: `# h1
+select(or(.h, .code, .[]))`,
+    markdown: `# Hello world
 
-- item1
-- item2
+- Hello
+- world
 
 \`\`\`
-code
+Hello world
 \`\`\`
 `,
     isUpdate: false,
@@ -54,18 +54,8 @@ code
     name: "Markdown Toc",
     code: `.h
 | let link = to_link("#" + to_text(self), to_text(self), "")
-| if (eq(to_md_name(), "h1")):
-  to_md_list(link, 1)
-elif (eq(to_md_name(), "h2")):
-  to_md_list(link, 2)
-elif (eq(to_md_name(), "h3")):
-  to_md_list(link, 3)
-elif (eq(to_md_name(), "h4")):
-  to_md_list(link, 4)
-elif (eq(to_md_name(), "h5")):
-  to_md_list(link, 5)
-else:
-  None`,
+| let level = .h.depth
+| if (not(is_none(level))): to_md_list(link, to_number(level))`,
     markdown: `# [header1](https://example.com)
 
 - item 1
