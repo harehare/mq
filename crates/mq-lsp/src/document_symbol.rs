@@ -28,33 +28,39 @@ pub fn response(
                         _ => return None,
                     };
 
-                    symbol.value.as_ref().map(|name| DocumentSymbol {
-                        name: name.to_string(),
-                        detail: None,
-                        kind,
-                        tags: None,
-                        range: Range {
-                            start: Position {
-                                line: text_range.start.line - 1,
-                                character: (text_range.start.column - 1) as u32,
-                            },
-                            end: Position {
-                                line: text_range.end.line - 1,
-                                character: (text_range.end.column - 1) as u32,
-                            },
-                        },
-                        selection_range: Range {
-                            start: Position {
-                                line: text_range.start.line - 1,
-                                character: (text_range.start.column - 1) as u32,
-                            },
-                            end: Position {
-                                line: text_range.start.line - 1,
-                                character: (text_range.start.column - 1) as u32,
-                            },
-                        },
-                        children: None,
-                        deprecated: None,
+                    symbol.value.as_ref().and_then(|name| {
+                        if name.is_empty() {
+                            None
+                        } else {
+                            Some(DocumentSymbol {
+                                name: name.to_string(),
+                                detail: None,
+                                kind,
+                                tags: None,
+                                range: Range {
+                                    start: Position {
+                                        line: text_range.start.line - 1,
+                                        character: (text_range.start.column - 1) as u32,
+                                    },
+                                    end: Position {
+                                        line: text_range.end.line - 1,
+                                        character: (text_range.end.column - 1) as u32,
+                                    },
+                                },
+                                selection_range: Range {
+                                    start: Position {
+                                        line: text_range.start.line - 1,
+                                        character: (text_range.start.column - 1) as u32,
+                                    },
+                                    end: Position {
+                                        line: text_range.start.line - 1,
+                                        character: (text_range.start.column - 1) as u32,
+                                    },
+                                },
+                                children: None,
+                                deprecated: None,
+                            })
+                        }
                     })
                 })
             })
