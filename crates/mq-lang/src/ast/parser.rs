@@ -114,7 +114,7 @@ impl<'a> Parser<'a> {
     fn parse_equality_expr(&mut self, initial_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let mut lhs = self.parse_primary_expr(initial_token)?;
 
-        if let Some(peeked_token_rc) = self.tokens.peek() {
+        while let Some(peeked_token_rc) = self.tokens.peek() {
             let peeked_token = &**peeked_token_rc;
             if matches!(
                 peeked_token.kind,
@@ -171,6 +171,8 @@ impl<'a> Parser<'a> {
                         false,
                     )),
                 });
+            } else {
+                break;
             }
         }
         Ok(lhs)
@@ -3965,6 +3967,270 @@ mod tests {
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::multiple_binary_operators(
+            vec![
+                token(TokenKind::NumberLiteral(1.into())),
+                token(TokenKind::Asterisk),
+                token(TokenKind::NumberLiteral(2.into())),
+                token(TokenKind::Asterisk),
+                token(TokenKind::NumberLiteral(3.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                        }),
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                        }),
+                                    ],
+                                    false,
+                                )),
+                            }),
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::multiple_binary_operators_eq(
+            vec![
+                token(TokenKind::NumberLiteral(1.into())),
+                token(TokenKind::Plus),
+                token(TokenKind::NumberLiteral(2.into())),
+                token(TokenKind::EqEq),
+                token(TokenKind::NumberLiteral(3.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                        }),
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                        }),
+                                    ],
+                                    false,
+                                )),
+                            }),
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::multiple_and_operators(
+            vec![
+                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(CompactString::new("c"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("and", Some(Rc::new(token(TokenKind::And)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::And)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                        }),
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                                        }),
+                                    ],
+                                    false,
+                                )),
+                            }),
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(CompactString::new("c")))))))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::multiple_or_operators(
+            vec![
+                token(TokenKind::Ident(CompactString::new("x"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(CompactString::new("y"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(CompactString::new("z"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                        }),
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                        }),
+                                    ],
+                                    false,
+                                )),
+                            }),
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("z", Some(Rc::new(token(TokenKind::Ident(CompactString::new("z")))))))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::and_or_mixed(
+            vec![
+                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::And),
+                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Or),
+                token(TokenKind::Ident(CompactString::new("c"))),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Rc::new(Node {
+                    token_id: 3.into(),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                        smallvec![
+                            Rc::new(Node {
+                                token_id: 1.into(),
+                                expr: Rc::new(Expr::Call(
+                                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::And)))),
+                                    smallvec![
+                                        Rc::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                        }),
+                                        Rc::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                                        }),
+                                    ],
+                                    false,
+                                )),
+                            }),
+                            Rc::new(Node {
+                                token_id: 4.into(),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(CompactString::new("c")))))))),
+                            }),
+                        ],
+                        false,
+                    )),
+                })
+            ]))]
+    #[case::range_simple(
+                vec![
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::RangeOp),
+                    token(TokenKind::NumberLiteral(5.into())),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("range", Some(Rc::new(token(TokenKind::RangeOp)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::range_with_identifiers(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("start"))),
+                    token(TokenKind::RangeOp),
+                    token(TokenKind::Ident(CompactString::new("end"))),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("range", Some(Rc::new(token(TokenKind::RangeOp)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("start", Some(Rc::new(token(TokenKind::Ident(CompactString::new("start")))))))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(CompactString::new("end")))))))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::range_error_missing_rhs(
+                vec![
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::RangeOp),
+                    token(TokenKind::Eof)
+                ],
+                Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
