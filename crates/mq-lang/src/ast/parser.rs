@@ -436,6 +436,7 @@ impl<'a> Parser<'a> {
             | Some(TokenKind::RBrace)
             | Some(TokenKind::And)
             | Some(TokenKind::Or)
+            | Some(TokenKind::Comment(_))
             | None => Ok(literal_node),
             Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
         }
@@ -813,7 +814,10 @@ impl<'a> Parser<'a> {
         let ast = self.parse_expr(Rc::clone(expr_token))?;
 
         self.next_token_with_eof(let_token_id, |token_kind| {
-            matches!(token_kind, TokenKind::Pipe) || matches!(token_kind, TokenKind::Eof)
+            matches!(
+                token_kind,
+                TokenKind::Pipe | TokenKind::Eof | TokenKind::Comment(_)
+            )
         })?;
 
         Ok(Rc::new(Node {
