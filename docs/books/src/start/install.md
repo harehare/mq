@@ -3,7 +3,7 @@
 ## Cargo
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.8
+cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.10
 ```
 
 ## Binaries
@@ -37,7 +37,7 @@ $ brew install harehare/tap/mq
 ## Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.2.8
+$ docker run --rm ghcr.io/harehare/mq:0.2.10
 ```
 
 ## Visual Studio Code Extension
