@@ -418,11 +418,11 @@ impl Evaluator {
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
 
-            if !cond_value.is_true() {
+            if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
 
-            while cond_value.is_true() {
+            while cond_value.is_truthy() {
                 runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
                 cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
             }
@@ -446,11 +446,11 @@ impl Evaluator {
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
             let mut values = Vec::with_capacity(100);
 
-            if !cond_value.is_true() {
+            if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
 
-            while cond_value.is_true() {
+            while cond_value.is_truthy() {
                 runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
                 cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                 values.push(runtime_value.clone());
@@ -475,7 +475,7 @@ impl Evaluator {
                         let cond =
                             self.eval_expr(runtime_value, Rc::clone(cond_node), Rc::clone(&env))?;
 
-                        if cond.is_true() {
+                        if cond.is_truthy() {
                             return self.eval_expr(runtime_value, Rc::clone(body), env);
                         }
                     }

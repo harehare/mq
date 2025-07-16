@@ -1286,19 +1286,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         map.insert(
             CompactString::new("and"),
             BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
-                Ok(args.iter().all(|arg| arg.is_true()).into())
+                Ok(args.iter().all(|arg| arg.is_truthy()).into())
             }),
         );
         map.insert(
             CompactString::new("or"),
             BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
-                Ok(args.iter().any(|arg| arg.is_true()).into())
+                Ok(args.iter().any(|arg| arg.is_truthy()).into())
             }),
         );
         map.insert(
             CompactString::new("not"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a] => Ok((!a.is_true()).into()),
+                [a] => Ok((!a.is_truthy()).into()),
                 _ => unreachable!(),
             }),
         );

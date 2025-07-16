@@ -165,7 +165,7 @@ impl RuntimeValue {
         }
     }
 
-    pub fn is_true(&self) -> bool {
+    pub fn is_truthy(&self) -> bool {
         match self {
             RuntimeValue::Bool(b) => *b,
             RuntimeValue::Number(n) => n.value() != 0.0,
@@ -337,14 +337,14 @@ mod tests {
 
     #[test]
     fn test_runtime_value_is_true() {
-        assert!(RuntimeValue::Bool(true).is_true());
-        assert!(!RuntimeValue::Bool(false).is_true());
-        assert!(RuntimeValue::Number(Number::from(42.0)).is_true());
-        assert!(!RuntimeValue::Number(Number::from(0.0)).is_true());
-        assert!(RuntimeValue::String(String::from("test")).is_true());
-        assert!(!RuntimeValue::String(String::from("")).is_true());
-        assert!(RuntimeValue::Array(vec!["".to_string().into()]).is_true());
-        assert!(!RuntimeValue::Array(Vec::new()).is_true());
+        assert!(RuntimeValue::Bool(true).is_truthy());
+        assert!(!RuntimeValue::Bool(false).is_truthy());
+        assert!(RuntimeValue::Number(Number::from(42.0)).is_truthy());
+        assert!(!RuntimeValue::Number(Number::from(0.0)).is_truthy());
+        assert!(RuntimeValue::String(String::from("test")).is_truthy());
+        assert!(!RuntimeValue::String(String::from("")).is_truthy());
+        assert!(RuntimeValue::Array(vec!["".to_string().into()]).is_truthy());
+        assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
         assert!(
             RuntimeValue::Markdown(
                 mq_markdown::Node::Text(mq_markdown::Text {
@@ -353,7 +353,7 @@ mod tests {
                 }),
                 None
             )
-            .is_true()
+            .is_truthy()
         );
         assert!(
             !RuntimeValue::Markdown(
@@ -363,20 +363,20 @@ mod tests {
                 }),
                 Some(Selector::Index(1))
             )
-            .is_true()
+            .is_truthy()
         );
-        assert!(!RuntimeValue::Array(Vec::new()).is_true());
-        assert!(!RuntimeValue::None.is_true());
-        assert!(RuntimeValue::NativeFunction(AstIdent::new("name")).is_true());
+        assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
+        assert!(!RuntimeValue::None.is_truthy());
+        assert!(RuntimeValue::NativeFunction(AstIdent::new("name")).is_truthy());
         assert!(
             RuntimeValue::Function(
                 SmallVec::new(),
                 Vec::new(),
                 Rc::new(RefCell::new(Env::default()))
             )
-            .is_true()
+            .is_truthy()
         );
-        assert!(RuntimeValue::Dict(BTreeMap::default()).is_true());
+        assert!(RuntimeValue::Dict(BTreeMap::default()).is_truthy());
     }
 
     #[test]
