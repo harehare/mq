@@ -378,6 +378,37 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
+        matches!(
+            token_kind,
+            Some(TokenKind::And)
+                | Some(TokenKind::Asterisk)
+                | Some(TokenKind::Comma)
+                | Some(TokenKind::Comment(_))
+                | Some(TokenKind::Eof)
+                | Some(TokenKind::Elif)
+                | Some(TokenKind::Else)
+                | Some(TokenKind::EqEq)
+                | Some(TokenKind::Gte)
+                | Some(TokenKind::Gt)
+                | Some(TokenKind::Lte)
+                | Some(TokenKind::Lt)
+                | Some(TokenKind::Minus)
+                | Some(TokenKind::NeEq)
+                | Some(TokenKind::Or)
+                | Some(TokenKind::Percent)
+                | Some(TokenKind::Pipe)
+                | Some(TokenKind::Plus)
+                | Some(TokenKind::RangeOp)
+                | Some(TokenKind::RBrace)
+                | Some(TokenKind::RBracket)
+                | Some(TokenKind::RParen)
+                | Some(TokenKind::SemiColon)
+                | Some(TokenKind::Slash)
+                | None
+        )
+    }
+
     fn parse_literal(&mut self, literal_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let literal_node = match &literal_token.kind {
             TokenKind::BoolLiteral(b) => Ok(Rc::new(Node {
@@ -414,33 +445,10 @@ impl<'a> Parser<'a> {
 
         let token = self.tokens.peek();
 
-        match token.map(|t| &t.kind) {
-            Some(TokenKind::Comma)
-            | Some(TokenKind::Else)
-            | Some(TokenKind::Elif)
-            | Some(TokenKind::RParen)
-            | Some(TokenKind::Pipe)
-            | Some(TokenKind::SemiColon)
-            | Some(TokenKind::Eof)
-            | Some(TokenKind::RBracket)
-            | Some(TokenKind::EqEq)
-            | Some(TokenKind::NeEq)
-            | Some(TokenKind::Plus)
-            | Some(TokenKind::Asterisk)
-            | Some(TokenKind::Minus)
-            | Some(TokenKind::Slash)
-            | Some(TokenKind::Percent)
-            | Some(TokenKind::Lt)
-            | Some(TokenKind::Lte)
-            | Some(TokenKind::Gt)
-            | Some(TokenKind::Gte)
-            | Some(TokenKind::RangeOp)
-            | Some(TokenKind::RBrace)
-            | Some(TokenKind::And)
-            | Some(TokenKind::Or)
-            | Some(TokenKind::Comment(_))
-            | None => Ok(literal_node),
-            Some(_) => Err(ParseError::UnexpectedToken((***token.unwrap()).clone())),
+        if Self::is_next_token_allowed(token.as_ref().map(|t| &t.kind)) {
+            Ok(literal_node)
+        } else {
+            Err(ParseError::UnexpectedToken((***token.unwrap()).clone()))
         }
     }
 
@@ -459,69 +467,22 @@ impl<'a> Parser<'a> {
                     let _ = self.tokens.next();
                 }
 
-                match self.tokens.peek().map(|t| &t.kind) {
-                    Some(TokenKind::Comma)
-                    | Some(TokenKind::RParen)
-                    | Some(TokenKind::Pipe)
-                    | Some(TokenKind::Else)
-                    | Some(TokenKind::Elif)
-                    | Some(TokenKind::SemiColon)
-                    | Some(TokenKind::Eof)
-                    | Some(TokenKind::EqEq)
-                    | Some(TokenKind::NeEq)
-                    | Some(TokenKind::Plus)
-                    | Some(TokenKind::Asterisk)
-                    | Some(TokenKind::Minus)
-                    | Some(TokenKind::Slash)
-                    | Some(TokenKind::Percent)
-                    | Some(TokenKind::Lt)
-                    | Some(TokenKind::Lte)
-                    | Some(TokenKind::Gt)
-                    | Some(TokenKind::Gte)
-                    | Some(TokenKind::RangeOp)
-                    | Some(TokenKind::And)
-                    | Some(TokenKind::Or)
-                    | Some(TokenKind::RBrace)
-                    | Some(TokenKind::RBracket)
-                    | Some(TokenKind::Comment(_))
-                    | None => Ok(Rc::new(Node {
+                if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
+                    Ok(Rc::new(Node {
                         token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
                         expr: Rc::new(Expr::Call(
                             Ident::new_with_token(ident, Some(Rc::clone(&ident_token))),
                             args,
                             optional,
                         )),
-                    })),
-                    _ => Err(ParseError::UnexpectedToken(
+                    }))
+                } else {
+                    Err(ParseError::UnexpectedToken(
                         (***self.tokens.peek().unwrap()).clone(),
-                    )),
+                    ))
                 }
             }
-            Some(TokenKind::Comma)
-            | Some(TokenKind::RParen)
-            | Some(TokenKind::Pipe)
-            | Some(TokenKind::Else)
-            | Some(TokenKind::Elif)
-            | Some(TokenKind::SemiColon)
-            | Some(TokenKind::Eof)
-            | Some(TokenKind::EqEq)
-            | Some(TokenKind::NeEq)
-            | Some(TokenKind::Plus)
-            | Some(TokenKind::Asterisk)
-            | Some(TokenKind::Minus)
-            | Some(TokenKind::Slash)
-            | Some(TokenKind::Percent)
-            | Some(TokenKind::Lt)
-            | Some(TokenKind::Lte)
-            | Some(TokenKind::Gt)
-            | Some(TokenKind::Gte)
-            | Some(TokenKind::RangeOp)
-            | Some(TokenKind::And)
-            | Some(TokenKind::Or)
-            | Some(TokenKind::RBrace)
-            | Some(TokenKind::RBracket)
-            | Some(TokenKind::Comment(_))
-            | None => Ok(Rc::new(Node {
+            token if Self::is_next_token_allowed(token) => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
                 expr: Rc::new(Expr::Ident(Ident::new_with_token(
                     ident,
@@ -889,81 +850,6 @@ impl<'a> Parser<'a> {
             match &**token {
                 Token {
                     range: _,
-                    kind: TokenKind::Ident(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Selector(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::If,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Fn,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::BoolLiteral(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::NumberLiteral(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::StringLiteral(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::None,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::InterpolatedString(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Env(_),
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::LBracket,
-                    module_id: _,
-                } => {
-                    // Arguments that are complex expressions (idents, selectors, if, fn)
-                    args.push(self.parse_arg_expr(Rc::clone(token))?);
-                }
-                Token {
-                    range: _,
-                    kind: TokenKind::LParen,
-                    module_id: _,
-                } => {
-                    return Err(ParseError::UnexpectedToken((**token).clone()));
-                }
-                Token {
-                    range: _,
-                    kind: TokenKind::Self_,
-                    module_id: _,
-                } => {
-                    args.push(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(token)),
-                        expr: Rc::new(Expr::Self_),
-                    }));
-                }
-                Token {
-                    range: _,
                     kind: TokenKind::RParen,
                     module_id: _,
                 } => match prev_token {
@@ -976,18 +862,6 @@ impl<'a> Parser<'a> {
                     }
                     _ => break,
                 },
-                Token {
-                    range: _,
-                    kind: TokenKind::Else,
-                    module_id: _,
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Elif,
-                    module_id: _,
-                } => {
-                    return Err(ParseError::UnexpectedToken((**token).clone()));
-                }
                 Token {
                     range: _,
                     kind: TokenKind::Eof,
@@ -1007,7 +881,22 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Comma,
                     module_id: _,
                 } => match prev_token {
-                    Some(_) => continue,
+                    Some(_) => {
+                        let token = match self.tokens.peek() {
+                            Some(token) => Ok(Rc::clone(token)),
+                            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                        }?;
+                        match &*token {
+                            Token {
+                                range: _,
+                                kind: TokenKind::Comma,
+                                module_id: _,
+                            } => {
+                                return Err(ParseError::UnexpectedToken((*token).clone()));
+                            }
+                            _ => continue,
+                        }
+                    }
                     None => return Err(ParseError::UnexpectedToken((**token).clone())),
                 },
                 Token {
@@ -1016,7 +905,8 @@ impl<'a> Parser<'a> {
                     module_id: _,
                 } => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
                 _ => {
-                    return Err(ParseError::UnexpectedToken((**token).clone()));
+                    // Arguments that are complex expressions (idents, selectors, if, fn)
+                    args.push(self.parse_arg_expr(Rc::clone(token))?);
                 }
             }
 
@@ -4231,6 +4121,51 @@ mod tests {
                     token(TokenKind::Eof)
                 ],
                 Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::args_missing_rparen(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::LParen),
+                    token(TokenKind::StringLiteral("bar".to_owned())),
+                    // Missing RParen
+                    token(TokenKind::Eof)
+                ],
+                Err(ParseError::ExpectedClosingParen(token(TokenKind::Eof)))
+            )]
+    #[case::args_unexpected_token(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::LParen),
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::Colon), // Invalid token in args
+                    token(TokenKind::RParen),
+                    token(TokenKind::Eof)
+                ],
+                Err(ParseError::UnexpectedToken(token(TokenKind::Colon)))
+            )]
+    #[case::args_leading_comma(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::LParen),
+                    token(TokenKind::Comma),
+                    token(TokenKind::Ident(CompactString::new("bar"))),
+                    token(TokenKind::RParen),
+                    token(TokenKind::Eof)
+                ],
+                Err(ParseError::UnexpectedToken(token(TokenKind::Comma)))
+            )]
+    #[case::args_double_comma(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::LParen),
+                    token(TokenKind::Ident(CompactString::new("bar"))),
+                    token(TokenKind::Comma),
+                    token(TokenKind::Comma),
+                    token(TokenKind::Ident(CompactString::new("baz"))),
+                    token(TokenKind::RParen),
+                    token(TokenKind::Eof)
+                ],
+                Err(ParseError::UnexpectedToken(token(TokenKind::Comma)))
+            )]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
