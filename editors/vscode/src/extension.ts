@@ -36,18 +36,8 @@ def snake_to_camel(x):
 # Markdown Toc
 .h
 | let link = to_link("#" + to_text(self), to_text(self), "")
-| if (is_h1()):
-  to_md_list(link, 1)
-elif (is_h2()):
-  to_md_list(link, 2)
-elif (is_h3()):
-  to_md_list(link, 3)
-elif (is_h4()):
-  to_md_list(link, 4)
-elif (is_h5()):
-  to_md_list(link, 5)
-else:
-  None;
+| let level = .h.level
+| if (not(is_none(level))): to_md_list(link, to_number(level))
 `;
 
 let client: lc.LanguageClient | null = null;
@@ -110,12 +100,12 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const mdFiles = await vscode.workspace.findFiles(
-        "**/*.{md,mdx,html,txt}"
+        "**/*.{md,mdx,html,csv,tsv,txt}"
       );
 
       if (mdFiles.length === 0) {
         vscode.window.showInformationMessage(
-          "No .md, .mdx, .html, or .txt files found in workspace"
+          "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace"
         );
         return;
       }
@@ -131,7 +121,8 @@ export async function activate(context: vscode.ExtensionContext) {
       });
 
       const selectedItem = await vscode.window.showQuickPick(items, {
-        placeHolder: "Select a .md, .mdx, .html, or .txt file as input",
+        placeHolder:
+          "Select a .md, .mdx, .html, .csv, .tsv or .txt file as input",
       });
 
       if (selectedItem) {

@@ -45,28 +45,38 @@ You can customize these settings in your VS Code settings.json file or through t
 
 ### Basic Example
 
-```python
-# Extract all headings
-.h
+```sh
+# code
+$ mq '.code | select(contains("name"))'
+# Extracts the language name from code blocks.
+$ mq '.code.lang'
+# Extracts the url from link.
+$ mq '.link.url'
+# table
+$ mq '.[][] | select(contains("name"))'
+# list or header
+$ mq 'or(.[], .h) | select(contains("name"))'
+# Exclude js code
+$ mq 'select(not(.code("js")))'
+# CSV to markdown table
+$ mq 'nodes | csv2table()' example.csv
 ```
 
-### Advanced Examples
+### Advanced Usage
 
-```python
-# Extract code blocks with their language
-.code("js")
-```
+You can chain multiple operations to perform complex transformations:
 
-```python
-# Find paragraphs containing specific text
-select(contains("important"))
-```
-
-```python
-# Define and use a custom function
-def important_headings():
-    .h | select(contains("Important"));
-| important_headings()
+```sh
+# Markdown TOC
+$ mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (not(is_none(level))): to_md_list(link, to_number(level))' docs/books/**/*.md
+# String Interpolation
+$ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
+# Merging Multiple Files
+$ mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
+# Extract all code blocks from an HTML file
+$ mq '.code' example.html
+# Convert HTML to Markdown and filter headers
+$ mq 'select(or(.h1, .h2))' example.html
 ```
 
 ## License

@@ -229,8 +229,6 @@ $ mq '.code' example.html
 $ mq 'select(or(.h1, .h2))' example.html
 ```
 
-This allows you to seamlessly convert and query HTML content using mq's Markdown processing features.
-
 ### Using with markitdown
 
 You can combine `mq` with [markitdown](https://github.com/microsoft/markitdown) for even more powerful Markdown processing workflows:
