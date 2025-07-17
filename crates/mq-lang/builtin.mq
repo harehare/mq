@@ -391,7 +391,6 @@ def fold(arr, init, f):
   else:
     until (i != len(arr)):
       let acc = f(acc, nth(arr, i))
-      | debug()
       | let i = i + 1
       | acc;;
 
