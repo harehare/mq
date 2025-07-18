@@ -2,29 +2,6 @@
 
 Thank you for your interest in contributing to mq! This document provides guidelines for contributing to the project.
 
-## Table of Contents
-
- - [Getting Started](#Getting Started)
- - [Development Setup](#Development Setup)
-   - [Prerequisites](#Prerequisites)
-   - [Setting up the Development Environment](#Setting up the Development Environment)
- - [Code Style and Standards](#Code Style and Standards)
-   - [Rust Conventions](#Rust Conventions)
-   - [Code Organization](#Code Organization)
- - [Testing](#Testing)
-   - [Running Tests](#Running Tests)
-   - [Test Guidelines](#Test Guidelines)
-   - [Test Coverage](#Test Coverage)
- - [Submitting Changes](#Submitting Changes)
-   - [Before Submitting](#Before Submitting)
-   - [Commit Message Format](#Commit Message Format)
- - [Documentation](#Documentation)
-   - [Documentation Requirements](#Documentation Requirements)
-   - [Building Documentation](#Building Documentation)
- - [Bug Reports](#Bug Reports)
- - [Feature Requests](#Feature Requests)
- - [License](#License)
-
 ## Getting Started
 
 Before contributing, please:
