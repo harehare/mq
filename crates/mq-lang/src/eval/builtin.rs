@@ -103,6 +103,18 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("print"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, current_value, args| {
+                match args.as_slice() {
+                    [a] => {
+                        println!("{}", a);
+                        Ok(current_value.clone())
+                    }
+                    _ => unreachable!(),
+                }
+            }),
+        );
+        map.insert(
             CompactString::new("stderr"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, current_value, args| {
                 match args.as_slice() {
@@ -2348,6 +2360,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
             description: "Asserts that two values are equal, returns the value if true, otherwise raises an error.",
             params: &["value1", "value2"],
+            },
+        );
+        map.insert(
+            CompactString::new("print"),
+            BuiltinFunctionDoc {
+                description: "Prints a message to standard output and returns the current value.",
+                params: &["message"],
             },
         );
         map.insert(
