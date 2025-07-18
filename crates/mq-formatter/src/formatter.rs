@@ -92,7 +92,7 @@ impl Formatter {
                 self.format_dict(&node, indent_level_consider_new_line);
             }
             mq_lang::CstNodeKind::BinaryOp(_) => {
-                self.format_binary_op(&node, indent_level_consider_new_line);
+                self.format_binary_op(&node, indent_level);
             }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
@@ -982,6 +982,19 @@ process();"#,
         "let v = 1
    || 2
    || 3"
+    )]
+    #[case::def_contains(
+        r#"def contains(haystack, needle):
+if (is_dict(haystack)):
+  not(is_none(get(haystack, needle)))
+else:
+  index(haystack, needle) != -1;
+"#,
+        r#"def contains(haystack, needle):
+  if (is_dict(haystack)):
+    not(is_none(get(haystack, needle)))
+  else:
+    index(haystack, needle) != -1;"#
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
