@@ -260,10 +260,9 @@ impl<'a> Parser<'a> {
     ) -> Result<Arc<Node>, ParseError> {
         let mut lhs = self.parse_primary_expr(leading_trivia, root)?;
 
-        while let Some(peeked_token_rc) = self.tokens.peek() {
-            let peeked_token = &**peeked_token_rc;
-            if matches!(
-                peeked_token.kind,
+        while self.try_next_token(|kind| {
+            matches!(
+                kind,
                 TokenKind::And
                     | TokenKind::Asterisk
                     | TokenKind::EqEq
@@ -278,97 +277,95 @@ impl<'a> Parser<'a> {
                     | TokenKind::Plus
                     | TokenKind::RangeOp
                     | TokenKind::Slash
-            ) {
-                let leading_trivia = self.parse_leading_trivia();
-                let operator_token = self.tokens.next().unwrap();
-                let mut op = Node {
-                    kind: match &**operator_token {
-                        Token {
-                            range: _,
-                            kind: TokenKind::And,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::And),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Asterisk,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Multiplication),
-                        Token {
-                            range: _,
-                            kind: TokenKind::EqEq,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Equal),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Gte,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Gte),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Gt,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Gt),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Lte,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Lte),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Lt,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Lt),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Minus,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Minus),
-                        Token {
-                            range: _,
-                            kind: TokenKind::NeEq,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::NotEqual),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Or,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Or),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Percent,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Modulo),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Plus,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Plus),
-                        Token {
-                            range: _,
-                            kind: TokenKind::RangeOp,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::RangeOp),
-                        Token {
-                            range: _,
-                            kind: TokenKind::Slash,
-                            ..
-                        } => NodeKind::BinaryOp(BinaryOp::Division),
-                        _ => unreachable!(),
-                    },
-                    token: Some(Arc::clone(operator_token)),
-                    leading_trivia,
-                    trailing_trivia: self.parse_trailing_trivia(),
-                    children: Vec::new(),
-                };
+            )
+        }) {
+            let leading_trivia = self.parse_leading_trivia();
+            let operator_token = self.tokens.next().unwrap();
+            let mut op = Node {
+                kind: match &**operator_token {
+                    Token {
+                        range: _,
+                        kind: TokenKind::And,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::And),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Asterisk,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Multiplication),
+                    Token {
+                        range: _,
+                        kind: TokenKind::EqEq,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Equal),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Gte,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Gte),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Gt,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Gt),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Lte,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Lte),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Lt,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Lt),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Minus,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Minus),
+                    Token {
+                        range: _,
+                        kind: TokenKind::NeEq,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::NotEqual),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Or,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Or),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Percent,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Modulo),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Plus,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Plus),
+                    Token {
+                        range: _,
+                        kind: TokenKind::RangeOp,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::RangeOp),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Slash,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Division),
+                    _ => unreachable!(),
+                },
+                token: Some(Arc::clone(operator_token)),
+                leading_trivia,
+                trailing_trivia: self.parse_trailing_trivia(),
+                children: Vec::new(),
+            };
 
-                let leading_trivia = self.parse_leading_trivia();
-                let rhs = self.parse_primary_expr(leading_trivia, root)?;
+            let leading_trivia = self.parse_leading_trivia();
+            let rhs = self.parse_primary_expr(leading_trivia, root)?;
 
-                op.children = vec![lhs, rhs];
-                lhs = Arc::new(op);
-            } else {
-                break;
-            }
+            op.children = vec![lhs, rhs];
+            lhs = Arc::new(op);
         }
 
         Ok(lhs)

@@ -1,6 +1,4 @@
-use std::sync::{Arc, LazyLock};
-
-use rustc_hash::FxHashSet;
+use std::sync::Arc;
 
 #[allow(dead_code)]
 #[cfg(target_os = "windows")]
@@ -25,12 +23,6 @@ impl Default for FormatterConfig {
         Self { indent_width: 2 }
     }
 }
-
-static IGNORE_TRIVIA_KIND: LazyLock<FxHashSet<mq_lang::CstNodeKind>> = LazyLock::new(|| {
-    let mut set = FxHashSet::default();
-    set.insert(mq_lang::CstNodeKind::Token);
-    set
-});
 
 impl Formatter {
     pub fn new(config: Option<FormatterConfig>) -> Self {
@@ -85,7 +77,10 @@ impl Formatter {
             0
         };
 
-        if !IGNORE_TRIVIA_KIND.contains(&node.kind) {
+        if !matches!(
+            node.kind,
+            mq_lang::CstNodeKind::Token | mq_lang::CstNodeKind::BinaryOp(_)
+        ) {
             self.append_leading_trivia(&node, indent_level_consider_new_line);
         }
 
@@ -97,7 +92,7 @@ impl Formatter {
                 self.format_dict(&node, indent_level_consider_new_line);
             }
             mq_lang::CstNodeKind::BinaryOp(_) => {
-                self.format_binary_op(&node, indent_level_consider_new_line, indent_level);
+                self.format_binary_op(&node, indent_level_consider_new_line);
             }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
@@ -241,13 +236,7 @@ impl Formatter {
         }
     }
 
-    fn format_binary_op(
-        &mut self,
-        node: &Arc<mq_lang::CstNode>,
-        indent_level: usize,
-        block_indent_level: usize,
-    ) {
-        self.append_indent(indent_level);
+    fn format_binary_op(&mut self, node: &Arc<mq_lang::CstNode>, block_indent_level: usize) {
         match node.binary_op() {
             Some((left, right)) => {
                 self.format_node(left, block_indent_level);
@@ -258,6 +247,11 @@ impl Formatter {
                         token: Some(token),
                         ..
                     } => {
+                        self.append_leading_trivia(node, block_indent_level);
+
+                        if node.has_new_line() {
+                            self.append_indent(block_indent_level);
+                        }
                         self.output.push_str(format!("{}", token).as_str());
                     }
                     mq_lang::CstNode {
@@ -265,6 +259,12 @@ impl Formatter {
                         token: Some(token),
                         ..
                     } => {
+                        self.append_leading_trivia(node, block_indent_level);
+
+                        if node.has_new_line() {
+                            self.append_indent(block_indent_level);
+                        }
+
                         self.output.push_str(format!(" {} ", token).as_str());
                     }
                     _ => unreachable!(),
@@ -967,6 +967,22 @@ process();"#,
     #[case::mul("1 / 1", "1 / 1")]
     #[case::and("true && false", "true && false")]
     #[case::or("true || false", "true || false")]
+    #[case::binary_op_multiline_or(
+        r#"1
+|| 2
+|| 3"#,
+        "1
+ || 2
+ || 3"
+    )]
+    #[case::binary_op_multiline(
+        r#"let v = 1
+|| 2
+|| 3"#,
+        "let v = 1
+   || 2
+   || 3"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
