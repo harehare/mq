@@ -1,12 +1,12 @@
 use miette::miette;
 use rmcp::{
-    Error as McpError, ServerHandler, ServiceExt,
+    ErrorData, ServerHandler, ServiceExt,
     handler::server::tool::{Parameters, ToolRouter},
     model::{CallToolResult, Content, ProtocolVersion, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router,
 };
 use tokio::io::{stdin, stdout};
-type McpResult = Result<CallToolResult, McpError>;
+type McpResult = Result<CallToolResult, ErrorData>;
 
 #[derive(Debug, Clone, Default)]
 pub struct Server {
@@ -74,7 +74,7 @@ impl Server {
         engine.load_builtin_module();
 
         let markdown = mq_markdown::Markdown::from_html_str(&html).map_err(|e| {
-            McpError::parse_error(
+            ErrorData::parse_error(
                 "Failed to parse html",
                 Some(serde_json::Value::String(e.to_string())),
             )
@@ -85,7 +85,7 @@ impl Server {
                 markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
             )
             .map_err(|e| {
-                McpError::invalid_request(
+                ErrorData::invalid_request(
                     "Failed to query",
                     Some(serde_json::Value::String(e.to_string())),
                 )
@@ -111,12 +111,12 @@ impl Server {
     fn extract_markdown(
         &self,
         Parameters(QueryForMarkdown { markdown, query }): Parameters<QueryForMarkdown>,
-    ) -> Result<CallToolResult, McpError> {
+    ) -> Result<CallToolResult, ErrorData> {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
         let markdown = mq_markdown::Markdown::from_html_str(&markdown).map_err(|e| {
-            McpError::parse_error(
+            ErrorData::parse_error(
                 "Failed to parse markdown",
                 Some(serde_json::Value::String(e.to_string())),
             )
@@ -127,7 +127,7 @@ impl Server {
                 markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
             )
             .map_err(|e| {
-                McpError::invalid_request(
+                ErrorData::invalid_request(
                     "Failed to query",
                     Some(serde_json::Value::String(e.to_string())),
                 )
