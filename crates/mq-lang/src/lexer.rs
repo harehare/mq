@@ -107,6 +107,20 @@ fn unicode(input: Span) -> IResult<Span, char> {
     .parse(input)
 }
 
+fn hex_escape(input: Span) -> IResult<Span, char> {
+    map_opt(
+        map_res(
+            preceded(
+                char('x'),
+                take_while_m_n(2, 2, |c: char| c.is_ascii_hexdigit()),
+            ),
+            |span: Span| u8::from_str_radix(span.fragment(), 16),
+        ),
+        |byte| char::from_u32(byte as u32),
+    )
+    .parse(input)
+}
+
 fn inline_comment(input: Span) -> IResult<Span, Token> {
     map(preceded(char('#'), is_not("\n\r|")), |span: Span| {
         let module_id = span.extra;
@@ -292,6 +306,7 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
                         value('\r', char('r')),
                         value('\n', char('n')),
                         value('\t', char('t')),
+                        hex_escape,
                         unicode,
                     )),
                 )(span)?;
@@ -365,6 +380,7 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
                 value('\r', char('r')),
                 value('\n', char('n')),
                 value('\t', char('t')),
+                hex_escape,
                 unicode,
             )),
         ),
@@ -776,6 +792,36 @@ mod tests {
                     },
                     Token {
                         range: Range { start: Position { line: 1, column: 8 }, end: Position { line: 1, column: 8 } },
+                        kind: TokenKind::Eof,
+                        module_id: 1.into(),
+                    }
+                ])
+            )]
+    #[case::hex_escape_sequence("print(\"\\x1b[2J\\x1b[H\")",
+            Options::default(),
+            Ok(vec![
+                    Token {
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 6 } },
+                        kind: TokenKind::Ident(CompactString::new("print")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 6 }, end: Position { line: 1, column: 7 } },
+                        kind: TokenKind::LParen,
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 7 }, end: Position { line: 1, column: 22 } },
+                        kind: TokenKind::StringLiteral("\x1b[2J\x1b[H".to_string()),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 22 }, end: Position { line: 1, column: 23 } },
+                        kind: TokenKind::RParen,
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 23 }, end: Position { line: 1, column: 23 } },
                         kind: TokenKind::Eof,
                         module_id: 1.into(),
                     }
