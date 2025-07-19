@@ -115,6 +115,7 @@
 |`numbers`| Returns number if input is number, None otherwise|`n`|numbers(n)|
 |`or`|Performs a logical OR operation on two boolean values.|`value1`, `value2`|or(value1, value2)|
 |`pow`|Raises the base to the power of the exponent.|`base`, `exponent`|pow(base, exponent)|
+|`print`|Prints a message to standard output and returns the current value.|`message`|print(message)|
 |`range`|Creates an array from start to end with an optional step.|`start`, `end`, `step`|range(start, end, step)|
 |`repeat`|Repeats the given string a specified number of times.|`string`, `count`|repeat(string, count)|
 |`replace`|Replaces all occurrences of a substring with another substring.|`from`, `pattern`, `to`|replace(from, pattern, to)|
