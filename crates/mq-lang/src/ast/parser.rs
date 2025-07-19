@@ -113,68 +113,67 @@ impl<'a> Parser<'a> {
 
     fn parse_equality_expr(&mut self, initial_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         let mut lhs = self.parse_primary_expr(initial_token)?;
+        let mut is_first_binary_op = true;
 
         while let Some(peeked_token_rc) = self.tokens.peek() {
             let peeked_token = &**peeked_token_rc;
-            if matches!(
-                peeked_token.kind,
-                TokenKind::And
-                    | TokenKind::Asterisk
-                    | TokenKind::EqEq
-                    | TokenKind::Gte
-                    | TokenKind::Gt
-                    | TokenKind::Lte
-                    | TokenKind::Lt
-                    | TokenKind::Minus
-                    | TokenKind::NeEq
-                    | TokenKind::Or
-                    | TokenKind::Percent
-                    | TokenKind::Plus
-                    | TokenKind::RangeOp
-                    | TokenKind::Slash
-            ) {
-                let operator_token = self.tokens.next().unwrap();
-                let operator_token_id = self
-                    .token_arena
-                    .borrow_mut()
-                    .alloc(Rc::clone(operator_token));
 
-                let next_expr_token = match self.tokens.next() {
-                    Some(t) => t,
-                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                };
-                let rhs = self.parse_primary_expr(Rc::clone(next_expr_token))?;
-
-                let function_name = match peeked_token.kind {
-                    TokenKind::And => "and",
-                    TokenKind::Asterisk => "mul",
-                    TokenKind::EqEq => "eq",
-                    TokenKind::Gte => "gte",
-                    TokenKind::Gt => "gt",
-                    TokenKind::Lte => "lte",
-                    TokenKind::Lt => "lt",
-                    TokenKind::Minus => "sub",
-                    TokenKind::NeEq => "ne",
-                    TokenKind::Or => "or",
-                    TokenKind::Percent => "mod",
-                    TokenKind::Plus => "add",
-                    TokenKind::RangeOp => "range",
-                    TokenKind::Slash => "div",
-                    _ => unreachable!(),
-                };
-
-                lhs = Rc::new(Node {
-                    token_id: operator_token_id,
-                    expr: Rc::new(Expr::Call(
-                        Ident::new_with_token(function_name, Some(Rc::clone(operator_token))),
-                        smallvec![lhs, rhs],
-                        false,
-                    )),
-                });
-            } else {
+            if !Self::is_binary_op(&peeked_token.kind) {
                 break;
             }
+
+            let operator_token = self.tokens.next().unwrap();
+            let operator_token_id = self
+                .token_arena
+                .borrow_mut()
+                .alloc(Rc::clone(operator_token));
+
+            let next_expr_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            let rhs = if !is_first_binary_op
+                && self
+                    .tokens
+                    .peek()
+                    .map(|t| Self::is_binary_op(&t.kind))
+                    .unwrap_or(false)
+            {
+                self.parse_expr(Rc::clone(next_expr_token))?
+            } else {
+                self.parse_primary_expr(Rc::clone(next_expr_token))?
+            };
+
+            let function_name = match peeked_token.kind {
+                TokenKind::And => "and",
+                TokenKind::Asterisk => "mul",
+                TokenKind::EqEq => "eq",
+                TokenKind::Gte => "gte",
+                TokenKind::Gt => "gt",
+                TokenKind::Lte => "lte",
+                TokenKind::Lt => "lt",
+                TokenKind::Minus => "sub",
+                TokenKind::NeEq => "ne",
+                TokenKind::Or => "or",
+                TokenKind::Percent => "mod",
+                TokenKind::Plus => "add",
+                TokenKind::RangeOp => "range",
+                TokenKind::Slash => "div",
+                _ => unreachable!(),
+            };
+
+            lhs = Rc::new(Node {
+                token_id: operator_token_id,
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token(function_name, Some(Rc::clone(operator_token))),
+                    smallvec![lhs, rhs],
+                    false,
+                )),
+            });
+            is_first_binary_op = false;
         }
+
         Ok(lhs)
     }
 
@@ -376,6 +375,26 @@ impl<'a> Parser<'a> {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Nodes),
         }))
+    }
+
+    fn is_binary_op(token_kind: &TokenKind) -> bool {
+        matches!(
+            token_kind,
+            TokenKind::And
+                | TokenKind::Asterisk
+                | TokenKind::EqEq
+                | TokenKind::Gte
+                | TokenKind::Gt
+                | TokenKind::Lte
+                | TokenKind::Lt
+                | TokenKind::Minus
+                | TokenKind::NeEq
+                | TokenKind::Or
+                | TokenKind::Percent
+                | TokenKind::Plus
+                | TokenKind::RangeOp
+                | TokenKind::Slash
+        )
     }
 
     fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
@@ -4166,6 +4185,62 @@ mod tests {
                 ],
                 Err(ParseError::UnexpectedToken(token(TokenKind::Comma)))
             )]
+    #[case::binary_operator_chaining(
+                vec![
+                    token(TokenKind::NumberLiteral(2.into())),
+                    token(TokenKind::Gt),
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::Or),
+                    token(TokenKind::NumberLiteral(2.into())),
+                    token(TokenKind::Gt),
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Call(
+                                        Ident::new_with_token("gt", Some(Rc::new(token(TokenKind::Gt)))),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                            }),
+                                            Rc::new(Node {
+                                                token_id: 2.into(),
+                                                expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                            }),
+                                        ],
+                                        false,
+                                    )),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 5.into(),
+                                    expr: Rc::new(Expr::Call(
+                                        Ident::new_with_token("gt", Some(Rc::new(token(TokenKind::Gt)))),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 4.into(),
+                                                expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
+                                            }),
+                                            Rc::new(Node {
+                                                token_id: 6.into(),
+                                                expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                            }),
+                                        ],
+                                        false,
+                                    )),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
