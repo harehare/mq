@@ -2,7 +2,7 @@
 edition = "2024"
 name = "mq-test"
 publish = false
-version = "0.2.10"
+version = "0.2.11"
 
 [lib]
 bench = false

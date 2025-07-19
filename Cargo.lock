@@ -2512,7 +2512,7 @@ dependencies = [
 
 [[package]]
 name = "mq-c-api"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "cbindgen",
  "libc",
@@ -2522,7 +2522,7 @@ dependencies = [
 
 [[package]]
 name = "mq-cli"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2545,7 +2545,7 @@ dependencies = [
 
 [[package]]
 name = "mq-crawler"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "clap",
  "crossbeam",
@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "mq-lang",
  "rstest",
@@ -2579,7 +2579,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "compact_str 0.9.0",
  "itertools 0.14.0",
@@ -2594,7 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2629,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lsp"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "bimap",
  "dashmap 6.1.0",
@@ -2647,7 +2647,7 @@ dependencies = [
 
 [[package]]
 name = "mq-macros"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "mq-lang",
  "mq-markdown",
@@ -2657,7 +2657,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "compact_str 0.9.0",
  "ego-tree",
@@ -2674,7 +2674,7 @@ dependencies = [
 
 [[package]]
 name = "mq-mcp"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "miette",
  "mq-hir",
@@ -2690,7 +2690,7 @@ dependencies = [
 
 [[package]]
 name = "mq-python"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "mq-lang",
  "mq-markdown",
@@ -2699,7 +2699,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "arboard",
  "colored 3.0.0",
@@ -2717,14 +2717,14 @@ dependencies = [
 
 [[package]]
 name = "mq-test"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "scopeguard",
 ]
 
 [[package]]
 name = "mq-tui"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "arboard",
  "crossterm 0.29.0",
@@ -2739,7 +2739,7 @@ dependencies = [
 
 [[package]]
 name = "mq-wasm"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "itertools 0.14.0",
  "js-sys",
@@ -2756,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "mq-web-api"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "miette",
  "mq-lang",
