@@ -370,7 +370,7 @@ impl Cli {
                     "md" | "markdown" => &InputFormat::Markdown,
                     "mdx" => &InputFormat::Mdx,
                     "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" => &InputFormat::Text,
+                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" => &InputFormat::Text,
                     _ => &InputFormat::Markdown,
                 }
             } else {
