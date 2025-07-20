@@ -96,6 +96,7 @@ pub enum TokenKind {
     LBrace,
     And,
     Or,
+    Not,
 }
 
 impl Token {
@@ -115,6 +116,7 @@ impl Display for TokenKind {
         match &self {
             TokenKind::And => write!(f, "&&"),
             TokenKind::Or => write!(f, "||"),
+            TokenKind::Not => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::BoolLiteral(b) => write!(f, "{}", b),
             TokenKind::Colon => write!(f, ":"),

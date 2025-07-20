@@ -98,6 +98,7 @@ pub enum NodeKind {
     Selector,
     Self_,
     Token,
+    UnaryOp(UnaryOp),
     Until,
     While,
 }
@@ -118,6 +119,11 @@ pub enum BinaryOp {
     Or,
     Plus,
     RangeOp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UnaryOp {
+    Not,
 }
 
 impl Display for Node {
@@ -218,6 +224,15 @@ impl Node {
             let left = non_token_children.next()?;
             let right = non_token_children.next()?;
             Some((Arc::clone(left), Arc::clone(right)))
+        } else {
+            None
+        }
+    }
+
+    pub fn unary_op(&self) -> Option<Arc<Node>> {
+        if let NodeKind::UnaryOp(_) = self.kind {
+            let operand = self.children.iter().find(|child| !child.is_token())?;
+            Some(Arc::clone(operand))
         } else {
             None
         }

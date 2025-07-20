@@ -200,6 +200,7 @@ impl<'a> Parser<'a> {
             TokenKind::LBracket => self.parse_array(token),
             TokenKind::LBrace => self.parse_dict(token),
             TokenKind::LParen => self.parse_paren(token),
+            TokenKind::Not => self.parse_not(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
@@ -226,6 +227,26 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id,
             expr: Rc::new(Expr::Paren(expr_node)),
+        }))
+    }
+
+    fn parse_not(&mut self, not_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&not_token));
+
+        let expr_token = match self.tokens.next() {
+            Some(t) => t,
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        let expr_node = self.parse_primary_expr(Rc::clone(expr_token))?;
+
+        // Convert ! to not() function call
+        let not_ident = Ident::new_with_token("not", Some(Rc::clone(&not_token)));
+        let args = smallvec![expr_node];
+
+        Ok(Rc::new(Node {
+            token_id,
+            expr: Rc::new(Expr::Call(not_ident, args, false)),
         }))
     }
 
@@ -4241,6 +4262,54 @@ mod tests {
                         )),
                     })
                 ]))]
+    #[case::not_simple(
+                vec![
+                    token(TokenKind::Not),
+                    token(TokenKind::BoolLiteral(false)),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Not)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::not_with_expr(
+                vec![
+                    token(TokenKind::Not),
+                    token(TokenKind::Ident(CompactString::new("x"))),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Not)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::not_error_missing_rhs(
+                vec![
+                    token(TokenKind::Not),
+                    token(TokenKind::Eof)
+                ],
+                Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(

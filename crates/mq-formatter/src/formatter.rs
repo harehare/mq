@@ -94,6 +94,9 @@ impl Formatter {
             mq_lang::CstNodeKind::BinaryOp(_) => {
                 self.format_binary_op(&node, indent_level);
             }
+            mq_lang::CstNodeKind::UnaryOp(_) => {
+                self.format_unary_op(&node, indent_level);
+            }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
@@ -273,6 +276,26 @@ impl Formatter {
                 self.format_node(right, block_indent_level);
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn format_unary_op(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::UnaryOp(op),
+            token: Some(token),
+            ..
+        } = &**node
+        {
+            self.append_indent(indent_level);
+            self.output.push_str(&token.to_string());
+
+            match op {
+                mq_lang::CstUnaryOp::Not => {
+                    self.format_node(Arc::clone(&node.children[0]), indent_level);
+                }
+            }
+        } else {
+            unreachable!();
         }
     }
 
@@ -1032,6 +1055,7 @@ else:
     #[case::control_character_form_feed(r#""\x0c""#, r#""\x0c""#)]
     #[case::control_character_escape(r#""\x1b""#, r#""\x1b""#)]
     #[case::control_character_delete(r#""\x7f""#, r#""\x7f""#)]
+    #[case::not_operator("!true", "!true")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
