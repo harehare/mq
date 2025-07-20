@@ -4090,6 +4090,24 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::string_literal_with_escape_sequences(
+        vec![
+            Arc::new(token(TokenKind::StringLiteral("\\x1b[2J\\x1b[H".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Literal,
+                    token: Some(Arc::new(token(TokenKind::StringLiteral("\\x1b[2J\\x1b[H".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
     fn test_parse(
         #[case] input: Vec<Arc<Token>>,
         #[case] expected: (Vec<Arc<Node>>, ErrorReporter),
