@@ -11,8 +11,8 @@ use std::{fs, path::PathBuf};
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
-#[command(author = "Takahiro Sato. <harehare1110@gmail.com>")]
-#[command(version = "0.2.11")]
+#[command(author = env!("CARGO_PKG_AUTHORS"))]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(after_help = "Examples:\n\n\
     To filter markdown nodes:\n\
     $ mq 'query' file.md\n\n\
