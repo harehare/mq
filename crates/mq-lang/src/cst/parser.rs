@@ -1,6 +1,9 @@
 use std::{collections::BTreeSet, fmt::Display, iter::Peekable, sync::Arc};
 
-use crate::{Position, Range, Token, TokenKind, cst::node::BinaryOp};
+use crate::{
+    Position, Range, Token, TokenKind,
+    cst::node::{BinaryOp, UnaryOp},
+};
 
 use super::{
     error::ParseError,
@@ -478,6 +481,11 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Env(_),
                     ..
                 } => self.parse_node(NodeKind::Env, leading_trivia),
+                Token {
+                    range: _,
+                    kind: TokenKind::Not,
+                    ..
+                } => self.parse_unary_op(leading_trivia, root),
                 Token {
                     range: _,
                     kind: TokenKind::Eof,
@@ -1352,6 +1360,39 @@ impl<'a> Parser<'a> {
         let (mut program, _) = self.parse_program(false);
 
         children.append(&mut program);
+
+        node.children = children;
+        Ok(Arc::new(node))
+    }
+
+    fn parse_unary_op(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        root: bool,
+    ) -> Result<Arc<Node>, ParseError> {
+        let operator_token = self.tokens.next().unwrap();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Arc<Node>> = Vec::with_capacity(2);
+
+        let mut node = Node {
+            kind: match &**operator_token {
+                Token {
+                    range: _,
+                    kind: TokenKind::Not,
+                    ..
+                } => NodeKind::UnaryOp(UnaryOp::Not),
+                _ => return Err(ParseError::UnexpectedToken(Arc::clone(operator_token))),
+            },
+            token: Some(Arc::clone(operator_token)),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        // Parse the operand expression
+        let operand_leading_trivia = self.parse_leading_trivia();
+        let operand = self.parse_primary_expr(operand_leading_trivia, root)?;
+        children.push(operand);
 
         node.children = children;
         Ok(Arc::new(node))
@@ -4103,6 +4144,33 @@ mod tests {
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::not_operation(
+        vec![
+            Arc::new(token(TokenKind::Not)),
+            Arc::new(token(TokenKind::BoolLiteral(true))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::UnaryOp(UnaryOp::Not),
+                    token: Some(Arc::new(token(TokenKind::Not))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::BoolLiteral(true)))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
                 }),
             ],
             ErrorReporter::default()

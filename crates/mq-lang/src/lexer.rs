@@ -216,6 +216,7 @@ define_token_parser!(gt, ">", TokenKind::Gt);
 define_token_parser!(gte, ">=", TokenKind::Gte);
 define_token_parser!(and, "&&", TokenKind::And);
 define_token_parser!(or, "||", TokenKind::Or);
+define_token_parser!(not, "!", TokenKind::Not);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -230,6 +231,10 @@ fn binary_op(input: Span) -> IResult<Span, Token> {
         eq_eq, ne_eq, lte, gte, lt, gt, equal, plus, minus, asterisk, slash, percent, range_op,
     ))
     .parse(input)
+}
+
+fn unary_op(input: Span) -> IResult<Span, Token> {
+    alt((not,)).parse(input)
 }
 
 fn keywords(input: Span) -> IResult<Span, Token> {
@@ -488,6 +493,7 @@ fn token(input: Span) -> IResult<Span, Token> {
         literals,
         punctuations,
         binary_op,
+        unary_op,
         ident,
     ))
     .parse(input)
@@ -504,6 +510,7 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         literals,
         punctuations,
         binary_op,
+        unary_op,
         ident,
     ))
     .parse(input)

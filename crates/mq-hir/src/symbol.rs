@@ -44,6 +44,7 @@ pub enum SymbolKind {
     Keyword,
     Selector,
     BinaryOp,
+    UnaryOp,
 }
 
 impl Symbol {
