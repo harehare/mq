@@ -47,7 +47,7 @@
                 },
                 {
                     "name": "keyword.operator.mq",
-                    "match": "(->|=|\\||:|;|\\?)"
+                    "match": "(->|=|\\||:|;|\\?|!|\\+|\\-|\\*|\\/|%|<|>|<=|>=|==|!=|&&)"
                 },
                 {
                     "name": "constant.language.boolean.mq",

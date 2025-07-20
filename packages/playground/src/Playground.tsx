@@ -615,7 +615,7 @@ export const Playground = () => {
             "keyword",
           ],
           [/;/, "delimiter"],
-          [/\|/, "operator"],
+          [/(->|=|\||:|;|\?|!|\+|-|\*|\/|%|<=|>=|==|!=|<|>|&&)/, "operator"],
           [/"/, { token: "string", next: "@multilineString" }],
           [/"s"/, { token: "string", next: "@multilineString" }],
           [/\d+/, "number"],
