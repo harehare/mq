@@ -496,13 +496,10 @@ impl Formatter {
         {
             self.append_indent(indent_level);
             match &token.kind {
-                mq_lang::TokenKind::StringLiteral(s) => self.output.push_str(&format!(
-                    "\"{}\"",
-                    &s.replace("\"", "\\\"")
-                        .replace("\n", "\\n")
-                        .replace("\t", "\\t")
-                        .replace("\r", "\\r")
-                )),
+                mq_lang::TokenKind::StringLiteral(s) => {
+                    let escaped = Self::escape_string(s);
+                    self.output.push_str(&format!(r#""{}""#, escaped));
+                }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
@@ -633,7 +630,39 @@ impl Formatter {
             false
         }
     }
+
+    /// Escapes control characters in a string, converting them to \xXX format
+    fn escape_string(s: &str) -> String {
+        let mut result = String::with_capacity(s.len() * 2);
+
+        for ch in s.chars() {
+            match ch {
+                '"' => result.push_str("\\\""),
+                '\\' => {
+                    // Check if it's already an escape sequence
+                    result.push('\\');
+                }
+                '\n' => result.push_str("\\n"),
+                '\t' => result.push_str("\\t"),
+                '\r' => result.push_str("\\r"),
+                c if c.is_control() => {
+                    // Convert control characters to \xXX format
+                    let code = c as u32;
+                    if code <= 0xFF {
+                        result.push_str(&format!("\\x{:02x}", code));
+                    } else {
+                        // For Unicode control characters, use \u{xxxx} format
+                        result.push_str(&format!("\\u{{{:04x}}}", code));
+                    }
+                }
+                c => result.push(c),
+            }
+        }
+
+        result
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -996,8 +1025,32 @@ else:
   else:
     index(haystack, needle) != -1;"#
     )]
+    #[case::escape_sequence_clear_screen(r#""\x1b[2J\x1b[H""#, r#""\x1b[2J\x1b[H""#)]
+    #[case::control_character_bell(r#""\x07""#, r#""\x07""#)]
+    #[case::control_character_backspace(r#""\x08""#, r#""\x08""#)]
+    #[case::control_character_vertical_tab(r#""\x0b""#, r#""\x0b""#)]
+    #[case::control_character_form_feed(r#""\x0c""#, r#""\x0c""#)]
+    #[case::control_character_escape(r#""\x1b""#, r#""\x1b""#)]
+    #[case::control_character_delete(r#""\x7f""#, r#""\x7f""#)]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("hello", "hello")]
+    #[case("hello\"world", "hello\\\"world")]
+    #[case("hello\nworld", "hello\\nworld")]
+    #[case("hello\tworld", "hello\\tworld")]
+    #[case("hello\rworld", "hello\\rworld")]
+    #[case("hello\x07world", "hello\\x07world")] // Bell character
+    #[case("hello\x08world", "hello\\x08world")] // Backspace character
+    #[case("hello\x0bworld", "hello\\x0bworld")] // Vertical tab
+    #[case("hello\x0cworld", "hello\\x0cworld")] // Form feed
+    #[case("hello\x1bworld", "hello\\x1bworld")] // Escape character
+    #[case("hello\x7fworld", "hello\\x7fworld")] // Delete character
+    fn test_escape_string(#[case] input: &str, #[case] expected: &str) {
+        let result = Formatter::escape_string(input);
+        assert_eq!(result, expected);
     }
 }
