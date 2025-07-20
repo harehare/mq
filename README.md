@@ -115,6 +115,13 @@ You can use mq in Python through the `markdown-query` package:
 pip install markdown-query
 ```
 
+## MCP (Model Context Protocol)
+
+mq provides an MCP server implementation that allows AI assistants to process Markdown and HTML content using mq's query language.
+
+- [mq-mcp documentation](crates/mq-mcp/README.md)
+- [Getting started with MCP](https://mqlang.org/book/start/mcp)
+
 ## Usage
 
 For more detailed usage and examples, refer to the [documentation](https://mqlang.org/book/).
