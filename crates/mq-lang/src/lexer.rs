@@ -43,6 +43,35 @@ macro_rules! define_token_parser {
     };
 }
 
+macro_rules! define_keyword_parser {
+    ($name:ident, $keyword:expr, $kind:expr) => {
+        fn $name(input: Span) -> IResult<Span, Token> {
+            let (remaining, matched) = tag($keyword)(input)?;
+
+            if !remaining.fragment().is_empty() {
+                let c = remaining.fragment().chars().next().unwrap_or('\0');
+                if c.is_alphanumeric() || c == '_' {
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        input,
+                        nom::error::ErrorKind::Tag,
+                    )));
+                }
+            }
+
+            let module_id = matched.extra;
+
+            Ok((
+                remaining,
+                Token {
+                    range: matched.into(),
+                    kind: $kind,
+                    module_id,
+                },
+            ))
+        }
+    };
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     pub ignore_errors: bool,
@@ -174,9 +203,10 @@ fn spaces(input: Span) -> IResult<Span, Token> {
 
 define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(comma, ",", TokenKind::Comma);
-define_token_parser!(def, "def ", TokenKind::Def);
-define_token_parser!(elif, "elif", TokenKind::Elif);
-define_token_parser!(else_, "else", TokenKind::Else);
+define_keyword_parser!(def, "def", TokenKind::Def);
+define_keyword_parser!(elif, "elif", TokenKind::Elif);
+define_keyword_parser!(else_, "else", TokenKind::Else);
+define_keyword_parser!(end, "end", TokenKind::End);
 define_token_parser!(
     empty_string,
     "\"\"",
@@ -184,20 +214,20 @@ define_token_parser!(
 );
 define_token_parser!(eq_eq, "==", TokenKind::EqEq);
 define_token_parser!(equal, "=", TokenKind::Equal);
-define_token_parser!(fn_, "fn", TokenKind::Fn);
-define_token_parser!(foreach, "foreach", TokenKind::Foreach);
-define_token_parser!(if_, "if", TokenKind::If);
-define_token_parser!(include, "include", TokenKind::Include);
+define_keyword_parser!(fn_, "fn", TokenKind::Fn);
+define_keyword_parser!(foreach, "foreach", TokenKind::Foreach);
+define_keyword_parser!(if_, "if", TokenKind::If);
+define_keyword_parser!(include, "include", TokenKind::Include);
 define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
-define_token_parser!(let_, "let ", TokenKind::Let);
+define_keyword_parser!(let_, "let", TokenKind::Let);
 define_token_parser!(asterisk, "*", TokenKind::Asterisk);
 define_token_parser!(minus, "-", TokenKind::Minus);
 define_token_parser!(slash, "/", TokenKind::Slash);
 define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
-define_token_parser!(nodes, "nodes", TokenKind::Nodes);
-define_token_parser!(none, "None", TokenKind::None);
+define_keyword_parser!(nodes, "nodes", TokenKind::Nodes);
+define_keyword_parser!(none, "None", TokenKind::None);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(percent, "%", TokenKind::Percent);
@@ -206,10 +236,10 @@ define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(r_brace, "}", TokenKind::RBrace);
-define_token_parser!(self_, "self", TokenKind::Self_);
+define_keyword_parser!(self_, "self", TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
-define_token_parser!(until, "until", TokenKind::Until);
-define_token_parser!(while_, "while", TokenKind::While);
+define_keyword_parser!(until, "until", TokenKind::Until);
+define_keyword_parser!(while_, "while", TokenKind::While);
 define_token_parser!(lt, "<", TokenKind::Lt);
 define_token_parser!(lte, "<=", TokenKind::Lte);
 define_token_parser!(gt, ">", TokenKind::Gt);
@@ -239,7 +269,7 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        nodes, def, let_, self_, while_, until, if_, elif, else_, none, include, foreach, fn_,
+        nodes, def, let_, self_, while_, until, if_, elif, else_, end, none, include, foreach, fn_,
     ))
     .parse(input)
 }
@@ -715,6 +745,21 @@ mod tests {
               Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }, kind: TokenKind::Ident(CompactString::new("program")), module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 15} }, kind: TokenKind::SemiColon, module_id: 1.into()},
               Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::end_keyword("end",
+            Options::default(),
+            Ok(vec![
+              Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::End, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 4} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::function_declaration_with_end("fn(): program end",
+            Options::default(),
+            Ok(vec![
+              Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 3} }, kind: TokenKind::Fn, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 4} }, kind: TokenKind::LParen, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 4}, end: Position {line: 1, column: 5} }, kind: TokenKind::RParen, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 6} }, kind: TokenKind::Colon, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }, kind: TokenKind::Ident(CompactString::new("program")), module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 18} }, kind: TokenKind::End, module_id: 1.into()},
+              Token{range: Range { start: Position {line: 1, column: 18}, end: Position {line: 1, column: 18} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case::eq_eq1("==",
               Options::default(),
               Ok(vec![
@@ -834,6 +879,31 @@ mod tests {
                     }
                 ])
             )]
+    #[case::keyword_boundary_def("definition",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 11} }, kind: TokenKind::Ident(CompactString::new("definition")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 11}, end: Position {line: 1, column: 11} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_boundary_end("ending",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 7} }, kind: TokenKind::Ident(CompactString::new("ending")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 7} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_boundary_if("ifconfig",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 9} }, kind: TokenKind::Ident(CompactString::new("ifconfig")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 9}, end: Position {line: 1, column: 9} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_proper_def("def ",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::Def, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_proper_end("end ",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::End, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,

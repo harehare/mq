@@ -425,9 +425,9 @@ def sections(md_nodes, level):
   | let result = []
   | let i = 0
   | until (i < len(indices)):
-      let start = nth(indices, i)
-      | let end = nth(indices_with_end, i + 1)
-      | let section = slice(md_nodes, start, end)
+      let start_node = nth(indices, i)
+      | let end_node = nth(indices_with_end, i + 1)
+      | let section = slice(md_nodes, start_node, end_node)
       | let result = result + [section]
       | let i = i + 1
       | result;;

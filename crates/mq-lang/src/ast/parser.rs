@@ -46,7 +46,7 @@ impl<'a> Parser<'a> {
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
             Some(token) => match &token.kind {
-                TokenKind::Pipe | TokenKind::SemiColon => {
+                TokenKind::Pipe | TokenKind::SemiColon | TokenKind::End => {
                     return Err(ParseError::UnexpectedToken((***token).clone()));
                 }
                 _ => {}
@@ -58,16 +58,16 @@ impl<'a> Parser<'a> {
             match &token.kind {
                 TokenKind::Pipe | TokenKind::Comment(_) => continue, // Skip pipes and comments.
                 TokenKind::Eof => break, // End of file terminates the program.
-                TokenKind::SemiColon => {
-                    // Semicolons terminate sub-programs (e.g., in 'def', 'fn').
-                    // In the root program, a semicolon is only allowed if followed by EOF or a comment then EOF.
+                TokenKind::SemiColon | TokenKind::End => {
+                    // Semicolons and 'end' keyword terminate sub-programs (e.g., in 'def', 'fn').
+                    // In the root program, a semicolon/end is only allowed if followed by EOF or a comment then EOF.
                     // Otherwise, it's an unexpected EOF because more expressions were expected.
                     if root {
                         if let Some(token) = self.tokens.peek() {
                             if let TokenKind::Eof = &token.kind {
                                 break;
                             } else if let TokenKind::Comment(_) = &token.kind {
-                                // Allow comments before EOF after a semicolon
+                                // Allow comments before EOF after a semicolon/end
                                 let _ = self.tokens.next(); // Consume comment
                                 if matches!(
                                     self.tokens.peek().map(|t| &t.kind),
@@ -82,7 +82,7 @@ impl<'a> Parser<'a> {
                             }
                         }
                     }
-                    // For non-root programs (e.g. function bodies), a semicolon explicitly ends the program.
+                    // For non-root programs (e.g. function bodies), a semicolon/end explicitly ends the program.
                     break;
                 }
                 TokenKind::Nodes if root => {
@@ -444,6 +444,7 @@ impl<'a> Parser<'a> {
                 | Some(TokenKind::RBracket)
                 | Some(TokenKind::RParen)
                 | Some(TokenKind::SemiColon)
+                | Some(TokenKind::End)
                 | Some(TokenKind::Slash)
                 | None
         )
@@ -1646,6 +1647,29 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(Expr::Def(
+                        Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(CompactString::new("name")))))),
+                        SmallVec::new(),
+                        vec![Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
+                        })],
+                )),
+            }),
+        ]))]
+    #[case::def_with_end(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::End)
         ],
         Ok(vec![
             Rc::new(Node {

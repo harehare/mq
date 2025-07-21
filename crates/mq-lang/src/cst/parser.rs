@@ -1563,6 +1563,7 @@ impl<'a> Parser<'a> {
                 | TokenKind::Ident(_)
                 | TokenKind::Pipe
                 | TokenKind::SemiColon
+                | TokenKind::End
                 | TokenKind::Eof => return,
                 _ => {
                     self.tokens.next();
