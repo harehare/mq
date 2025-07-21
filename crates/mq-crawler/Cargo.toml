@@ -2,7 +2,7 @@
 edition = "2024"
 homepage = "https://mqlang.org"
 name = "mq-crawler"
-version = "0.2.11"
+version = "0.2.12"
 
 [dependencies]
 clap = {version = "4.5", features = ["derive"]}
