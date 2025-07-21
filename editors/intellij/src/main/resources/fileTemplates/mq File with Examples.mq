@@ -1,0 +1,33 @@
+# To hide these examples, set "Show examples in new file" to false in settings
+# Hello world
+def hello_world():
+  add(" Hello World")?;
+select(or(.[], .code, .h)) | upcase() | hello_world();
+
+# Extract js code
+.code("js")
+
+# Extract list
+.[]
+
+# Extract table
+.[][]
+
+# Extract MDX
+select(is_mdx())
+
+# Custom function
+def snake_to_camel(x):
+  let words = split(x, "_")
+  | foreach (word, words):
+    let first_char = upcase(first(word))
+    | let rest_str = downcase(slice(word, 1, len(word)))
+    | s"${first_char}${rest_str}";
+  | join("");
+| snake_to_camel()
+
+# Markdown Toc
+.h
+| let link = to_link("#" + to_text(self), to_text(self), "")
+| let level = .h.level
+| if (not(is_none(level))): to_md_list(link, to_number(level))

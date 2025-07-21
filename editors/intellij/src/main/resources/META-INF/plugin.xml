@@ -1,0 +1,90 @@
+<idea-plugin>
+    <id>org.mqlang.intellij-mq</id>
+    <name>mq - jq-like tool for Markdown processing</name>
+    <vendor email="support@mqlang.org" url="https://mqlang.org">mq</vendor>
+
+    <description><![CDATA[
+    mq is a jq-like tool for Markdown processing. This plugin adds support for the mq language to IntelliJ IDEA.
+    
+    Features:
+    - Syntax highlighting for .mq files
+    - Language support with completion and validation
+    - Integration with mq LSP server
+    - Execute mq queries on Markdown files
+    - Create new mq files with examples
+    ]]></description>
+
+    <!-- please see https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html
+         on how to target different products -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Language registration -->
+        <fileType name="mq File"
+                  implementationClass="org.mqlang.intellij.MqFileType"
+                  fieldName="INSTANCE"
+                  language="mq"
+                  extensions="mq"/>
+        
+        <lang.parserDefinition language="mq"
+                               implementationClass="org.mqlang.intellij.MqParserDefinition"/>
+        
+        <lang.syntaxHighlighterFactory language="mq"
+                                       implementationClass="org.mqlang.intellij.MqSyntaxHighlighterFactory"/>
+        
+        <!-- Code completion -->
+        <completion.contributor language="mq"
+                                implementationClass="org.mqlang.intellij.MqCompletionContributor"/>
+        
+        <!-- File template -->
+        <internalFileTemplate name="mq File"/>
+        
+        <!-- Language Server Protocol -->
+        <platform.lsp.serverDefinition implementation="org.mqlang.intellij.lsp.MqLspServerDefinition"/>
+        
+        <!-- Configuration -->
+        <applicationConfigurable parentId="tools"
+                               instance="org.mqlang.intellij.settings.MqConfigurable"
+                               id="org.mqlang.intellij.settings.MqConfigurable"
+                               displayName="mq"/>
+                               
+        <applicationService serviceImplementation="org.mqlang.intellij.settings.MqSettings"/>
+    </extensions>
+
+    <actions>
+        <!-- Add menu items -->
+        <group id="MqActionGroup" text="mq" description="mq actions">
+            <add-to-group group-id="NewGroup" anchor="before" relative-to-action="NewFile"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            
+            <action id="MqNewFile" 
+                    class="org.mqlang.intellij.actions.MqNewFileAction" 
+                    text="mq File" 
+                    description="Create new mq file">
+                <add-to-group group-id="NewGroup" anchor="before" relative-to-action="NewFile"/>
+            </action>
+            
+            <action id="MqRunSelectedText"
+                    class="org.mqlang.intellij.actions.MqRunSelectedTextAction"
+                    text="Run Selected mq Query"
+                    description="Run selected mq query on a Markdown file">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt M"/>
+            </action>
+            
+            <action id="MqExecuteQuery"
+                    class="org.mqlang.intellij.actions.MqExecuteQueryAction"
+                    text="Execute mq Query"
+                    description="Execute mq query on current file">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt Q"/>
+            </action>
+            
+            <action id="MqExecuteFile"
+                    class="org.mqlang.intellij.actions.MqExecuteFileAction"
+                    text="Execute mq File"
+                    description="Execute mq file on current document">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt F"/>
+            </action>
+        </group>
+    </actions>
+</idea-plugin>
