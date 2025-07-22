@@ -59,9 +59,9 @@ interface FilePickerItem {
 
 // Helper functions
 function getInputFormatFromExtension(extension: string): InputFormat {
-  const formatKey = (Object.keys(InputFormatMap) as Array<InputFormatExtension>).includes(
-    extension as InputFormatExtension
-  )
+  const formatKey = (
+    Object.keys(InputFormatMap) as Array<InputFormatExtension>
+  ).includes(extension as InputFormatExtension)
     ? (extension as InputFormatExtension)
     : "md";
   return InputFormatMap[formatKey];
@@ -198,7 +198,7 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
 
       const extension = editor.document.uri.fsPath.split(".").pop() || "";
       const inputFormat = getInputFormatFromExtension(extension);
-      
+
       await executeCommand(
         "mq/run",
         query,
@@ -231,10 +231,12 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
         return;
       }
 
-      const document = await vscode.workspace.openTextDocument(selectedItem.uri);
+      const document = await vscode.workspace.openTextDocument(
+        selectedItem.uri
+      );
       const extension = editor.document.uri.fsPath.split(".").pop() || "";
       const inputFormat = getInputFormatFromExtension(extension);
-      
+
       await executeCommand(
         "mq/run",
         document.getText(),
@@ -513,86 +515,116 @@ const installLspServer = async (
   }
 };
 
+/**
+ * Provides CodeLens for mq queries in the editor.
+ */
 class MqCodeLensProvider implements vscode.CodeLensProvider {
+  /**
+   * Returns CodeLens objects for each query block in the document.
+   * @param document The text document to analyze.
+   */
   async provideCodeLenses(
     document: vscode.TextDocument
   ): Promise<vscode.CodeLens[]> {
     const codeLenses: vscode.CodeLens[] = [];
-    const text = document.getText();
-    const lines = text.split("\n");
-
+    const lines = document.getText().split("\n");
     let i = 0;
+
     while (i < lines.length) {
       const line = lines[i].trim();
 
       // Skip empty lines and comments
-      if (line === "" || line.startsWith("#")) {
+      if (!line || line.startsWith("#")) {
         i++;
         continue;
       }
 
-      // Check if line starts with '.'
+      // Handle queries starting with '.'
       if (line.startsWith(".")) {
-        const startLine = i;
-        let endLine = i;
-
-        // Find the end of the query block (until empty line or end of file)
-        while (endLine + 1 < lines.length && lines[endLine + 1].trim() !== "") {
-          endLine++;
-        }
-
-        const startPos = new vscode.Position(startLine, 0);
-        const endPos = new vscode.Position(endLine, lines[endLine].length);
-        const range = new vscode.Range(startPos, endPos);
-
-        const queryLines = lines.slice(startLine, endLine + 1);
-        const query = queryLines.join("\n").trim();
-
+        const { endLine, query } = this.collectQueryBlock(lines, i);
         if (query) {
           codeLenses.push(
-            new vscode.CodeLens(range, {
-              title: "▶︎ Run Query",
-              command: "mq.runQueryAndShowInEditor",
-              arguments: [query],
-            })
-          );
-        }
-
-        i = endLine + 1;
-      } else {
-        // Handle other query types (def functions, etc.)
-        const queryRegex =
-          /(?:^def\s+[\s\S]+?;\s*$)|(?:^(?!#)(?!def\s)[\s\S]+?(?:;|end)\s*$)/gm;
-        const remainingText = lines.slice(i).join("\n");
-        const match = queryRegex.exec(remainingText);
-
-        if (match && match.index === 0) {
-          const matchLines = match[0].split("\n").length;
-          const startPos = new vscode.Position(i, 0);
-          const endPos = new vscode.Position(
-            i + matchLines - 1,
-            lines[i + matchLines - 1].length
-          );
-          const range = new vscode.Range(startPos, endPos);
-          const query = match[0].trim();
-
-          if (query) {
-            codeLenses.push(
-              new vscode.CodeLens(range, {
+            new vscode.CodeLens(
+              new vscode.Range(
+                new vscode.Position(i, 0),
+                new vscode.Position(endLine, lines[endLine].length)
+              ),
+              {
                 title: "▶︎ Run Query",
                 command: "mq.runQueryAndShowInEditor",
                 arguments: [query],
-              })
-            );
-          }
-
-          i += matchLines;
-        } else {
-          i++;
+              }
+            )
+          );
         }
+        i = endLine + 1;
+        continue;
+      }
+
+      // Handle 'def' function blocks or other queries
+      const matchInfo = this.matchQueryBlock(lines, i);
+      if (matchInfo) {
+        const { matchLines, query } = matchInfo;
+        codeLenses.push(
+          new vscode.CodeLens(
+            new vscode.Range(
+              new vscode.Position(i, 0),
+              new vscode.Position(
+                i + matchLines - 1,
+                lines[i + matchLines - 1].length
+              )
+            ),
+            {
+              title: "▶︎ Run Query",
+              command: "mq.runQueryAndShowInEditor",
+              arguments: [query],
+            }
+          )
+        );
+        i += matchLines;
+      } else {
+        i++;
       }
     }
 
     return codeLenses;
+  }
+
+  /**
+   * Collects a query block starting with '.' until the next empty line or end of file.
+   */
+  private collectQueryBlock(
+    lines: string[],
+    startLine: number
+  ): { endLine: number; query: string } {
+    let endLine = startLine;
+    while (endLine + 1 < lines.length && lines[endLine + 1].trim() !== "") {
+      endLine++;
+    }
+    const query = lines
+      .slice(startLine, endLine + 1)
+      .join("\n")
+      .trim();
+    return { endLine, query };
+  }
+
+  /**
+   * Matches a query block for 'def' functions or other queries using regex.
+   */
+  private matchQueryBlock(
+    lines: string[],
+    startLine: number
+  ): { matchLines: number; query: string } | null {
+    const queryRegex =
+      /(?:^def\s+[\s\S]+?;\s*$)|(?:^(?!#)(?!def\s)[\s\S]+?(?:;|end)\s*$)/gm;
+    const remainingText = lines.slice(startLine).join("\n");
+    const match = queryRegex.exec(remainingText);
+
+    if (match && match.index === 0) {
+      const matchLines = match[0].split("\n").length;
+      const query = match[0].trim();
+      return { matchLines, query };
+    }
+    return null;
   }
 }
