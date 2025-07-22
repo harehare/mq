@@ -28,6 +28,7 @@ pub enum SymbolKind {
     If,
     Elif,
     Else,
+    End,
     Foreach,
     Function(Params),
     While,

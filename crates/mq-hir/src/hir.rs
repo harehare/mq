@@ -288,7 +288,13 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
-
+            _ if node
+                .token
+                .as_ref()
+                .is_some_and(|t| t.kind == mq_lang::TokenKind::End) =>
+            {
+                self.add_end_token(node, source_id, scope_id, parent);
+            }
             _ => {}
         }
     }
@@ -993,6 +999,32 @@ impl Hir {
                 self.add_expr(&child, source_id, scope_id, Some(symbol_id));
             }
         }
+    }
+
+    fn add_end_token(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        let mq_lang::CstNode { token, .. } = &**node;
+
+        if token
+            .as_ref()
+            .is_none_or(|t| t.kind != mq_lang::TokenKind::End)
+        {
+            return;
+        }
+
+        self.add_symbol(Symbol {
+            value: node.name(),
+            kind: SymbolKind::End,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+        });
     }
 }
 
