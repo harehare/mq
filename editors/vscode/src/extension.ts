@@ -51,7 +51,76 @@ const InputFormatMap = {
 type InputFormatExtension = keyof typeof InputFormatMap;
 type InputFormat = (typeof InputFormatMap)[keyof typeof InputFormatMap];
 
-export async function activate(context: vscode.ExtensionContext) {
+interface FilePickerItem {
+  label: string;
+  description: string;
+  uri: vscode.Uri;
+}
+
+// Helper functions
+function getInputFormatFromExtension(extension: string): InputFormat {
+  const formatKey = (Object.keys(InputFormatMap) as Array<InputFormatExtension>).includes(
+    extension as InputFormatExtension
+  )
+    ? (extension as InputFormatExtension)
+    : "md";
+  return InputFormatMap[formatKey];
+}
+
+function createFilePickerItems(files: vscode.Uri[]): FilePickerItem[] {
+  return files.map((uri) => {
+    const relativePath = vscode.workspace.asRelativePath(uri);
+    const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
+    return {
+      label: fileName,
+      description: relativePath,
+      uri,
+    };
+  });
+}
+
+async function selectMarkdownFile(): Promise<{
+  document: vscode.TextDocument;
+  inputFormat: InputFormat;
+} | null> {
+  const mdFiles = await vscode.workspace.findFiles(
+    "**/*.{md,mdx,html,csv,tsv,txt}"
+  );
+
+  if (mdFiles.length === 0) {
+    vscode.window.showInformationMessage(
+      "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace"
+    );
+    return null;
+  }
+
+  const items = createFilePickerItems(mdFiles);
+  const selectedItem = await vscode.window.showQuickPick(items, {
+    placeHolder: "Select a .md, .mdx, .html, .csv, .tsv or .txt file as input",
+  });
+
+  if (!selectedItem) {
+    return null;
+  }
+
+  const document = await vscode.workspace.openTextDocument(selectedItem.uri);
+  const extension = selectedItem.uri.fsPath.split(".").pop() || "";
+  const inputFormat = getInputFormatFromExtension(extension);
+
+  return { document, inputFormat };
+}
+
+function getActiveEditorValidation(): vscode.TextEditor | null {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showErrorMessage("No active editor");
+    return null;
+  }
+  return editor;
+}
+
+// Command registration functions
+function registerNewCommand(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.new", async () => {
       const config = vscode.workspace.getConfiguration("mq");
@@ -65,7 +134,9 @@ export async function activate(context: vscode.ExtensionContext) {
       await vscode.window.showTextDocument(document);
     })
   );
+}
 
+function registerLspCommands(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.installLSPServer", async () => {
       await stopLspServer();
@@ -84,79 +155,34 @@ export async function activate(context: vscode.ExtensionContext) {
       await startLspServer();
     })
   );
+}
 
+function registerMqExecutionCommands(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.runSelectedText", async () => {
       const command = selectedText();
-
       if (!command) {
         return;
       }
 
-      const editor = vscode.window.activeTextEditor;
-
-      if (!editor) {
-        vscode.window.showErrorMessage("No active editor");
-        return null;
-      }
-
-      const mdFiles = await vscode.workspace.findFiles(
-        "**/*.{md,mdx,html,csv,tsv,txt}"
-      );
-
-      if (mdFiles.length === 0) {
-        vscode.window.showInformationMessage(
-          "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace"
-        );
+      const selectedFile = await selectMarkdownFile();
+      if (!selectedFile) {
         return;
       }
 
-      const items = mdFiles.map((uri) => {
-        const relativePath = vscode.workspace.asRelativePath(uri);
-        const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
-        return {
-          label: fileName,
-          description: relativePath,
-          uri,
-        };
-      });
-
-      const selectedItem = await vscode.window.showQuickPick(items, {
-        placeHolder:
-          "Select a .md, .mdx, .html, .csv, .tsv or .txt file as input",
-      });
-
-      if (selectedItem) {
-        const document = await vscode.workspace.openTextDocument(
-          selectedItem.uri
-        );
-        const selectedFileExtension =
-          selectedItem.uri.fsPath.split(".").pop() || "";
-        const inputFormat =
-          InputFormatMap[
-            (
-              Object.keys(InputFormatMap) as Array<InputFormatExtension>
-            ).includes(selectedFileExtension as InputFormatExtension)
-              ? (selectedFileExtension as InputFormatExtension)
-              : "md"
-          ];
-        return await executeCommand(
-          "mq/run",
-          command,
-          document.getText(),
-          inputFormat
-        );
-      } else {
-        return await vscode.window.showInformationMessage("No file selected");
-      }
+      return await executeCommand(
+        "mq/run",
+        command,
+        selectedFile.document.getText(),
+        selectedFile.inputFormat
+      );
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.executeMqQuery", async () => {
-      const editor = vscode.window.activeTextEditor;
+      const editor = getActiveEditorValidation();
       if (!editor) {
-        vscode.window.showErrorMessage("No active editor");
         return;
       }
 
@@ -169,16 +195,10 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage("No query entered");
         return;
       }
-      const currentFileExtension =
-        editor.document.uri.fsPath.split(".").pop() || "";
-      const inputFormat =
-        InputFormatMap[
-          (Object.keys(InputFormatMap) as Array<InputFormatExtension>).includes(
-            currentFileExtension as InputFormatExtension
-          )
-            ? (currentFileExtension as InputFormatExtension)
-            : "md"
-        ];
+
+      const extension = editor.document.uri.fsPath.split(".").pop() || "";
+      const inputFormat = getInputFormatFromExtension(extension);
+      
       await executeCommand(
         "mq/run",
         query,
@@ -190,57 +210,37 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mq.executeMqFile", async () => {
-      const editor = vscode.window.activeTextEditor;
+      const editor = getActiveEditorValidation();
       if (!editor) {
-        vscode.window.showErrorMessage("No active editor");
         return;
       }
 
       const mqFiles = await vscode.workspace.findFiles("**/*.mq");
-
       if (mqFiles.length === 0) {
         vscode.window.showInformationMessage("No .mq files found in workspace");
         return;
       }
 
-      const currentFileText = editor.document.getText();
-      const items = mqFiles.map((uri) => {
-        const relativePath = vscode.workspace.asRelativePath(uri);
-        const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
-        return {
-          label: fileName,
-          description: relativePath,
-          uri,
-        };
-      });
-
+      const items = createFilePickerItems(mqFiles);
       const selectedItem = await vscode.window.showQuickPick(items, {
         placeHolder: "Select a .mq file to execute",
       });
 
-      if (selectedItem) {
-        const document = await vscode.workspace.openTextDocument(
-          selectedItem.uri
-        );
-        const currentFileExtension =
-          editor.document.uri.fsPath.split(".").pop() || "";
-        const inputFormat =
-          InputFormatMap[
-            (
-              Object.keys(InputFormatMap) as Array<InputFormatExtension>
-            ).includes(currentFileExtension as InputFormatExtension)
-              ? (currentFileExtension as InputFormatExtension)
-              : "md"
-          ];
-        await executeCommand(
-          "mq/run",
-          document.getText(),
-          currentFileText,
-          inputFormat
-        );
-      } else {
+      if (!selectedItem) {
         await vscode.window.showInformationMessage("No file selected");
+        return;
       }
+
+      const document = await vscode.workspace.openTextDocument(selectedItem.uri);
+      const extension = editor.document.uri.fsPath.split(".").pop() || "";
+      const inputFormat = getInputFormatFromExtension(extension);
+      
+      await executeCommand(
+        "mq/run",
+        document.getText(),
+        editor.document.getText(),
+        inputFormat
+      );
     })
   );
 
@@ -248,55 +248,17 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "mq.runQueryAndShowInEditor",
       async (query: string) => {
-        const mdFiles = await vscode.workspace.findFiles(
-          "**/*.{md,mdx,html,csv,tsv,txt}"
-        );
-
-        if (mdFiles.length === 0) {
-          vscode.window.showInformationMessage(
-            "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace"
-          );
+        const selectedFile = await selectMarkdownFile();
+        if (!selectedFile) {
           return;
         }
 
-        const items = mdFiles.map((uri) => {
-          const relativePath = vscode.workspace.asRelativePath(uri);
-          const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
-          return {
-            label: fileName,
-            description: relativePath,
-            uri,
-          };
-        });
-
-        const selectedItem = await vscode.window.showQuickPick(items, {
-          placeHolder:
-            "Select a .md, .mdx, .html, .csv, .tsv or .txt file as input",
-        });
-
-        if (selectedItem) {
-          const document = await vscode.workspace.openTextDocument(
-            selectedItem.uri
-          );
-          const selectedFileExtension =
-            selectedItem.uri.fsPath.split(".").pop() || "";
-          const inputFormat =
-            InputFormatMap[
-              (
-                Object.keys(InputFormatMap) as Array<InputFormatExtension>
-              ).includes(selectedFileExtension as InputFormatExtension)
-                ? (selectedFileExtension as InputFormatExtension)
-                : "md"
-            ];
-          return await executeCommand(
-            "mq/run",
-            query,
-            document.getText(),
-            inputFormat
-          );
-        } else {
-          return await vscode.window.showInformationMessage("No file selected");
-        }
+        return await executeCommand(
+          "mq/run",
+          query,
+          selectedFile.document.getText(),
+          selectedFile.inputFormat
+        );
       }
     )
   );
@@ -307,7 +269,9 @@ export async function activate(context: vscode.ExtensionContext) {
       new MqCodeLensProvider()
     )
   );
+}
 
+async function initializeLspServer(context: vscode.ExtensionContext) {
   if (process.env._MQ_DEBUG_BIN) {
     await startLspServer();
   } else {
@@ -350,6 +314,13 @@ export async function activate(context: vscode.ExtensionContext) {
       await startLspServer();
     }
   }
+}
+
+export async function activate(context: vscode.ExtensionContext) {
+  registerNewCommand(context);
+  registerLspCommands(context);
+  registerMqExecutionCommands(context);
+  await initializeLspServer(context);
 }
 
 export function deactivate(): Thenable<void> | undefined {
