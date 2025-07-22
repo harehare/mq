@@ -79,6 +79,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 }
                 mq_hir::SymbolKind::Else
                 | mq_hir::SymbolKind::Elif
+                | mq_hir::SymbolKind::End
                 | mq_hir::SymbolKind::Foreach
                 | mq_hir::SymbolKind::If
                 | mq_hir::SymbolKind::Include(_)

@@ -288,7 +288,14 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
-
+            _ if node
+                .token
+                .as_ref()
+                .map(|t| t.kind == mq_lang::TokenKind::End)
+                .unwrap_or(false) =>
+            {
+                // TODO:
+            }
             _ => {}
         }
     }

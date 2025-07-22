@@ -180,6 +180,11 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::SemiColon,
                     ..
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::End,
+                    ..
                 } => {
                     self.tokens.next();
                     let trailing_trivia = self.parse_trailing_trivia();
