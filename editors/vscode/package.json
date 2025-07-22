@@ -32,7 +32,9 @@
     "Linters",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:mq"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "snippets": [
@@ -85,6 +87,10 @@
       {
         "command": "mq.executeMqQuery",
         "title": "mq: Execute query"
+      },
+      {
+        "command": "mq.runQueryAndShowInEditor",
+        "title": "mq: Run query and show result in new editor"
       }
     ],
     "configuration": {

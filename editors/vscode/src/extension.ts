@@ -234,6 +234,67 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "mq.runQueryAndShowInEditor",
+      async (query: string) => {
+        const mdFiles = await vscode.workspace.findFiles(
+          "**/*.{md,mdx,html,csv,tsv,txt}"
+        );
+
+        if (mdFiles.length === 0) {
+          vscode.window.showInformationMessage(
+            "No .md, .mdx, .html, .csv, .tsv, or .txt files found in workspace"
+          );
+          return;
+        }
+
+        const items = mdFiles.map((uri) => {
+          const relativePath = vscode.workspace.asRelativePath(uri);
+          const fileName = uri.fsPath.split(/[/\\]/).pop() || relativePath;
+          return {
+            label: fileName,
+            description: relativePath,
+            uri,
+          };
+        });
+
+        const selectedItem = await vscode.window.showQuickPick(items, {
+          placeHolder:
+            "Select a .md, .mdx, .html, .csv, .tsv or .txt file as input",
+        });
+
+        if (selectedItem) {
+          const document = await vscode.workspace.openTextDocument(
+            selectedItem.uri
+          );
+          const selectedFileExtension =
+            selectedItem.uri.fsPath.split(".").pop() || "";
+          const inputFormat = (
+            Object.keys(InputFormatMap) as Array<InputFormat>
+          ).includes(selectedFileExtension as InputFormat)
+            ? (selectedFileExtension as InputFormat)
+            : "md";
+          return await executeCommandAndShowInEditor(
+            "mq/run",
+            query,
+            document.getText(),
+            inputFormat
+          );
+        } else {
+          return await vscode.window.showInformationMessage("No file selected");
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: "mq" },
+      new MqCodeLensProvider()
+    )
+  );
+
   if (process.env._MQ_DEBUG_BIN) {
     await startLspServer();
   } else {
@@ -465,5 +526,71 @@ const installLspServer = async (
       }`
     );
     return false;
+  }
+};
+
+class MqCodeLensProvider implements vscode.CodeLensProvider {
+  async provideCodeLenses(
+    document: vscode.TextDocument
+  ): Promise<vscode.CodeLens[]> {
+    const codeLenses: vscode.CodeLens[] = [];
+    const text = document.getText();
+    const queryRegex =
+      /(?:^def\s+[\s\S]+?;\s*$)|(?:^(?!#)(?!def\s)[\s\S]+?;\s*$)/gm;
+
+    let match;
+    while ((match = queryRegex.exec(text)) !== null) {
+      const startPos = document.positionAt(match.index);
+      const endPos = document.positionAt(match.index + match[0].length);
+      const range = new vscode.Range(startPos, endPos);
+      const query = match[0].trim();
+
+      if (query) {
+        codeLenses.push(
+          new vscode.CodeLens(range, {
+            title: "▶︎ Run Query",
+            command: "mq.runQueryAndShowInEditor",
+            arguments: [query],
+          })
+        );
+      }
+    }
+
+    return codeLenses;
+  }
+}
+
+const executeCommandAndShowInEditor = async (
+  command: (typeof COMMANDS)[number],
+  script: string,
+  input: string,
+  inputFormat: InputFormat
+) => {
+  if (!client) {
+    vscode.window.showErrorMessage("LSP server is not running");
+    return;
+  }
+
+  try {
+    const result = await client.sendRequest(lc.ExecuteCommandRequest.type, {
+      command,
+      arguments: [script, input, inputFormat],
+    });
+
+    if (result) {
+      const doc = await vscode.workspace.openTextDocument({
+        content: result,
+        language: "markdown",
+      });
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } else {
+      await vscode.window.showErrorMessage("No result from LSP server");
+    }
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      `Failed to run query: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 };
