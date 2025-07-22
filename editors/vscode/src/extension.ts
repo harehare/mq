@@ -48,7 +48,8 @@ const InputFormatMap = {
   html: "html",
   txt: "text",
 } as const;
-type InputFormat = keyof typeof InputFormatMap;
+type InputFormatExtension = keyof typeof InputFormatMap;
+type InputFormat = (typeof InputFormatMap)[keyof typeof InputFormatMap];
 
 export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
@@ -131,11 +132,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         const selectedFileExtension =
           selectedItem.uri.fsPath.split(".").pop() || "";
-        const inputFormat = (
-          Object.keys(InputFormatMap) as Array<InputFormat>
-        ).includes(selectedFileExtension as InputFormat)
-          ? (selectedFileExtension as InputFormat)
-          : "md";
+        const inputFormat =
+          InputFormatMap[
+            (
+              Object.keys(InputFormatMap) as Array<InputFormatExtension>
+            ).includes(selectedFileExtension as InputFormatExtension)
+              ? (selectedFileExtension as InputFormatExtension)
+              : "md"
+          ];
         return await executeCommand(
           "mq/run",
           command,
@@ -167,11 +171,14 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       const currentFileExtension =
         editor.document.uri.fsPath.split(".").pop() || "";
-      const inputFormat = (
-        Object.keys(InputFormatMap) as Array<InputFormat>
-      ).includes(currentFileExtension as InputFormat)
-        ? (currentFileExtension as InputFormat)
-        : "md";
+      const inputFormat =
+        InputFormatMap[
+          (Object.keys(InputFormatMap) as Array<InputFormatExtension>).includes(
+            currentFileExtension as InputFormatExtension
+          )
+            ? (currentFileExtension as InputFormatExtension)
+            : "md"
+        ];
       await executeCommand(
         "mq/run",
         query,
@@ -217,11 +224,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         const currentFileExtension =
           editor.document.uri.fsPath.split(".").pop() || "";
-        const inputFormat = (
-          Object.keys(InputFormatMap) as Array<InputFormat>
-        ).includes(currentFileExtension as InputFormat)
-          ? (currentFileExtension as InputFormat)
-          : "md";
+        const inputFormat =
+          InputFormatMap[
+            (
+              Object.keys(InputFormatMap) as Array<InputFormatExtension>
+            ).includes(currentFileExtension as InputFormatExtension)
+              ? (currentFileExtension as InputFormatExtension)
+              : "md"
+          ];
         await executeCommand(
           "mq/run",
           document.getText(),
@@ -270,12 +280,15 @@ export async function activate(context: vscode.ExtensionContext) {
           );
           const selectedFileExtension =
             selectedItem.uri.fsPath.split(".").pop() || "";
-          const inputFormat = (
-            Object.keys(InputFormatMap) as Array<InputFormat>
-          ).includes(selectedFileExtension as InputFormat)
-            ? (selectedFileExtension as InputFormat)
-            : "md";
-          return await executeCommandAndShowInEditor(
+          const inputFormat =
+            InputFormatMap[
+              (
+                Object.keys(InputFormatMap) as Array<InputFormatExtension>
+              ).includes(selectedFileExtension as InputFormatExtension)
+                ? (selectedFileExtension as InputFormatExtension)
+                : "md"
+            ];
+          return await executeCommand(
             "mq/run",
             query,
             document.getText(),
@@ -535,62 +548,80 @@ class MqCodeLensProvider implements vscode.CodeLensProvider {
   ): Promise<vscode.CodeLens[]> {
     const codeLenses: vscode.CodeLens[] = [];
     const text = document.getText();
-    const queryRegex =
-      /(?:^def\s+[\s\S]+?;\s*$)|(?:^(?!#)(?!def\s)[\s\S]+?;\s*$)/gm;
+    const lines = text.split("\n");
 
-    let match;
-    while ((match = queryRegex.exec(text)) !== null) {
-      const startPos = document.positionAt(match.index);
-      const endPos = document.positionAt(match.index + match[0].length);
-      const range = new vscode.Range(startPos, endPos);
-      const query = match[0].trim();
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i].trim();
 
-      if (query) {
-        codeLenses.push(
-          new vscode.CodeLens(range, {
-            title: "▶︎ Run Query",
-            command: "mq.runQueryAndShowInEditor",
-            arguments: [query],
-          })
-        );
+      // Skip empty lines and comments
+      if (line === "" || line.startsWith("#")) {
+        i++;
+        continue;
+      }
+
+      // Check if line starts with '.'
+      if (line.startsWith(".")) {
+        const startLine = i;
+        let endLine = i;
+
+        // Find the end of the query block (until empty line or end of file)
+        while (endLine + 1 < lines.length && lines[endLine + 1].trim() !== "") {
+          endLine++;
+        }
+
+        const startPos = new vscode.Position(startLine, 0);
+        const endPos = new vscode.Position(endLine, lines[endLine].length);
+        const range = new vscode.Range(startPos, endPos);
+
+        const queryLines = lines.slice(startLine, endLine + 1);
+        const query = queryLines.join("\n").trim();
+
+        if (query) {
+          codeLenses.push(
+            new vscode.CodeLens(range, {
+              title: "▶︎ Run Query",
+              command: "mq.runQueryAndShowInEditor",
+              arguments: [query],
+            })
+          );
+        }
+
+        i = endLine + 1;
+      } else {
+        // Handle other query types (def functions, etc.)
+        const queryRegex =
+          /(?:^def\s+[\s\S]+?;\s*$)|(?:^(?!#)(?!def\s)[\s\S]+?(?:;|end)\s*$)/gm;
+        const remainingText = lines.slice(i).join("\n");
+        const match = queryRegex.exec(remainingText);
+
+        if (match && match.index === 0) {
+          const matchLines = match[0].split("\n").length;
+          const startPos = new vscode.Position(i, 0);
+          const endPos = new vscode.Position(
+            i + matchLines - 1,
+            lines[i + matchLines - 1].length
+          );
+          const range = new vscode.Range(startPos, endPos);
+          const query = match[0].trim();
+
+          if (query) {
+            codeLenses.push(
+              new vscode.CodeLens(range, {
+                title: "▶︎ Run Query",
+                command: "mq.runQueryAndShowInEditor",
+                arguments: [query],
+              })
+            );
+          }
+
+          i += matchLines;
+        } else {
+          i++;
+        }
       }
     }
 
     return codeLenses;
   }
 }
-
-const executeCommandAndShowInEditor = async (
-  command: (typeof COMMANDS)[number],
-  script: string,
-  input: string,
-  inputFormat: InputFormat
-) => {
-  if (!client) {
-    vscode.window.showErrorMessage("LSP server is not running");
-    return;
-  }
-
-  try {
-    const result = await client.sendRequest(lc.ExecuteCommandRequest.type, {
-      command,
-      arguments: [script, input, inputFormat],
-    });
-
-    if (result) {
-      const doc = await vscode.workspace.openTextDocument({
-        content: result,
-        language: "markdown",
-      });
-      await vscode.window.showTextDocument(doc, { preview: false });
-    } else {
-      await vscode.window.showErrorMessage("No result from LSP server");
-    }
-  } catch (error) {
-    await vscode.window.showErrorMessage(
-      `Failed to run query: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`
-    );
-  }
-};
