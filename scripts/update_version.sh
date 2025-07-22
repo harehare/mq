@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export MQ_VERSION="0.2.12"
+export MQ_VERSION="0.2.13"
 
 # Update Cargo.toml files
 for crate in ../crates/*; do
