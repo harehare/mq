@@ -140,7 +140,8 @@ In {year}, the snowfall was above average.
       let first_char = upcase(first(word))
       | let rest_str = downcase(slice(word, 1, len(word)))
       | s"\${first_char}\${rest_str}";
-  | join("");
+  | join("")
+end
 | snake_to_camel()`,
     markdown: `# sample_codes`,
     isUpdate: false,
@@ -154,7 +155,8 @@ In {year}, the snowfall was above average.
   | s"<url>
   <loc>\${loc}</loc>
   <priority>1.0</priority>
-</url>";
+</url>"
+end
 | .[]
 | sitemap("https://example.com/")`,
     markdown: `# Summary
