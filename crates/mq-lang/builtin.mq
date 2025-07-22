@@ -27,28 +27,32 @@ def contains(haystack, needle):
   if (is_dict(haystack)):
     not(is_none(get(haystack, needle)))
   else:
-    index(haystack, needle) != -1;
+    index(haystack, needle) != -1
+end
 
 # Removes prefix string from input if it exists
 def ltrimstr(s, left):
   if (starts_with(s, left)):
     slice(s, index(s, left) + len(left), len(s))
   else:
-    s;
+    s
+end
 
 # Removes suffix string from input if it exists
 def rtrimstr(s, right):
   if (ends_with(s, right)):
     slice(s, 0, sub(len(s), len(right)))
   else:
-    s;
+    s
+end
 
 # Checks if string, array or dict is empty
 def is_empty(s):
   if (or(is_string(s), is_array(s), is_dict(s))):
     len(s) == 0
   else:
-    false;
+    false
+end
 
 # Tests if string matches a pattern
 def test(s, pattern): match(s, pattern) | is_empty() | not();
@@ -82,7 +86,8 @@ def map(v, f):
   | if (is_dict(v)):
     map_dict(v, f)
   else:
-    foreach (x, v): f(x);;
+    foreach (x, v): f(x);
+end
 
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f):
@@ -95,28 +100,32 @@ def filter(v, f):
   | if (is_dict(v)):
     filter_dict(v, f)
   else:
-    _filter(v, f);
+    _filter(v, f)
+end
 
 # Returns the first element of an array
 def first(arr):
   if (is_empty(arr)):
     None
   else:
-    nth(arr, 0);
+    nth(arr, 0)
+end
 
 # Returns the last element of an array
 def last(arr):
   if (is_empty(arr)):
     None
   else:
-    nth(arr, sub(len(arr), 1));
+    nth(arr, sub(len(arr), 1))
+end
 
 # Returns the second element of an array
 def second(arr):
   if (len(arr) < 2):
     None
   else:
-    nth(arr, 1);
+    nth(arr, 1)
+end
 
 # Checks if markdown is h1 heading
 def is_h1(md): to_md_name(md) == "h1";
@@ -154,7 +163,8 @@ def is_h_level(md, level):
   elif (level == 6):
     is_h6(md)
   else:
-    error("Invalid heading level: " + to_string(level));
+    error("Invalid heading level: " + to_string(level))
+end
 
 # Checks if markdown is not an h1 heading
 def is_not_h1(md): is_h1(md) | not();
@@ -219,7 +229,8 @@ def is_mdx(mdx): or(
   is_mdx_jsx_flow_element(mdx),
   is_mdx_jsx_text_element(mdx),
   is_mdx_text_expression(mdx),
-  is_mdx_js_esm(mdx));
+  is_mdx_js_esm(mdx))
+end
 
 # Checks if markdown is list with indentation level 1
 def is_list1(list): and(is_list(list), get_md_list_level(list) == 0);
@@ -241,16 +252,19 @@ def fill(value, n):
   if (n < 0):
     error("n must be non-negative")
   else:
-    foreach (i, range(0, n)): value;;
+    foreach (i, range(0, n)): value;
+end
 
 def _csv_header(csv_or_tsv, sep):
   let head = first(csv_or_tsv)
-  | join(fill("---", sub(len(split(head, sep)), 1)), sep);
+  | join(fill("---", sub(len(split(head, sep)), 1)), sep)
+end
 
 # Converts a CSV string array to a markdown table.
 def csv2table_with_header(csv):
   let csv_with_header = insert(csv, 1, _csv_header(csv, ","))
-  | map(csv_with_header, csv2table_row);
+  | map(csv_with_header, csv2table_row)
+end
 
 # Convert tsv string to markdown table row
 def tsv2table_row(row): split(row, "\t") | to_md_table_row();
@@ -261,14 +275,16 @@ def tsv2table(tsv): map(tsv, tsv2table_row);
 # Converts a CSV string array to a markdown table.
 def tsv2table_with_header(tsv):
   let tsv_with_header = insert(tsv, 1, _csv_header(tsv, "\t"))
-  | map(tsv_with_header, tsv2table_row);
+  | map(tsv_with_header, tsv2table_row)
+end
 
 # Verifies that a condition is true and raises an error if it's false.
 def assert(cond):
   if (cond):
     self
   else:
-    error("Assertion failed: It is not true.");
+    error("Assertion failed: It is not true.")
+end
 
 # Prints the debug information of the given value.
 def debug(msg):
@@ -284,7 +300,8 @@ def skip(arr, n):
     error("n must be non-negative")
   elif (n > len(arr)): []
   else:
-    slice(arr, n, len(arr));
+    slice(arr, n, len(arr))
+end
 
 # Takes the first n elements of an array
 def take(arr, n):
@@ -293,7 +310,8 @@ def take(arr, n):
   elif (n > len(arr)):
     arr
   else:
-    slice(arr, 0, n);
+    slice(arr, 0, n)
+end
 
 # Returns the index of the first element in an array that satisfies the provided function.
 def find_index(arr, f):
@@ -308,7 +326,8 @@ def find_index(arr, f):
   | if (not(is_array(arr))):
     error("first argument must be an array")
   else:
-    _find_index_impl(arr, f, 0);
+    _find_index_impl(arr, f, 0)
+end
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
@@ -323,7 +342,8 @@ def skip_while(arr, f):
       let i = i + 1 | i;
   | if (is_none(si)): []
   else:
-    slice(arr, si, len(arr));
+    slice(arr, si, len(arr))
+end
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
@@ -338,7 +358,8 @@ def take_while(arr, f):
       let i = i + 1 | i;
   | if (is_none(ti)): []
   else:
-    slice(arr, 0, ti);
+    slice(arr, 0, ti)
+end
 
 # Groups elements of an array by the result of applying a function to each element
 def group_by(arr, f):
@@ -356,7 +377,9 @@ def group_by(arr, f):
       | let existing = get(groups, key)
       | let new_group = if (is_none(existing)): [v] else: existing + v
       | let groups = set(groups, key, new_group)
-      | groups;;
+      | groups
+    end
+end
 
 # Returns true if any element in the array satisfies the provided function.
 def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;
@@ -372,7 +395,8 @@ def in(v, elem):
     else:
       any(v, fn(x): x == elem;)
   else:
-    contains(v, elem);
+    contains(v, elem)
+end
 
 # Converts the given value to a CSV.
 def to_csv(v): if (is_array(v)): join(v, ",") else: to_string(v);
@@ -392,7 +416,9 @@ def fold(arr, init, f):
     until (i != len(arr)):
       let acc = f(acc, nth(arr, i))
       | let i = i + 1
-      | acc;;
+      | acc
+    end
+end
 
 # Returns a new array with duplicate elements removed, comparing by the result of the provided function.
 def unique_by(arr, f):
@@ -410,7 +436,9 @@ def unique_by(arr, f):
       | let result = if (is_none(already_seen)): result + item else: result
       | let seen = if (is_none(already_seen)): set(seen, key, true) else: seen
       | let i = i + 1
-      | result;;
+      | result
+    end
+end
 
 # Returns the input value unchanged.
 def identity(x): x;
@@ -430,4 +458,6 @@ def sections(md_nodes, level):
       | let section = slice(md_nodes, start_node, end_node)
       | let result = result + [section]
       | let i = i + 1
-      | result;;
+      | result
+    end
+end
