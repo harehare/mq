@@ -32,9 +32,7 @@
     "Linters",
     "Other"
   ],
-  "activationEvents": [
-    "onLanguage:mq"
-  ],
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
     "snippets": [
