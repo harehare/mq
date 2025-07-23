@@ -97,7 +97,8 @@ impl Node {
             | Expr::Include(_)
             | Expr::InterpolatedString(_)
             | Expr::Nodes
-            | Expr::Self_ => arena[self.token_id].range.clone(),
+            | Expr::Self_
+            | Expr::Break => arena[self.token_id].range.clone(),
         }
     }
 
@@ -234,6 +235,7 @@ pub enum Expr {
     Self_,
     Nodes,
     Paren(Rc<Node>),
+    Break,
 }
 #[cfg(test)]
 mod tests {

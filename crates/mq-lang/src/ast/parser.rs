@@ -193,6 +193,7 @@ impl<'a> Parser<'a> {
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
             TokenKind::Include => self.parse_include(token),
             TokenKind::Self_ => self.parse_self(token),
+            TokenKind::Break => self.parse_break(token),
             TokenKind::Ident(name) => self.parse_ident(name, Rc::clone(&token)),
             TokenKind::BoolLiteral(_) => self.parse_literal(token),
             TokenKind::StringLiteral(_) => self.parse_literal(token),
@@ -363,6 +364,13 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Self_),
+        }))
+    }
+
+    fn parse_break(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        Ok(Rc::new(Node {
+            token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+            expr: Rc::new(Expr::Break),
         }))
     }
 

@@ -237,6 +237,7 @@ impl Diagnostic for Error {
                 "EvalError::RuntimeError".to_string()
             }
             InnerError::Eval(EvalError::ZeroDivision(_)) => "EvalError::ZeroDivision".to_string(),
+            InnerError::Eval(EvalError::Break) => "EvalError::Break".to_string(),
             InnerError::Module(ModuleError::NotFound(_)) => "ModuleError::NotFound".to_string(),
             InnerError::Module(ModuleError::IOError(_)) => "ModuleError::IOError".to_string(),
             InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {

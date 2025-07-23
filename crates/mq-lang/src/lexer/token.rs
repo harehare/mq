@@ -47,6 +47,7 @@ pub struct Token {
 pub enum TokenKind {
     Asterisk,
     BoolLiteral(bool),
+    Break,
     Colon,
     Comma,
     Comment(String),
@@ -120,6 +121,7 @@ impl Display for TokenKind {
             TokenKind::Not => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::BoolLiteral(b) => write!(f, "{}", b),
+            TokenKind::Break => write!(f, "break"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Comment(comment) => write!(f, "# {}", comment.trim()),

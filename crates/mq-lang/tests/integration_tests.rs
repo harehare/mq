@@ -52,6 +52,37 @@ fn engine() -> Engine {
     ",
       vec![Value::Number(10.into())],
       Ok(vec![Value::Array(vec![Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])].into()))]
+#[case::while_break("
+    let x = 0 |
+    while(x < 10):
+      let x = x + 1
+      | if(x == 3):
+        break
+      else:
+        x;
+    ",
+      vec![Value::Number(10.into())],
+      Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())])].into()))]
+#[case::until_break("
+    let x = 0 |
+    until(x < 10):
+      let x = x + 1
+      | if(x == 3):
+        break
+      else:
+        x;
+    ",
+      vec![Value::Number(5.into())],
+      Ok(vec![Value::Number(2.into())].into()))]
+#[case::foreach_break("
+    foreach(x, array(1, 2, 3, 4, 5)):
+      if(x == 3):
+        break
+      else:
+        x + 10;
+    ",
+      vec![Value::Number(0.into())],
+      Ok(vec![Value::Array(vec![Value::Number(11.into()), Value::Number(12.into())])].into()))]
 #[case::if_("
     def fibonacci(x):
       if(eq(x, 0)):
