@@ -41,6 +41,7 @@ def snake_to_camel(x):
 `;
 
 let client: lc.LanguageClient | null = null;
+let codeLensProvider: vscode.Disposable | null = null;
 
 const InputFormatMap = {
   md: "markdown",
@@ -265,12 +266,37 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
     )
   );
 
+  // Initialize Code Lens provider
+  updateCodeLensProvider(context);
+
+  // Watch for configuration changes
   context.subscriptions.push(
-    vscode.languages.registerCodeLensProvider(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("mq.enableCodeLens")) {
+        updateCodeLensProvider(context);
+      }
+    })
+  );
+}
+
+function updateCodeLensProvider(context: vscode.ExtensionContext) {
+  const config = vscode.workspace.getConfiguration("mq");
+  const enableCodeLens = config.get<boolean>("enableCodeLens", true);
+
+  // Dispose existing provider if it exists
+  if (codeLensProvider) {
+    codeLensProvider.dispose();
+    codeLensProvider = null;
+  }
+
+  // Register new provider if enabled
+  if (enableCodeLens) {
+    codeLensProvider = vscode.languages.registerCodeLensProvider(
       { language: "mq" },
       new MqCodeLensProvider()
-    )
-  );
+    );
+    context.subscriptions.push(codeLensProvider);
+  }
 }
 
 async function initializeLspServer(context: vscode.ExtensionContext) {
