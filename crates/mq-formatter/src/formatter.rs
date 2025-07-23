@@ -397,7 +397,13 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
-        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
+        let indent_adjustment = if self.is_let_line() {
+            1
+        } else if self.is_pipe_and_let_line() {
+            2
+        } else {
+            0
+        };
 
         if let [l_param, cond, r_param, then_colon, then_expr, rest @ ..] = node.children.as_slice()
         {
@@ -659,6 +665,14 @@ impl Formatter {
     fn is_let_line(&self) -> bool {
         if let Some(last_line) = self.output.lines().last() {
             !last_line.starts_with("let ") && last_line.trim().starts_with("let ")
+        } else {
+            false
+        }
+    }
+
+    fn is_pipe_and_let_line(&self) -> bool {
+        if let Some(last_line) = self.output.lines().last() {
+            last_line.trim().replace(" ", "").starts_with("|let")
         } else {
             false
         }
@@ -1066,6 +1080,21 @@ else:
     #[case::control_character_escape(r#""\x1b""#, r#""\x1b""#)]
     #[case::control_character_delete(r#""\x7f""#, r#""\x7f""#)]
     #[case::not_operator("!true", "!true")]
+    #[case::let_with_if_multiline_in_while(
+        r#"while(condition()):
+  let x = 1
+  | let y = if(test):
+test
+else:
+test2
+"#,
+        r#"while (condition()):
+  let x = 1
+  | let y = if (test):
+      test
+    else:
+      test2"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
