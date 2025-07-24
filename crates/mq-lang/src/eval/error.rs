@@ -43,6 +43,8 @@ pub enum EvalError {
     RuntimeError(ErrorToken, String),
     #[error("Divided by 0")]
     ZeroDivision(ErrorToken),
-    #[error("Break statement")]
-    Break,
+    #[error("Unexpected token break")]
+    Break(ErrorToken),
+    #[error("Unexpected token continue")]
+    Continue(ErrorToken),
 }

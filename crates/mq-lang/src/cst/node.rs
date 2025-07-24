@@ -79,7 +79,9 @@ pub struct Node {
 pub enum NodeKind {
     Array,
     BinaryOp(BinaryOp),
+    Break,
     Call,
+    Continue,
     Def,
     Dict,
     Elif,

@@ -215,6 +215,7 @@ define_token_parser!(
 define_token_parser!(eq_eq, "==", TokenKind::EqEq);
 define_token_parser!(equal, "=", TokenKind::Equal);
 define_keyword_parser!(break_, "break", TokenKind::Break);
+define_keyword_parser!(continue_, "continue", TokenKind::Continue);
 define_keyword_parser!(fn_, "fn", TokenKind::Fn);
 define_keyword_parser!(foreach, "foreach", TokenKind::Foreach);
 define_keyword_parser!(if_, "if", TokenKind::If);
@@ -271,7 +272,7 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
         nodes, def, let_, self_, while_, until, if_, elif, else_, end, none, include, foreach, fn_,
-        break_,
+        break_, continue_,
     ))
     .parse(input)
 }

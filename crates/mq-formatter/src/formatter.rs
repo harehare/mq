@@ -124,11 +124,15 @@ impl Formatter {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::Env => self.append_env(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Nodes => self.format_nodes(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Nodes
+            | mq_lang::CstNodeKind::Self_
+            | mq_lang::CstNodeKind::Break
+            | mq_lang::CstNodeKind::Continue => {
+                self.format_keyword(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::Selector => {
                 self.format_selector(&node, indent_level_consider_new_line)
             }
-            mq_lang::CstNodeKind::Self_ => self.format_self(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
         }
     }
@@ -579,23 +583,9 @@ impl Formatter {
         }
     }
 
-    fn format_self(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_keyword(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Self_,
-            token: Some(token),
-            ..
-        } = &**node
-        {
-            self.append_indent(indent_level);
-            self.output.push_str(&token.to_string());
-        }
-    }
-
-    fn format_nodes(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Nodes,
-            token: Some(token),
-            ..
+            token: Some(token), ..
         } = &**node
         {
             self.append_indent(indent_level);

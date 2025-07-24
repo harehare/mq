@@ -63,7 +63,10 @@ impl Error {
                 EvalError::InternalError(token) => Some(token),
                 EvalError::RuntimeError(token, _) => Some(token),
                 EvalError::ZeroDivision(token) => Some(token),
-                _ => None,
+                EvalError::Break(token) => Some(token),
+                EvalError::Continue(token) => Some(token),
+                EvalError::RecursionError(_) => None,
+                EvalError::ModuleLoadError(_) => None,
             },
             InnerError::Module(err) => match err {
                 ModuleError::NotFound(_) => None,
@@ -237,7 +240,8 @@ impl Diagnostic for Error {
                 "EvalError::RuntimeError".to_string()
             }
             InnerError::Eval(EvalError::ZeroDivision(_)) => "EvalError::ZeroDivision".to_string(),
-            InnerError::Eval(EvalError::Break) => "EvalError::Break".to_string(),
+            InnerError::Eval(EvalError::Break(_)) => "EvalError::Break".to_string(),
+            InnerError::Eval(EvalError::Continue(_)) => "EvalError::Continue".to_string(),
             InnerError::Module(ModuleError::NotFound(_)) => "ModuleError::NotFound".to_string(),
             InnerError::Module(ModuleError::IOError(_)) => "ModuleError::IOError".to_string(),
             InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {

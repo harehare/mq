@@ -288,12 +288,15 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Break | mq_lang::CstNodeKind::Continue => {
+                self.add_keyword(node, source_id, scope_id, parent);
+            }
             _ if node
                 .token
                 .as_ref()
                 .is_some_and(|t| t.kind == mq_lang::TokenKind::End) =>
             {
-                self.add_end_token(node, source_id, scope_id, parent);
+                self.add_keyword(node, source_id, scope_id, parent);
             }
             _ => {}
         }
@@ -1001,25 +1004,16 @@ impl Hir {
         }
     }
 
-    fn add_end_token(
+    fn add_keyword(
         &mut self,
         node: &Arc<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        let mq_lang::CstNode { token, .. } = &**node;
-
-        if token
-            .as_ref()
-            .is_none_or(|t| t.kind != mq_lang::TokenKind::End)
-        {
-            return;
-        }
-
         self.add_symbol(Symbol {
             value: node.name(),
-            kind: SymbolKind::End,
+            kind: SymbolKind::Keyword,
             source: SourceInfo::new(Some(source_id), Some(node.range())),
             scope: scope_id,
             doc: node.comments(),
@@ -1109,6 +1103,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::dict_nested("{\"a\": {\"b\": 2}}", "b", SymbolKind::String)]
     #[case::not_unary("!true", "!", SymbolKind::UnaryOp)]
     #[case::not_variable("!x", "!", SymbolKind::UnaryOp)]
+    #[case::break_("while (true): break;", "break", SymbolKind::Keyword)]
+    #[case::continue_("while (true): continue;", "continue", SymbolKind::Keyword)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
