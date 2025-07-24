@@ -5,6 +5,7 @@ use miette::miette;
 use mq_lang::Engine;
 use rayon::prelude::*;
 use std::collections::VecDeque;
+use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
@@ -373,6 +374,8 @@ impl Cli {
                     "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" => &InputFormat::Text,
                     _ => &InputFormat::Markdown,
                 }
+            } else if io::stdin().is_terminal() {
+                &InputFormat::Null
             } else {
                 &InputFormat::Markdown
             }
@@ -435,6 +438,10 @@ impl Cli {
                 })
             })
             .unwrap_or_else(|| {
+                if io::stdin().is_terminal() {
+                    return Ok(vec![(None, "".to_string())]);
+                }
+
                 let mut input = String::new();
                 io::stdin().read_to_string(&mut input).into_diagnostic()?;
                 Ok(vec![(None, input)])
