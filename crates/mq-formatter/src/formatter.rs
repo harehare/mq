@@ -307,7 +307,13 @@ impl Formatter {
         append_space_after_keyword: bool,
     ) {
         let is_prev_pipe = self.is_prev_pipe();
-        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
+        let indent_adjustment = if self.is_let_line() {
+            1
+        } else if self.is_pipe_and_let_line() {
+            2
+        } else {
+            0
+        };
 
         if node.has_new_line() {
             self.append_indent(indent_level);
@@ -1094,6 +1100,34 @@ test2
       test
     else:
       test2"#
+    )]
+    #[case::let_with_until_multiline(
+        r#"let x = until(condition()):
+process();"#,
+        r#"let x = until (condition()):
+  process();"#
+    )]
+    #[case::let_with_until_multiline(
+        r#""test"
+| let x = until(condition()):
+process();"#,
+        r#""test"
+| let x = until (condition()):
+      process();"#
+    )]
+    #[case::let_with_while_multiline(
+        r#"let x = while(condition()):
+process();"#,
+        r#"let x = while (condition()):
+  process();"#
+    )]
+    #[case::let_with_while_multiline(
+        r#""test"
+| let x = while(condition()):
+process();"#,
+        r#""test"
+| let x = while (condition()):
+      process();"#
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
