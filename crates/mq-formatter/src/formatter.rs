@@ -646,16 +646,6 @@ impl Formatter {
                         self.output.push_str(&token.to_string());
                     }
                 }
-                mq_lang::TokenKind::End => {
-                    if node.has_new_line() {
-                        let indent_level = indent_level.saturating_sub(1);
-                        self.append_leading_trivia(node, indent_level);
-                        self.append_indent(indent_level);
-                        self.output.push_str(&token.to_string());
-                    } else {
-                        self.output.push_str(&token.to_string());
-                    }
-                }
                 _ => self.output.push_str(&token.to_string()),
             }
         }
