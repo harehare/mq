@@ -541,14 +541,7 @@ const installLspServer = async (
   }
 };
 
-/**
- * Provides CodeLens for mq queries in the editor.
- */
 class MqCodeLensProvider implements vscode.CodeLensProvider {
-  /**
-   * Returns CodeLens objects for each query block in the document.
-   * @param document The text document to analyze.
-   */
   async provideCodeLenses(
     document: vscode.TextDocument
   ): Promise<vscode.CodeLens[]> {
@@ -616,9 +609,6 @@ class MqCodeLensProvider implements vscode.CodeLensProvider {
     return codeLenses;
   }
 
-  /**
-   * Collects a query block starting with '.' until the next empty line or end of file.
-   */
   private collectQueryBlock(
     lines: string[],
     startLine: number
@@ -634,15 +624,11 @@ class MqCodeLensProvider implements vscode.CodeLensProvider {
     return { endLine, query };
   }
 
-  /**
-   * Matches a query block for 'def' functions or other queries using regex.
-   */
   private matchQueryBlock(
     lines: string[],
     startLine: number
   ): { matchLines: number; query: string } | null {
-    const queryRegex =
-      /(?:^def\s+[\s\S]+?;\s*$)|(?:^(?!#)(?!def\s)[\s\S]+?(?:;|end)\s*$)/gm;
+    const queryRegex = /(^def[\s\S]+?;\s*$)/gm;
     const remainingText = lines.slice(startLine).join("\n");
     const match = queryRegex.exec(remainingText);
 
