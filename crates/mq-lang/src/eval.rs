@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
 use crate::{
     Program, Token, TokenKind,
@@ -202,7 +202,7 @@ impl Evaluator {
             module.vars.iter().try_for_each(|node| {
                 if let ast::Expr::Let(ident, node) = &*node.expr {
                     let val =
-                        self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
+                        self.eval_expr(RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
                     self.env.borrow_mut().define(ident, val);
                     Ok(())
                 } else {
@@ -222,15 +222,13 @@ impl Evaluator {
         runtime_value: RuntimeValue,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        program
-            .iter()
-            .try_fold(runtime_value, |runtime_value, expr| {
-                if self.options.filter_none && runtime_value.is_none() {
-                    return Ok(RuntimeValue::NONE);
-                }
+        program.iter().try_fold(runtime_value, |value, expr| {
+            if self.options.filter_none && value.is_none() {
+                return Ok(RuntimeValue::NONE);
+            }
 
-                self.eval_expr(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-            })
+            self.eval_expr(value, Rc::clone(expr), Rc::clone(&env))
+        })
     }
 
     fn eval_ident(
@@ -291,11 +289,12 @@ impl Evaluator {
 
     fn eval_interpolated_string(
         &self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::InterpolatedString(segments) = &*node.expr {
+            let self_string = runtime_value.to_string();
             segments
                 .iter()
                 .try_fold(String::with_capacity(100), |mut acc, segment| {
@@ -307,7 +306,7 @@ impl Evaluator {
                             acc.push_str(&value.to_string());
                         }
                         ast::StringSegment::Self_ => {
-                            acc.push_str(&runtime_value.to_string());
+                            acc.push_str(&self_string);
                         }
                     }
 
@@ -321,18 +320,16 @@ impl Evaluator {
 
     fn eval_expr(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
-            ast::Expr::Selector(ident) => {
-                Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
-            }
+            ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
-            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
+            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value),
             ast::Expr::Break => self.eval_break(node),
             ast::Expr::Continue => self.eval_continue(node),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
@@ -350,9 +347,10 @@ impl Evaluator {
                 Ok(function)
             }
             ast::Expr::Let(ident, node) => {
-                let let_ = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
+                let let_ =
+                    self.eval_expr(runtime_value.clone(), Rc::clone(node), Rc::clone(&env))?;
                 env.borrow_mut().define(ident, let_);
-                Ok(runtime_value.clone())
+                Ok(runtime_value)
             }
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
@@ -362,7 +360,7 @@ impl Evaluator {
             }
             ast::Expr::Include(module_id) => {
                 self.eval_include(module_id.to_owned())?;
-                Ok(runtime_value.clone())
+                Ok(runtime_value)
             }
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, Rc::clone(expr), env),
         }
@@ -391,12 +389,12 @@ impl Evaluator {
 
     fn eval_foreach(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Foreach(ident, values, body) = &*node.expr {
-            let values = self.eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?;
+            let values = self.eval_expr(runtime_value.clone(), Rc::clone(values), Rc::clone(&env))?;
             let values = if let RuntimeValue::Array(values) = values {
                 let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
                 let mut results = Vec::with_capacity(values.len());
@@ -428,15 +426,15 @@ impl Evaluator {
 
     fn eval_until(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Until(cond, body) = &*node.expr {
-            let mut runtime_value = runtime_value.clone();
+            let mut runtime_value = runtime_value;
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
-                self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                self.eval_expr(runtime_value.clone(), Rc::clone(cond), Rc::clone(&env))?;
 
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
@@ -446,8 +444,8 @@ impl Evaluator {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
                         runtime_value = new_runtime_value;
-                        cond_value =
-                            self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                        cond_value = self
+                            .eval_expr(runtime_value.clone(), Rc::clone(cond), Rc::clone(&env))?;
                     }
                     Err(EvalError::Break(_)) => break,
                     Err(EvalError::Continue(_)) => continue,
@@ -463,15 +461,15 @@ impl Evaluator {
 
     fn eval_while(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::While(cond, body) = &*node.expr {
-            let mut runtime_value = runtime_value.clone();
+            let mut runtime_value = runtime_value;
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
-                self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                self.eval_expr(runtime_value.clone(), Rc::clone(cond), Rc::clone(&env))?;
             let mut values = Vec::with_capacity(100);
 
             if !cond_value.is_truthy() {
@@ -482,8 +480,8 @@ impl Evaluator {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
                         runtime_value = new_runtime_value;
-                        cond_value =
-                            self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                        cond_value = self
+                            .eval_expr(runtime_value.clone(), Rc::clone(cond), Rc::clone(&env))?;
                         values.push(runtime_value.clone());
                     }
                     Err(EvalError::Break(_)) => break,
@@ -500,7 +498,7 @@ impl Evaluator {
 
     fn eval_if(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
@@ -508,8 +506,11 @@ impl Evaluator {
             for (cond_node, body) in conditions {
                 match cond_node {
                     Some(cond_node) => {
-                        let cond =
-                            self.eval_expr(runtime_value, Rc::clone(cond_node), Rc::clone(&env))?;
+                        let cond = self.eval_expr(
+                            runtime_value.clone(),
+                            Rc::clone(cond_node),
+                            Rc::clone(&env),
+                        )?;
 
                         if cond.is_truthy() {
                             return self.eval_expr(runtime_value, Rc::clone(body), env);
@@ -527,7 +528,7 @@ impl Evaluator {
 
     fn eval_fn(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         ident: &ast::Ident,
         args: &ast::Args,
@@ -542,8 +543,8 @@ impl Evaluator {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
-                let new_args = if params.len() == args.len() + 1 {
+                let new_args: Cow<ast::Args> = if params.len() == args.len() + 1 {
+                    let mut new_args: ast::Args = SmallVec::with_capacity(args.len() + 1);
                     new_args.insert(
                         0,
                         Rc::new(ast::Node {
@@ -551,8 +552,8 @@ impl Evaluator {
                             expr: Rc::new(ast::Expr::Self_),
                         }),
                     );
-                    new_args.extend(args.clone());
-                    new_args
+                    new_args.extend(args.iter().cloned());
+                    Cow::Owned(new_args)
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -561,7 +562,7 @@ impl Evaluator {
                         args.len() as u8,
                     ));
                 } else {
-                    args.clone()
+                    Cow::Borrowed(args)
                 };
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
@@ -572,7 +573,7 @@ impl Evaluator {
                     .try_for_each(|(arg, param)| {
                         if let ast::Expr::Ident(name) = &*param.expr {
                             let value =
-                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
+                                self.eval_expr(runtime_value.clone(), Rc::clone(arg), Rc::clone(&env))?;
 
                             new_env.borrow_mut().define(name, value);
                             Ok(())
@@ -584,7 +585,7 @@ impl Evaluator {
                         }
                     })?;
 
-                let result = self.eval_program(program, runtime_value.clone(), new_env);
+                let result = self.eval_program(program, runtime_value, new_env);
 
                 self.exit_scope();
                 result
@@ -603,7 +604,7 @@ impl Evaluator {
 
     fn eval_builtin(
         &mut self,
-        runtime_value: &RuntimeValue,
+        runtime_value: RuntimeValue,
         node: Rc<ast::Node>,
         ident: &ast::Ident,
         args: &ast::Args,
@@ -611,9 +612,9 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         let args: Result<builtin::Args, EvalError> = args
             .iter()
-            .map(|arg| self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env)))
+            .map(|arg| self.eval_expr(runtime_value.clone(), Rc::clone(arg), Rc::clone(&env)))
             .collect();
-        builtin::eval_builtin(runtime_value, ident, &args?)
+        builtin::eval_builtin(&runtime_value, ident, &args?)
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
