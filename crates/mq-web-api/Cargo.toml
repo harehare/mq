@@ -11,7 +11,7 @@ serde = {workspace = true, features = ["derive"]}
 serde_json.workspace = true
 url = {workspace = true}
 utoipa = {version = "5.4", features = ["preserve_order"]}
-worker = "0.6.0"
+worker = "0.6.1"
 # https://github.com/rustwasm/wasm-pack/issues/1247
 
 [package.metadata.wasm-pack.profile.release]
