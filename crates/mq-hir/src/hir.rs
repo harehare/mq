@@ -288,16 +288,14 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Break | mq_lang::CstNodeKind::Continue => {
+            mq_lang::CstNodeKind::Self_
+            | mq_lang::CstNodeKind::End
+            | mq_lang::CstNodeKind::Nodes
+            | mq_lang::CstNodeKind::Break
+            | mq_lang::CstNodeKind::Continue => {
                 self.add_keyword(node, source_id, scope_id, parent);
             }
-            _ if node
-                .token
-                .as_ref()
-                .is_some_and(|t| t.kind == mq_lang::TokenKind::End) =>
-            {
-                self.add_keyword(node, source_id, scope_id, parent);
-            }
+
             _ => {}
         }
     }
@@ -1103,6 +1101,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::dict_nested("{\"a\": {\"b\": 2}}", "b", SymbolKind::String)]
     #[case::not_unary("!true", "!", SymbolKind::UnaryOp)]
     #[case::not_variable("!x", "!", SymbolKind::UnaryOp)]
+    #[case::not_variable("nodes", "nodes", SymbolKind::Keyword)]
+    #[case::not_variable("self", "self", SymbolKind::Keyword)]
     #[case::break_("while (true): break;", "break", SymbolKind::Keyword)]
     #[case::continue_("while (true): continue;", "continue", SymbolKind::Keyword)]
     fn test_add_code(

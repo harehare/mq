@@ -125,6 +125,7 @@ impl Formatter {
             }
             mq_lang::CstNodeKind::Env => self.append_env(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Nodes
+            | mq_lang::CstNodeKind::End
             | mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Break
             | mq_lang::CstNodeKind::Continue => {
@@ -588,8 +589,22 @@ impl Formatter {
             token: Some(token), ..
         } = &**node
         {
-            self.append_indent(indent_level);
-            self.output.push_str(&token.to_string());
+            match token.kind {
+                mq_lang::TokenKind::End => {
+                    if node.has_new_line() {
+                        let indent_level = indent_level.saturating_sub(1);
+                        self.append_leading_trivia(node, indent_level);
+                        self.append_indent(indent_level);
+                        self.output.push_str(&token.to_string());
+                    } else {
+                        self.output.push_str(&token.to_string());
+                    }
+                }
+                _ => {
+                    self.append_indent(indent_level);
+                    self.output.push_str(&token.to_string());
+                }
+            }
         }
     }
 
