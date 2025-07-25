@@ -99,7 +99,9 @@ impl Optimizer {
             | ast::Expr::Selector(_)
             | ast::Expr::Nodes
             | ast::Expr::Self_
-            | ast::Expr::Include(_) => {}
+            | ast::Expr::Include(_)
+            | ast::Expr::Break
+            | ast::Expr::Continue => {}
         }
     }
 

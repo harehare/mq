@@ -613,7 +613,7 @@ export const Playground = () => {
       tokenizer: {
         root: [
           [
-            /\b(let|def|while|foreach|until|if|elif|else|end|self|None|nodes)\b/,
+            /\b(let|def|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],

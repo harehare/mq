@@ -333,6 +333,8 @@ impl Evaluator {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
+            ast::Expr::Break => self.eval_break(node),
+            ast::Expr::Continue => self.eval_continue(node),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
@@ -366,6 +368,18 @@ impl Evaluator {
         }
     }
 
+    fn eval_break(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
+        Err(EvalError::Break(
+            (*self.token_arena.borrow()[node.token_id]).clone(),
+        ))
+    }
+
+    fn eval_continue(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
+        Err(EvalError::Continue(
+            (*self.token_arena.borrow()[node.token_id]).clone(),
+        ))
+    }
+
     fn eval_literal(&self, literal: &ast::Literal) -> RuntimeValue {
         match literal {
             ast::Literal::None => RuntimeValue::None,
@@ -385,13 +399,19 @@ impl Evaluator {
             let values = self.eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?;
             let values = if let RuntimeValue::Array(values) = values {
                 let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
-                values
-                    .into_iter()
-                    .map(|value| {
-                        env.borrow_mut().define(ident, value);
-                        self.eval_program(body, runtime_value.clone(), Rc::clone(&env))
-                    })
-                    .collect::<Result<Vec<RuntimeValue>, EvalError>>()?
+                let mut results = Vec::with_capacity(values.len());
+
+                for value in values {
+                    env.borrow_mut().define(ident, value);
+                    match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                        Ok(result) => results.push(result),
+                        Err(EvalError::Break(_)) => break,
+                        Err(EvalError::Continue(_)) => continue,
+                        Err(e) => return Err(e),
+                    }
+                }
+
+                results
             } else {
                 return Err(EvalError::InvalidTypes {
                     token: (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -423,8 +443,16 @@ impl Evaluator {
             }
 
             while cond_value.is_truthy() {
-                runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
-                cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                    Ok(new_runtime_value) => {
+                        runtime_value = new_runtime_value;
+                        cond_value =
+                            self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                    }
+                    Err(EvalError::Break(_)) => break,
+                    Err(EvalError::Continue(_)) => continue,
+                    Err(e) => return Err(e),
+                }
             }
 
             Ok(runtime_value)
@@ -451,9 +479,17 @@ impl Evaluator {
             }
 
             while cond_value.is_truthy() {
-                runtime_value = self.eval_program(body, runtime_value, Rc::clone(&env))?;
-                cond_value = self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-                values.push(runtime_value.clone());
+                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                    Ok(new_runtime_value) => {
+                        runtime_value = new_runtime_value;
+                        cond_value =
+                            self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
+                        values.push(runtime_value.clone());
+                    }
+                    Err(EvalError::Break(_)) => break,
+                    Err(EvalError::Continue(_)) => continue,
+                    Err(e) => return Err(e),
+                }
             }
 
             Ok(RuntimeValue::Array(values))
