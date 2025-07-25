@@ -190,11 +190,7 @@ impl<'a> Parser<'a> {
                     let trailing_trivia = self.parse_trailing_trivia();
 
                     nodes.push(Arc::new(Node {
-                        kind: if matches!(token.kind, TokenKind::End) {
-                            NodeKind::End
-                        } else {
-                            NodeKind::Token
-                        },
+                        kind: NodeKind::Token,
                         token: Some(Arc::clone(&token)),
                         leading_trivia,
                         trailing_trivia,

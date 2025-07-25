@@ -289,7 +289,6 @@ impl Hir {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Self_
-            | mq_lang::CstNodeKind::End
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::Break
             | mq_lang::CstNodeKind::Continue => {
