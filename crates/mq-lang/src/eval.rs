@@ -433,7 +433,7 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Until(cond, body) = &*node.expr {
-            let mut runtime_value = runtime_value.clone();
+            let mut runtime_value = Cow::Borrowed(runtime_value);
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
@@ -443,9 +443,9 @@ impl Evaluator {
             }
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                match self.eval_program(body, runtime_value.as_ref().clone(), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
-                        runtime_value = new_runtime_value;
+                        runtime_value = Cow::Owned(new_runtime_value);
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
@@ -455,7 +455,7 @@ impl Evaluator {
                 }
             }
 
-            Ok(runtime_value)
+            Ok(runtime_value.into_owned())
         } else {
             unreachable!()
         }
@@ -468,23 +468,23 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::While(cond, body) = &*node.expr {
-            let mut runtime_value = runtime_value.clone();
+            let mut runtime_value = Cow::Borrowed(runtime_value);
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-            let mut values = Vec::with_capacity(100);
+            let mut values = Vec::new();
 
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                match self.eval_program(body, runtime_value.as_ref().clone(), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
-                        runtime_value = new_runtime_value;
+                        runtime_value = Cow::Owned(new_runtime_value);
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-                        values.push(runtime_value.clone());
+                        values.push(runtime_value.as_ref().clone());
                     }
                     Err(EvalError::Break(_)) => break,
                     Err(EvalError::Continue(_)) => continue,
