@@ -259,11 +259,11 @@ impl Evaluator {
         }
     }
 
-    fn eval_selector_expr(runtime_value: RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
-        match &runtime_value {
+    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
+        match runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
                 if builtin::eval_selector(node_value, ident) {
-                    runtime_value
+                    runtime_value.clone()
                 } else {
                     RuntimeValue::NONE
                 }
@@ -339,9 +339,7 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
-            ast::Expr::Selector(ident) => {
-                Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
-            }
+            ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
@@ -485,7 +483,7 @@ impl Evaluator {
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-            let mut values = Vec::with_capacity(100);
+            let mut values = Vec::new();
 
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
