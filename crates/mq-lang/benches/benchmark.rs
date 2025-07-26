@@ -22,13 +22,24 @@ fn eval_fibonacci(n: u64) -> mq_lang::Values {
         .unwrap()
 }
 
-#[divan::bench(args = [100_000])]
-fn eval_speed_test(n: u64) -> mq_lang::Values {
+#[divan::bench()]
+fn eval_until_speed_test() -> mq_lang::Values {
     let mut engine = mq_lang::Engine::default();
     engine
         .eval(
-            "until(gt(0)): sub(1);",
-            vec![mq_lang::Value::Number(n.into())].into_iter(),
+            "let i = 10000 | until(i > 0): let i = i - 1 | i;",
+            vec![mq_lang::Value::Number(1.into())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_while_speed_test() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine
+        .eval(
+            "let i = 10000 | while(i > 0): let i = i - 1 | i;",
+            vec![mq_lang::Value::Number(1.into())].into_iter(),
         )
         .unwrap()
 }

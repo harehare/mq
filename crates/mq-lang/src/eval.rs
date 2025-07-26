@@ -259,11 +259,11 @@ impl Evaluator {
         }
     }
 
-    fn eval_selector_expr(runtime_value: RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
-        match &runtime_value {
+    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
+        match runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
                 if builtin::eval_selector(node_value, ident) {
-                    runtime_value
+                    runtime_value.clone()
                 } else {
                     RuntimeValue::NONE
                 }
@@ -296,23 +296,36 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::InterpolatedString(segments) = &*node.expr {
+            // Calculate estimated capacity based on segment content
+            let estimated_capacity = segments
+                .iter()
+                .map(|segment| match segment {
+                    ast::StringSegment::Text(s) => s.len(),
+                    ast::StringSegment::Ident(_) => 32, // Estimated size for variable content
+                    ast::StringSegment::Self_ => 64,    // Estimated size for self reference
+                })
+                .sum();
+
             segments
                 .iter()
-                .try_fold(String::with_capacity(100), |mut acc, segment| {
-                    match segment {
-                        ast::StringSegment::Text(s) => acc.push_str(s),
-                        ast::StringSegment::Ident(ident) => {
-                            let value =
-                                self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
-                            acc.push_str(&value.to_string());
+                .try_fold(
+                    String::with_capacity(estimated_capacity),
+                    |mut acc, segment| {
+                        match segment {
+                            ast::StringSegment::Text(s) => acc.push_str(s),
+                            ast::StringSegment::Ident(ident) => {
+                                let value =
+                                    self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
+                                acc.push_str(&value.to_string());
+                            }
+                            ast::StringSegment::Self_ => {
+                                acc.push_str(&runtime_value.to_string());
+                            }
                         }
-                        ast::StringSegment::Self_ => {
-                            acc.push_str(&runtime_value.to_string());
-                        }
-                    }
 
-                    Ok(acc)
-                })
+                        Ok(acc)
+                    },
+                )
                 .map(|acc| acc.into())
         } else {
             unreachable!()
@@ -326,9 +339,7 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
-            ast::Expr::Selector(ident) => {
-                Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
-            }
+            ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
@@ -472,7 +483,7 @@ impl Evaluator {
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-            let mut values = Vec::with_capacity(100);
+            let mut values = Vec::new();
 
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
