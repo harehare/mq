@@ -11,34 +11,31 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
             source,
             mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
         ) {
-            symbol
-                .clone()
-                .source
-                .text_range
-                .and_then(|text_range| match &symbol.kind {
-                    mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Variable => Some(Hover {
-                        contents: HoverContents::Markup(MarkupContent {
-                            kind: MarkupKind::Markdown,
-                            value: match symbol.kind {
-                                mq_hir::SymbolKind::Function(args) => {
-                                    format!(
-                                        "```mq\n{}({})\n```\n\n{doc}",
-                                        &symbol.value.unwrap_or_default(),
-                                        args.join(", "),
-                                        doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
-                                    )
-                                }
-                                mq_hir::SymbolKind::Variable => {
-                                    format!(
-                                        "```mq\n{}```\n\n{doc}",
-                                        &symbol.value.unwrap_or_default(),
-                                        doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
-                                    )
-                                }
-                                _ => String::new(),
-                            },
-                        }),
-                        range: Some(Range::new(
+            match &symbol.kind {
+                mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Variable => Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: match symbol.kind {
+                            mq_hir::SymbolKind::Function(args) => {
+                                format!(
+                                    "```mq\n{}({})\n```\n\n{doc}",
+                                    &symbol.value.unwrap_or_default(),
+                                    args.join(", "),
+                                    doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
+                                )
+                            }
+                            mq_hir::SymbolKind::Variable => {
+                                format!(
+                                    "```mq\n{}```\n\n{doc}",
+                                    &symbol.value.unwrap_or_default(),
+                                    doc = symbol.doc.iter().map(|(_, doc)| doc).join("\n")
+                                )
+                            }
+                            _ => String::new(),
+                        },
+                    }),
+                    range: symbol.source.text_range.map(|text_range| {
+                        Range::new(
                             Position::new(
                                 text_range.start.line - 1,
                                 (text_range.start.column - 1) as u32,
@@ -47,10 +44,11 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                                 text_range.end.line - 1,
                                 (text_range.end.column - 1) as u32,
                             ),
-                        )),
+                        )
                     }),
-                    _ => None,
-                })
+                }),
+                _ => None,
+            }
         } else {
             None
         }
@@ -122,5 +120,35 @@ mod tests {
 
         let hover = response(Arc::new(RwLock::new(hir)), url, position);
         assert!(hover.is_none());
+    }
+
+    #[test]
+    fn test_builtin_function_hover() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        // Add code that calls a builtin function
+        hir.add_code(Some(url.clone()), "\"hello\" | len");
+
+        // Try to find symbol at position of "len" (around column 11)
+        let position = Position::new(0, 11);
+
+        let hover = response(Arc::new(RwLock::new(hir)), url, position);
+
+        assert!(hover.is_some());
+        let hover = hover.unwrap();
+
+        if let tower_lsp::lsp_types::HoverContents::Markup(content) = hover.contents {
+            assert_eq!(content.kind, tower_lsp::lsp_types::MarkupKind::Markdown);
+            // Check that the hover contains the function signature and description
+            assert!(content.value.contains("len(value)"));
+            assert!(
+                content
+                    .value
+                    .contains("Returns the length of the given string or array")
+            );
+        } else {
+            panic!("Expected markup content");
+        }
     }
 }
