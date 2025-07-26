@@ -64,12 +64,14 @@ impl ErrorReporter {
                 let a_range = match a {
                     ParseError::UnexpectedToken(token) => &token.range,
                     ParseError::InsufficientTokens(token) => &token.range,
+                    ParseError::ExpectedClosingBracket(token) => &token.range,
                     ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Greater,
                 };
 
                 let b_range = match b {
                     ParseError::UnexpectedToken(token) => &token.range,
                     ParseError::InsufficientTokens(token) => &token.range,
+                    ParseError::ExpectedClosingBracket(token) => &token.range,
                     ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Less,
                 };
 
@@ -96,6 +98,7 @@ impl ErrorReporter {
                     match e {
                         ParseError::UnexpectedToken(token) => token.range.clone(),
                         ParseError::InsufficientTokens(token) => token.range.clone(),
+                        ParseError::ExpectedClosingBracket(token) => token.range.clone(),
                         ParseError::UnexpectedEOFDetected => Range {
                             start: Position {
                                 line: text.lines().count() as u32,
@@ -554,6 +557,37 @@ impl<'a> Parser<'a> {
                             |token_kind| matches!(token_kind, TokenKind::Question),
                             NodeKind::Token,
                         )?);
+                    }
+                }
+
+                node.kind = NodeKind::Call;
+                node.children = children;
+                Ok(Arc::new(node))
+            }
+            Some(token) if matches!(token.kind, TokenKind::LBracket) => {
+                // Parse bracket access: ident[key] -> get(ident, key)
+                children.push(self.next_node(
+                    |token_kind| matches!(token_kind, TokenKind::LBracket),
+                    NodeKind::Token,
+                )?);
+
+                // Parse the key expression
+                let key_expr = self.parse_expr(Vec::new(), false, false)?;
+                children.push(key_expr);
+
+                // Expect closing bracket
+                match self.tokens.peek() {
+                    Some(token) if matches!(token.kind, TokenKind::RBracket) => {
+                        children.push(self.next_node(
+                            |token_kind| matches!(token_kind, TokenKind::RBracket),
+                            NodeKind::Token,
+                        )?);
+                    }
+                    Some(token) => {
+                        return Err(ParseError::ExpectedClosingBracket(Arc::clone(token)));
+                    }
+                    None => {
+                        return Err(ParseError::UnexpectedEOFDetected);
                     }
                 }
 
@@ -4344,6 +4378,104 @@ mod tests {
         (
             Vec::new(),
             ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Arc::new(token(TokenKind::Continue))), ParseError::UnexpectedEOFDetected], 100)
+        )
+    )]
+    #[case::bracket_access_with_number(
+        vec![
+            Arc::new(token(TokenKind::Ident("arr".into()))),
+            Arc::new(token(TokenKind::LBracket)),
+            Arc::new(token(TokenKind::NumberLiteral(5.into()))),
+            Arc::new(token(TokenKind::RBracket)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Arc::new(token(TokenKind::Ident("arr".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::NumberLiteral(5.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::bracket_access_with_string(
+        vec![
+            Arc::new(token(TokenKind::Ident("dict".into()))),
+            Arc::new(token(TokenKind::LBracket)),
+            Arc::new(token(TokenKind::StringLiteral("key".into()))),
+            Arc::new(token(TokenKind::RBracket)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Arc::new(token(TokenKind::Ident("dict".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::StringLiteral("key".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::bracket_access_error_missing_rbracket(
+        vec![
+            Arc::new(token(TokenKind::Ident("arr".into()))),
+            Arc::new(token(TokenKind::LBracket)),
+            Arc::new(token(TokenKind::NumberLiteral(5.into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            Vec::new(),
+            ErrorReporter::with_error(vec![ParseError::ExpectedClosingBracket(Arc::new(token(TokenKind::Eof))), ParseError::UnexpectedToken(Arc::new(token(TokenKind::Eof)))], 100)
         )
     )]
     fn test_parse(

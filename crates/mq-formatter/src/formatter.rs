@@ -1126,6 +1126,13 @@ process();"#,
 | let x = while (condition()):
       process();"#
     )]
+    #[case::array_index_access("let arr = [1, 2, 3]\n|arr[1]", "let arr = [1, 2, 3]\n| arr[1]")]
+    #[case::array_index_access_inline("arr[0]", "arr[0]")]
+    #[case::dict_index_access(
+        "let d = {\"key\": \"value\"}\n|d[\"key\"]",
+        "let d = {\"key\": \"value\"}\n| d[\"key\"]"
+    )]
+    #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
