@@ -12,4 +12,6 @@ pub enum ParseError {
     UnexpectedEOFDetected,
     #[error("Insufficient tokens `{0}`")]
     InsufficientTokens(Arc<Token>),
+    #[error("Expected a closing bracket `]` but got `{0}` delimiter")]
+    ExpectedClosingBracket(Arc<Token>),
 }

@@ -49,6 +49,7 @@ impl Error {
                 ParseError::InsufficientTokens(token) => Some(token),
                 ParseError::ExpectedClosingParen(token) => Some(token),
                 ParseError::ExpectedClosingBrace(token) => Some(token),
+                ParseError::ExpectedClosingBracket(token) => Some(token),
             },
             InnerError::Eval(err) => match err {
                 EvalError::UserDefined { token, .. } => Some(token),
@@ -80,6 +81,7 @@ impl Error {
                     ParseError::InsufficientTokens(token) => Some(token),
                     ParseError::ExpectedClosingParen(token) => Some(token),
                     ParseError::ExpectedClosingBrace(token) => Some(token),
+                    ParseError::ExpectedClosingBracket(token) => Some(token),
                 },
                 ModuleError::InvalidModule => None,
             },
@@ -206,6 +208,9 @@ impl Diagnostic for Error {
             InnerError::Parse(ParseError::ExpectedClosingBrace(_)) => {
                 "ParseError::ExpectedClosingBrace".to_string()
             }
+            InnerError::Parse(ParseError::ExpectedClosingBracket(_)) => {
+                "ParseError::ExpectedClosingBracket".to_string()
+            }
             InnerError::Eval(EvalError::RecursionError(_)) => {
                 "EvalError::RecursionError".to_string()
             }
@@ -270,6 +275,9 @@ impl Diagnostic for Error {
             }
             InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(_))) => {
                 "ModuleError::ExpectedClosingBrace".to_string()
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(_))) => {
+                "ModuleError::ExpectedClosingBracket".to_string()
             }
         };
 
