@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     Program, Token, TokenKind,
@@ -296,23 +296,36 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::InterpolatedString(segments) = &*node.expr {
+            // Calculate estimated capacity based on segment content
+            let estimated_capacity = segments
+                .iter()
+                .map(|segment| match segment {
+                    ast::StringSegment::Text(s) => s.len(),
+                    ast::StringSegment::Ident(_) => 32, // Estimated size for variable content
+                    ast::StringSegment::Self_ => 64,    // Estimated size for self reference
+                })
+                .sum();
+
             segments
                 .iter()
-                .try_fold(String::with_capacity(100), |mut acc, segment| {
-                    match segment {
-                        ast::StringSegment::Text(s) => acc.push_str(s),
-                        ast::StringSegment::Ident(ident) => {
-                            let value =
-                                self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
-                            acc.push_str(&value.to_string());
+                .try_fold(
+                    String::with_capacity(estimated_capacity),
+                    |mut acc, segment| {
+                        match segment {
+                            ast::StringSegment::Text(s) => acc.push_str(s),
+                            ast::StringSegment::Ident(ident) => {
+                                let value =
+                                    self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
+                                acc.push_str(&value.to_string());
+                            }
+                            ast::StringSegment::Self_ => {
+                                acc.push_str(&runtime_value.to_string());
+                            }
                         }
-                        ast::StringSegment::Self_ => {
-                            acc.push_str(&runtime_value.to_string());
-                        }
-                    }
 
-                    Ok(acc)
-                })
+                        Ok(acc)
+                    },
+                )
                 .map(|acc| acc.into())
         } else {
             unreachable!()
@@ -433,7 +446,7 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Until(cond, body) = &*node.expr {
-            let mut runtime_value = Cow::Borrowed(runtime_value);
+            let mut runtime_value = runtime_value.clone();
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
@@ -443,9 +456,9 @@ impl Evaluator {
             }
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.as_ref().clone(), Rc::clone(&env)) {
+                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
-                        runtime_value = Cow::Owned(new_runtime_value);
+                        runtime_value = new_runtime_value;
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
@@ -455,7 +468,7 @@ impl Evaluator {
                 }
             }
 
-            Ok(runtime_value.into_owned())
+            Ok(runtime_value)
         } else {
             unreachable!()
         }
@@ -468,23 +481,23 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::While(cond, body) = &*node.expr {
-            let mut runtime_value = Cow::Borrowed(runtime_value);
+            let mut runtime_value = runtime_value.clone();
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-            let mut values = Vec::new();
+            let mut values = Vec::with_capacity(100);
 
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.as_ref().clone(), Rc::clone(&env)) {
+                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
-                        runtime_value = Cow::Owned(new_runtime_value);
+                        runtime_value = new_runtime_value;
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-                        values.push(runtime_value.as_ref().clone());
+                        values.push(runtime_value.clone());
                     }
                     Err(EvalError::Break(_)) => break,
                     Err(EvalError::Continue(_)) => continue,
@@ -542,8 +555,8 @@ impl Evaluator {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let new_args: Cow<ast::Args> = if params.len() == args.len() + 1 {
-                    let mut new_args: ast::Args = SmallVec::with_capacity(args.len() + 1);
+                let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
+                let new_args = if params.len() == args.len() + 1 {
                     new_args.insert(
                         0,
                         Rc::new(ast::Node {
@@ -551,8 +564,8 @@ impl Evaluator {
                             expr: Rc::new(ast::Expr::Self_),
                         }),
                     );
-                    new_args.extend(args.iter().cloned());
-                    Cow::Owned(new_args)
+                    new_args.extend(args.clone());
+                    new_args
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -561,7 +574,7 @@ impl Evaluator {
                         args.len() as u8,
                     ));
                 } else {
-                    Cow::Borrowed(args)
+                    args.clone()
                 };
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
