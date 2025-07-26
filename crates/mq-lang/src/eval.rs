@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
 use crate::{
     Program, Token, TokenKind,
@@ -542,8 +542,8 @@ impl Evaluator {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
-                let new_args = if params.len() == args.len() + 1 {
+                let new_args: Cow<ast::Args> = if params.len() == args.len() + 1 {
+                    let mut new_args: ast::Args = SmallVec::with_capacity(args.len() + 1);
                     new_args.insert(
                         0,
                         Rc::new(ast::Node {
@@ -551,8 +551,8 @@ impl Evaluator {
                             expr: Rc::new(ast::Expr::Self_),
                         }),
                     );
-                    new_args.extend(args.clone());
-                    new_args
+                    new_args.extend(args.iter().cloned());
+                    Cow::Owned(new_args)
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -561,7 +561,7 @@ impl Evaluator {
                         args.len() as u8,
                     ));
                 } else {
-                    args.clone()
+                    Cow::Borrowed(args)
                 };
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
