@@ -166,24 +166,6 @@ def is_h_level(md, level):
     error("Invalid heading level: " + to_string(level))
 end
 
-# Checks if markdown is not an h1 heading
-def is_not_h1(md): is_h1(md) | not();
-
-# Checks if markdown is not an h2 heading
-def is_not_h2(md): is_h2(md) | not();
-
-# Checks if markdown is not an h3 heading
-def is_not_h3(md): is_h3(md) | not();
-
-# Checks if markdown is not an h4 heading
-def is_not_h4(md): is_h4(md) | not();
-
-# Checks if markdown is not an h5 heading
-def is_not_h5(md): is_h5(md) | not();
-
-# Checks if markdown is not an h6 heading
-def is_not_h6(md): is_h6(md) | not();
-
 # Checks if markdown is emphasis
 def is_em(md): to_md_name(md) == "emphasis";
 
