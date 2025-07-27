@@ -413,13 +413,32 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
             none_of("\"\\"),
             '\\',
             alt((
-                value('\\', char('\\')),
-                value('\"', char('\"')),
-                value('\r', char('r')),
-                value('\n', char('n')),
-                value('\t', char('t')),
-                hex_escape,
-                unicode,
+                alt((
+                    value('\\', char('\\')),
+                    value('\"', char('\"')),
+                    value('\r', char('r')),
+                    value('\n', char('n')),
+                    value('\t', char('t')),
+                    value('/', char('/')),
+                    value('[', char('[')),
+                    value(']', char(']')),
+                    value('(', char('(')),
+                    value(')', char(')')),
+                    value('{', char('{')),
+                    value('}', char('}')),
+                )),
+                alt((
+                    value('+', char('+')),
+                    value('*', char('*')),
+                    value('?', char('?')),
+                    value('^', char('^')),
+                    value('$', char('$')),
+                    value('|', char('|')),
+                    value('-', char('-')),
+                    value('.', char('.')),
+                    hex_escape,
+                    unicode,
+                )),
             )),
         ),
         char('"'),
@@ -907,6 +926,51 @@ mod tests {
         Ok(vec![
             Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::End, module_id: 1.into()},
             Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::number_regex("\"^(-?(?:0|[1-9]\\\\d*)(?:\\\\.\\\\d+)?(?:[eE][+-]?\\\\d+)?)\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 53 } },
+                kind: TokenKind::StringLiteral("^(-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 53 }, end: Position { line: 1, column: 53 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::regex_with_brackets("\"[a-zA-Z0-9]+\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 15 } },
+                kind: TokenKind::StringLiteral("[a-zA-Z0-9]+".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 15 }, end: Position { line: 1, column: 15 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::regex_with_escaped_chars("\"\\\\[\\\\(\\\\)\\\\{\\\\}\\\\+\\\\*\\\\?\\\\^\\\\$\\\\|\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 36 } },
+                kind: TokenKind::StringLiteral("\\[\\(\\)\\{\\}\\+\\*\\?\\^\\$\\|".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 36 }, end: Position { line: 1, column: 36 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
     fn test_parse(
         #[case] input: &str,
         #[case] options: Options,
