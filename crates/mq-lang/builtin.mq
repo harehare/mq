@@ -232,15 +232,6 @@ def is_mdx(mdx): or(
   is_mdx_js_esm(mdx))
 end
 
-# Checks if markdown is list with indentation level 1
-def is_list1(list): and(is_list(list), get_md_list_level(list) == 0);
-
-# Checks if markdown is list with indentation level 2
-def is_list2(list): and(is_list(list), get_md_list_level(list) == 1);
-
-# Checks if markdown is list with indentation level 3
-def is_list3(list): and(is_list(list), get_md_list_level(list) == 2);
-
 # Convert csv string to markdown table row
 def csv2table_row(row): split(row, ",") | to_md_table_row();
 

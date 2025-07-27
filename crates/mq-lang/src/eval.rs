@@ -2578,11 +2578,6 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "compact".to_string(),
                                                      args: vec!["test".to_string().into()]})))]
-    #[case::get_md_list_level(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["List Item".to_string().into()], ordered: false, level: 1, index: 0, checked: None, position: None}), None)],
-        vec![
-            ast_call("get_md_list_level", SmallVec::new()),
-        ],
-        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "1".to_string(), position: None}), None)]))]
     #[case::text_selector(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
         vec![
             ast_node(ast::Expr::Selector(ast::Selector::Text)),
