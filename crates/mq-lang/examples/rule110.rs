@@ -19,7 +19,7 @@ def rule110(left, center, right):
 
 def safe_get(arr, index):
   if (and(index >= 0, index < len(arr))):
-    nth(arr, index)
+    get(arr, index)
   else:
     0;
 
@@ -28,7 +28,7 @@ def next_generation(current_gen):
   | map(range(0, width, 1),
   fn(i):
     let left = safe_get(current_gen, sub(i, 1))
-    | let center = nth(current_gen, i)
+    | let center = get(current_gen, i)
     | let right = safe_get(current_gen, add(i, 1))
     | rule110(left, center, right);
 );

@@ -807,33 +807,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("nth"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
-                    let index = index.value() as usize;
-                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
-                }
-                [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-                    match s.chars().nth(n.value() as usize) {
-                        Some(o) => Ok(o.to_string().into()),
-                        None => Ok(RuntimeValue::None),
-                    }
-                }
-                [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-                    Ok(RuntimeValue::Markdown(
-                        node.clone(),
-                        Some(runtime_value::Selector::Index(i.value() as usize)),
-                    ))
-                }
-                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
-            }),
-        );
-        map.insert(
             CompactString::new("range"),
             BuiltinFunction::new(ParamNum::Range(1, 3), |ident, _, args| {
                 match args.as_slice() {
@@ -1857,6 +1830,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     let index = index.value() as usize;
                     Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
                 }
+                [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
+                    match s.chars().nth(n.value() as usize) {
+                        Some(o) => Ok(o.to_string().into()),
+                        None => Ok(RuntimeValue::None),
+                    }
+                }
+                [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
+                    Ok(RuntimeValue::Markdown(
+                        node.clone(),
+                        Some(runtime_value::Selector::Index(i.value() as usize)),
+                    ))
+                }
+                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
                 [a, b] => Err(Error::InvalidTypes(
                     ident.to_string(),
                     vec![a.clone(), b.clone()],
@@ -2605,13 +2591,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Finds the last occurrence of a substring in the given string.",
                 params: &["string", "substring"],
-            },
-        );
-        map.insert(
-            CompactString::new("nth"),
-            BuiltinFunctionDoc {
-                description: "Gets the element at the specified index in the array or string.",
-                params: &["array_or_string", "index"],
             },
         );
         map.insert(
