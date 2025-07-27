@@ -2678,27 +2678,27 @@ mod tests {
              ast_call("get_title", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
-    #[case::nth_string(vec![RuntimeValue::String("test1".to_string())],
+    #[case::get_string(vec![RuntimeValue::String("test1".to_string())],
         vec![
-            ast_call("nth", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
+            ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
         ],
         Ok(vec![RuntimeValue::String("t".to_string())]))]
-    #[case::nth_string(vec![RuntimeValue::String("test1".to_string())],
+    #[case::get_string(vec![RuntimeValue::String("test1".to_string())],
         vec![
-            ast_call("nth", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(5.into())))])
+            ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(5.into())))])
         ],
         Ok(vec![RuntimeValue::NONE]))]
-    #[case::nth_array(vec![RuntimeValue::Array(vec!["test1".to_string().into()])],
+    #[case::get_array(vec![RuntimeValue::Array(vec!["test1".to_string().into()])],
         vec![
-            ast_call("nth", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))])
+            ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(2.into())))])
         ],
         Ok(vec![RuntimeValue::NONE]))]
-    #[case::nth(vec![RuntimeValue::TRUE],
+    #[case::get(vec![RuntimeValue::TRUE],
         vec![
-            ast_call("nth", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
+            ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                     name: "nth".to_string(),
+                                                     name: "get".to_string(),
                                                      args: vec![true.to_string().into(), 0.to_string().into()]})))]
     #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
         vec![

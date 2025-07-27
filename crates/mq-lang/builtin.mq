@@ -95,7 +95,7 @@ def filter(v, f):
       let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
 
   | let _filter = fn(v, f):
-  foreach (x, v): select(x, f(x)); | compact();
+      foreach (x, v): select(x, f(x)); | compact();
 
   | if (is_dict(v)):
     filter_dict(v, f)
@@ -108,7 +108,7 @@ def first(arr):
   if (is_empty(arr)):
     None
   else:
-    nth(arr, 0)
+    get(arr, 0)
 end
 
 # Returns the last element of an array
@@ -116,7 +116,7 @@ def last(arr):
   if (is_empty(arr)):
     None
   else:
-    nth(arr, sub(len(arr), 1))
+    get(arr, sub(len(arr), 1))
 end
 
 # Returns the second element of an array
@@ -124,7 +124,7 @@ def second(arr):
   if (len(arr) < 2):
     None
   else:
-    nth(arr, 1)
+    get(arr, 1)
 end
 
 # Checks if markdown is h1 heading
@@ -318,7 +318,7 @@ def find_index(arr, f):
   let _find_index_impl = fn(arr, f, idx):
       if (idx == len(arr)):
         -1
-      elif (f(nth(arr, idx))):
+      elif (f(get(arr, idx))):
         idx
       else:
         _find_index_impl(arr, f, idx + 1);
@@ -338,7 +338,7 @@ def skip_while(arr, f):
   elif (is_empty(arr)):
     0
   else:
-    until (and(i < len(arr), f(nth(arr, i)))):
+    until (and(i < len(arr), f(get(arr, i)))):
       let i = i + 1 | i;
   | if (is_none(si)): []
   else:
@@ -354,7 +354,7 @@ def take_while(arr, f):
   elif (is_empty(arr)):
     0
   else:
-    until (and(i < len(arr), f(nth(arr, i)))):
+    until (and(i < len(arr), f(get(arr, i)))):
       let i = i + 1 | i;
   | if (is_none(ti)): []
   else:
@@ -414,7 +414,7 @@ def fold(arr, init, f):
     init
   else:
     until (i != len(arr)):
-      let acc = f(acc, nth(arr, i))
+      let acc = f(acc, get(arr, i))
       | let i = i + 1
       | acc
     end
@@ -430,7 +430,7 @@ def unique_by(arr, f):
   elif (is_empty(arr)): []
   else:
     until (i != len(arr)):
-      let item = nth(arr, i)
+      let item = get(arr, i)
       | let key = to_string(f(item))
       | let already_seen = get(seen, key)
       | let result = if (is_none(already_seen)): result + item else: result
@@ -446,15 +446,15 @@ def identity(x): x;
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
 def sections(md_nodes, level):
   let indices = foreach (i, range(sub(len(md_nodes), 1))):
-      let n = nth(md_nodes, i)
+      let n = get(md_nodes, i)
       | if (is_h_level(n, level)): i;
   | let indices = compact(indices)
   | let indices_with_end = indices + len(md_nodes)
   | let result = []
   | let i = 0
   | until (i < len(indices)):
-      let start_node = nth(indices, i)
-      | let end_node = nth(indices_with_end, i + 1)
+      let start_node = get(indices, i)
+      | let end_node = get(indices_with_end, i + 1)
       | let section = slice(md_nodes, start_node, end_node)
       | let result = result + [section]
       | let i = i + 1

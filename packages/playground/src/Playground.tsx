@@ -41,7 +41,7 @@ Hello world
   },
   {
     name: "Update child node",
-    code: `.h1 | nth(1) | add("text")`,
+    code: `.h1 | get(1) | add("text")`,
     markdown: `# *h1* text
 
 - item1
