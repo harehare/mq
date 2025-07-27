@@ -120,12 +120,7 @@ def last(arr):
 end
 
 # Returns the second element of an array
-def second(arr):
-  if (len(arr) < 2):
-    None
-  else:
-    get(arr, 1)
-end
+def second(arr): if (len(arr) > 1): get(arr, 1);
 
 # Checks if markdown is h1 heading
 def is_h1(md): to_md_name(md) == "h1";
