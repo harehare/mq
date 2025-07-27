@@ -88,7 +88,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("halt"),
-            BuiltinFunction::new(ParamNum::None, |ident, _, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
