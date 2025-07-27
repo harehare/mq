@@ -120,12 +120,7 @@ def last(arr):
 end
 
 # Returns the second element of an array
-def second(arr):
-  if (len(arr) < 2):
-    None
-  else:
-    get(arr, 1)
-end
+def second(arr): if (len(arr) > 1): get(arr, 1);
 
 # Checks if markdown is h1 heading
 def is_h1(md): to_md_name(md) == "h1";
@@ -165,24 +160,6 @@ def is_h_level(md, level):
   else:
     error("Invalid heading level: " + to_string(level))
 end
-
-# Checks if markdown is not an h1 heading
-def is_not_h1(md): is_h1(md) | not();
-
-# Checks if markdown is not an h2 heading
-def is_not_h2(md): is_h2(md) | not();
-
-# Checks if markdown is not an h3 heading
-def is_not_h3(md): is_h3(md) | not();
-
-# Checks if markdown is not an h4 heading
-def is_not_h4(md): is_h4(md) | not();
-
-# Checks if markdown is not an h5 heading
-def is_not_h5(md): is_h5(md) | not();
-
-# Checks if markdown is not an h6 heading
-def is_not_h6(md): is_h6(md) | not();
 
 # Checks if markdown is emphasis
 def is_em(md): to_md_name(md) == "emphasis";
@@ -231,15 +208,6 @@ def is_mdx(mdx): or(
   is_mdx_text_expression(mdx),
   is_mdx_js_esm(mdx))
 end
-
-# Checks if markdown is list with indentation level 1
-def is_list1(list): and(is_list(list), get_md_list_level(list) == 0);
-
-# Checks if markdown is list with indentation level 2
-def is_list2(list): and(is_list(list), get_md_list_level(list) == 1);
-
-# Checks if markdown is list with indentation level 3
-def is_list3(list): and(is_list(list), get_md_list_level(list) == 2);
 
 # Convert csv string to markdown table row
 def csv2table_row(row): split(row, ",") | to_md_table_row();

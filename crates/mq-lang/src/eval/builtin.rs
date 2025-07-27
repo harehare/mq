@@ -88,7 +88,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("halt"),
-            BuiltinFunction::new(ParamNum::None, |ident, _, args| match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
                 [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                 _ => unreachable!(),
@@ -1635,19 +1635,6 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("get_md_list_level"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(
-                        mq_markdown::Node::List(mq_markdown::List { level, .. }),
-                        _,
-                    ),
-                ] => Ok(RuntimeValue::Number((*level).into())),
-                [_] => Ok(RuntimeValue::Number(0.into())),
-                _ => unreachable!(),
-            }),
-        );
-        map.insert(
             CompactString::new("get_title"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [
@@ -2897,13 +2884,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             BuiltinFunctionDoc {
                 description: "Creates a markdown table row node with the given values.",
                 params: &["cells"],
-            },
-        );
-        map.insert(
-            CompactString::new("get_md_list_level"),
-            BuiltinFunctionDoc {
-                description: "Returns the indent level of a markdown list node.",
-                params: &["list"],
             },
         );
         map.insert(
