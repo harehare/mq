@@ -39,16 +39,16 @@ pub enum TitleSurroundStyle {
     Double,
     #[pyo3(name = "SINGLE")]
     Single,
-    #[pyo3(name = "ParEN")]
+    #[pyo3(name = "PAREN")]
     PAREN,
 }
 
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum UrlSurroundStyle {
-    #[pyo3(name = "DOUBLE")]
+    #[pyo3(name = "ANGLE")]
     Angle,
-    #[pyo3(name = "DOUBLE")]
+    #[pyo3(name = "NONE")]
     #[default]
     None,
 }
