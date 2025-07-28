@@ -436,6 +436,12 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
                     value('|', char('|')),
                     value('-', char('-')),
                     value('.', char('.')),
+                    value('s', char('s')), // \s (whitespace)
+                    value('S', char('S')), // \S (non-whitespace)
+                    value('d', char('d')), // \d (digit)
+                    value('D', char('D')), // \D (non-digit)
+                    value('w', char('w')), // \w (word character)
+                    value('W', char('W')), // \W (non-word character)
                     hex_escape,
                     unicode,
                 )),
@@ -966,6 +972,36 @@ mod tests {
             },
             Token {
                 range: Range { start: Position { line: 1, column: 36 }, end: Position { line: 1, column: 36 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::regex_character_classes("\"\\s\\S\\d\\D\\w\\W\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 15 } },
+                kind: TokenKind::StringLiteral("sSdDwW".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 15 }, end: Position { line: 1, column: 15 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::regex_mixed_with_character_classes("\"[a-z]\\d+\\s*\"",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 14 } },
+                kind: TokenKind::StringLiteral("[a-z]d+s*".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 14 }, end: Position { line: 1, column: 14 } },
                 kind: TokenKind::Eof,
                 module_id: 1.into(),
             }
