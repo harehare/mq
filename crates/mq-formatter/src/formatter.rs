@@ -121,7 +121,9 @@ impl Formatter {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
-            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Let => {
+                self.format_let(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
@@ -375,10 +377,21 @@ impl Formatter {
         });
     }
 
-    fn format_let(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_let(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
+
+        let indent_level = if self.is_last_line_pipe() {
+            block_indent_level
+        } else {
+            indent_level
+        };
 
         node.children.iter().for_each(|child| {
             let indent_level = if child.has_new_line() {
@@ -542,7 +555,7 @@ impl Formatter {
             match &token.kind {
                 mq_lang::TokenKind::StringLiteral(s) => {
                     let escaped = Self::escape_string(s);
-                    self.output.push_str(escaped.as_str());
+                    self.output.push_str(&format!(r#""{}""#, escaped));
                 }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
@@ -665,6 +678,17 @@ impl Formatter {
 
     fn is_prev_pipe(&self) -> bool {
         self.output.ends_with("| ")
+    }
+
+    pub fn is_last_line_pipe(&self) -> bool {
+        let output = self.output.trim_end_matches('\n');
+        let lines = output.lines();
+
+        if let Some(last_line) = lines.last() {
+            last_line.trim_start().starts_with('|')
+        } else {
+            false
+        }
     }
 
     fn is_let_line(&self) -> bool {
