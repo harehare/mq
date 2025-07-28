@@ -724,26 +724,11 @@ impl Formatter {
     /// Escapes control characters in a string, preserving existing valid escape sequences
     fn escape_string(s: &str) -> String {
         let mut result = String::with_capacity(s.len() * 2);
-        let mut chars = s.chars().peekable();
 
-        while let Some(ch) = chars.next() {
+        for ch in s.chars() {
             match ch {
                 '"' => result.push_str("\\\""),
-                '\\' => {
-                    if let Some(&next_ch) = chars.peek() {
-                        if Self::is_valid_escape_char(next_ch) {
-                            // Preserve valid escape sequence
-                            result.push('\\');
-                            result.push(chars.next().unwrap());
-                        } else {
-                            // Escape the backslash
-                            result.push_str("\\\\");
-                        }
-                    } else {
-                        // Backslash at end of string
-                        result.push_str("\\\\");
-                    }
-                }
+                '\\' => result.push_str("\\\\"),
                 '\n' => result.push_str("\\n"),
                 '\t' => result.push_str("\\t"),
                 '\r' => result.push_str("\\r"),
@@ -760,44 +745,6 @@ impl Formatter {
         }
 
         result
-    }
-
-    /// Checks if a character following a backslash forms a valid escape sequence
-    fn is_valid_escape_char(ch: char) -> bool {
-        matches!(
-            ch,
-            'n' | 't'
-                | 'r'
-                | '\\'
-                | '"'
-                | '\''
-                | '0'
-                | 'a'
-                | 'b'
-                | 'f'
-                | 'v'
-                | 'd'
-                | 'D'
-                | 'w'
-                | 'W'
-                | 's'
-                | 'S'
-                | '.'
-                | '+'
-                | '*'
-                | '?'
-                | '^'
-                | '$'
-                | '('
-                | ')'
-                | '['
-                | ']'
-                | '{'
-                | '}'
-                | '|'
-                | 'x'
-                | 'u'
-        )
     }
 }
 
@@ -1096,7 +1043,7 @@ s"test${val1}"
     )]
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
-    #[case::string_with_newline(r#""line1\\nline2""#, r#""line1\nline2""#)]
+    #[case::string_with_newline(r#""line1\nline2""#, r#""line1\nline2""#)]
     #[case::plus_operator("let x = 1 + 2", "let x = 1 + 2")]
     #[case::let_newline_after_equal(
         r#"let x =
@@ -1224,42 +1171,5 @@ process();"#,
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
-    }
-
-    #[rstest]
-    #[case("hello", "hello")]
-    #[case("hello\"world", "hello\\\"world")]
-    #[case("hello\nworld", "hello\\nworld")]
-    #[case("hello\tworld", "hello\\tworld")]
-    #[case("hello\rworld", "hello\\rworld")]
-    #[case("hello\x07world", "hello\\x07world")] // Bell character
-    #[case("hello\x08world", "hello\\x08world")] // Backspace character
-    #[case("hello\x0bworld", "hello\\x0bworld")] // Vertical tab
-    #[case("hello\x0cworld", "hello\\x0cworld")] // Form feed
-    #[case("hello\x1bworld", "hello\\x1bworld")] // Escape character
-    #[case("hello\x7fworld", "hello\\x7fworld")] // Delete character
-    #[case("\\d", "\\d")] // Regex digit escape sequence should be preserved
-    #[case("\\.", "\\.")] // Regex dot escape sequence should be preserved
-    #[case("\\w", "\\w")] // Regex word escape sequence should be preserved
-    #[case("\\s", "\\s")] // Regex whitespace escape sequence should be preserved
-    #[case("\\D", "\\D")] // Regex non-digit escape sequence should be preserved
-    #[case("\\W", "\\W")] // Regex non-word escape sequence should be preserved
-    #[case("\\S", "\\S")] // Regex non-whitespace escape sequence should be preserved
-    #[case("\\+", "\\+")] // Regex plus escape sequence should be preserved
-    #[case("\\*", "\\*")] // Regex star escape sequence should be preserved
-    #[case("\\?", "\\?")] // Regex question mark escape sequence should be preserved
-    #[case("\\^", "\\^")] // Regex caret escape sequence should be preserved
-    #[case("\\$", "\\$")] // Regex dollar escape sequence should be preserved
-    #[case("\\(", "\\(")] // Regex left paren escape sequence should be preserved
-    #[case("\\)", "\\)")] // Regex right paren escape sequence should be preserved
-    #[case("\\[", "\\[")] // Regex left bracket escape sequence should be preserved
-    #[case("\\]", "\\]")] // Regex right bracket escape sequence should be preserved
-    #[case("\\{", "\\{")] // Regex left brace escape sequence should be preserved
-    #[case("\\}", "\\}")] // Regex right brace escape sequence should be preserved
-    #[case("\\|", "\\|")] // Regex pipe escape sequence should be preserved
-    #[case("\\z", "\\\\z")] // Invalid escape sequence should escape the backslash
-    fn test_escape_string(#[case] input: &str, #[case] expected: &str) {
-        let result = Formatter::escape_string(input);
-        assert_eq!(result, expected);
     }
 }
