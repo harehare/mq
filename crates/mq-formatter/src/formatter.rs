@@ -297,8 +297,8 @@ impl Formatter {
         {
             if node.has_new_line() {
                 self.append_indent(indent_level);
-                self.output.push_str(&token.to_string());
             }
+            self.output.push_str(&token.to_string());
 
             match op {
                 mq_lang::CstUnaryOp::Not => {
@@ -707,27 +707,37 @@ impl Formatter {
         }
     }
 
-    /// Escapes control characters in a string, converting them to \xXX format
+    /// Escapes control characters in a string, preserving existing valid escape sequences
     fn escape_string(s: &str) -> String {
         let mut result = String::with_capacity(s.len() * 2);
+        let mut chars = s.chars().peekable();
 
-        for ch in s.chars() {
+        while let Some(ch) = chars.next() {
             match ch {
                 '"' => result.push_str("\\\""),
                 '\\' => {
-                    // Check if it's already an escape sequence
-                    result.push('\\');
+                    if let Some(&next_ch) = chars.peek() {
+                        if Self::is_valid_escape_char(next_ch) {
+                            // Preserve valid escape sequence
+                            result.push('\\');
+                            result.push(chars.next().unwrap());
+                        } else {
+                            // Escape the backslash
+                            result.push_str("\\\\");
+                        }
+                    } else {
+                        // Backslash at end of string
+                        result.push_str("\\\\");
+                    }
                 }
                 '\n' => result.push_str("\\n"),
                 '\t' => result.push_str("\\t"),
                 '\r' => result.push_str("\\r"),
                 c if c.is_control() => {
-                    // Convert control characters to \xXX format
                     let code = c as u32;
                     if code <= 0xFF {
                         result.push_str(&format!("\\x{:02x}", code));
                     } else {
-                        // For Unicode control characters, use \u{xxxx} format
                         result.push_str(&format!("\\u{{{:04x}}}", code));
                     }
                 }
@@ -736,6 +746,44 @@ impl Formatter {
         }
 
         result
+    }
+
+    /// Checks if a character following a backslash forms a valid escape sequence
+    fn is_valid_escape_char(ch: char) -> bool {
+        matches!(
+            ch,
+            'n' | 't'
+                | 'r'
+                | '\\'
+                | '"'
+                | '\''
+                | '0'
+                | 'a'
+                | 'b'
+                | 'f'
+                | 'v'
+                | 'd'
+                | 'D'
+                | 'w'
+                | 'W'
+                | 's'
+                | 'S'
+                | '.'
+                | '+'
+                | '*'
+                | '?'
+                | '^'
+                | '$'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '|'
+                | 'x'
+                | 'u'
+        )
     }
 }
 
@@ -1176,6 +1224,26 @@ process();"#,
     #[case("hello\x0cworld", "hello\\x0cworld")] // Form feed
     #[case("hello\x1bworld", "hello\\x1bworld")] // Escape character
     #[case("hello\x7fworld", "hello\\x7fworld")] // Delete character
+    #[case("\\d", "\\d")] // Regex digit escape sequence should be preserved
+    #[case("\\.", "\\.")] // Regex dot escape sequence should be preserved
+    #[case("\\w", "\\w")] // Regex word escape sequence should be preserved
+    #[case("\\s", "\\s")] // Regex whitespace escape sequence should be preserved
+    #[case("\\D", "\\D")] // Regex non-digit escape sequence should be preserved
+    #[case("\\W", "\\W")] // Regex non-word escape sequence should be preserved
+    #[case("\\S", "\\S")] // Regex non-whitespace escape sequence should be preserved
+    #[case("\\+", "\\+")] // Regex plus escape sequence should be preserved
+    #[case("\\*", "\\*")] // Regex star escape sequence should be preserved
+    #[case("\\?", "\\?")] // Regex question mark escape sequence should be preserved
+    #[case("\\^", "\\^")] // Regex caret escape sequence should be preserved
+    #[case("\\$", "\\$")] // Regex dollar escape sequence should be preserved
+    #[case("\\(", "\\(")] // Regex left paren escape sequence should be preserved
+    #[case("\\)", "\\)")] // Regex right paren escape sequence should be preserved
+    #[case("\\[", "\\[")] // Regex left bracket escape sequence should be preserved
+    #[case("\\]", "\\]")] // Regex right bracket escape sequence should be preserved
+    #[case("\\{", "\\{")] // Regex left brace escape sequence should be preserved
+    #[case("\\}", "\\}")] // Regex right brace escape sequence should be preserved
+    #[case("\\|", "\\|")] // Regex pipe escape sequence should be preserved
+    #[case("\\z", "\\\\z")] // Invalid escape sequence should escape the backslash
     fn test_escape_string(#[case] input: &str, #[case] expected: &str) {
         let result = Formatter::escape_string(input);
         assert_eq!(result, expected);
