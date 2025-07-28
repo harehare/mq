@@ -462,10 +462,10 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
 
 fn literals(input: Span) -> IResult<Span, Token> {
     alt((
-        number_literal,
-        empty_string,
-        interpolated_string,
         string_literal,
+        interpolated_string,
+        empty_string,
+        number_literal,
     ))
     .parse(input)
 }
