@@ -733,7 +733,7 @@ impl Formatter {
                     if let Some(&next_ch) = chars.peek() {
                         if Self::is_valid_escape_char(next_ch) {
                             // Preserve valid escape sequence
-                            result.push_str("\\\\");
+                            result.push('\\');
                             result.push(chars.next().unwrap());
                         } else {
                             // Escape the backslash
@@ -1182,9 +1182,9 @@ test2
         r#"while (condition()):
   let x = 1
   | let y = if (test):
-      test
-    else:
-      test2"#
+        test
+      else:
+        test2"#
     )]
     #[case::let_with_until_multiline(
         r#"let x = until(condition()):
