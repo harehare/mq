@@ -293,8 +293,10 @@ impl Formatter {
             ..
         } = &**node
         {
-            self.append_indent(indent_level);
-            self.output.push_str(&token.to_string());
+            if node.has_new_line() {
+                self.append_indent(indent_level);
+                self.output.push_str(&token.to_string());
+            }
 
             match op {
                 mq_lang::CstUnaryOp::Not => {
@@ -540,7 +542,7 @@ impl Formatter {
             match &token.kind {
                 mq_lang::TokenKind::StringLiteral(s) => {
                     let escaped = Self::escape_string(s);
-                    self.output.push_str(&format!(r#""{}""#, escaped));
+                    self.output.push_str(escaped.as_str());
                 }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
