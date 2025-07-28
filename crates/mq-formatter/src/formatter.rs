@@ -114,7 +114,9 @@ impl Formatter {
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::If => {
+                self.format_if(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Include => {
                 self.format_include(&node, indent_level_consider_new_line)
             }
@@ -420,11 +422,23 @@ impl Formatter {
         });
     }
 
-    fn format_if(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_if(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
         let is_prev_pipe = self.is_prev_pipe();
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
+
+        let indent_level = if self.is_last_line_pipe() {
+            block_indent_level
+        } else {
+            indent_level
+        };
+
         let indent_adjustment = if self.is_let_line() {
             1
         } else if self.is_pipe_and_let_line() {
