@@ -733,7 +733,7 @@ impl Formatter {
                     if let Some(&next_ch) = chars.peek() {
                         if Self::is_valid_escape_char(next_ch) {
                             // Preserve valid escape sequence
-                            result.push('\\');
+                            result.push_str("\\\\");
                             result.push(chars.next().unwrap());
                         } else {
                             // Escape the backslash
