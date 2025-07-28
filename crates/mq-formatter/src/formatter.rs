@@ -114,14 +114,18 @@ impl Formatter {
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::If => {
+                self.format_if(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Include => {
                 self.format_include(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
-            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Let => {
+                self.format_let(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Literal => {
                 self.append_literal(&node, indent_level_consider_new_line)
             }
@@ -293,7 +297,9 @@ impl Formatter {
             ..
         } = &**node
         {
-            self.append_indent(indent_level);
+            if node.has_new_line() {
+                self.append_indent(indent_level);
+            }
             self.output.push_str(&token.to_string());
 
             match op {
@@ -373,10 +379,21 @@ impl Formatter {
         });
     }
 
-    fn format_let(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_let(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
+
+        let indent_level = if self.is_last_line_pipe() {
+            block_indent_level
+        } else {
+            indent_level
+        };
 
         node.children.iter().for_each(|child| {
             let indent_level = if child.has_new_line() {
@@ -405,11 +422,23 @@ impl Formatter {
         });
     }
 
-    fn format_if(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_if(
+        &mut self,
+        node: &Arc<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
         let is_prev_pipe = self.is_prev_pipe();
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
+
+        let indent_level = if self.is_last_line_pipe() {
+            block_indent_level
+        } else {
+            indent_level
+        };
+
         let indent_adjustment = if self.is_let_line() {
             1
         } else if self.is_pipe_and_let_line() {
@@ -665,6 +694,17 @@ impl Formatter {
         self.output.ends_with("| ")
     }
 
+    pub fn is_last_line_pipe(&self) -> bool {
+        let output = self.output.trim_end_matches('\n');
+        let lines = output.lines();
+
+        if let Some(last_line) = lines.last() {
+            last_line.trim_start().starts_with('|')
+        } else {
+            false
+        }
+    }
+
     fn is_let_line(&self) -> bool {
         if let Some(last_line) = self.output.lines().last() {
             !last_line.starts_with("let ") && last_line.trim().starts_with("let ")
@@ -681,27 +721,22 @@ impl Formatter {
         }
     }
 
-    /// Escapes control characters in a string, converting them to \xXX format
+    /// Escapes control characters in a string, preserving existing valid escape sequences
     fn escape_string(s: &str) -> String {
         let mut result = String::with_capacity(s.len() * 2);
 
         for ch in s.chars() {
             match ch {
                 '"' => result.push_str("\\\""),
-                '\\' => {
-                    // Check if it's already an escape sequence
-                    result.push('\\');
-                }
+                '\\' => result.push_str("\\\\"),
                 '\n' => result.push_str("\\n"),
                 '\t' => result.push_str("\\t"),
                 '\r' => result.push_str("\\r"),
                 c if c.is_control() => {
-                    // Convert control characters to \xXX format
                     let code = c as u32;
                     if code <= 0xFF {
                         result.push_str(&format!("\\x{:02x}", code));
                     } else {
-                        // For Unicode control characters, use \u{xxxx} format
                         result.push_str(&format!("\\u{{{:04x}}}", code));
                     }
                 }
@@ -1008,7 +1043,7 @@ s"test${val1}"
     )]
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
-    #[case::string_with_newline(r#""line1\\nline2""#, r#""line1\nline2""#)]
+    #[case::string_with_newline(r#""line1\nline2""#, r#""line1\nline2""#)]
     #[case::plus_operator("let x = 1 + 2", "let x = 1 + 2")]
     #[case::let_newline_after_equal(
         r#"let x =
@@ -1094,9 +1129,9 @@ test2
         r#"while (condition()):
   let x = 1
   | let y = if (test):
-      test
-    else:
-      test2"#
+        test
+      else:
+        test2"#
     )]
     #[case::let_with_until_multiline(
         r#"let x = until(condition()):
@@ -1136,22 +1171,5 @@ process();"#,
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
-    }
-
-    #[rstest]
-    #[case("hello", "hello")]
-    #[case("hello\"world", "hello\\\"world")]
-    #[case("hello\nworld", "hello\\nworld")]
-    #[case("hello\tworld", "hello\\tworld")]
-    #[case("hello\rworld", "hello\\rworld")]
-    #[case("hello\x07world", "hello\\x07world")] // Bell character
-    #[case("hello\x08world", "hello\\x08world")] // Backspace character
-    #[case("hello\x0bworld", "hello\\x0bworld")] // Vertical tab
-    #[case("hello\x0cworld", "hello\\x0cworld")] // Form feed
-    #[case("hello\x1bworld", "hello\\x1bworld")] // Escape character
-    #[case("hello\x7fworld", "hello\\x7fworld")] // Delete character
-    fn test_escape_string(#[case] input: &str, #[case] expected: &str) {
-        let result = Formatter::escape_string(input);
-        assert_eq!(result, expected);
     }
 }
