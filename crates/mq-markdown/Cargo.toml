@@ -23,7 +23,7 @@ serde_json = {workspace = true, optional = true}
 serde_yaml = {version = "0.9", optional = true}
 
 [dev-dependencies]
-rstest = "0.25.0"
+rstest = "0.26.1"
 
 [features]
 default = ["std"]
