@@ -13,7 +13,40 @@ use std::{borrow::Cow, cell::RefCell, fs, rc::Rc};
 
 use crate::command_context::{Command, CommandContext, CommandOutput};
 
-const PROMPT: &str = "> ";
+/// Get the appropriate prompt symbol based on character availability
+fn get_prompt() -> &'static str {
+    if is_char_available() { "❯ " } else { "> " }
+}
+
+/// Check if a Unicode character is available in the current environment
+fn is_char_available() -> bool {
+    // Check environment variables that might indicate character support
+    if let Ok(term) = std::env::var("TERM") {
+        // Most modern terminals support Unicode
+        if term.contains("xterm") || term.contains("screen") || term.contains("tmux") {
+            return true;
+        }
+    }
+
+    // Check if we're in a UTF-8 locale
+    if let Ok(lang) = std::env::var("LANG") {
+        if lang.to_lowercase().contains("utf-8") || lang.to_lowercase().contains("utf8") {
+            return true;
+        }
+    }
+
+    // Check LC_ALL and LC_CTYPE for UTF-8 support
+    for var in ["LC_ALL", "LC_CTYPE"] {
+        if let Ok(locale) = std::env::var(var) {
+            if locale.to_lowercase().contains("utf-8") || locale.to_lowercase().contains("utf8") {
+                return true;
+            }
+        }
+    }
+
+    // Default to false for safety if we can't determine character support
+    false
+}
 
 pub struct MqLineHelper {
     command_context: Rc<RefCell<CommandContext>>,
@@ -169,7 +202,7 @@ impl Repl {
         Self::print_welcome();
 
         loop {
-            let prompt = format!("{}", PROMPT.cyan());
+            let prompt = format!("{}", get_prompt().cyan());
             let readline = editor.readline(&prompt);
 
             match readline {
@@ -240,6 +273,60 @@ mod tests {
         assert!(config_dir.is_some());
         if let Some(dir) = config_dir {
             assert!(dir.ends_with("mq"));
+        }
+    }
+
+    #[test]
+    fn test_is_char_available_utf8_env() {
+        // Save original env vars
+        let orig_term = std::env::var("TERM").ok();
+        let orig_lang = std::env::var("LANG").ok();
+        let orig_lc_all = std::env::var("LC_ALL").ok();
+        let orig_lc_ctype = std::env::var("LC_CTYPE").ok();
+
+        // TERM contains xterm
+        unsafe { std::env::set_var("TERM", "xterm-256color") };
+        assert!(is_char_available());
+
+        // LANG contains utf-8
+        unsafe { std::env::remove_var("TERM") };
+        unsafe { std::env::set_var("LANG", "en_US.UTF-8") };
+        assert!(is_char_available());
+
+        // LC_ALL contains utf8
+        unsafe { std::env::remove_var("LANG") };
+        unsafe { std::env::set_var("LC_ALL", "ja_JP.utf8") };
+        assert!(is_char_available());
+
+        // LC_CTYPE contains utf-8
+        unsafe { std::env::remove_var("LC_ALL") };
+        unsafe { std::env::set_var("LC_CTYPE", "fr_FR.UTF-8") };
+        assert!(is_char_available());
+
+        // No relevant env vars
+        unsafe { std::env::remove_var("LC_CTYPE") };
+        assert!(!is_char_available());
+
+        // Restore original env vars
+        if let Some(val) = orig_term {
+            unsafe { std::env::set_var("TERM", val) };
+        } else {
+            unsafe { std::env::remove_var("TERM") };
+        }
+        if let Some(val) = orig_lang {
+            unsafe { std::env::set_var("LANG", val) };
+        } else {
+            unsafe { std::env::remove_var("LANG") };
+        }
+        if let Some(val) = orig_lc_all {
+            unsafe { std::env::set_var("LC_ALL", val) };
+        } else {
+            unsafe { std::env::remove_var("LC_ALL") };
+        }
+        if let Some(val) = orig_lc_ctype {
+            unsafe { std::env::set_var("LC_CTYPE", val) };
+        } else {
+            unsafe { std::env::remove_var("LC_CTYPE") };
         }
     }
 }
