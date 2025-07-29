@@ -111,70 +111,107 @@ impl<'a> Parser<'a> {
         self.parse_equality_expr(token)
     }
 
-    fn parse_equality_expr(&mut self, initial_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        let mut lhs = self.parse_primary_expr(initial_token)?;
-        let mut is_first_binary_op = true;
+    fn binary_op_precedence(kind: &TokenKind) -> u8 {
+        match kind {
+            TokenKind::Or => 1,
+            TokenKind::And => 2,
+            TokenKind::EqEq
+            | TokenKind::NeEq
+            | TokenKind::Gt
+            | TokenKind::Gte
+            | TokenKind::Lt
+            | TokenKind::Lte => 3,
+            TokenKind::Plus | TokenKind::Minus => 4,
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
+            TokenKind::RangeOp => 6,
+            _ => 0,
+        }
+    }
 
-        while let Some(peeked_token_rc) = self.tokens.peek() {
-            let peeked_token = &**peeked_token_rc;
+    fn binary_op_function_name(kind: &TokenKind) -> &'static str {
+        match kind {
+            TokenKind::And => "and",
+            TokenKind::Asterisk => "mul",
+            TokenKind::EqEq => "eq",
+            TokenKind::Gte => "gte",
+            TokenKind::Gt => "gt",
+            TokenKind::Lte => "lte",
+            TokenKind::Lt => "lt",
+            TokenKind::Minus => "sub",
+            TokenKind::NeEq => "ne",
+            TokenKind::Or => "or",
+            TokenKind::Percent => "mod",
+            TokenKind::Plus => "add",
+            TokenKind::RangeOp => "range",
+            TokenKind::Slash => "div",
+            _ => unreachable!(),
+        }
+    }
 
-            if !Self::is_binary_op(&peeked_token.kind) {
+    fn parse_binary_op(
+        parser: &mut Parser,
+        min_prec: u8,
+        mut lhs: Rc<Node>,
+    ) -> Result<Rc<Node>, ParseError> {
+        while let Some(peeked_token_rc) = parser.tokens.peek() {
+            let kind = &peeked_token_rc.kind;
+            if !Self::is_binary_op(kind) {
                 break;
             }
 
-            let operator_token = self.tokens.next().unwrap();
-            let operator_token_id = self
+            let prec = Self::binary_op_precedence(kind);
+
+            if prec < min_prec {
+                break;
+            }
+
+            let operator_token = parser.tokens.next().unwrap();
+            let operator_token_id = parser
                 .token_arena
                 .borrow_mut()
                 .alloc(Rc::clone(operator_token));
 
-            let next_expr_token = match self.tokens.next() {
+            let rhs_token = match parser.tokens.next() {
                 Some(t) => t,
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(ParseError::UnexpectedEOFDetected(parser.module_id)),
             };
+            let mut rhs = parser.parse_primary_expr(Rc::clone(rhs_token))?;
 
-            let rhs = if !is_first_binary_op
-                && self
-                    .tokens
-                    .peek()
-                    .map(|t| Self::is_binary_op(&t.kind))
-                    .unwrap_or(false)
-            {
-                self.parse_expr(Rc::clone(next_expr_token))?
-            } else {
-                self.parse_primary_expr(Rc::clone(next_expr_token))?
-            };
-
-            let function_name = match peeked_token.kind {
-                TokenKind::And => "and",
-                TokenKind::Asterisk => "mul",
-                TokenKind::EqEq => "eq",
-                TokenKind::Gte => "gte",
-                TokenKind::Gt => "gt",
-                TokenKind::Lte => "lte",
-                TokenKind::Lt => "lt",
-                TokenKind::Minus => "sub",
-                TokenKind::NeEq => "ne",
-                TokenKind::Or => "or",
-                TokenKind::Percent => "mod",
-                TokenKind::Plus => "add",
-                TokenKind::RangeOp => "range",
-                TokenKind::Slash => "div",
-                _ => unreachable!(),
-            };
+            loop {
+                let next_prec = if let Some(next_token) = parser.tokens.peek() {
+                    if Self::is_binary_op(&next_token.kind) {
+                        Self::binary_op_precedence(&next_token.kind)
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                if next_prec > prec {
+                    rhs = Self::parse_binary_op(parser, next_prec, rhs)?;
+                } else {
+                    break;
+                }
+            }
 
             lhs = Rc::new(Node {
                 token_id: operator_token_id,
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(function_name, Some(Rc::clone(operator_token))),
+                    Ident::new_with_token(
+                        Self::binary_op_function_name(kind),
+                        Some(Rc::clone(operator_token)),
+                    ),
                     smallvec![lhs, rhs],
                     false,
                 )),
             });
-            is_first_binary_op = false;
         }
-
         Ok(lhs)
+    }
+
+    fn parse_equality_expr(&mut self, initial_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let lhs = self.parse_primary_expr(initial_token)?;
+        Self::parse_binary_op(self, 1, lhs)
     }
 
     fn parse_primary_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
