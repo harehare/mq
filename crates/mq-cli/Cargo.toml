@@ -35,7 +35,7 @@ mq-mcp.workspace = true
 mq-repl.workspace = true
 mq-tui.workspace = true
 rayon = "1.10.0"
-tokio = {version = "1.46.1", features = ["io-util", "io-std", "rt"]}
+tokio = {version = "1.47.0", features = ["io-util", "io-std", "rt"]}
 url.workspace = true
 
 [dev-dependencies]
