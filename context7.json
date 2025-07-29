@@ -1,0 +1,16 @@
+{
+    "$schema": "https://context7.com/schema/context7.json",
+    "projectTitle": "mq",
+    "description": "jq-like command-line tool for markdown processing",
+    "folders": [],
+    "excludeFolders": [
+        "crates",
+        "editors",
+        "packages"
+    ],
+    "excludeFiles": [
+        "CONTRIBUTING.md"
+    ],
+    "rules": [],
+    "previousVersions": []
+}
