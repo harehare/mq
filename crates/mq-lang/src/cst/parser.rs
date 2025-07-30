@@ -160,15 +160,19 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Eof,
                     ..
                 } => {
-                    let trailing_trivia = self.parse_trailing_trivia();
+                    if !nodes.is_empty() {
+                        self.tokens.next();
+                        let trailing_trivia = self.parse_trailing_trivia();
 
-                    nodes.push(Arc::new(Node {
-                        kind: NodeKind::Token,
-                        token: Some(Arc::clone(&token)),
-                        leading_trivia,
-                        trailing_trivia,
-                        children: Vec::new(),
-                    }));
+                        nodes.push(Arc::new(Node {
+                            kind: NodeKind::Eof,
+                            token: Some(Arc::clone(&token)),
+                            leading_trivia,
+                            trailing_trivia,
+                            children: Vec::new(),
+                        }));
+                    }
+
                     break;
                 }
                 Token {
@@ -1772,6 +1776,13 @@ mod tests {
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
+                        Arc::new(Node {
+                            kind: NodeKind::Eof,
+                            token: Some(Arc::new(token(TokenKind::Eof))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
                     ],
                 }),
             ],
@@ -1786,7 +1797,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::Equal)),
             Arc::new(token(TokenKind::NumberLiteral(42.into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -1836,7 +1846,6 @@ mod tests {
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::StringLiteral("test".into()))),
             Arc::new(token(TokenKind::Comma)), // Unexpected token
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -1913,7 +1922,6 @@ mod tests {
             Arc::new(token(TokenKind::Else)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("else_branch".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2004,7 +2012,6 @@ mod tests {
             Arc::new(token(TokenKind::Else)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("else_branch".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2129,7 +2136,6 @@ mod tests {
             Arc::new(token(TokenKind::RParen)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("then_branch1".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2196,7 +2202,6 @@ mod tests {
             Arc::new(token(TokenKind::RParen)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("then_branch2".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2299,7 +2304,6 @@ mod tests {
             Arc::new(token(TokenKind::Whitespace(1))),
             Arc::new(token(TokenKind::Ident("y".into()))),
             Arc::new(token(TokenKind::Whitespace(1))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2336,7 +2340,6 @@ mod tests {
             Arc::new(token(TokenKind::LParen)),
             Arc::new(token(TokenKind::RParen)),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2402,7 +2405,6 @@ mod tests {
             Arc::new(token(TokenKind::Comment("comment".into()))),
             Arc::new(token(TokenKind::NewLine)),
             Arc::new(token(TokenKind::Ident("body".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2480,7 +2482,6 @@ mod tests {
             Arc::new(token(TokenKind::NewLine)),
             Arc::new(token(TokenKind::Ident("body".into()))),
             Arc::new(token(TokenKind::Whitespace(4))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2534,7 +2535,6 @@ mod tests {
     #[case::selector1(
         vec![
             Arc::new(token(TokenKind::Selector(".#(2)".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2588,6 +2588,13 @@ mod tests {
                         }),
                     ],
                 }),
+                Arc::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Arc::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
             ],
             ErrorReporter::default()
         )
@@ -2601,7 +2608,6 @@ mod tests {
             Arc::new(token(TokenKind::LBracket)),
             Arc::new(token(TokenKind::NumberLiteral(2.into()))),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2662,7 +2668,6 @@ mod tests {
     #[case::selector4(
         vec![
             Arc::new(token(TokenKind::Selector(".list.checked".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2682,7 +2687,6 @@ mod tests {
             Arc::new(token(TokenKind::Include)),
             Arc::new(token(TokenKind::Whitespace(1))),
             Arc::new(token(TokenKind::StringLiteral("module".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2710,7 +2714,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::SemiColon)),
             Arc::new(token(TokenKind::Ident("y".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2738,7 +2741,6 @@ mod tests {
             Arc::new(token(TokenKind::LParen)),
             Arc::new(token(TokenKind::StringLiteral("test".into()))),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2788,7 +2790,6 @@ mod tests {
             Arc::new(token(TokenKind::NewLine)),
             Arc::new(token(TokenKind::Ident("body".into()))),
             Arc::new(token(TokenKind::Whitespace(4))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2852,7 +2853,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("arg2".into()))),
             Arc::new(token(TokenKind::NewLine)),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2906,7 +2906,6 @@ mod tests {
     #[case::interpolated_string(
         vec![
             Arc::new(token(TokenKind::InterpolatedString(vec![StringSegment::Ident("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())]))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2925,7 +2924,6 @@ mod tests {
         vec![
             Arc::new(token(TokenKind::Nodes)),
             Arc::new(token(TokenKind::Whitespace(1))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -2950,7 +2948,6 @@ mod tests {
             Arc::new(token(TokenKind::SemiColon)),
             Arc::new(token(TokenKind::Pipe)),
             Arc::new(token(TokenKind::Ident("y".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3024,7 +3021,6 @@ mod tests {
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Ident("body".into()))),
             Arc::new(token(TokenKind::SemiColon)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3078,6 +3074,7 @@ mod tests {
                         }),
                     ],
                 }),
+
             ],
             ErrorReporter::default()
         )
@@ -3093,7 +3090,6 @@ mod tests {
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::StringLiteral("result".into()))),
             Arc::new(token(TokenKind::SemiColon)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3169,7 +3165,6 @@ mod tests {
         vec![
             Arc::new(token(TokenKind::LBracket)),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3204,7 +3199,6 @@ mod tests {
             Arc::new(token(TokenKind::LBracket)),
             Arc::new(token(TokenKind::NumberLiteral(42.into()))),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3250,7 +3244,6 @@ mod tests {
             Arc::new(token(TokenKind::Comma)),
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3329,7 +3322,6 @@ mod tests {
             Arc::new(token(TokenKind::NewLine)),
             Arc::new(token(TokenKind::RBracket)),
             Arc::new(token(TokenKind::Whitespace(1))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3395,7 +3387,6 @@ mod tests {
             Arc::new(token(TokenKind::NumberLiteral(2.into()))),
             Arc::new(token(TokenKind::RBracket)),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3494,7 +3485,6 @@ mod tests {
         vec![
             Arc::new(token(TokenKind::LBrace)),
             Arc::new(token(TokenKind::RBrace)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3531,7 +3521,6 @@ mod tests {
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::NumberLiteral(1.into()))),
             Arc::new(token(TokenKind::RBrace)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3593,7 +3582,6 @@ mod tests {
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::NumberLiteral(2.into()))),
             Arc::new(token(TokenKind::RBrace)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3677,7 +3665,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::EqEq)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3714,7 +3701,6 @@ mod tests {
             Arc::new(token(TokenKind::NeEq)),
             Arc::new(token(TokenKind::Whitespace(1))),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3749,7 +3735,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Plus)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3784,7 +3769,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Lt)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3819,7 +3803,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Lte)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3854,7 +3837,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Gt)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3889,7 +3871,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Gte)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3924,7 +3905,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::RangeOp)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3959,7 +3939,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Minus)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -3994,7 +3973,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Slash)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4029,7 +4007,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Percent)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4064,7 +4041,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("a".into()))),
             Arc::new(token(TokenKind::Asterisk)),
             Arc::new(token(TokenKind::Ident("b".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4103,7 +4079,6 @@ mod tests {
             Arc::new(token(TokenKind::Ident("c".into()))),
             Arc::new(token(TokenKind::Asterisk)),
             Arc::new(token(TokenKind::Ident("d".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4174,7 +4149,6 @@ mod tests {
             Arc::new(token(TokenKind::Minus)),
             Arc::new(token(TokenKind::Whitespace(1))),
             Arc::new(token(TokenKind::Ident("z".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4222,7 +4196,6 @@ mod tests {
     #[case::string_literal_with_escape_sequences(
         vec![
             Arc::new(token(TokenKind::StringLiteral("\\x1b[2J\\x1b[H".into()))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4241,7 +4214,6 @@ mod tests {
         vec![
             Arc::new(token(TokenKind::Not)),
             Arc::new(token(TokenKind::BoolLiteral(true))),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4272,7 +4244,6 @@ mod tests {
             Arc::new(token(TokenKind::RParen)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Break)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4331,7 +4302,6 @@ mod tests {
             Arc::new(token(TokenKind::RParen)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::Continue)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4406,7 +4376,6 @@ mod tests {
             Arc::new(token(TokenKind::LBracket)),
             Arc::new(token(TokenKind::NumberLiteral(5.into()))),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -4449,7 +4418,6 @@ mod tests {
             Arc::new(token(TokenKind::LBracket)),
             Arc::new(token(TokenKind::StringLiteral("key".into()))),
             Arc::new(token(TokenKind::RBracket)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![

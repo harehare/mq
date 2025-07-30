@@ -684,20 +684,6 @@ impl Formatter {
                         self.output.push_str(&token.to_string());
                     }
                 }
-                mq_lang::TokenKind::Eof => {
-                    for trivia in &node.leading_trivia {
-                        if let mq_lang::CstTrivia::Comment(_) = trivia {
-                            if node.has_new_line() {
-                                self.append_indent(indent_level);
-                            }
-
-                            if !self.output.ends_with('\n') {
-                                self.append_space();
-                            }
-                            self.output.push_str(&trivia.to_string());
-                        }
-                    }
-                }
                 _ => self.output.push_str(&token.to_string()),
             }
         }
@@ -1021,7 +1007,8 @@ s"test${val1}"
     1,
     2,
     3
-  ];"#
+  ];
+"#
     )]
     #[case::dict_single_pair("{\"key\": \"value\"}", "{\"key\": \"value\"}")]
     #[case::dict_multiple_pairs(
@@ -1119,7 +1106,8 @@ else:
   if (is_dict(haystack)):
     not(is_none(get(haystack, needle)))
   else:
-    index(haystack, needle) != -1;"#
+    index(haystack, needle) != -1;
+"#
     )]
     #[case::escape_sequence_clear_screen(r#""\x1b[2J\x1b[H""#, r#""\x1b[2J\x1b[H""#)]
     #[case::control_character_bell(r#""\x07""#, r#""\x07""#)]
@@ -1142,7 +1130,8 @@ test2
   | let y = if (test):
         test
       else:
-        test2"#
+        test2
+"#
     )]
     #[case::let_with_until_multiline(
         r#"let x = until(condition()):
