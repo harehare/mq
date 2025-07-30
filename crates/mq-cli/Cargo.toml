@@ -23,7 +23,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.14"
 
 [dependencies]
-clap = {version = "4.5.41", features = ["derive"]}
+clap = {version = "4.5.42", features = ["derive"]}
 itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter.workspace = true
