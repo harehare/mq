@@ -177,3 +177,26 @@ impl Display for TokenKind {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(
+        StringSegment::Text("hello".to_string(), Range::default()),
+        "hello"
+    )]
+    #[case(
+        StringSegment::Ident(CompactString::new("world"), Range::default()),
+        "${world}"
+    )]
+    #[case(
+        StringSegment::Text("".to_string(), Range::default()),
+        ""
+    )]
+    #[case(StringSegment::Ident(CompactString::new(""), Range::default()), "${}")]
+    fn string_segment_display_works(#[case] segment: StringSegment, #[case] expected: &str) {
+        assert_eq!(segment.to_string(), expected);
+    }
+}

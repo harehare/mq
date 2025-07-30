@@ -730,6 +730,11 @@ impl<'a> Parser<'a> {
             }
             | Token {
                 range: _,
+                kind: TokenKind::Not,
+                ..
+            }
+            | Token {
+                range: _,
                 kind: TokenKind::Fn,
                 ..
             } => self.parse_expr(leading_trivia, false, false),
@@ -4480,6 +4485,58 @@ mod tests {
         (
             Vec::new(),
             ErrorReporter::with_error(vec![ParseError::ExpectedClosingBracket(Arc::new(token(TokenKind::Eof))), ParseError::UnexpectedToken(Arc::new(token(TokenKind::Eof)))], 100)
+        )
+    )]
+    #[case::call_with_not_ident_arg(
+        vec![
+            Arc::new(token(TokenKind::Ident("foo".into()))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Not)),
+            Arc::new(token(TokenKind::Ident("bar".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Arc::new(token(TokenKind::Ident("foo".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::UnaryOp(UnaryOp::Not),
+                            token: Some(Arc::new(token(TokenKind::Not))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Arc::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Arc::new(token(TokenKind::Ident("bar".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
         )
     )]
     fn test_parse(

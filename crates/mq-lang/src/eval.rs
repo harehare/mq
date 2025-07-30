@@ -3961,13 +3961,84 @@ mod tests {
                 value: "Not a heading".to_string(),
                 position: None
             }), None)],
+            vec![
+                ast_call("decrease_header_level", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
+                value: "Not a heading".to_string(),
+                position: None
+            }), None)]))]
+    #[case::break_in_foreach(
+       vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ])],
+            vec![
+                ast_node(ast::Expr::Foreach(
+                    ast::Ident::new("x"),
+                    ast_node(ast::Expr::Self_),
+                    vec![
+                        ast_node(ast::Expr::If(smallvec![
+                            (
+                                Some(ast_node(ast::Expr::Call(
+                                    ast::Ident::new("eq"),
+                                    smallvec![
+                                        ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                                        ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+                                    ],
+                                    false,
+                                ))),
+                                ast_node(ast::Expr::Break),
+                            ),
+                            (
+                                None,
+                                ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                            ),
+                        ])),
+                    ],
+                )),
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::Number(1.into()),
+            ])])
+        )]
+    #[case::continue_in_foreach(
+        vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ])],
+        vec![
+            ast_node(ast::Expr::Foreach(
+                ast::Ident::new("x"),
+                ast_node(ast::Expr::Self_),
                 vec![
-                    ast_call("decrease_header_level", SmallVec::new())
+                    ast_node(ast::Expr::If(smallvec![
+                        (
+                            Some(ast_node(ast::Expr::Call(
+                                ast::Ident::new("eq"),
+                                smallvec![
+                                    ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                                    ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
+                                ],
+                                false,
+                            ))),
+                            ast_node(ast::Expr::Continue),
+                        ),
+                        (
+                            None,
+                            ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                        ),
+                    ])),
                 ],
-                Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text {
-                    value: "Not a heading".to_string(),
-                    position: None
-                }), None)]))]
+            )),
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(3.into()),
+        ])])
+    )]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

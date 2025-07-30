@@ -4497,6 +4497,28 @@ mod tests {
                     token(TokenKind::Eof)
                 ],
                 Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::break_(
+                    vec![
+                        token(TokenKind::Break),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Break),
+                        })
+                    ]))]
+    #[case::continue_(
+                    vec![
+                        token(TokenKind::Continue),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Continue),
+                        })
+                    ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         assert_eq!(
