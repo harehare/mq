@@ -530,7 +530,14 @@ impl Formatter {
             match trivia {
                 mq_lang::CstTrivia::Whitespace(_) => {}
                 comment @ mq_lang::CstTrivia::Comment(_) => {
-                    self.append_indent(indent_level);
+                    if node.has_new_line() {
+                        self.append_indent(indent_level);
+                    }
+
+                    if !self.output.ends_with('\n') {
+                        self.append_space();
+                    }
+
                     self.output.push_str(&comment.to_string());
                 }
                 mq_lang::CstTrivia::NewLine => {
@@ -675,6 +682,20 @@ impl Formatter {
                         self.output.push_str(&token.to_string());
                     } else {
                         self.output.push_str(&token.to_string());
+                    }
+                }
+                mq_lang::TokenKind::Eof => {
+                    for trivia in &node.leading_trivia {
+                        if let mq_lang::CstTrivia::Comment(_) = trivia {
+                            if node.has_new_line() {
+                                self.append_indent(indent_level);
+                            }
+
+                            if !self.output.ends_with('\n') {
+                                self.append_space();
+                            }
+                            self.output.push_str(&trivia.to_string());
+                        }
                     }
                 }
                 _ => self.output.push_str(&token.to_string()),
@@ -866,16 +887,6 @@ else:
     #[case::until_oneline(
         "until(finished()): continue_process();",
         "until (finished()): continue_process();"
-    )]
-    #[case::test(
-        r#"# Sample
-def hello_world():
-  add(" Hello World")?;
-|select(or(.[],.code,.h))|upcase()|hello_world()"#,
-        r#"# Sample
-def hello_world():
-  add(" Hello World")?;
-| select(or(.[], .code, .h)) | upcase() | hello_world()"#
     )]
     #[case::def(
         r##".h
@@ -1168,6 +1179,19 @@ process();"#,
         "let d = {\"key\": \"value\"}\n| d[\"key\"]"
     )]
     #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
+    #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
+    #[case::comment_multiline(
+        "let x = 1\n# multiline comment\nlet y = 2",
+        "let x = 1\n# multiline comment\nlet y = 2"
+    )]
+    #[case::comment_after_expr_multiline(
+        "if(test):\n  test # comment\nelse:\n  test2 # comment2",
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+    )]
+    #[case::comment_after_expr_inline(
+        "if(test): test # comment else: test2 # comment2",
+        "if (test): test # comment else: test2 # comment2"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

@@ -159,7 +159,18 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Eof,
                     ..
-                } => break,
+                } => {
+                    let trailing_trivia = self.parse_trailing_trivia();
+
+                    nodes.push(Arc::new(Node {
+                        kind: NodeKind::Token,
+                        token: Some(Arc::clone(&token)),
+                        leading_trivia,
+                        trailing_trivia,
+                        children: Vec::new(),
+                    }));
+                    break;
+                }
                 Token {
                     range: _,
                     kind: TokenKind::Pipe,
