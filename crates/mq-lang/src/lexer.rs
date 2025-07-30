@@ -151,7 +151,7 @@ fn hex_escape(input: Span) -> IResult<Span, char> {
 }
 
 fn inline_comment(input: Span) -> IResult<Span, Token> {
-    map(preceded(char('#'), is_not("\n\r|")), |span: Span| {
+    map(preceded(char('#'), is_not("\n\r")), |span: Span| {
         let module_id = span.extra;
         let kind = TokenKind::Comment(span.fragment().to_string());
         Token {
@@ -1002,6 +1002,46 @@ mod tests {
             },
             Token {
                 range: Range { start: Position { line: 1, column: 14 }, end: Position { line: 1, column: 14 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::pipe_with_comment("| \"test\" # comment",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 2 } },
+                kind: TokenKind::Pipe,
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 3 }, end: Position { line: 1, column: 9 } },
+                kind: TokenKind::StringLiteral("test".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 11 }, end: Position { line: 1, column: 19 } },
+                kind: TokenKind::Comment(" comment".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 19 }, end: Position { line: 1, column: 19 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::comment_with_pipe_character("# comment with | pipe",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 22 } },
+                kind: TokenKind::Comment(" comment with | pipe".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 22 }, end: Position { line: 1, column: 22 } },
                 kind: TokenKind::Eof,
                 module_id: 1.into(),
             }
