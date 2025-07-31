@@ -162,13 +162,12 @@ impl<'a> Parser<'a> {
                 } => {
                     if !nodes.is_empty() {
                         self.tokens.next();
-                        let trailing_trivia = self.parse_trailing_trivia();
 
                         nodes.push(Arc::new(Node {
                             kind: NodeKind::Eof,
                             token: Some(Arc::clone(&token)),
                             leading_trivia,
-                            trailing_trivia,
+                            trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }));
                     }
@@ -4473,7 +4472,6 @@ mod tests {
             Arc::new(token(TokenKind::Not)),
             Arc::new(token(TokenKind::Ident("bar".into()))),
             Arc::new(token(TokenKind::RParen)),
-            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
