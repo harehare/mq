@@ -40,7 +40,6 @@
 |`fold`| Reduces an array to a single value by applying a function, starting from an initial value.|`arr`, `init`, `f`|fold(arr, init, f)|
 |`from_date`|Converts a date string to a timestamp.|`date_str`|from_date(date_str)|
 |`get`|Retrieves a value from a dict by its key. Returns None if the key is not found.|`dict`, `key`|get(dict, key)|
-|`get_md_list_level`|Returns the indent level of a markdown list node.|`list`|get_md_list_level(list)|
 |`get_title`|Returns the title of a markdown node.|`node`|get_title(node)|
 |`get_url`|Returns the url of a markdown node.|`node`|get_url(node)|
 |`group_by`| Groups elements of an array by the result of applying a function to each element|`arr`, `f`|group_by(arr, f)|
@@ -71,9 +70,6 @@
 |`is_h_level`| Checks if markdown is a heading of the specified level (1-6)|`md`, `level`|is_h_level(md, level)|
 |`is_html`| Checks if markdown is html|`md`|is_html(md)|
 |`is_list`| Checks if markdown is list|`list`|is_list(list)|
-|`is_list1`| Checks if markdown is list with indentation level 1|`list`|is_list1(list)|
-|`is_list2`| Checks if markdown is list with indentation level 2|`list`|is_list2(list)|
-|`is_list3`| Checks if markdown is list with indentation level 3|`list`|is_list3(list)|
 |`is_markdown`| Checks if input is markdown|`m`|is_markdown(m)|
 |`is_mdx`| Checks if markdown is MDX|`mdx`|is_mdx(mdx)|
 |`is_mdx_flow_expression`| Checks if markdown is MDX Flow Expression|`mdx`|is_mdx_flow_expression(mdx)|
@@ -82,12 +78,6 @@
 |`is_mdx_jsx_text_element`| Checks if markdown is MDX Jsx Text Element|`mdx`|is_mdx_jsx_text_element(mdx)|
 |`is_mdx_text_expression`| Checks if markdown is MDX Text Expression|`mdx`|is_mdx_text_expression(mdx)|
 |`is_none`| Checks if input is None|`n`|is_none(n)|
-|`is_not_h1`| Checks if markdown is not an h1 heading|`md`|is_not_h1(md)|
-|`is_not_h2`| Checks if markdown is not an h2 heading|`md`|is_not_h2(md)|
-|`is_not_h3`| Checks if markdown is not an h3 heading|`md`|is_not_h3(md)|
-|`is_not_h4`| Checks if markdown is not an h4 heading|`md`|is_not_h4(md)|
-|`is_not_h5`| Checks if markdown is not an h5 heading|`md`|is_not_h5(md)|
-|`is_not_h6`| Checks if markdown is not an h6 heading|`md`|is_not_h6(md)|
 |`is_number`| Checks if input is a number|`n`|is_number(n)|
 |`is_string`| Checks if input is a string|`s`|is_string(s)|
 |`is_text`| Checks if markdown is text|`text`|is_text(text)|
@@ -111,7 +101,6 @@
 |`ne`|Checks if two values are not equal.|`value1`, `value2`|ne(value1, value2)|
 |`not`|Performs a logical NOT operation on a boolean value.|`value`|not(value)|
 |`now`|Returns the current timestamp.||now()|
-|`nth`|Gets the element at the specified index in the array or string.|`array_or_string`, `index`|nth(array_or_string, index)|
 |`numbers`| Returns number if input is number, None otherwise|`n`|numbers(n)|
 |`or`|Performs a logical OR operation on two boolean values.|`value1`, `value2`|or(value1, value2)|
 |`pow`|Raises the base to the power of the exponent.|`base`, `exponent`|pow(base, exponent)|
