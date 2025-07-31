@@ -525,27 +525,23 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Continue,
                     ..
                 } if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
-                token @ Token {
-                    range: _,
-                    kind: TokenKind::Break,
-                    ..
-                } => Err(ParseError::UnexpectedToken(Arc::new(token.clone()))),
                 Token {
                     range: _,
                     kind: TokenKind::Continue,
                     ..
                 } if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
-                token @ Token {
-                    range: _,
-                    kind: TokenKind::Continue,
-                    ..
-                } => Err(ParseError::UnexpectedToken(Arc::new(token.clone()))),
                 Token {
                     range: _,
                     kind: TokenKind::Eof,
                     ..
-                } => Err(ParseError::UnexpectedEOFDetected),
-                token => Err(ParseError::UnexpectedToken(Arc::new(token.clone()))),
+                } => {
+                    self.tokens.next();
+                    Err(ParseError::UnexpectedEOFDetected)
+                }
+                token => {
+                    self.tokens.next();
+                    Err(ParseError::UnexpectedToken(Arc::new(token.clone())))
+                }
             }
         } else {
             Err(ParseError::UnexpectedEOFDetected)
@@ -1796,6 +1792,7 @@ mod tests {
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::Equal)),
             Arc::new(token(TokenKind::NumberLiteral(42.into()))),
+            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -1828,6 +1825,13 @@ mod tests {
                         }),
                     ],
                 }),
+                Arc::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Arc::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
             ],
             ErrorReporter::default()
         )
@@ -1844,7 +1848,8 @@ mod tests {
             Arc::new(token(TokenKind::RParen)),
             Arc::new(token(TokenKind::Colon)),
             Arc::new(token(TokenKind::StringLiteral("test".into()))),
-            Arc::new(token(TokenKind::Comma)), // Unexpected token
+            Arc::new(token(TokenKind::Comma)),
+            Arc::new(token(TokenKind::Eof)),
         ],
         (
             vec![
@@ -1903,6 +1908,7 @@ mod tests {
             Arc::new(token(TokenKind::Whitespace(4))),
             Arc::new(token(TokenKind::Ident("x".into()))),
             Arc::new(token(TokenKind::Equal)),
+            Arc::new(token(TokenKind::Eof)),
         ],
         (
             Vec::new(),
