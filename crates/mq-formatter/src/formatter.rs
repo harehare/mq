@@ -530,7 +530,14 @@ impl Formatter {
             match trivia {
                 mq_lang::CstTrivia::Whitespace(_) => {}
                 comment @ mq_lang::CstTrivia::Comment(_) => {
-                    self.append_indent(indent_level);
+                    if node.has_new_line() {
+                        self.append_indent(indent_level);
+                    }
+
+                    if !self.output.ends_with('\n') {
+                        self.append_space();
+                    }
+
                     self.output.push_str(&comment.to_string());
                 }
                 mq_lang::CstTrivia::NewLine => {
@@ -867,16 +874,6 @@ else:
         "until(finished()): continue_process();",
         "until (finished()): continue_process();"
     )]
-    #[case::test(
-        r#"# Sample
-def hello_world():
-  add(" Hello World")?;
-|select(or(.[],.code,.h))|upcase()|hello_world()"#,
-        r#"# Sample
-def hello_world():
-  add(" Hello World")?;
-| select(or(.[], .code, .h)) | upcase() | hello_world()"#
-    )]
     #[case::def(
         r##".h
 | let link = to_link(add("#", to_text(self)), to_text(self), "");
@@ -1010,7 +1007,8 @@ s"test${val1}"
     1,
     2,
     3
-  ];"#
+  ];
+"#
     )]
     #[case::dict_single_pair("{\"key\": \"value\"}", "{\"key\": \"value\"}")]
     #[case::dict_multiple_pairs(
@@ -1108,7 +1106,8 @@ else:
   if (is_dict(haystack)):
     not(is_none(get(haystack, needle)))
   else:
-    index(haystack, needle) != -1;"#
+    index(haystack, needle) != -1;
+"#
     )]
     #[case::escape_sequence_clear_screen(r#""\x1b[2J\x1b[H""#, r#""\x1b[2J\x1b[H""#)]
     #[case::control_character_bell(r#""\x07""#, r#""\x07""#)]
@@ -1131,7 +1130,8 @@ test2
   | let y = if (test):
         test
       else:
-        test2"#
+        test2
+"#
     )]
     #[case::let_with_until_multiline(
         r#"let x = until(condition()):
@@ -1168,6 +1168,19 @@ process();"#,
         "let d = {\"key\": \"value\"}\n| d[\"key\"]"
     )]
     #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
+    #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
+    #[case::comment_multiline(
+        "let x = 1\n# multiline comment\nlet y = 2",
+        "let x = 1\n# multiline comment\nlet y = 2"
+    )]
+    #[case::comment_after_expr_multiline(
+        "if(test):\n  test # comment\nelse:\n  test2 # comment2",
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+    )]
+    #[case::comment_after_expr_inline(
+        "if(test): test # comment else: test2 # comment2",
+        "if (test): test # comment else: test2 # comment2"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

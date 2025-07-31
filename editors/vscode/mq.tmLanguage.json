@@ -35,7 +35,7 @@
             "patterns": [
                 {
                     "name": "comment.line.double-slash.mq",
-                    "match": "#[^|]*$"
+                    "match": "#[^\n]*"
                 }
             ]
         },
