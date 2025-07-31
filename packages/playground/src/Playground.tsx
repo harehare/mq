@@ -629,9 +629,8 @@ export const Playground = () => {
         ],
         multilineString: [
           [/\$\{[^}]*\}/, "variable"],
-          [/[^"$]+/, "string"],
-          [/\$(?!\{)/, "string"],
-          [/\n/, "string"],
+          [/\\./, "string.escape"], // handle escaped characters (including \")
+          [/[^\\"]+/, "string"], // match all except backslash and quote
           [/"/, { token: "string", next: "@pop" }],
         ],
       },
