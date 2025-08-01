@@ -302,6 +302,7 @@ impl Evaluator {
                 .map(|segment| match segment {
                     ast::StringSegment::Text(s) => s.len(),
                     ast::StringSegment::Ident(_) => 32, // Estimated size for variable content
+                    ast::StringSegment::Env(_) => 32,   // Estimated size for environment variable
                     ast::StringSegment::Self_ => 64,    // Estimated size for self reference
                 })
                 .sum();
@@ -317,6 +318,14 @@ impl Evaluator {
                                 let value =
                                     self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
                                 acc.push_str(&value.to_string());
+                            }
+                            ast::StringSegment::Env(env) => {
+                                acc.push_str(&std::env::var(env).map_err(|_| {
+                                    EvalError::EnvNotFound(
+                                        (*self.token_arena.borrow()[node.token_id]).clone(),
+                                        env.clone(),
+                                    )
+                                })?);
                             }
                             ast::StringSegment::Self_ => {
                                 acc.push_str(&runtime_value.to_string());
@@ -4283,6 +4292,164 @@ mod tests {
                 vec![RuntimeValue::String("".to_string())].into_iter()
             ),
             Ok(vec![RuntimeValue::Number(42.into())])
+        );
+    }
+
+    #[rstest]
+    #[case::simple_interpolated_string(
+        vec![RuntimeValue::String("world".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Hello, ".to_string()),
+                ast::StringSegment::Self_,
+                ast::StringSegment::Text("!".to_string()),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Hello, world!".to_string())])
+    )]
+    #[case::interpolated_string_with_number(
+        vec![RuntimeValue::Number(42.into())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("The answer is ".to_string()),
+                ast::StringSegment::Self_,
+                ast::StringSegment::Text(".".to_string()),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("The answer is 42.".to_string())])
+    )]
+    #[case::interpolated_string_with_bool(
+        vec![RuntimeValue::Bool(true)],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Value: ".to_string()),
+                ast::StringSegment::Self_,
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Value: true".to_string())])
+    )]
+    #[case::interpolated_string_with_none(
+        vec![RuntimeValue::NONE],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("None: ".to_string()),
+                ast::StringSegment::Self_,
+            ])),
+        ],
+        Ok(vec![RuntimeValue::NONE])
+    )]
+    #[case::interpolated_string_with_array(
+        vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String("b".to_string()),
+        ])],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Array: ".to_string()),
+                ast::StringSegment::Self_,
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String(r#"Array: ["a", "b"]"#.to_string())])
+    )]
+    #[case::interpolated_string_only_literal(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Just a string".to_string()),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Just a string".to_string())])
+    )]
+    #[case::interpolated_string_empty(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![])),
+        ],
+        Ok(vec![RuntimeValue::String("".to_string())])
+    )]
+    #[case::interpolated_string_with_env_var(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("HOME: ".to_string()),
+                ast::StringSegment::Env("HOME".into()),
+            ])),
+        ],
+        {
+            unsafe { std::env::set_var("HOME", "/home/testuser") };
+            Ok(vec![RuntimeValue::String("HOME: /home/testuser".to_string())])
+        }
+    )]
+    #[case::interpolated_string_with_missing_env_var(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("MISSING: ".to_string()),
+                ast::StringSegment::Env("MQ_TEST_MISSING_ENV".into()),
+            ])),
+        ],
+        {
+            unsafe { std::env::remove_var("MQ_TEST_MISSING_ENV") };
+            Err(EvalError::EnvNotFound(
+                Token {
+                    range: Range::default(),
+                    kind: TokenKind::Eof,
+                    module_id: 1.into(),
+                },
+                "MQ_TEST_MISSING_ENV".into(),
+            ).into())
+        }
+    )]
+    #[case::interpolated_string_env_and_self(
+        vec![RuntimeValue::String("value".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Env("USER".into()),
+                ast::StringSegment::Text(":".to_string()),
+                ast::StringSegment::Self_,
+            ])),
+        ],
+        {
+            unsafe { std::env::set_var("USER", "tester") };
+            Ok(vec![RuntimeValue::String("tester:value".to_string())])
+        }
+    )]
+    #[case::interpolated_string_env_only(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Env("USER".into()),
+            ])),
+        ],
+        {
+            unsafe { std::env::set_var("USER", "tester") };
+            Ok(vec![RuntimeValue::String("tester".to_string())])
+        }
+    )]
+    #[case::interpolated_string_env_and_literal(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("User: ".to_string()),
+                ast::StringSegment::Env("USER".into()),
+                ast::StringSegment::Text("!".to_string()),
+            ])),
+        ],
+        {
+            unsafe { std::env::set_var("USER", "tester") };
+            Ok(vec![RuntimeValue::String("User: tester!".to_string())])
+        }
+    )]
+    fn test_interpolated_string_eval(
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        #[case] runtime_values: Vec<RuntimeValue>,
+        #[case] program: Program,
+        #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
+    ) {
+        assert_eq!(
+            Evaluator::new(ModuleLoader::new(None), token_arena)
+                .eval(&program, runtime_values.into_iter()),
+            expected
         );
     }
 }

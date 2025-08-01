@@ -195,6 +195,7 @@ pub enum Selector {
 pub enum StringSegment {
     Text(String),
     Ident(Ident),
+    Env(CompactString),
     Self_,
 }
 
@@ -203,6 +204,9 @@ impl From<&lexer::token::StringSegment> for StringSegment {
         match segment {
             lexer::token::StringSegment::Text(text, _) => StringSegment::Text(text.to_owned()),
             lexer::token::StringSegment::Ident(ident, _) if ident == "self" => StringSegment::Self_,
+            lexer::token::StringSegment::Ident(ident, _) if ident.starts_with("$") => {
+                StringSegment::Env(CompactString::from(&ident[1..]))
+            }
             lexer::token::StringSegment::Ident(ident, _) => StringSegment::Ident(Ident::new(ident)),
         }
     }
@@ -215,6 +219,17 @@ pub enum Literal {
     Number(Number),
     Bool(bool),
     None,
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Literal::String(s) => write!(f, "{}", s),
+            Literal::Number(n) => write!(f, "{}", n),
+            Literal::Bool(b) => write!(f, "{}", b),
+            Literal::None => write!(f, "none"),
+        }
+    }
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]

@@ -216,6 +216,17 @@ impl Optimizer {
             ast::Expr::Paren(expr) => {
                 self.optimize_node(expr);
             }
+            ast::Expr::InterpolatedString(segments) => {
+                for segment in segments.iter_mut() {
+                    if let ast::StringSegment::Ident(ident) = segment {
+                        if let Some(expr) = self.constant_table.get(ident) {
+                            if let ast::Expr::Literal(lit) = &**expr {
+                                *segment = ast::StringSegment::Text(lit.to_string());
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -648,6 +659,160 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Literal(Literal::String("cba".to_string()))),
+            }),
+        ]
+    )]
+    #[case::constant_folding_interpolated_string_ident(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("name"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                    ast::StringSegment::Text("Hello, ".to_string()),
+                    ast::StringSegment::Ident(Ident::new("name")),
+                    ast::StringSegment::Text("!".to_string()),
+                ])),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("name"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                    ast::StringSegment::Text("Hello, ".to_string()),
+                    ast::StringSegment::Text("Alice".to_string()),
+                    ast::StringSegment::Text("!".to_string()),
+                ])),
+            }),
+        ]
+    )]
+    #[case::constant_folding_interpolated_string_multiple_idents(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("first"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("last"),
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                    ast::StringSegment::Text("Name: ".to_string()),
+                    ast::StringSegment::Ident(Ident::new("first")),
+                    ast::StringSegment::Text(" ".to_string()),
+                    ast::StringSegment::Ident(Ident::new("last")),
+                ])),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("first"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("last"),
+                    Rc::new(Node {
+                        token_id: 3.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 4.into(),
+                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                    ast::StringSegment::Text("Name: ".to_string()),
+                    ast::StringSegment::Text("Bob".to_string()),
+                    ast::StringSegment::Text(" ".to_string()),
+                    ast::StringSegment::Text("Smith".to_string()),
+                ])),
+            }),
+        ]
+    )]
+    #[case::constant_folding_interpolated_string_ident_non_const(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("dynamic"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("some_func"),
+                            smallvec![],
+                            false,
+                        )),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                    ast::StringSegment::Text("Value: ".to_string()),
+                    ast::StringSegment::Ident(Ident::new("dynamic")),
+                ])),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("dynamic"),
+                    Rc::new(Node {
+                        token_id: 1.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("some_func"),
+                            smallvec![],
+                            false,
+                        )),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                    ast::StringSegment::Text("Value: ".to_string()),
+                    ast::StringSegment::Ident(Ident::new("dynamic")),
+                ])),
             }),
         ]
     )]
