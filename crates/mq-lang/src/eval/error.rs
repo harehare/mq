@@ -47,4 +47,6 @@ pub enum EvalError {
     Break(ErrorToken),
     #[error("Unexpected token continue")]
     Continue(ErrorToken),
+    #[error("Not found env `{1}`")]
+    EnvNotFound(Token, CompactString),
 }
