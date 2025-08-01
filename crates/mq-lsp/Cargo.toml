@@ -20,7 +20,7 @@ mq-formatter.workspace = true
 mq-hir.workspace = true
 mq-lang = {workspace = true, features = ["ast-json"]}
 mq-markdown.workspace = true
-serde_json = "1.0.141"
+serde_json = "1.0.142"
 tokio = {version = "1.47", features = ["macros", "io-std", "rt-multi-thread"]}
 tokio-macros = "2.5.0"
 tower-lsp = "0.20.0"
