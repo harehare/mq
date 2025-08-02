@@ -1,4 +1,4 @@
-# Halts execution with error code 5
+ # Halts execution with error code 5
 def halt_error(): halt(5);
 
 # Checks if input is an array
@@ -84,9 +84,9 @@ def map(v, f):
       let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
 
   | if (is_dict(v)):
-    map_dict(v, f)
-  else:
-    foreach (x, v): f(x);
+      map_dict(v, f)
+    else:
+      foreach (x, v): f(x);
 end
 
 # Filters the elements of an array based on a provided callback function.
@@ -95,12 +95,12 @@ def filter(v, f):
       let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
 
   | let _filter = fn(v, f):
-      foreach (x, v): select(x, f(x)); | compact();
+        foreach (x, v): select(x, f(x)); | compact();
 
   | if (is_dict(v)):
-    filter_dict(v, f)
-  else:
-    _filter(v, f)
+      filter_dict(v, f)
+    else:
+      _filter(v, f)
 end
 
 # Returns the first element of an array
@@ -292,41 +292,41 @@ def find_index(arr, f):
         _find_index_impl(arr, f, idx + 1);
 
   | if (not(is_array(arr))):
-    error("first argument must be an array")
-  else:
-    _find_index_impl(arr, f, 0)
+      error("first argument must be an array")
+    else:
+      _find_index_impl(arr, f, 0)
 end
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
   let i = 0
   | let si =
-  if (not(is_array(arr))):
-    error("first argument must be an array")
-  elif (is_empty(arr)):
-    0
-  else:
-    until (and(i < len(arr), f(get(arr, i)))):
-      let i = i + 1 | i;
+    if (not(is_array(arr))):
+      error("first argument must be an array")
+    elif (is_empty(arr)):
+      0
+    else:
+      until (and(i < len(arr), f(get(arr, i)))):
+        let i = i + 1 | i;
   | if (is_none(si)): []
-  else:
-    slice(arr, si, len(arr))
+    else:
+      slice(arr, si, len(arr))
 end
 
 # Takes elements from the beginning of an array while the provided function returns true
 def take_while(arr, f):
   let i = 0
   | let ti =
-  if (not(is_array(arr))):
-    error("first argument must be an array")
-  elif (is_empty(arr)):
-    0
-  else:
-    until (and(i < len(arr), f(get(arr, i)))):
-      let i = i + 1 | i;
+    if (not(is_array(arr))):
+      error("first argument must be an array")
+    elif (is_empty(arr)):
+      0
+    else:
+      until (and(i < len(arr), f(get(arr, i)))):
+        let i = i + 1 | i;
   | if (is_none(ti)): []
-  else:
-    slice(arr, 0, ti)
+    else:
+      slice(arr, 0, ti)
 end
 
 # Groups elements of an array by the result of applying a function to each element
@@ -334,19 +334,19 @@ def group_by(arr, f):
   let i = 0
   | let groups = dict()
   | if (not(is_array(arr))):
-    error("first argument must be an array")
-  elif (is_empty(arr)):
-    dict()
-  else:
-    until (not(is_none(get(arr, i)))):
-      let v = get(arr, i)
-      | let i = i + 1
-      | let key = to_string(f(v))
-      | let existing = get(groups, key)
-      | let new_group = if (is_none(existing)): [v] else: existing + v
-      | let groups = set(groups, key, new_group)
-      | groups
-    end
+      error("first argument must be an array")
+    elif (is_empty(arr)):
+      dict()
+    else:
+      until (not(is_none(get(arr, i)))):
+        let v = get(arr, i)
+        | let i = i + 1
+        | let key = to_string(f(v))
+        | let existing = get(groups, key)
+        | let new_group = if (is_none(existing)): [v] else: existing + v
+        | let groups = set(groups, key, new_group)
+        | groups
+      end
 end
 
 # Returns true if any element in the array satisfies the provided function.
@@ -377,15 +377,15 @@ def fold(arr, init, f):
   let acc = init
   | let i = 0
   | if (not(is_array(arr))):
-    error("first argument must be an array")
-  elif (is_empty(arr)):
-    init
-  else:
-    until (i != len(arr)):
-      let acc = f(acc, get(arr, i))
-      | let i = i + 1
-      | acc
-    end
+      error("first argument must be an array")
+    elif (is_empty(arr)):
+      init
+    else:
+      until (i != len(arr)):
+        let acc = f(acc, get(arr, i))
+        | let i = i + 1
+        | acc
+      end
 end
 
 # Returns a new array with duplicate elements removed, comparing by the result of the provided function.
@@ -394,18 +394,18 @@ def unique_by(arr, f):
   | let result = []
   | let i = 0
   | if (not(is_array(arr))):
-    error("first argument must be an array")
-  elif (is_empty(arr)): []
-  else:
-    until (i != len(arr)):
-      let item = get(arr, i)
-      | let key = to_string(f(item))
-      | let already_seen = get(seen, key)
-      | let result = if (is_none(already_seen)): result + item else: result
-      | let seen = if (is_none(already_seen)): set(seen, key, true) else: seen
-      | let i = i + 1
-      | result
-    end
+      error("first argument must be an array")
+    elif (is_empty(arr)): []
+    else:
+      until (i != len(arr)):
+        let item = get(arr, i)
+        | let key = to_string(f(item))
+        | let already_seen = get(seen, key)
+        | let result = if (is_none(already_seen)): result + item else: result
+        | let seen = if (is_none(already_seen)): set(seen, key, true) else: seen
+        | let i = i + 1
+        | result
+      end
 end
 
 # Returns the input value unchanged.
