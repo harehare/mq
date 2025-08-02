@@ -152,6 +152,7 @@ pub struct Crawler {
     crawl_delay: Duration,
     custom_robots_path: Option<String>, // Store custom robots path
     concurrency: usize,
+    depth_limit: Option<usize>, // Maximum crawl depth (None for unlimited)
     format: OutputFormat,
     http_client: HttpClient,
     initial_domain: String, // To keep crawls within the starting domain
@@ -159,7 +160,7 @@ pub struct Crawler {
     output_path: Option<String>,
     result: Arc<RwLock<CrawlResult>>,
     robots_cache: Arc<DashMap<String, Arc<RobotsTxt>>>,
-    to_visit: Arc<SegQueue<Url>>,
+    to_visit: Arc<SegQueue<(Url, usize)>>, // URL with its depth
     user_agent: String,
     visited: Arc<DashSet<Url>>,
 }
@@ -176,6 +177,7 @@ impl Crawler {
         concurrency: usize,
         format: OutputFormat,
         conversion_options: mq_markdown::ConversionOptions,
+        depth_limit: Option<usize>, // Maximum crawl depth
     ) -> Result<Self, String> {
         let initial_domain = start_url
             .domain()
@@ -184,7 +186,7 @@ impl Crawler {
         let user_agent = format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE"));
 
         let to_visit = SegQueue::new();
-        to_visit.push(start_url.clone());
+        to_visit.push((start_url.clone(), 0)); // Start with depth 0
 
         Ok(Self {
             http_client,
@@ -201,6 +203,7 @@ impl Crawler {
             concurrency: concurrency.max(1),
             format,
             conversion_options,
+            depth_limit,
         })
     }
 
@@ -279,8 +282,8 @@ impl Crawler {
             let mut urls_to_process = Vec::with_capacity(self.concurrency);
 
             while urls_to_process.len() < self.concurrency {
-                if let Some(url) = self.to_visit.pop() {
-                    urls_to_process.push(url);
+                if let Some((url, depth)) = self.to_visit.pop() {
+                    urls_to_process.push((url, depth));
                 } else {
                     break;
                 }
@@ -293,20 +296,20 @@ impl Crawler {
             // Filter out URLs that should be skipped and mark as visited atomically
             let mut valid_urls = Vec::with_capacity(self.concurrency);
 
-            for url in urls_to_process {
+            for (url, depth) in urls_to_process {
                 if !self.should_skip_url_without_visited_check(&url)
                     && self.visited.insert(url.clone())
                 {
-                    valid_urls.push(url);
+                    valid_urls.push((url, depth));
                 }
             }
 
             let futures = valid_urls
                 .into_iter()
-                .map(|url| {
+                .map(|(url, depth)| {
                     let crawler = self.clone();
                     tokio::task::spawn(async move {
-                        crawler.process_url(url).await;
+                        crawler.process_url(url, depth).await;
                         // Apply crawl delay after processing batch
                         sleep(crawler.crawl_delay).await;
                     })
@@ -333,8 +336,8 @@ impl Crawler {
         false
     }
 
-    async fn process_url(&self, current_url: Url) {
-        tracing::info!("Processing URL: {}", current_url);
+    async fn process_url(&self, current_url: Url, current_depth: usize) {
+        tracing::info!("Processing URL: {} (depth: {})", current_url, current_depth);
 
         // URL is already marked as visited in run_parallel, no need to check again
         let robots_rules = match self.get_or_fetch_robots(&current_url).await {
@@ -399,11 +402,13 @@ impl Crawler {
                         }
 
                         {
+                            let next_depth = current_depth + 1;
                             for link in new_links {
                                 if !self.visited.contains(&link)
                                     && link.domain().is_some_and(|d| d == self.initial_domain)
+                                    && self.depth_limit.is_none_or(|limit| next_depth <= limit)
                                 {
-                                    self.to_visit.push(link);
+                                    self.to_visit.push((link, next_depth));
                                 }
                             }
                         }
@@ -672,5 +677,49 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(result.duration(), None);
+    }
+
+    #[tokio::test]
+    async fn test_crawler_new_with_depth_limit() {
+        let start_url = Url::parse("http://example.com").unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        let crawler = Crawler::new(
+            http_client,
+            start_url,
+            1.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            Some(2),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(crawler.depth_limit, Some(2));
+    }
+
+    #[tokio::test]
+    async fn test_crawler_new_with_unlimited_depth() {
+        let start_url = Url::parse("http://example.com").unwrap();
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        let crawler = Crawler::new(
+            http_client,
+            start_url,
+            1.0,
+            None,
+            None,
+            None,
+            1,
+            OutputFormat::Text,
+            mq_markdown::ConversionOptions::default(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(crawler.depth_limit, None);
     }
 }

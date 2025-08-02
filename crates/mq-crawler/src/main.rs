@@ -30,6 +30,10 @@ struct CliArgs {
     /// Number of concurrent workers for parallel processing.
     #[clap(short = 'c', long, default_value_t = 1)]
     concurrency: usize,
+    /// Maximum crawl depth. 0 means only the specified URL, 1 means specified URL and its direct links, etc.
+    /// If not specified, crawling depth is unlimited.
+    #[clap(long)]
+    depth: Option<usize>,
     /// Timeout (in seconds) for implicit waits (element finding).
     #[clap(long, default_value_t = 5.0)]
     implicit_timeout: f64,
@@ -136,6 +140,7 @@ async fn main() {
             generate_front_matter: args.conversion.generate_front_matter,
             use_title_as_h1: args.conversion.use_title_as_h1,
         },
+        args.depth,
     )
     .await
     {
