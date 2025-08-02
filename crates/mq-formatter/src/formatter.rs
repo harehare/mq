@@ -410,13 +410,19 @@ impl Formatter {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
+        let current_line_indent = if indent_level == 0 {
+            self.current_line_indent()
+        } else {
+            indent_level
+        };
+
         node.children.iter().for_each(|child| {
             self.format_node(
                 Arc::clone(child),
                 if child.has_new_line() {
-                    indent_level + 1
+                    current_line_indent + 1
                 } else {
-                    indent_level
+                    current_line_indent
                 },
             );
         });
@@ -699,6 +705,14 @@ impl Formatter {
 
     fn is_prev_pipe(&self) -> bool {
         self.output.ends_with("| ")
+    }
+
+    pub fn current_line_indent(&self) -> usize {
+        if let Some(last_line) = self.output.lines().last() {
+            last_line.chars().take_while(|c| *c == ' ').count()
+        } else {
+            0
+        }
     }
 
     pub fn is_last_line_pipe(&self) -> bool {
@@ -1180,6 +1194,20 @@ process();"#,
     #[case::comment_after_expr_inline(
         "if(test): test # comment else: test2 # comment2",
         "if (test): test # comment else: test2 # comment2"
+    )]
+    #[case::fn_as_call_arg_single_line("map(fn(): program;)", "map(fn(): program;)")]
+    #[case::fn_as_call_arg_multi_line(
+        "map(\n  fn(arg):\n    process(arg);\n)",
+        "map(\n  fn(arg):\n    process(arg);\n)"
+    )]
+    #[case::fn_as_call_arg_with_other_args(
+        "map(fn(): program;, 1, \"test\")",
+        "map(fn(): program;, 1, \"test\")"
+    )]
+    #[case::nested_fn_as_call_arg("outer(map(fn(): inner();))", "outer(map(fn(): inner();))")]
+    #[case::fn_as_call_arg_with_multiline_args(
+        "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)",
+        "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
