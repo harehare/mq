@@ -1,4 +1,4 @@
- # Halts execution with error code 5
+# Halts execution with error code 5
 def halt_error(): halt(5);
 
 # Checks if input is an array

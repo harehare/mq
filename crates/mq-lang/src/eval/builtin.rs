@@ -645,15 +645,28 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Number(start),
                     RuntimeValue::Number(end),
                 ] => {
-                    let start = start.value() as usize;
-                    let end = end.value() as usize;
+                    let chars: Vec<char> = s.chars().collect();
+                    let len = chars.len();
+                    let start = start.value() as isize;
+                    let end = end.value() as isize;
 
-                    let sub: String = s
-                        .chars()
-                        .skip(start)
-                        .take(end.saturating_sub(start))
-                        .collect();
+                    let real_start = if start < 0 {
+                        (len as isize + start).max(0) as usize
+                    } else {
+                        (start as usize).min(len)
+                    };
 
+                    let real_end = if end < 0 {
+                        (len as isize + end).max(0) as usize
+                    } else {
+                        (end as usize).min(len)
+                    };
+
+                    if real_start >= len || real_end <= real_start {
+                        return Ok("".into());
+                    }
+
+                    let sub: String = chars[real_start..real_end].iter().collect();
                     Ok(sub.into())
                 }
                 [
@@ -661,16 +674,26 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     RuntimeValue::Number(start),
                     RuntimeValue::Number(end),
                 ] => {
-                    let start = start.value() as usize;
-                    let end = end.value() as usize;
+                    let len = arrays.len();
+                    let start = start.value() as isize;
+                    let end = end.value() as isize;
 
-                    if start >= arrays.len() {
+                    let real_start = if start < 0 {
+                        (len as isize + start).max(0) as usize
+                    } else {
+                        (start as usize).min(len)
+                    };
+                    let real_end = if end < 0 {
+                        (len as isize + end).max(0) as usize
+                    } else {
+                        (end as usize).min(len)
+                    };
+
+                    if real_start >= len || real_end <= real_start {
                         return Ok(RuntimeValue::EMPTY_ARRAY);
                     }
 
-                    let actual_end = std::cmp::min(end, arrays.len());
-
-                    Ok(RuntimeValue::Array(arrays[start..actual_end].to_vec()))
+                    Ok(RuntimeValue::Array(arrays[real_start..real_end].to_vec()))
                 }
                 [
                     node @ RuntimeValue::Markdown(_, _),
@@ -679,15 +702,27 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 ] => node
                     .markdown_node()
                     .map(|md| {
-                        let start = start.value() as usize;
-                        let end = end.value() as usize;
-                        let sub: String = md
-                            .value()
-                            .chars()
-                            .skip(start)
-                            .take(end.saturating_sub(start))
-                            .collect();
+                        let chars: Vec<char> = md.value().chars().collect();
+                        let len = chars.len();
+                        let start = start.value() as isize;
+                        let end = end.value() as isize;
 
+                        let real_start = if start < 0 {
+                            (len as isize + start).max(0) as usize
+                        } else {
+                            (start as usize).min(len)
+                        };
+                        let real_end = if end < 0 {
+                            (len as isize + end).max(0) as usize
+                        } else {
+                            (end as usize).min(len)
+                        };
+
+                        if real_start >= len || real_end <= real_start {
+                            return Ok(node.update_markdown_value(""));
+                        }
+
+                        let sub: String = chars[real_start..real_end].iter().collect();
                         Ok(node.update_markdown_value(&sub))
                     })
                     .unwrap_or_else(|| Ok(RuntimeValue::NONE)),

@@ -4135,6 +4135,81 @@ mod tests {
             ast_call("upcase", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::NONE]))]
+    #[case::slice_array_negative_start_index(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item5".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-2).into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item4".to_string()),
+        ])]))]
+    #[case::slice_array_negative_end_index(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item5".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item4".to_string()),
+        ])]))]
+    #[case::slice_array_both_negative_indices(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item5".to_string()),
+        ])],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-4).into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-2).into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item3".to_string()),
+        ])]))]
+    #[case::slice_string_negative_start_index(vec![RuntimeValue::String("abcdef".to_string())],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-3).into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number(6.into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::String("def".to_string())]))]
+    #[case::slice_string_negative_end_index(vec![RuntimeValue::String("abcdef".to_string())],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::String("bcde".to_string())]))]
+    #[case::slice_string_both_negative_indices(vec![RuntimeValue::String("abcdef".to_string())],
+       vec![
+            ast_call("slice", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-5).into()))),
+                ast_node(ast::Expr::Literal(ast::Literal::Number((-2).into()))),
+            ])
+       ],
+       Ok(vec![RuntimeValue::String("bcd".to_string())]))]
     #[case::to_code(vec![RuntimeValue::NONE],
         vec![
               ast_call("to_code", smallvec![
