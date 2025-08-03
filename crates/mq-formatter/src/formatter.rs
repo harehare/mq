@@ -540,7 +540,7 @@ impl Formatter {
                         self.append_indent(indent_level);
                     }
 
-                    if !self.output.ends_with('\n') {
+                    if !self.output.is_empty() && !self.output.ends_with('\n') {
                         self.append_space();
                     }
 
@@ -1182,6 +1182,7 @@ process();"#,
         "let d = {\"key\": \"value\"}\n| d[\"key\"]"
     )]
     #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
+    #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1")]
     #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline(
         "let x = 1\n# multiline comment\nlet y = 2",
@@ -1209,6 +1210,7 @@ process();"#,
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)",
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)"
     )]
+
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
