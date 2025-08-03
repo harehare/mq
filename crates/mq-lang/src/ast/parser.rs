@@ -859,6 +859,11 @@ impl<'a> Parser<'a> {
         let mut nodes = Vec::with_capacity(8);
 
         while let Some(token) = self.tokens.peek() {
+            if matches!(token.kind, TokenKind::Comment(_)) {
+                self.tokens.next();
+                continue;
+            }
+
             if !matches!(token.kind, TokenKind::Elif) {
                 break;
             }
@@ -4519,17 +4524,159 @@ mod tests {
                             expr: Rc::new(Expr::Continue),
                         })
                     ]))]
+    #[case::if_with_comment_before_elif(
+                        vec![
+                            token(TokenKind::If),
+                            token(TokenKind::LParen),
+                            token(TokenKind::BoolLiteral(true)),
+                            token(TokenKind::RParen),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("true branch".to_owned())),
+                            token(TokenKind::Comment("comment before elif".to_owned())),
+                            token(TokenKind::Elif),
+                            token(TokenKind::LParen),
+                            token(TokenKind::BoolLiteral(false)),
+                            token(TokenKind::RParen),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("elif branch".to_owned())),
+                            token(TokenKind::Else),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("else branch".to_owned())),
+                            token(TokenKind::Eof)
+                        ],
+                        Ok(vec![
+                            Rc::new(Node {
+                                token_id: 11.into(),
+                                expr: Rc::new(Expr::If(smallvec![
+                                    (
+                                        Some(Rc::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                                        })),
+                                        Rc::new(Node {
+                                            token_id: 3.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                        })
+                                    ),
+                                    (
+                                        Some(Rc::new(Node {
+                                            token_id: 5.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+
+                                        })),
+                                        Rc::new(Node {
+                                            token_id: 7.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("elif branch".to_owned()))),
+                                        })
+                                    ),
+                                    (
+                                        None,
+                                        Rc::new(Node {
+                                            token_id: 10.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("else branch".to_owned()))),
+                                        })
+                                    )
+                                ])),
+                            })
+                        ])
+                    )]
+    #[rstest]
+    #[case::if_with_multiple_comments_and_elifs(
+                        vec![
+                            token(TokenKind::If),
+                            token(TokenKind::LParen),
+                            token(TokenKind::BoolLiteral(true)),
+                            token(TokenKind::RParen),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("true branch".to_owned())),
+                            token(TokenKind::Comment("first comment".to_owned())),
+                            token(TokenKind::Elif),
+                            token(TokenKind::LParen),
+                            token(TokenKind::BoolLiteral(false)),
+                            token(TokenKind::RParen),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("first elif branch".to_owned())),
+                            token(TokenKind::Comment("second comment".to_owned())),
+                            token(TokenKind::Elif),
+                            token(TokenKind::LParen),
+                            token(TokenKind::BoolLiteral(true)),
+                            token(TokenKind::RParen),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("second elif branch".to_owned())),
+                            token(TokenKind::Else),
+                            token(TokenKind::Colon),
+                            token(TokenKind::StringLiteral("else branch".to_owned())),
+                            token(TokenKind::Eof)
+                        ],
+                        Ok(vec![
+                            Rc::new(Node {
+                                token_id: 15.into(),
+                                expr: Rc::new(Expr::If(smallvec![
+                                    (
+                                        Some(Rc::new(Node {
+                                            token_id: 1.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                                        })),
+                                        Rc::new(Node {
+                                            token_id: 3.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                        })
+                                    ),
+                                    (
+                                        Some(Rc::new(Node {
+                                            token_id: 5.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+                                        })),
+                                        Rc::new(Node {
+                                            token_id: 7.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("first elif branch".to_owned()))),
+                                        })
+                                    ),
+                                    (
+                                        Some(Rc::new(Node {
+                                            token_id: 9.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+                                        })),
+                                        Rc::new(Node {
+                                            token_id: 11.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("second elif branch".to_owned()))),
+                                        })
+                                    ),
+                                    (
+                                        None,
+                                        Rc::new(Node {
+                                            token_id: 14.into(),
+                                            expr: Rc::new(Expr::Literal(Literal::String("else branch".to_owned()))),
+                                        })
+                                    )
+                                ])),
+                            })
+                        ])
+                    )]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
-        assert_eq!(
-            Parser::new(
-                input.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
-                Rc::new(RefCell::new(arena)),
-                Module::TOP_LEVEL_MODULE_ID
-            )
-            .parse(),
-            expected
-        );
+        let tokens: Vec<Rc<Token>> = input.into_iter().map(Rc::new).collect();
+        let result = Parser::new(
+            tokens.iter(),
+            Rc::new(RefCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+
+        match (&result, &expected) {
+            (Ok(actual), Ok(expected)) => {
+                assert_eq!(actual.len(), expected.len());
+                let actual_exprs: Vec<_> = actual.iter().map(|a| &*a.expr).collect();
+                let expected_exprs: Vec<_> = expected.iter().map(|e| &*e.expr).collect();
+                assert_eq!(actual_exprs, expected_exprs);
+            }
+            (Err(actual), Err(expected)) => {
+                assert_eq!(actual, expected);
+            }
+            _ => {
+                panic!("Mismatch: actual = {:?}, expected = {:?}", result, expected)
+            }
+        }
     }
 
     #[rstest]
