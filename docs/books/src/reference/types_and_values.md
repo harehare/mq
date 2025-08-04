@@ -41,6 +41,32 @@ get(arr, 0)    # Same as arr[0]
 arr | get(2)    # Same as arr[2]
 ```
 
+### Array Slice Access
+
+Arrays support slice notation to extract subarrays using the `arr[start:end]` syntax:
+
+```mq
+let arr = [1, 2, 3, 4, 5]
+
+arr[1:4]    # Returns [2, 3, 4] (elements from index 1 to 3)
+arr[0:3]    # Returns [1, 2, 3] (first three elements)
+arr[2:5]    # Returns [3, 4, 5] (elements from index 2 to end)
+```
+
+Slice indices work as follows:
+- `start`: The starting index (inclusive)
+- `end`: The ending index (exclusive)
+- Both indices are zero-based
+- If `start` or `end` is out of bounds, it will be clamped to valid range
+
+```mq
+let arr = [1, 2, 3, 4, 5]
+
+arr[0:2]    # Returns [1, 2]
+arr[3:10]   # Returns [4, 5] (end index clamped to array length)
+arr[2:2]    # Returns [] (empty slice when start equals end)
+```
+
 ### Dictionary Key Access
 
 Dictionaries can be accessed using square bracket notation with keys:
