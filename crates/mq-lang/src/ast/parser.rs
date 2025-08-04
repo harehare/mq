@@ -476,6 +476,7 @@ impl<'a> Parser<'a> {
             token_kind,
             Some(TokenKind::And)
                 | Some(TokenKind::Asterisk)
+                | Some(TokenKind::Colon)
                 | Some(TokenKind::Comma)
                 | Some(TokenKind::Comment(_))
                 | Some(TokenKind::Eof)
@@ -577,52 +578,105 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(TokenKind::LBracket) => {
-                // Parse bracket access: ident[key] -> get(ident, key)
                 let _ = self.tokens.next(); // consume '['
 
-                // Parse the key expression
-                let key_token = match self.tokens.next() {
+                // Parse the first expression
+                let first_token = match self.tokens.next() {
                     Some(t) => t,
                     None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
                 };
 
-                let key_node = self.parse_expr(Rc::clone(key_token))?;
+                let first_node = self.parse_expr(Rc::clone(first_token))?;
 
-                // Expect closing bracket
-                match self.tokens.peek() {
-                    Some(token) if matches!(token.kind, TokenKind::RBracket) => {
-                        let _ = self.tokens.next(); // consume ']'
+                // Check if this is a slice operation (contains ':')
+                let is_slice = matches!(self.tokens.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
+
+                if is_slice {
+                    // Consume the colon
+                    let _ = self.tokens.next();
+
+                    // Parse the second expression (end index)
+                    let second_token = match self.tokens.next() {
+                        Some(t) => t,
+                        None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                    };
+
+                    let second_node = self.parse_expr(Rc::clone(second_token))?;
+
+                    // Expect closing bracket
+                    match self.tokens.peek() {
+                        Some(token) if matches!(token.kind, TokenKind::RBracket) => {
+                            let _ = self.tokens.next(); // consume ']'
+                        }
+                        Some(token) => {
+                            return Err(ParseError::ExpectedClosingBracket((***token).clone()));
+                        }
+                        None => {
+                            return Err(ParseError::ExpectedClosingBracket(Token {
+                                range: self.token_arena.borrow()
+                                    [self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token))]
+                                .range
+                                .clone(),
+                                kind: TokenKind::Eof,
+                                module_id: self.module_id,
+                            }));
+                        }
                     }
-                    Some(token) => {
-                        return Err(ParseError::ExpectedClosingBracket((***token).clone()));
+
+                    let ident_node = Rc::new(Node {
+                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
+                        expr: Rc::new(Expr::Ident(Ident::new_with_token(
+                            ident,
+                            Some(Rc::clone(&ident_token)),
+                        ))),
+                    });
+
+                    Ok(Rc::new(Node {
+                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("slice", Some(Rc::clone(&ident_token))),
+                            smallvec![ident_node, first_node, second_node],
+                            false,
+                        )),
+                    }))
+                } else {
+                    // Expect closing bracket
+                    match self.tokens.peek() {
+                        Some(token) if matches!(token.kind, TokenKind::RBracket) => {
+                            let _ = self.tokens.next(); // consume ']'
+                        }
+                        Some(token) => {
+                            return Err(ParseError::ExpectedClosingBracket((***token).clone()));
+                        }
+                        None => {
+                            return Err(ParseError::ExpectedClosingBracket(Token {
+                                range: self.token_arena.borrow()
+                                    [self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token))]
+                                .range
+                                .clone(),
+                                kind: TokenKind::Eof,
+                                module_id: self.module_id,
+                            }));
+                        }
                     }
-                    None => {
-                        return Err(ParseError::ExpectedClosingBracket(Token {
-                            range: self.token_arena.borrow()
-                                [self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token))]
-                            .range
-                            .clone(),
-                            kind: TokenKind::Eof,
-                            module_id: self.module_id,
-                        }));
-                    }
+
+                    let ident_node = Rc::new(Node {
+                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
+                        expr: Rc::new(Expr::Ident(Ident::new_with_token(
+                            ident,
+                            Some(Rc::clone(&ident_token)),
+                        ))),
+                    });
+
+                    Ok(Rc::new(Node {
+                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("get", Some(Rc::clone(&ident_token))),
+                            smallvec![ident_node, first_node],
+                            false,
+                        )),
+                    }))
                 }
-
-                // Create get(ident, key) function call
-                let get_ident = Ident::new_with_token("get", Some(Rc::clone(&ident_token)));
-                let ident_node = Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
-                    expr: Rc::new(Expr::Ident(Ident::new_with_token(
-                        ident,
-                        Some(Rc::clone(&ident_token)),
-                    ))),
-                });
-                let args = smallvec![ident_node, key_node];
-
-                Ok(Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
-                    expr: Rc::new(Expr::Call(get_ident, args, false)),
-                }))
             }
             token if Self::is_next_token_allowed(token) => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
@@ -4310,7 +4364,7 @@ mod tests {
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::UnexpectedToken(token(TokenKind::Colon)))
+                Err(ParseError::ExpectedClosingParen(token(TokenKind::Colon)))
             )]
     #[case::args_leading_comma(
                 vec![
@@ -4496,6 +4550,72 @@ mod tests {
                     token(TokenKind::Eof)
                 ],
                 Err(ParseError::ExpectedClosingBracket(token(TokenKind::Eof))))]
+    #[case::slice_access_with_numbers(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("arr"))),
+                    token(TokenKind::LBracket),
+                    token(TokenKind::NumberLiteral(1.into())),
+                    token(TokenKind::Colon),
+                    token(TokenKind::NumberLiteral(3.into())),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 5.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("slice", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("arr", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::slice_access_with_variables(
+                vec![
+                    token(TokenKind::Ident(CompactString::new("items"))),
+                    token(TokenKind::LBracket),
+                    token(TokenKind::Ident(CompactString::new("start"))),
+                    token(TokenKind::Colon),
+                    token(TokenKind::Ident(CompactString::new("end"))),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 5.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("slice", Some(Rc::new(token(TokenKind::Ident(CompactString::new("items")))))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("items", Some(Rc::new(token(TokenKind::Ident(CompactString::new("items")))))))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("start", Some(Rc::new(token(TokenKind::Ident(CompactString::new("start")))))))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(CompactString::new("end")))))))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
     #[case::not_error_missing_rhs(
                 vec![
                     token(TokenKind::Not),
