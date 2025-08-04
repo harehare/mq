@@ -3,6 +3,10 @@ name: Publish npm package
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -25,5 +29,3 @@ jobs:
       - name: Publish to npm
         working-directory: packages/mq-web
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
