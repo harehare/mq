@@ -91,6 +91,7 @@ pub enum NodeKind {
     Eof,
     Fn,
     Foreach,
+    Group,
     Ident,
     If,
     Include,

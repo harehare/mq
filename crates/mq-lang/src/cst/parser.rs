@@ -502,6 +502,11 @@ impl<'a> Parser<'a> {
                 } => self.parse_dict(leading_trivia),
                 Token {
                     range: _,
+                    kind: TokenKind::LParen,
+                    ..
+                } => self.parse_group_expr(leading_trivia, root, in_loop),
+                Token {
+                    range: _,
                     kind: TokenKind::Nodes,
                     ..
                 } if root => self.parse_nodes(leading_trivia),
@@ -546,6 +551,45 @@ impl<'a> Parser<'a> {
         } else {
             Err(ParseError::UnexpectedEOFDetected)
         }
+    }
+
+    fn parse_group_expr(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        root: bool,
+        in_loop: bool,
+    ) -> Result<Arc<Node>, ParseError> {
+        let mut node = Node {
+            kind: NodeKind::Group,
+            token: None,
+            leading_trivia,
+            trailing_trivia: Vec::new(),
+            children: Vec::new(),
+        };
+
+        let mut children: Vec<Arc<Node>> = Vec::with_capacity(64);
+
+        children.push(self.next_node(
+            |token_kind| matches!(token_kind, TokenKind::LParen),
+            NodeKind::Token,
+        )?);
+
+        match self.tokens.peek() {
+            Some(token) => Arc::clone(token),
+            None => return Err(ParseError::UnexpectedEOFDetected),
+        };
+
+        let leading_trivia = self.parse_leading_trivia();
+
+        children.push(self.parse_expr(leading_trivia, root, in_loop)?);
+        children.push(self.next_node(
+            |token_kind| matches!(token_kind, TokenKind::RParen),
+            NodeKind::Token,
+        )?);
+
+        node.children = children;
+
+        Ok(Arc::new(node))
     }
 
     fn parse_ident(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
@@ -1220,7 +1264,7 @@ impl<'a> Parser<'a> {
             children.push(Arc::new(Node {
                 kind: NodeKind::Token,
                 token: Some(Arc::clone(token)),
-                leading_trivia,
+                leading_trivia: Vec::new(),
                 trailing_trivia,
                 children: Vec::new(),
             }));
@@ -1228,7 +1272,7 @@ impl<'a> Parser<'a> {
             return Ok(Arc::new(Node {
                 kind: NodeKind::Dict,
                 token: None,
-                leading_trivia: Vec::new(),
+                leading_trivia,
                 trailing_trivia: Vec::new(),
                 children,
             }));
@@ -4667,6 +4711,160 @@ mod tests {
                 }),
             ],
             ErrorReporter::default()
+        )
+    )]
+    #[case::group_expr_single_ident(
+        vec![
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("x".into()))),
+            Arc::new(token(TokenKind::RParen)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Group,
+                    token: None,
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::group_expr_binary_op(
+        vec![
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("a".into()))),
+            Arc::new(token(TokenKind::Plus)),
+            Arc::new(token(TokenKind::Ident("b".into()))),
+            Arc::new(token(TokenKind::RParen)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Group,
+                    token: None,
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::BinaryOp(BinaryOp::Plus),
+                            token: Some(Arc::new(token(TokenKind::Plus))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Arc::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Arc::new(token(TokenKind::Ident("a".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Arc::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Arc::new(token(TokenKind::Ident("b".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::group_expr_with_trivia(
+        vec![
+            Arc::new(token(TokenKind::Whitespace(2))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::NewLine)),
+            Arc::new(token(TokenKind::Ident("x".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::Whitespace(1))),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Group,
+                    token: None,
+                    leading_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: vec![Trivia::NewLine],
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: vec![Trivia::Whitespace(Arc::new(token(TokenKind::Whitespace(1))))],
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::group_expr_missing_rparen(
+        vec![
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("x".into()))),
+            Arc::new(token(TokenKind::Eof)),
+        ],
+        (
+            Vec::new(),
+            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Arc::new(token(TokenKind::Eof)))], 100)
         )
     )]
     fn test_parse(
