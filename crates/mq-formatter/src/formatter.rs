@@ -101,6 +101,7 @@ impl Formatter {
             }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
+            | mq_lang::CstNodeKind::Group
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
             | mq_lang::CstNodeKind::Until
