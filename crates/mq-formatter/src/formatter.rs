@@ -99,9 +99,11 @@ impl Formatter {
             mq_lang::CstNodeKind::UnaryOp(_) => {
                 self.format_unary_op(&node, indent_level);
             }
+            mq_lang::CstNodeKind::Group => {
+                self.format_group(&node, indent_level_consider_new_line);
+            }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
-            | mq_lang::CstNodeKind::Group
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
             | mq_lang::CstNodeKind::Until
@@ -179,6 +181,15 @@ impl Formatter {
 
             self.format_node(Arc::clone(last), indent_level + indent_adjustment);
         }
+    }
+
+    fn format_group(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+
+        node.children.iter().for_each(|child| {
+            self.format_node(Arc::clone(child), indent_level);
+        });
     }
 
     fn format_dict(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
@@ -1211,7 +1222,16 @@ process();"#,
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)",
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)"
     )]
-
+    #[case::group_simple("(1)", "(1)")]
+    #[case::group_with_expr("(1 + 2)", "(1 + 2)")]
+    #[case::group_with_nested_group("((1 + 2) * 3)", "((1 + 2) * 3)")]
+    #[case::group_with_multiple_ops("(1 + 2 * 3)", "(1 + 2 * 3)")]
+    #[case::group_with_array("(array(1, 2))", "(array(1, 2))")]
+    #[case::group_with_dict("({\"key\": \"value\"})", "({\"key\": \"value\"})")]
+    #[case::group_with_comment("(1 + 2) # group comment", "(1 + 2) # group comment")]
+    #[case::group_with_call("(test(1, 2))", "(test(1, 2))")]
+    #[case::group_with_if("(if(test): test else: test2)", "(if (test): test else: test2)")]
+    #[case::group_with_let("(let x = 1)", "(let x = 1)")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
