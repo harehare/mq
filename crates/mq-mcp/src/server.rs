@@ -289,10 +289,14 @@ mod tests {
                 assert!(!result.is_error.unwrap_or_default());
                 let actual = result
                     .content
-                    .iter()
-                    .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
+                    .map(|c| {
+                        c.iter()
+                            .map(|c| c.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    })
+                    .unwrap_or_default();
+
                 assert_eq!(actual, expected_text);
             }
             Err(expected_err) => {
@@ -354,10 +358,13 @@ mod tests {
                 assert!(!result.is_error.unwrap_or_default());
                 let actual = result
                     .content
-                    .iter()
-                    .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
+                    .map(|c| {
+                        c.iter()
+                            .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    })
+                    .unwrap_or_default();
                 assert_eq!(actual, expected_text);
             }
             Err(expected_err) => {
@@ -376,7 +383,7 @@ mod tests {
         let server = Server::new().expect("Failed to create server");
         let result = server.available_functions().unwrap();
         assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content.map(|c| c.len()).unwrap_or_default(), 1);
     }
 
     #[test]
@@ -384,7 +391,7 @@ mod tests {
         let server = Server::new().expect("Failed to create server");
         let result = server.available_selectors().unwrap();
         assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content.map(|c| c.len()).unwrap_or_default(), 1);
     }
 
     #[test]
