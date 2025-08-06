@@ -165,7 +165,6 @@ pub struct List {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type")
 )]
-
 pub struct TableCell {
     pub values: Vec<Node>,
     pub column: usize,
@@ -325,7 +324,6 @@ pub struct Heading {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type")
 )]
-
 pub struct Definition {
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
@@ -334,7 +332,6 @@ pub struct Definition {
     pub ident: String,
     pub label: Option<String>,
 }
-
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -353,7 +350,6 @@ pub struct Text {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type")
 )]
-
 pub struct Html {
     pub value: String,
     #[cfg_attr(feature = "json", serde(skip))]

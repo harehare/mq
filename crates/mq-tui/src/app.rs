@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     event::{EventHandler, EventHandlerExt},
-    ui::draw_ui,
+    ui::{draw_ui, treeview::TreeView},
     util,
 };
 
@@ -20,6 +20,7 @@ pub enum Mode {
     Normal,
     Query,
     Help,
+    TreeView,
 }
 
 pub struct App {
@@ -53,6 +54,8 @@ pub struct App {
     cursor_position: usize,
     /// Filename (if loaded from a file)
     filename: Option<String>,
+    /// Tree view component
+    tree_view: Option<TreeView>,
 }
 
 impl App {
@@ -73,6 +76,7 @@ impl App {
             history_position: None,
             cursor_position: 0,
             filename: None,
+            tree_view: None,
         }
     }
 
@@ -121,6 +125,7 @@ impl App {
             Mode::Normal => self.handle_normal_mode_event(event),
             Mode::Query => self.handle_query_mode_event(event),
             Mode::Help => self.handle_help_mode_event(event),
+            Mode::TreeView => self.handle_tree_view_mode_event(event),
         }
     }
 
@@ -146,6 +151,11 @@ impl App {
                 // Show help
                 (KeyCode::Char('?'), _) | (KeyCode::F(1), _) => {
                     self.mode = Mode::Help;
+                }
+                // Toggle tree view
+                (KeyCode::Char('t'), _) => {
+                    self.mode = Mode::TreeView;
+                    self.init_tree_view();
                 }
                 // Navigate results
                 (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
@@ -318,6 +328,60 @@ impl App {
         Ok(())
     }
 
+    fn handle_tree_view_mode_event(&mut self, event: Event) -> miette::Result<()> {
+        if let Event::Key(KeyEvent {
+            code, modifiers, ..
+        }) = event
+        {
+            match (code, modifiers) {
+                // Exit tree view mode
+                (KeyCode::Esc, _) | (KeyCode::Char('t'), _) => {
+                    self.mode = Mode::Normal;
+                }
+                // Quit
+                (KeyCode::Char('q'), _) => {
+                    self.should_quit = true;
+                }
+                // Navigation
+                (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                    if let Some(tree_view) = &mut self.tree_view {
+                        tree_view.move_down();
+                    }
+                }
+                (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                    if let Some(tree_view) = &mut self.tree_view {
+                        tree_view.move_up();
+                    }
+                }
+                // Toggle expand/collapse
+                (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
+                    if let Some(tree_view) = &mut self.tree_view {
+                        tree_view.toggle_expand();
+                    }
+                }
+                // Show help
+                (KeyCode::Char('?'), _) | (KeyCode::F(1), _) => {
+                    self.mode = Mode::Help;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn init_tree_view(&mut self) {
+        let markdown_result = Markdown::from_markdown_str(&self.content);
+        match markdown_result {
+            Ok(markdown) => {
+                self.tree_view = Some(TreeView::new(markdown.nodes));
+            }
+            Err(_) => {
+                self.error_msg = Some("Failed to parse markdown for tree view".to_string());
+            }
+        }
+    }
+
     pub fn exec_query(&mut self) {
         let mut engine = Engine::default();
         engine.load_builtin_module();
@@ -450,6 +514,11 @@ impl App {
     #[cfg(test)]
     pub fn set_cursor_position(&mut self, position: usize) {
         self.cursor_position = position;
+    }
+
+    /// Get the tree view, if available
+    pub fn tree_view(&self) -> Option<&TreeView> {
+        self.tree_view.as_ref()
     }
 }
 #[cfg(test)]
@@ -951,5 +1020,61 @@ mod tests {
     fn test_query_history_functionality() {
         let app = create_test_app();
         assert!(app.query_history().is_empty());
+    }
+
+    #[test]
+    fn test_tree_view_mode() {
+        let mut app = create_test_app();
+        assert_eq!(app.mode(), Mode::Normal);
+        assert!(app.tree_view().is_none());
+
+        // Switch to tree view mode
+        app.set_mode(Mode::TreeView);
+        app.init_tree_view();
+
+        assert_eq!(app.mode(), Mode::TreeView);
+        assert!(app.tree_view().is_some());
+    }
+
+    #[test]
+    fn test_tree_view_mode_navigation() {
+        let mut app = create_test_app();
+        app.set_mode(Mode::TreeView);
+        app.init_tree_view();
+
+        // Test tree view navigation keys
+        let down_event = Event::Key(KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        app.handle_event(down_event).unwrap();
+        assert_eq!(app.mode(), Mode::TreeView);
+
+        // Test exiting tree view
+        let escape_event = Event::Key(KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        app.handle_event(escape_event).unwrap();
+        assert_eq!(app.mode(), Mode::Normal);
+    }
+
+    #[test]
+    fn test_tree_view_toggle_from_normal_mode() {
+        let mut app = create_test_app();
+
+        let tree_toggle_event = Event::Key(KeyEvent {
+            code: KeyCode::Char('t'),
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        app.handle_event(tree_toggle_event).unwrap();
+        assert_eq!(app.mode(), Mode::TreeView);
+        assert!(app.tree_view().is_some());
     }
 }

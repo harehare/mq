@@ -1,3 +1,5 @@
+pub mod treeview;
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
@@ -26,19 +28,28 @@ pub fn draw_ui(frame: &mut Frame, app: &App) {
         draw_title_bar(frame, app, chunks[0]);
     }
 
-    if app.show_detail() && !app.results().is_empty() {
-        let detail_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(40), // Results list
-                Constraint::Percentage(60), // Detail view
-            ])
-            .split(chunks[1]);
+    match app.mode() {
+        Mode::TreeView => {
+            if let Some(tree_view) = app.tree_view() {
+                tree_view.render(frame, chunks[1]);
+            }
+        }
+        _ => {
+            if app.show_detail() && !app.results().is_empty() {
+                let detail_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(40), // Results list
+                        Constraint::Percentage(60), // Detail view
+                    ])
+                    .split(chunks[1]);
 
-        draw_results_list(frame, app, detail_chunks[0]);
-        draw_detail_view(frame, app, detail_chunks[1]);
-    } else {
-        draw_results_list(frame, app, chunks[1]);
+                draw_results_list(frame, app, detail_chunks[0]);
+                draw_detail_view(frame, app, detail_chunks[1]);
+            } else {
+                draw_results_list(frame, app, chunks[1]);
+            }
+        }
     }
 
     draw_status_line(frame, app, chunks[2]);
@@ -142,6 +153,7 @@ fn draw_title_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Normal => "NORMAL",
         Mode::Query => "QUERY",
         Mode::Help => "HELP",
+        Mode::TreeView => "TREE VIEW",
     };
 
     let title_block = Block::default()
@@ -158,7 +170,10 @@ fn draw_title_bar(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" | "),
-        Span::styled("Press '?' for help", Style::default().fg(Color::Gray)),
+        Span::styled(
+            "Press 't' for tree view, '?' for help",
+            Style::default().fg(Color::Gray),
+        ),
     ];
 
     let title_text = Paragraph::new(Line::from(title_spans))
@@ -195,7 +210,7 @@ fn draw_help_screen(frame: &mut Frame) {
     let area = frame.area();
 
     let width = area.width.clamp(20, 60);
-    let height = area.height.clamp(10, 25);
+    let height = area.height.clamp(15, 40);
     let x = (area.width.saturating_sub(width)) / 2;
     let y = (area.height.saturating_sub(height)) / 2;
 
@@ -232,14 +247,6 @@ fn draw_help_screen(frame: &mut Frame) {
         Line::from(vec![
             Span::styled("PgDn", Style::default().fg(Color::Yellow)),
             Span::raw(" - Page down"),
-        ]),
-        Line::from(vec![
-            Span::styled("Home", Style::default().fg(Color::Yellow)),
-            Span::raw(" - Go to first item"),
-        ]),
-        Line::from(vec![
-            Span::styled("End", Style::default().fg(Color::Yellow)),
-            Span::raw(" - Go to last item"),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -292,6 +299,34 @@ fn draw_help_screen(frame: &mut Frame) {
         Line::from(vec![
             Span::styled("Ctrl+l", Style::default().fg(Color::Yellow)),
             Span::raw(" - Clear query"),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Tree View Mode",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::UNDERLINED),
+        )]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("t", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Toggle tree view"),
+        ]),
+        Line::from(vec![
+            Span::styled("↑/k", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Move up in tree"),
+        ]),
+        Line::from(vec![
+            Span::styled("↓/j", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Move down in tree"),
+        ]),
+        Line::from(vec![
+            Span::styled("Enter/Space", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Expand/collapse node"),
+        ]),
+        Line::from(vec![
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::raw(" - Exit tree view"),
         ]),
     ];
 
@@ -651,5 +686,64 @@ mod tests {
                 draw_ui(frame, &app);
             })
             .unwrap();
+    }
+
+    #[test]
+    fn test_draw_ui_tree_view_mode() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = create_test_app();
+        app.set_mode(Mode::TreeView);
+
+        terminal
+            .draw(|frame| {
+                draw_ui(frame, &app);
+            })
+            .unwrap();
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .map(|c| c.symbol())
+                .join("")
+                .contains("TREE VIEW")
+        );
+    }
+
+    #[test]
+    fn test_title_bar_mode_indicators() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+        // Test Normal mode
+        let app_normal = create_test_app();
+        terminal
+            .draw(|frame| draw_title_bar(frame, &app_normal, frame.area()))
+            .unwrap();
+        let content = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .join("");
+        assert!(content.contains("NORMAL"));
+
+        // Test TreeView mode
+        let mut app_tree = create_test_app();
+        app_tree.set_mode(Mode::TreeView);
+        terminal
+            .draw(|frame| draw_title_bar(frame, &app_tree, frame.area()))
+            .unwrap();
+        let content = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .join("");
+        assert!(content.contains("TREE VIEW"));
     }
 }
