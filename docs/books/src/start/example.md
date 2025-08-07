@@ -6,13 +6,13 @@
 .h
 | let link = to_link("#" + to_text(self), to_text(self), "")
 | let level = .h.depth
-| if (not(is_none(level))): to_md_list(link, to_number(level))
+| if (!is_none(level)): to_md_list(link, to_number(level))
 ```
 
 ## Exclude code
 
 ```js
-select(not(.code))
+select(!.code)
 ```
 
 ## Extract js code
