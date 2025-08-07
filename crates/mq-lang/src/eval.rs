@@ -4048,6 +4048,40 @@ mod tests {
             RuntimeValue::Number(3.into()),
         ])])
     )]
+    #[case::to_array_string(vec![RuntimeValue::String("test".to_string())],
+        vec![
+            ast_call("to_array", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("t".to_string()), RuntimeValue::String("e".to_string()), RuntimeValue::String("s".to_string()), RuntimeValue::String("t".to_string())])]))]
+    #[case::to_array_number(vec![RuntimeValue::Number(42.into())],
+        vec![
+            ast_call("to_array", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into())])]))]
+    #[case::to_array_bool(vec![RuntimeValue::Bool(true)],
+        vec![
+            ast_call("to_array", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Bool(true)])]))]
+    #[case::to_array_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())])],
+        vec![
+            ast_call("to_array", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())])]))]
+    #[case::to_array_empty_array(vec![RuntimeValue::Array(Vec::new())],
+        vec![
+            ast_call("to_array", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(Vec::new())]))]
+    #[case::to_array_dict(vec![RuntimeValue::Dict(vec![
+            ("key".to_string(), RuntimeValue::String("value".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("to_array", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Dict(vec![
+            ("key".to_string(), RuntimeValue::String("value".to_string())),
+        ].into_iter().collect())])]))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
