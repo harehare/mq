@@ -28,4 +28,4 @@ jobs:
         run: just build-web
       - name: Publish to npm
         working-directory: packages/mq-web
-        run: npm publish
+        run: npm publish --access public
