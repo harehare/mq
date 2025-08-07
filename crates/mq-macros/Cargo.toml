@@ -5,7 +5,7 @@ documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
 edition = "2024"
 license = "MIT"
 name = "mq-macros"
-version = "0.2.15"
+version = "0.2.16"
 
 [lib]
 proc-macro = true
