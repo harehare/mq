@@ -341,6 +341,20 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
+            CompactString::new("to_array"),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+                [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(array.clone())),
+                [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
+                    s.chars()
+                        .map(|c| RuntimeValue::String(c.to_string()))
+                        .collect(),
+                )),
+                [RuntimeValue::None] => Ok(RuntimeValue::Array(Vec::new())),
+                [value] => Ok(RuntimeValue::Array(vec![value.clone()])),
+                _ => unreachable!(),
+            }),
+        );
+        map.insert(
             CompactString::new("url_encode"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
                 [RuntimeValue::String(s)] => url_encode(s),
@@ -2479,6 +2493,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             CompactString::new("to_number"),
             BuiltinFunctionDoc {
                 description: "Converts the given value to a number.",
+                params: &["value"],
+            },
+        );
+        map.insert(
+            CompactString::new("to_array"),
+            BuiltinFunctionDoc {
+                description: "Converts the given value to an array.",
                 params: &["value"],
             },
         );
