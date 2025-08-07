@@ -26,7 +26,7 @@ const EXAMPLES: {
   {
     name: "Hello World",
     code: `# Hello world
-select(or(.h, .code, .[]))`,
+select(.h || .code || .[])`,
     markdown: `# Hello world
 
 - Hello
@@ -99,7 +99,7 @@ console.log("Hello, World!");
   },
   {
     name: "Exclude js code",
-    code: `select(not(.code("js")))`,
+    code: `select(!.code("js"))`,
     markdown: `# Sample codes
 \`\`\`js
 console.log("Hello, World!");
@@ -138,7 +138,7 @@ In {year}, the snowfall was above average.
   let words = split(x, "_")
   | foreach (word, words):
       let first_char = upcase(first(word))
-      | let rest_str = downcase(slice(word, 1, len(word)))
+      | let rest_str = downcase(word[1:len(word)])
       | s"\${first_char}\${rest_str}";
   | join("")
 end
@@ -195,7 +195,7 @@ end
   },
   {
     name: "Extract list",
-    code: `.[] | select(is_list2())`,
+    code: `.[] | select(.list.level == "1")`,
     markdown: `# Product List
 
 - Electronics
