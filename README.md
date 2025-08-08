@@ -216,7 +216,7 @@ $ mq 'select(.[] || .h) | select(contains("name"))'
 # Exclude js code
 $ mq 'select(!.code("js"))'
 # CSV to markdown table
-$ mq 'nodes | csv2table()' example.csv
+$ mq 'include "csv" | nodes | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
 
 ### Advanced Usage
