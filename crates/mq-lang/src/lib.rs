@@ -191,6 +191,11 @@ pub fn null_input() -> Vec<Value> {
     vec!["".to_string().into()]
 }
 
+/// Parses a raw input string and returns a vector containing a single `Value` node.
+pub fn raw_input(input: &str) -> Vec<Value> {
+    vec![input.to_string().into()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

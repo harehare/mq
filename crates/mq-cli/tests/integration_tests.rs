@@ -224,15 +224,17 @@ fn test_cli_run_with_csv_input() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
     let assert = cmd
         .arg("--unbuffered")
-        .arg("nodes | csv2table_with_header()")
+        .arg("-I")
+        .arg("raw")
+        .arg(r#"include "csv" | csv_parse(false) | csv_to_markdown_table()"#)
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
     assert.success().code(0).stdout(
-        "|name|age|
-|---|---|
-|Alice|30|
-|Bob|25|
+        "| name | age |
+| --- | --- |
+| Alice | 30 |
+| Bob | 25 |
 ",
     );
     Ok(())

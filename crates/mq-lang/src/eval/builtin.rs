@@ -6,7 +6,7 @@ use base64::prelude::*;
 use compact_str::CompactString;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
-use regex::{Regex, RegexBuilder};
+use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;

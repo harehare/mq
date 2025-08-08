@@ -209,41 +209,12 @@ def is_mdx(mdx): or(
   is_mdx_js_esm(mdx))
 end
 
-# Convert csv string to markdown table row
-def csv2table_row(row): split(row, ",") | to_md_table_row();
-
-# Convert csv string to markdown table
-def csv2table(csv): map(csv, csv2table_row);
-
 # Returns an array of length n filled with the given value.
 def fill(value, n):
   if (n < 0):
     error("n must be non-negative")
   else:
     foreach (i, range(0, n)): value;
-end
-
-def _csv_header(csv_or_tsv, sep):
-  let head = first(csv_or_tsv)
-  | join(fill("---", sub(len(split(head, sep)), 1)), sep)
-end
-
-# Converts a CSV string array to a markdown table.
-def csv2table_with_header(csv):
-  let csv_with_header = insert(csv, 1, _csv_header(csv, ","))
-  | map(csv_with_header, csv2table_row)
-end
-
-# Convert tsv string to markdown table row
-def tsv2table_row(row): split(row, "\t") | to_md_table_row();
-
-# Convert tsv string to markdown table
-def tsv2table(tsv): map(tsv, tsv2table_row);
-
-# Converts a CSV string array to a markdown table.
-def tsv2table_with_header(tsv):
-  let tsv_with_header = insert(tsv, 1, _csv_header(tsv, "\t"))
-  | map(tsv_with_header, tsv2table_row)
 end
 
 # Verifies that a condition is true and raises an error if it's false.
