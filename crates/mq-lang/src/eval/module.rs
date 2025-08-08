@@ -143,23 +143,22 @@ impl ModuleLoader {
         module_name: &str,
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Result<Option<Module>, ModuleError> {
-        let program = if STANDARD_MODULES.contains_key(module_name) {
-            STANDARD_MODULES
-                .get(module_name)
-                .map(|f| f())
-                .unwrap()
-                .to_string()
-        } else {
-            let file_path = Self::find(module_name, self.search_paths.clone())?;
-            std::fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(e.to_string()))?
-        };
-
+        let program = self.read_file(module_name)?;
         self.load(module_name, &program, token_arena)
     }
 
-    pub fn read_file(&mut self, module_name: &str) -> Option<String> {
-        let file_path = Self::find(module_name, self.search_paths.clone()).ok()?;
-        fs::read_to_string(&file_path).ok()
+    pub fn read_file(&mut self, module_name: &str) -> Result<String, ModuleError> {
+        if STANDARD_MODULES.contains_key(module_name) {
+            Ok(STANDARD_MODULES
+                .get(module_name)
+                .map(|f| f())
+                .unwrap()
+                .to_string())
+        } else {
+            let file_path = Self::find(module_name, self.search_paths.clone())
+                .map_err(|e| ModuleError::IOError(e.to_string()))?;
+            fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(e.to_string()))
+        }
     }
 
     pub fn load_builtin(
