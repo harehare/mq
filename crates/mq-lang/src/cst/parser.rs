@@ -459,7 +459,7 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Let,
                     ..
-                } => self.parse_let(leading_trivia),
+                } => self.parse_let(leading_trivia, in_loop),
                 Token {
                     range: _,
                     kind: TokenKind::Selector(_),
@@ -525,11 +525,6 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Break,
                     ..
                 } if in_loop => self.parse_node(NodeKind::Break, leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Continue,
-                    ..
-                } if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
                 Token {
                     range: _,
                     kind: TokenKind::Continue,
@@ -1387,7 +1382,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_let(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+    fn parse_let(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        in_loop: bool,
+    ) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Arc<Node>> = Vec::with_capacity(10);
@@ -1406,7 +1405,7 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Equal), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
-        children.push(self.parse_expr(leading_trivia, false, false)?);
+        children.push(self.parse_expr(leading_trivia, false, in_loop)?);
 
         node.children = children;
         Ok(Arc::new(node))
