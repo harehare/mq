@@ -424,7 +424,7 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::If,
                     ..
-                } => self.parse_if(leading_trivia),
+                } => self.parse_if(leading_trivia, in_loop),
                 Token {
                     range: _,
                     kind: TokenKind::Foreach,
@@ -1048,7 +1048,11 @@ impl<'a> Parser<'a> {
         Ok(Arc::new(node))
     }
 
-    fn parse_if(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+    fn parse_if(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        in_loop: bool,
+    ) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Arc<Node>> = Vec::with_capacity(10);
@@ -1071,7 +1075,7 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
-        children.push(self.parse_expr(leading_trivia, false, false)?);
+        children.push(self.parse_expr(leading_trivia, false, in_loop)?);
 
         loop {
             if !self.try_next_token(|kind| matches!(kind, TokenKind::Elif)) {
@@ -1079,7 +1083,7 @@ impl<'a> Parser<'a> {
             }
 
             let leading_trivia = self.parse_leading_trivia();
-            children.push(self.parse_elif(leading_trivia)?);
+            children.push(self.parse_elif(leading_trivia, in_loop)?);
         }
 
         if !self.try_next_token(|kind| matches!(kind, TokenKind::Else)) {
@@ -1088,13 +1092,17 @@ impl<'a> Parser<'a> {
         }
 
         let leading_trivia = self.parse_leading_trivia();
-        children.push(self.parse_else(leading_trivia)?);
+        children.push(self.parse_else(leading_trivia, in_loop)?);
         node.children = children;
 
         Ok(Arc::new(node))
     }
 
-    fn parse_elif(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+    fn parse_elif(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        in_loop: bool,
+    ) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Arc<Node>> = Vec::with_capacity(10);
@@ -1117,13 +1125,17 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
-        children.push(self.parse_expr(leading_trivia, false, false)?);
+        children.push(self.parse_expr(leading_trivia, false, in_loop)?);
 
         node.children = children;
         Ok(Arc::new(node))
     }
 
-    fn parse_else(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+    fn parse_else(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        in_loop: bool,
+    ) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Arc<Node>> = Vec::with_capacity(10);
@@ -1139,7 +1151,7 @@ impl<'a> Parser<'a> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
         let leading_trivia = self.parse_leading_trivia();
-        children.push(self.parse_expr(leading_trivia, false, false)?);
+        children.push(self.parse_expr(leading_trivia, false, in_loop)?);
 
         node.children = children;
         Ok(Arc::new(node))
