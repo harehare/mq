@@ -18,10 +18,7 @@ impl Hir {
                 let resolved = self
                     .resolve_ref_symbol_of_scope(ref_symbol.scope, ref_name, ref_symbol_id)
                     .or_else(|| {
-                        self.resolve_ref_symbol_of_source(
-                            self.include_source_ids(ref_symbol.scope),
-                            ref_name,
-                        )
+                        self.resolve_ref_symbol_of_source(self.include_source_ids(), ref_name)
                     });
 
                 if let Some((symbol_id, _)) = resolved {
@@ -35,14 +32,12 @@ impl Hir {
         self.references.get(&ref_symbol_id).copied()
     }
 
-    fn include_source_ids(&self, scope_id: ScopeId) -> Vec<SourceId> {
+    fn include_source_ids(&self) -> Vec<SourceId> {
         let mut source_ids = Vec::new();
 
         for (_, symbol) in &self.symbols {
-            if symbol.scope == scope_id {
-                if let SymbolKind::Include(source_id) = symbol.kind {
-                    source_ids.push(source_id);
-                }
+            if let SymbolKind::Include(source_id) = symbol.kind {
+                source_ids.push(source_id);
             }
         }
 
