@@ -181,7 +181,11 @@ enum Commands {
         check: bool,
     },
     /// Show functions documentation for the query
-    Docs,
+    Docs {
+        /// Specify additional module names to load for documentation
+        #[arg(short = 'M', long)]
+        module_names: Option<Vec<String>>,
+    },
 }
 
 impl Cli {
@@ -243,10 +247,18 @@ impl Cli {
 
                 Ok(())
             }
-            Some(Commands::Docs) => {
-                let query = self.get_query().unwrap_or_default();
+            Some(Commands::Docs { module_names }) => {
                 let mut hir = mq_hir::Hir::default();
-                hir.add_code(None, &query);
+
+                if let Some(module_names) = module_names {
+                    hir.builtin.disabled = true;
+
+                    for module_name in module_names {
+                        hir.add_code(None, &format!("include \"{}\"", module_name));
+                    }
+                } else {
+                    hir.add_code(None, "");
+                }
 
                 let mut doc_csv = hir
                     .symbols()
@@ -279,7 +291,7 @@ impl Cli {
                 let mut engine = self.create_engine()?;
                 let doc_values = engine
                     .eval(
-                        r#"include "csv" | tsv_parse(true) | csv_to_markdown_table()"#,
+                        r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
                         mq_lang::raw_input(&doc_csv.iter().join("\n")).into_iter(),
                     )
                     .map_err(|e| *e)?;

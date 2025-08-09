@@ -1,8 +1,8 @@
 # CSV/TSV Implementation in mq
 # Based on RFC 4180 for CSV format
 
-def parse_csv_content(input, delimiter, has_header):
-  def parse_quoted_field(input, delimiter, pos):
+def _parse_csv_content(input, delimiter, has_header):
+  def _parse_quoted_field(input, delimiter, pos):
     let pos = pos + 1
     | let field_content = ""
     | let escaped = false
@@ -21,7 +21,7 @@ def parse_csv_content(input, delimiter, has_header):
     | [field_content, next_pos]
   end
 
-  def parse_unquoted_field(input, delimiter, pos):
+  def _parse_unquoted_field(input, delimiter, pos):
     let end_pos = pos
     | let current_input = input[end_pos]
     | let result = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
@@ -34,20 +34,20 @@ def parse_csv_content(input, delimiter, has_header):
     | [field_content, result]
   end
 
-  def parse_csv_field(input, delimiter, pos):
+  def _parse_csv_field(input, delimiter, pos):
     let quoted = starts_with(input[pos], "\"")
     | if (quoted):
-        parse_quoted_field(input, delimiter, pos)
+        _parse_quoted_field(input, delimiter, pos)
       else:
-        parse_unquoted_field(input, delimiter, pos)
+        _parse_unquoted_field(input, delimiter, pos)
   end
 
-  def parse_csv_line(line, delimiter):
+  def _parse_csv_line(line, delimiter):
     let fields = []
     | let pos = 0
     | let input_chars = to_array(line)
     | let result = until (pos < len(input_chars)):
-          let field_result = parse_csv_field(input_chars, delimiter, pos)
+          let field_result = _parse_csv_field(input_chars, delimiter, pos)
           | let new_pos = field_result[1]
           | let fields = fields + [field_result[0]]
           | let pos = if (new_pos < len(input_chars) && input_chars[new_pos] == delimiter):
@@ -59,7 +59,7 @@ def parse_csv_content(input, delimiter, has_header):
     | result[0]
   end
 
-  def split_csv_lines(input):
+  def _split_csv_lines(input):
     let lines = []
     | let current_line = ""
     | let in_quotes = false
@@ -91,8 +91,8 @@ def parse_csv_content(input, delimiter, has_header):
     | lines
   end
 
-  | let lines = split_csv_lines(input)
-  | let parsed_lines = map(lines, fn(line): parse_csv_line(line, delimiter);)
+  | let lines = _split_csv_lines(input)
+  | let parsed_lines = map(lines, fn(line): _parse_csv_line(line, delimiter);)
   | let headers = if (has_header && len(parsed_lines) > 0): first(parsed_lines) else: None
   | let data_lines = if (has_header && len(parsed_lines) > 0): parsed_lines[1:len(parsed_lines)] else: parsed_lines
   | let csv_to_dict = fn(row):
@@ -113,13 +113,13 @@ def parse_csv_content(input, delimiter, has_header):
 end
 
 # Parses CSV content with a specified delimiter and optional header row.
-def csv_parse_with_delimiter(input, delimiter, has_header): parse_csv_content(input, delimiter, has_header);
+def csv_parse_with_delimiter(input, delimiter, has_header): _parse_csv_content(input, delimiter, has_header);
 
 # Parses CSV content using a comma as the delimiter.
-def csv_parse(input, has_header): parse_csv_content(input, ",", has_header);
+def csv_parse(input, has_header): _parse_csv_content(input, ",", has_header);
 
 # Parses TSV (Tab-Separated Values) content.
-def tsv_parse(input, has_header): parse_csv_content(input, "\t", has_header);
+def tsv_parse(input, has_header): _parse_csv_content(input, "\t", has_header);
 
 # Converts data to a CSV string with a specified delimiter.
 def csv_stringify(data, delimiter):
@@ -158,7 +158,7 @@ end
 
 # Converts CSV data to a JSON string.
 def csv_to_json(data):
-  def to_json(value):
+  def _to_json(value):
     if (is_dict(value)):
       "{" + join(map(keys(value), fn(k): "\"" + k + "\":" + to_json(value[k]);), ",") + "}"
     elif (is_array(value)):
@@ -176,7 +176,7 @@ def csv_to_json(data):
   end
 
   | if (is_array(data) && len(data) > 0 && is_dict(first(data))):
-      to_json(data)
+      _to_json(data)
     else:
-      to_json(map(data, fn(row): row;))
+      _to_json(map(data, fn(row): row;))
 end
