@@ -1,97 +1,103 @@
 # CSV/TSV Implementation in mq
 # Based on RFC 4180 for CSV format
 
+def _parse_quoted_field(input, delimiter, pos):
+  let pos = pos + 1
+  | let field_content = ""
+  | let escaped = false
+  | let end_pos = pos
+  | let result = until (end_pos < len(input) && (escaped || input[end_pos] != "\"")):
+        let char = input[end_pos]
+        | let field_content = field_content + char
+        | let escaped = char == "\"" && !escaped
+        | let end_pos = end_pos + 1
+        | [field_content, end_pos]
+      end
+  | let field_content = if (is_none(result)): "" else: result[0]
+  | let end_pos = if (is_none(result)): pos else: result[1]
+  | let field_content = replace(field_content, "\"\"", "\"")
+  | let next_pos = if (end_pos < len(input)): end_pos + 1 else: end_pos
+  | [field_content, next_pos]
+end
+
+def _parse_unquoted_field(input, delimiter, pos):
+  let end_pos = pos
+  | let current_input = input[end_pos]
+  | let result = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
+        let end_pos = end_pos + 1
+        | let current_input = input[end_pos]
+        | end_pos
+      end
+  | let result = if (is_none(result)): end_pos else: result
+  | let field_content = join(input[pos:result], "")
+  | [field_content, result]
+end
+
+def _parse_csv_field(input, delimiter, pos):
+  let quoted = starts_with(input[pos], "\"")
+  | if (quoted):
+      _parse_quoted_field(input, delimiter, pos)
+    else:
+      _parse_unquoted_field(input, delimiter, pos)
+end
+
+def _parse_csv_line(line, delimiter):
+  let fields = []
+  | let pos = 0
+  | let input_chars = to_array(line)
+  | let result = until (pos < len(input_chars)):
+        let field_result = _parse_csv_field(input_chars, delimiter, pos)
+        | let new_pos = field_result[1]
+        | let fields = fields + [field_result[0]]
+        | let pos = if (new_pos < len(input_chars) && input_chars[new_pos] == delimiter):
+              new_pos + 1
+            else:
+              new_pos
+        | [fields, pos]
+      end
+  | result[0]
+end
+
+def _split_csv_lines(input):
+  let lines = []
+  | let current_line = ""
+  | let in_quotes = false
+  | let i = 0
+  | let next_skip = false
+  | let result = foreach (char, input):
+        let i = i + 1
+        | let _next_skip = next_skip
+        | let next_skip = false
+        | let _ = if (_next_skip): continue
+        | let next_char = if (i + 1 < len(input)): input[i + 1] else: ""
+        | let result = if (char == "\"" && !in_quotes):
+              [lines, current_line + char, true, false]
+            elif (char == "\"" && in_quotes && next_char == "\""):
+              [lines, current_line + char + next_char, in_quotes, true]
+            elif (char == "\"" && in_quotes):
+              [lines, current_line + char, false, false]
+            elif ((char == "\n" || char == "\r") && !in_quotes):
+              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", in_quotes, false]
+            elif (char == "\\" && (next_char == "r" || next_char == "n") && !in_quotes):
+              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", in_quotes, true]
+            else:
+              [lines, current_line + char, in_quotes, false]
+        | let lines = result[0]
+        | let current_line = result[1]
+        | let in_quotes = result[2]
+        | let next_skip = result[3]
+        | if (i < len(input)): continue else: result
+      end
+
+  | let result = last(result)
+  | let lines = result[0]
+  | let current_line = result[1]
+  | let lines = if (!is_empty(trim(current_line))): lines + [current_line] else: lines
+  | lines
+end
+
 def _parse_csv_content(input, delimiter, has_header):
-  def _parse_quoted_field(input, delimiter, pos):
-    let pos = pos + 1
-    | let field_content = ""
-    | let escaped = false
-    | let end_pos = pos
-    | let result = until (end_pos < len(input) && (escaped || input[end_pos] != "\"")):
-          let char = input[end_pos]
-          | let field_content = field_content + char
-          | let escaped = char == "\"" && !escaped
-          | let end_pos = end_pos + 1
-          | [field_content, end_pos]
-        end
-    | let field_content = if (is_none(result)): "" else: result[0]
-    | let end_pos = if (is_none(result)): pos else: result[1]
-    | let field_content = replace(field_content, "\"\"", "\"")
-    | let next_pos = if (end_pos < len(input)): end_pos + 1 else: end_pos
-    | [field_content, next_pos]
-  end
-
-  def _parse_unquoted_field(input, delimiter, pos):
-    let end_pos = pos
-    | let current_input = input[end_pos]
-    | let result = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
-          let end_pos = end_pos + 1
-          | let current_input = input[end_pos]
-          | end_pos
-        end
-    | let result = if (is_none(result)): end_pos else: result
-    | let field_content = join(input[pos:result], "")
-    | [field_content, result]
-  end
-
-  def _parse_csv_field(input, delimiter, pos):
-    let quoted = starts_with(input[pos], "\"")
-    | if (quoted):
-        _parse_quoted_field(input, delimiter, pos)
-      else:
-        _parse_unquoted_field(input, delimiter, pos)
-  end
-
-  def _parse_csv_line(line, delimiter):
-    let fields = []
-    | let pos = 0
-    | let input_chars = to_array(line)
-    | let result = until (pos < len(input_chars)):
-          let field_result = _parse_csv_field(input_chars, delimiter, pos)
-          | let new_pos = field_result[1]
-          | let fields = fields + [field_result[0]]
-          | let pos = if (new_pos < len(input_chars) && input_chars[new_pos] == delimiter):
-                new_pos + 1
-              else:
-                new_pos
-          | [fields, pos]
-        end
-    | result[0]
-  end
-
-  def _split_csv_lines(input):
-    let lines = []
-    | let current_line = ""
-    | let in_quotes = false
-    | let i = 0
-    | let result = until (i < len(input)):
-          let char = input[i]
-          | let next_char = if (i + 1 < len(input)): input[i + 1] else: ""
-          | let result = if (char == "\"" && !in_quotes):
-                [lines, current_line + char, true, i + 1]
-              elif (char == "\"" && in_quotes && next_char == "\""):
-                [lines, current_line + char + next_char, in_quotes, i + 2]
-              elif (char == "\"" && in_quotes):
-                [lines, current_line + char, false, i + 1]
-              elif ((char == "\n" || char == "\r") && !in_quotes):
-                [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", in_quotes, i + 1]
-              elif (char == "\\" && (next_char == "r" || next_char == "n") && !in_quotes):
-                [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", in_quotes, i + 2]
-              else:
-                [lines, current_line + char, in_quotes, i + 1]
-          | let lines = result[0]
-          | let current_line = result[1]
-          | let in_quotes = result[2]
-          | let i = result[3]
-          | result
-        end
-    | let lines = result[0]
-    | let current_line = result[1]
-    | let lines = if (!is_empty(trim(current_line))): lines + [current_line] else: lines
-    | lines
-  end
-
-  | let lines = _split_csv_lines(input)
+  let lines = _split_csv_lines(input)
   | let parsed_lines = map(lines, fn(line): _parse_csv_line(line, delimiter);)
   | let headers = if (has_header && len(parsed_lines) > 0): first(parsed_lines) else: None
   | let data_lines = if (has_header && len(parsed_lines) > 0): parsed_lines[1:len(parsed_lines)] else: parsed_lines
