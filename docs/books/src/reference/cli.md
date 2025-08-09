@@ -23,7 +23,7 @@ Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [possible values: markdown, mdx, html, text, null, raw]
+          Set input format [possible values: markdown, mdx, html, text, null]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
