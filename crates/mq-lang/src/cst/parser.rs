@@ -102,11 +102,11 @@ impl ErrorReporter {
                         ParseError::UnexpectedEOFDetected => Range {
                             start: Position {
                                 line: text.lines().count() as u32,
-                                column: text.lines().last().unwrap().len(),
+                                column: text.lines().last().map(|line| line.len()).unwrap_or(0),
                             },
                             end: Position {
                                 line: text.lines().count() as u32,
-                                column: text.lines().last().unwrap().len(),
+                                column: text.lines().last().map(|line| line.len()).unwrap_or(0),
                             },
                         },
                     },
