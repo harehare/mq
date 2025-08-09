@@ -127,7 +127,6 @@ def csv_stringify(data, delimiter):
     keys(first(data))
   else: []
   | let header_line = join(headers, delimiter)
-  | debug(is_array(data))
   | let data_lines = map(data, fn(row):
           if (is_dict(row)):
             join(map(headers, fn(header): if (row[header]): to_string(row[header]) else: "";), delimiter)
@@ -145,7 +144,7 @@ def csv_to_markdown_table(data):
   else: first(data)
   | let header_row = "| " + join(headers, " | ") + " |"
   | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-  | let data = if (is_dict(data)): data else: data[1:len(data)]
+  | let data = if (is_dict(first(data))): data else: data[1:len(data)]
   | let data_rows = map(data, fn(row):
           if (is_dict(row)):
             "| " + join(map(headers, fn(header): if (row[header]): to_string(row[header]) else: "";), " | ") + " |"
@@ -160,9 +159,9 @@ end
 def csv_to_json(data):
   def _to_json(value):
     if (is_dict(value)):
-      "{" + join(map(keys(value), fn(k): "\"" + k + "\":" + to_json(value[k]);), ",") + "}"
+      "{" + join(map(keys(value), fn(k): "\"" + k + "\":" + _to_json(value[k]);), ",") + "}"
     elif (is_array(value)):
-      "[" + join(map(value, to_json), ",") + "]"
+      "[" + join(map(value, _to_json), ",") + "]"
     elif (is_string(value)):
       "\"" + replace(value, "\"", "\\\"") + "\""
     elif (is_number(value)):
