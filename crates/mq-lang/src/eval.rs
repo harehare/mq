@@ -417,27 +417,47 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Foreach(ident, values, body) = &*node.expr {
             let values = self.eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?;
-            let values = if let RuntimeValue::Array(values) = values {
-                let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
-                let mut results = Vec::with_capacity(values.len());
+            let values = match values {
+                RuntimeValue::Array(values) => {
+                    let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
+                    let mut results = Vec::with_capacity(values.len());
 
-                for value in values {
-                    env.borrow_mut().define(ident, value);
-                    match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
-                        Ok(result) => results.push(result),
-                        Err(EvalError::Break(_)) => break,
-                        Err(EvalError::Continue(_)) => continue,
-                        Err(e) => return Err(e),
+                    for value in values {
+                        env.borrow_mut().define(ident, value);
+                        match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                            Ok(result) => results.push(result),
+                            Err(EvalError::Break(_)) => break,
+                            Err(EvalError::Continue(_)) => continue,
+                            Err(e) => return Err(e),
+                        }
                     }
-                }
 
-                results
-            } else {
-                return Err(EvalError::InvalidTypes {
-                    token: (*self.token_arena.borrow()[node.token_id]).clone(),
-                    name: TokenKind::Foreach.to_string(),
-                    args: vec![values.to_string().into()],
-                });
+                    results
+                }
+                RuntimeValue::String(s) => {
+                    let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
+                    let mut results = Vec::with_capacity(s.len());
+
+                    for c in s.chars() {
+                        env.borrow_mut()
+                            .define(ident, RuntimeValue::String(c.to_string()));
+                        match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                            Ok(result) => results.push(result),
+                            Err(EvalError::Break(_)) => break,
+                            Err(EvalError::Continue(_)) => continue,
+                            Err(e) => return Err(e),
+                        }
+                    }
+
+                    results
+                }
+                _ => {
+                    return Err(EvalError::InvalidTypes {
+                        token: (*self.token_arena.borrow()[node.token_id]).clone(),
+                        name: TokenKind::Foreach.to_string(),
+                        args: vec![values.to_string().into()],
+                    });
+                }
             };
 
             Ok(RuntimeValue::Array(values))
@@ -4046,6 +4066,23 @@ mod tests {
         Ok(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(1.into()),
             RuntimeValue::Number(3.into()),
+        ])])
+    )]
+    #[case::foreach_string(
+        vec![RuntimeValue::String("abc".to_string())],
+        vec![
+            ast_node(ast::Expr::Foreach(
+                ast::Ident::new("c"),
+                ast_node(ast::Expr::Self_),
+                vec![
+                    ast_node(ast::Expr::Ident(ast::Ident::new("c"))),
+                ],
+            )),
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("c".to_string()),
         ])])
     )]
     #[case::to_array_string(vec![RuntimeValue::String("test".to_string())],

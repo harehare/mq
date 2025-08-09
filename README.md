@@ -144,14 +144,14 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
-          Set input format [possible values: markdown, mdx, html, text, null]
+          Set input format [possible values: markdown, mdx, html, text, null, raw]
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -216,7 +216,7 @@ $ mq 'select(.[] || .h) | select(contains("name"))'
 # Exclude js code
 $ mq 'select(!.code("js"))'
 # CSV to markdown table
-$ mq 'nodes | csv2table()' example.csv
+$ mq 'include "csv" | nodes | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
 
 ### Advanced Usage

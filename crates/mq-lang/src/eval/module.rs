@@ -5,7 +5,8 @@ use crate::{
     lexer::{self, Lexer, error::LexerError},
 };
 use compact_str::CompactString;
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
+use rustc_hash::FxHashMap;
+use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, sync::LazyLock};
 use thiserror::Error;
 
 const DEFAULT_PATHS: [&str; 4] = [
@@ -31,6 +32,7 @@ pub enum ModuleError {
 
 pub type ModuleId = ArenaId<ModuleName>;
 type ModuleName = CompactString;
+type StandardModules = FxHashMap<CompactString, fn() -> &'static str>;
 
 #[derive(Debug, Clone)]
 pub struct ModuleLoader {
@@ -50,6 +52,27 @@ impl Module {
     pub const TOP_LEVEL_MODULE: &str = "<top-level>";
     pub const BUILTIN_MODULE: &str = "<builtin>";
 }
+
+pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
+    let mut map = FxHashMap::default();
+
+    macro_rules! std_module {
+        ($name:ident) => {
+            fn $name() -> &'static str {
+                include_str!(concat!("../../modules/", stringify!($name), ".mq"))
+            }
+            map.insert(
+                CompactString::new(stringify!($name)),
+                $name as fn() -> &'static str,
+            );
+        };
+    }
+
+    std_module!(csv);
+
+    map.insert(CompactString::new("csv"), csv as fn() -> &'static str);
+    map
+});
 
 impl ModuleLoader {
     pub const BUILTIN_FILE: &str = include_str!("../../builtin.mq");
@@ -120,16 +143,22 @@ impl ModuleLoader {
         module_name: &str,
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Result<Option<Module>, ModuleError> {
-        let file_path = Self::find(module_name, self.search_paths.clone())?;
-        let program =
-            std::fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(e.to_string()))?;
-
+        let program = self.read_file(module_name)?;
         self.load(module_name, &program, token_arena)
     }
 
-    pub fn read_file(&mut self, module_name: &str) -> Option<String> {
-        let file_path = Self::find(module_name, self.search_paths.clone()).ok()?;
-        fs::read_to_string(&file_path).ok()
+    pub fn read_file(&mut self, module_name: &str) -> Result<String, ModuleError> {
+        if STANDARD_MODULES.contains_key(module_name) {
+            Ok(STANDARD_MODULES
+                .get(module_name)
+                .map(|f| f())
+                .unwrap()
+                .to_string())
+        } else {
+            let file_path = Self::find(module_name, self.search_paths.clone())
+                .map_err(|e| ModuleError::IOError(e.to_string()))?;
+            fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(e.to_string()))
+        }
     }
 
     pub fn load_builtin(
@@ -276,5 +305,43 @@ mod tests {
             ModuleLoader::new(None).load("test", &program, token_arena),
             expected
         );
+    }
+
+    #[rstest]
+    #[case::load_standard_csv("csv", Ok(Some(Module {
+        name: "csv".to_string(),
+        modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
+        vars: Vec::new(),
+    })))]
+    fn test_load_standard_module(
+        token_arena: Rc<RefCell<crate::arena::Arena<Rc<Token>>>>,
+        #[case] module_name: &str,
+        #[case] expected: Result<Option<Module>, ModuleError>,
+    ) {
+        let mut loader = ModuleLoader::new(None);
+        let result = loader.load_from_file(module_name, token_arena.clone());
+        // Only check that loading does not return NotFound error and returns Some(Module)
+        match expected {
+            Ok(Some(_)) => {
+                assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+                assert!(
+                    result.as_ref().unwrap().is_some(),
+                    "Expected Some(Module), got {:?}",
+                    result
+                );
+                assert_eq!(result.unwrap().unwrap().name, module_name);
+            }
+            Err(ref e) => {
+                assert_eq!(result.unwrap_err(), *e);
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_standard_modules_contains_csv() {
+        assert!(super::STANDARD_MODULES.contains_key("csv"));
+        let csv_content = super::STANDARD_MODULES.get("csv").unwrap()();
+        assert!(csv_content.contains("")); // Just check it's a string, optionally check for expected content
     }
 }

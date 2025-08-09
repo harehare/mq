@@ -23,7 +23,7 @@ mq-markdown = {workspace = true, features = ["html-to-markdown"]}
 nom = {version = "8.0.0"}
 nom_locate = "5.0.0"
 percent-encoding = "2.3.1"
-regex = "1.5"
+regex-lite = "0.1.6"
 rustc-hash.workspace = true
 serde = {workspace = true, features = ["derive", "rc"], optional = true}
 serde_json = {workspace = true, optional = true}

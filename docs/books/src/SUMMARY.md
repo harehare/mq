@@ -30,3 +30,4 @@
   - [Builtin selectors and functions](reference/builtins.md)
     - [Builtin functions](reference/builtin_functions.md)
     - [Builtin selectors](reference/builtin_selectors.md)
+    - [CSV functions](reference/csv_functions.md)

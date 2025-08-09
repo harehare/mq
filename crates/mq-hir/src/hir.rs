@@ -1180,4 +1180,32 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         hir.add_builtin();
         assert!(hir.builtin.loaded);
     }
+
+    #[test]
+    fn test_include_function_resolves() {
+        let mut hir = Hir::new();
+        hir.builtin.loaded = false; // Ensure builtins are loaded by add_code
+        let code = r#"include "csv"
+| def test_csv():
+  csv_parse("a,b,c\na,b,c", true)
+end"#;
+        let (_, _) = hir.add_code(None, code);
+
+        // Find the symbol for "csv_parse"
+        let symbol = hir
+            .symbols()
+            .find(|(_, symbol)| symbol.value.as_deref() == Some("csv_parse"))
+            .map(|(_, symbol)| symbol)
+            .expect("csv_parse symbol should be present");
+
+        // It should be a function
+        match &symbol.kind {
+            SymbolKind::Function(params) => {
+                assert!(!params.is_empty(), "csv_parse should have parameters");
+            }
+            _ => panic!("csv_parse should be a function"),
+        }
+
+        assert!(hir.errors().is_empty());
+    }
 }

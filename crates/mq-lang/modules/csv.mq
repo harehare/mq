@@ -1,0 +1,204 @@
+# CSV/TSV Implementation in mq
+# Based on RFC 4180 for CSV format
+
+def _parse_quoted_field(input, delimiter, pos):
+  let pos = pos + 1
+  | let field_content = ""
+  | let escaped = false
+  | let end_pos = pos
+  | let result = until (end_pos < len(input) && (escaped || input[end_pos] != "\"")):
+        let char = input[end_pos]
+        | let field_content = field_content + char
+        | let escaped = char == "\"" && !escaped
+        | let end_pos = end_pos + 1
+        | [field_content, end_pos]
+      end
+  | let field_content = if (is_none(result)): "" else: result[0]
+  | let end_pos = if (is_none(result)): pos else: result[1]
+  | let field_content = replace(field_content, "\"\"", "\"")
+  | let next_pos = if (end_pos < len(input)): end_pos + 1 else: end_pos
+  | [field_content, next_pos]
+end
+
+def _parse_unquoted_field(input, delimiter, pos):
+  let end_pos = pos
+  | let current_input = input[end_pos]
+  | let result = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
+        let end_pos = end_pos + 1
+        | let current_input = input[end_pos]
+        | end_pos
+      end
+  | let result = if (is_none(result)): end_pos else: result
+  | let field_content = join(input[pos:result], "")
+  | [field_content, result]
+end
+
+def _parse_csv_field(input, delimiter, pos):
+  let quoted = starts_with(input[pos], "\"")
+  | if (quoted):
+      _parse_quoted_field(input, delimiter, pos)
+    else:
+      _parse_unquoted_field(input, delimiter, pos)
+end
+
+def _parse_csv_line(line, delimiter):
+  let fields = []
+  | let pos = 0
+  | let input_chars = to_array(line)
+  | let result = until (pos < len(input_chars)):
+        let field_result = _parse_csv_field(input_chars, delimiter, pos)
+        | let new_pos = field_result[1]
+        | let fields = fields + [field_result[0]]
+        | let pos = if (new_pos < len(input_chars) && input_chars[new_pos] == delimiter):
+              new_pos + 1
+            else:
+              new_pos
+        | [fields, pos]
+      end
+  | result[0]
+end
+
+def _split_csv_lines(input):
+  let lines = []
+  | let current_line = ""
+  | let in_quotes = false
+  | let i = 0
+  | let next_skip = false
+  | let result = foreach (char, input):
+        let i = i + 1
+        | let _next_skip = next_skip
+        | let next_skip = false
+        | let _ = if (_next_skip): continue
+        | let next_char = if (i + 1 < len(input)): input[i + 1] else: ""
+        | let result = if (char == "\"" && !in_quotes):
+              [lines, current_line + char, true, false]
+            elif (char == "\"" && in_quotes):
+              [lines, current_line + char, false, false]
+            elif (char != "\"" && in_quotes):
+              [lines, current_line + char, true, false]
+            elif ((char == "\n" || char == "\r") && !in_quotes):
+              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", false, false]
+            elif (char == "\\" && (next_char == "r" || next_char == "n") && !in_quotes):
+              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", false, true]
+            else:
+              [lines, current_line + char, in_quotes, false]
+        | let lines = result[0]
+        | let current_line = result[1]
+        | let in_quotes = result[2]
+        | let next_skip = result[3]
+        | if (i < len(input)): continue else: result
+      end
+
+  | let result = last(result)
+  | let lines = result[0]
+  | let current_line = result[1]
+  | let lines = if (!is_empty(trim(current_line))): lines + [current_line] else: lines
+  | lines
+end
+
+def _parse_csv_content(input, delimiter, has_header):
+  let lines = _split_csv_lines(input)
+  | let parsed_lines = map(lines, fn(line): _parse_csv_line(line, delimiter);)
+  | let headers = if (has_header && len(parsed_lines) > 0): first(parsed_lines) else: None
+  | let data_lines = if (has_header && len(parsed_lines) > 0): parsed_lines[1:len(parsed_lines)] else: parsed_lines
+  | let csv_to_dict = fn(row):
+        let obj = {}
+        | let i = 0
+        | until (i < len(headers) && i < len(row)):
+            let key = if (i < len(headers)): headers[i] else: "column_" + to_string(i)
+            | let value = if (i < len(row)): row[i] else: ""
+            | let obj = set(obj, key, value)
+            | let i = i + 1
+            | obj
+          end
+      end
+  | if (!is_none(headers)):
+      map(data_lines, csv_to_dict)
+    else:
+      data_lines
+end
+
+def csv_needs_quote(field, delimiter):
+  let s = to_string(field)
+  | contains(s, "\"") || contains(s, "\n") || contains(s, "\r") || contains(s, delimiter) || starts_with(s, " ") || ends_with(s, " ")
+end
+
+# Parses CSV content with a specified delimiter and optional header row.
+def csv_parse_with_delimiter(input, delimiter, has_header): _parse_csv_content(input, delimiter, has_header);
+
+# Parses CSV content using a comma as the delimiter.
+def csv_parse(input, has_header): _parse_csv_content(input, ",", has_header);
+
+# Parses TSV (Tab-Separated Values) content.
+def tsv_parse(input, has_header): _parse_csv_content(input, "\t", has_header);
+
+# Converts data to a CSV string with a specified delimiter.
+def csv_stringify(data, delimiter):
+  let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
+    keys(first(data))
+  else: first(data)
+  | let header_line = join(headers, delimiter)
+  | let data = if (is_dict(first(data))): data else: data[1:len(data)]
+  | let data_lines = map(data, fn(row):
+          if (is_dict(row)):
+            join(map(headers, fn(header):
+                          if (row[header]):
+                            if (csv_needs_quote(row[header], delimiter)):
+                              "\"" + to_string(row[header]) + "\""
+                            else:
+                              to_string(row[header])
+                          else:
+                            "";), delimiter)
+          else:
+            join(map(row, fn(field):
+                          let s = to_string(field)
+                          | if (csv_needs_quote(field, delimiter)):
+                              s"\"${s}\""
+                            else: s;), delimiter)
+        end)
+  | [header_line] + data_lines
+  | join("\n")
+end
+
+# Converts CSV data to a Markdown table format.
+def csv_to_markdown_table(data):
+  let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
+    keys(first(data))
+  else: first(data)
+  | let header_row = "| " + join(headers, " | ") + " |"
+  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+  | let data = if (is_dict(first(data))): data else: data[1:len(data)]
+  | let data_rows = map(data, fn(row):
+          if (is_dict(row)):
+            "| " + join(map(headers, fn(header): if (row[header]): to_string(row[header]) else: "";), " | ") + " |"
+          else:
+            "| " + join(map(row, to_string), " | ") + " |"
+        end)
+  | [header_row, separator_row] + data_rows
+  | join("\n")
+end
+
+# Converts CSV data to a JSON string.
+def csv_to_json(data):
+  def _to_json(value):
+    if (is_dict(value)):
+      "{" + join(map(keys(value), fn(k): "\"" + k + "\":" + _to_json(value[k]);), ",") + "}"
+    elif (is_array(value)):
+      "[" + join(map(value, _to_json), ",") + "]"
+    elif (is_string(value)):
+      "\"" + replace(value, "\"", "\\\"") + "\""
+    elif (is_number(value)):
+      to_string(value)
+    elif (is_bool(value)):
+      if (value): "true" else: "false"
+    elif (is_none(value)):
+      "null"
+    else:
+      "\"" + to_string(value) + "\""
+  end
+
+  | if (is_array(data) && len(data) > 0 && is_dict(first(data))):
+      _to_json(data)
+    else:
+      _to_json(map(data, fn(row): row;))
+end

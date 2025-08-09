@@ -2608,7 +2608,7 @@ dependencies = [
  "nom",
  "nom_locate",
  "percent-encoding",
- "regex",
+ "regex-lite",
  "rstest",
  "rustc-hash",
  "serde",

@@ -80,7 +80,7 @@ def sitemap(item, base_url):
 ## CSV to markdown table
 
 ```bash
-$ mq 'nodes | csv2table()' example.csv
+$ mq 'include "csv" | nodes | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
 
 ## Merging Multiple Files

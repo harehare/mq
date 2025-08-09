@@ -71,7 +71,10 @@ impl Hir {
 
         self.symbols.iter().for_each(|(_, symbol)| {
             if symbol.scope == scope_id
-                && (symbol.is_function() || symbol.is_parameter() || symbol.is_variable())
+                && (symbol.is_function()
+                    || symbol.is_parameter()
+                    || symbol.is_variable()
+                    || symbol.is_argument())
             {
                 symbols.push(Arc::new(symbol.clone()));
             }

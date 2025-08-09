@@ -45,7 +45,13 @@ pub struct Cli {
     query: Option<String>,
     files: Option<Vec<PathBuf>>,
 }
-
+/// Represents the input format for processing.
+/// - Markdown: Standard Markdown parsing.
+/// - Mdx: MDX parsing.
+/// - Html: HTML parsing.
+/// - Text: Treats input as plain text.
+/// - Null: No input.
+/// - Raw: Treats all input as a single string, without parsing.
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
 enum InputFormat {
     #[default]
@@ -54,6 +60,7 @@ enum InputFormat {
     Html,
     Text,
     Null,
+    Raw,
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -174,7 +181,11 @@ enum Commands {
         check: bool,
     },
     /// Show functions documentation for the query
-    Docs,
+    Docs {
+        /// Specify additional module names to load for documentation
+        #[arg(short = 'M', long)]
+        module_names: Option<Vec<String>>,
+    },
 }
 
 impl Cli {
@@ -236,10 +247,18 @@ impl Cli {
 
                 Ok(())
             }
-            Some(Commands::Docs) => {
-                let query = self.get_query().unwrap_or_default();
+            Some(Commands::Docs { module_names }) => {
                 let mut hir = mq_hir::Hir::default();
-                hir.add_code(None, &query);
+
+                if let Some(module_names) = module_names {
+                    hir.builtin.disabled = true;
+
+                    for module_name in module_names {
+                        hir.add_code(None, &format!("include \"{}\"", module_name));
+                    }
+                } else {
+                    hir.add_code(None, "");
+                }
 
                 let mut doc_csv = hir
                     .symbols()
@@ -271,7 +290,10 @@ impl Cli {
 
                 let mut engine = self.create_engine()?;
                 let doc_values = engine
-                    .eval("nodes | tsv2table_with_header()", doc_csv.into_iter())
+                    .eval(
+                        r#"include "csv" | tsv_parse(false) | csv_to_markdown_table()"#,
+                        mq_lang::raw_input(&doc_csv.iter().join("\n")).into_iter(),
+                    )
                     .map_err(|e| *e)?;
                 self.print(doc_values)?;
 
@@ -371,7 +393,7 @@ impl Cli {
                     "md" | "markdown" => &InputFormat::Markdown,
                     "mdx" => &InputFormat::Mdx,
                     "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" => &InputFormat::Text,
+                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" => &InputFormat::Raw,
                     _ => &InputFormat::Markdown,
                 }
             } else if io::stdin().is_terminal() {
@@ -385,6 +407,7 @@ impl Cli {
             InputFormat::Text => mq_lang::parse_text_input(content)?,
             InputFormat::Html => mq_lang::parse_html_input(content)?,
             InputFormat::Null => mq_lang::null_input(),
+            InputFormat::Raw => mq_lang::raw_input(content),
         };
 
         let runtime_values = if self.output.update {
