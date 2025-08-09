@@ -623,52 +623,69 @@ impl<'a> Parser<'a> {
                 Ok(Arc::new(node))
             }
             Some(token) if matches!(token.kind, TokenKind::LBracket) => {
-                // Parse bracket access: ident[key] -> get(ident, key) or ident[start:end] -> slice(ident, start, end)
-                children.push(self.next_node(
-                    |token_kind| matches!(token_kind, TokenKind::LBracket),
-                    NodeKind::Token,
-                )?);
-
-                // Parse the first expression
-                let first_expr = self.parse_expr(Vec::new(), false, false)?;
-                children.push(first_expr);
-
-                // Check if this is a slice operation (contains ':')
-                let is_slice = matches!(self.tokens.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
-
-                if is_slice {
-                    // Add the colon token
-                    children.push(self.next_node(
-                        |token_kind| matches!(token_kind, TokenKind::Colon),
-                        NodeKind::Token,
-                    )?);
-
-                    // Parse the second expression (end index)
-                    let second_expr = self.parse_expr(Vec::new(), false, false)?;
-                    children.push(second_expr);
-                }
-
-                // Expect closing bracket
-                match self.tokens.peek() {
-                    Some(token) if matches!(token.kind, TokenKind::RBracket) => {
-                        children.push(self.next_node(
-                            |token_kind| matches!(token_kind, TokenKind::RBracket),
-                            NodeKind::Token,
-                        )?);
-                    }
-                    Some(token) => {
-                        return Err(ParseError::ExpectedClosingBracket(Arc::clone(token)));
-                    }
-                    None => {
-                        return Err(ParseError::UnexpectedEOFDetected);
-                    }
-                }
-
-                node.kind = NodeKind::Call;
-                node.children = children;
-                Ok(Arc::new(node))
+                self.parse_bracket_access(node)
             }
             _ => Ok(Arc::new(node)),
+        }
+    }
+
+    // Parses bracket access operations recursively to handle nested access like arr[0][1][2]
+    fn parse_bracket_access(&mut self, mut node: Node) -> Result<Arc<Node>, ParseError> {
+        let mut children: Vec<Arc<Node>> = Vec::with_capacity(100);
+
+        // Parse bracket access: ident[key] -> get(ident, key) or ident[start:end] -> slice(ident, start, end)
+        children.push(self.next_node(
+            |token_kind| matches!(token_kind, TokenKind::LBracket),
+            NodeKind::Token,
+        )?);
+
+        // Parse the first expression
+        let first_expr = self.parse_expr(Vec::new(), false, false)?;
+        children.push(first_expr);
+
+        // Check if this is a slice operation (contains ':')
+        let is_slice =
+            matches!(self.tokens.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
+
+        if is_slice {
+            // Add the colon token
+            children.push(self.next_node(
+                |token_kind| matches!(token_kind, TokenKind::Colon),
+                NodeKind::Token,
+            )?);
+
+            // Parse the second expression (end index)
+            let second_expr = self.parse_expr(Vec::new(), false, false)?;
+            children.push(second_expr);
+        }
+
+        // Expect closing bracket
+        match self.tokens.peek() {
+            Some(token) if matches!(token.kind, TokenKind::RBracket) => {
+                children.push(self.next_node(
+                    |token_kind| matches!(token_kind, TokenKind::RBracket),
+                    NodeKind::Token,
+                )?);
+            }
+            Some(token) => {
+                return Err(ParseError::ExpectedClosingBracket(Arc::clone(token)));
+            }
+            None => {
+                return Err(ParseError::UnexpectedEOFDetected);
+            }
+        }
+
+        node.kind = NodeKind::Call;
+        node.children = children;
+
+        // Check for additional bracket access (nested indexing)
+        if matches!(
+            self.tokens.peek().map(|t| &t.kind),
+            Some(TokenKind::LBracket)
+        ) {
+            self.parse_bracket_access(node)
+        } else {
+            Ok(Arc::new(node))
         }
     }
 
