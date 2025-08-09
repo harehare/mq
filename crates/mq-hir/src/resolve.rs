@@ -4,49 +4,31 @@ use crate::{Hir, ScopeId, SourceId, Symbol, SymbolId, SymbolKind};
 
 impl Hir {
     pub fn resolve(&mut self) {
-        self.symbols
-            .clone()
+        let symbols_to_resolve: Vec<_> = self
+            .symbols
             .iter()
-            .for_each(|(ref_symbol_id, ref_symbol)| match &ref_symbol.kind {
-                SymbolKind::Ref => {
-                    self.resolve_ref_symbol_of_scope(
-                        ref_symbol.scope,
-                        ref_symbol.value.as_ref().unwrap(),
-                        ref_symbol_id,
-                    )
-                    .map(|(symbol_id, _)| {
-                        self.references.insert(ref_symbol_id, symbol_id);
-                    })
-                    .or(self
-                        .resolve_ref_symbol_of_source(
+            .filter_map(|(ref_symbol_id, ref_symbol)| match &ref_symbol.kind {
+                SymbolKind::Ref | SymbolKind::Call => Some((ref_symbol_id, ref_symbol.clone())),
+                _ => None,
+            })
+            .collect();
+
+        for (ref_symbol_id, ref_symbol) in symbols_to_resolve {
+            if let Some(ref_name) = &ref_symbol.value {
+                let resolved = self
+                    .resolve_ref_symbol_of_scope(ref_symbol.scope, ref_name, ref_symbol_id)
+                    .or_else(|| {
+                        self.resolve_ref_symbol_of_source(
                             self.include_source_ids(ref_symbol.scope),
-                            ref_symbol.value.as_ref().unwrap(),
+                            ref_name,
                         )
-                        .map(|(symbol_id, _)| {
-                            self.references.insert(ref_symbol_id, symbol_id);
-                        }));
+                    });
+
+                if let Some((symbol_id, _)) = resolved {
+                    self.references.insert(ref_symbol_id, symbol_id);
                 }
-                SymbolKind::Call => {
-                    let _ = self
-                        .resolve_ref_symbol_of_scope(
-                            ref_symbol.scope,
-                            ref_symbol.value.as_ref().unwrap(),
-                            ref_symbol_id,
-                        )
-                        .map(|(symbol_id, _)| {
-                            self.references.insert(ref_symbol_id, symbol_id);
-                        })
-                        .or(self
-                            .resolve_ref_symbol_of_source(
-                                self.include_source_ids(ref_symbol.scope),
-                                ref_symbol.value.as_ref().unwrap(),
-                            )
-                            .map(|(symbol_id, _)| {
-                                self.references.insert(ref_symbol_id, symbol_id);
-                            }));
-                }
-                _ => {}
-            });
+            }
+        }
     }
 
     pub fn resolve_reference_symbol(&self, ref_symbol_id: SymbolId) -> Option<SymbolId> {
@@ -69,26 +51,53 @@ impl Hir {
         source_ids
     }
 
+    fn get_symbol_priority_for_cross_source(&self, symbol_kind: &SymbolKind) -> u8 {
+        match symbol_kind {
+            SymbolKind::Function(_) => 0,
+            SymbolKind::Variable => 1,
+            SymbolKind::Parameter => 2,
+            SymbolKind::Argument => 3,
+            _ => 4,
+        }
+    }
+
     fn resolve_ref_symbol_of_source(
         &self,
         source_ids: Vec<SourceId>,
         ref_name: &CompactString,
     ) -> Option<(SymbolId, Symbol)> {
-        let mut symbols = Vec::new();
+        let mut candidates = Vec::new();
 
         for (symbol_id, symbol) in &self.symbols {
             if let Some(source_id) = symbol.source.source_id {
                 if source_ids.contains(&source_id)
                     && symbol.value.as_ref() == Some(ref_name)
-                    && (symbol.is_function() || symbol.is_parameter() || symbol.is_variable())
+                    && (symbol.is_function()
+                        || symbol.is_parameter()
+                        || symbol.is_variable()
+                        || symbol.is_argument())
                 {
-                    symbols.push((symbol_id, symbol.clone()));
-                    break;
+                    let priority = self.get_symbol_priority_for_cross_source(&symbol.kind);
+                    candidates.push((priority, symbol_id, symbol.clone()));
                 }
             }
         }
 
-        symbols.first().cloned()
+        // Sort by priority and return the best match
+        candidates.sort_by_key(|(priority, _, _)| *priority);
+        candidates
+            .first()
+            .map(|(_, symbol_id, symbol)| (*symbol_id, symbol.clone()))
+    }
+
+    fn get_symbol_priority_for_scope(&self, symbol_kind: &SymbolKind) -> u8 {
+        match symbol_kind {
+            SymbolKind::Argument => 0,
+            SymbolKind::Parameter => 1,
+            SymbolKind::Variable => 2,
+            SymbolKind::Function(_) => 3,
+            _ => 4,
+        }
     }
 
     fn resolve_ref_symbol_of_scope(
@@ -97,7 +106,8 @@ impl Hir {
         ref_name: &CompactString,
         ref_symbol_id: SymbolId,
     ) -> Option<(SymbolId, Symbol)> {
-        let mut symbols = Vec::new();
+        // Find all matching symbols in current scope with priority order
+        let mut candidates = Vec::new();
 
         for (symbol_id, symbol) in &self.symbols {
             if symbol_id != ref_symbol_id
@@ -108,18 +118,21 @@ impl Hir {
                     || symbol.is_variable()
                     || symbol.is_argument())
             {
-                symbols.push((symbol_id, symbol.clone()));
-                break;
+                let priority = self.get_symbol_priority_for_scope(&symbol.kind);
+                candidates.push((priority, symbol_id, symbol.clone()));
             }
         }
 
-        if symbols.is_empty() {
-            let scope_id = self.scopes[scope_id].parent_id;
-            scope_id.and_then(|scope_id| {
-                self.resolve_ref_symbol_of_scope(scope_id, ref_name, ref_symbol_id)
-            })
+        // Sort by priority (lower number = higher priority)
+        candidates.sort_by_key(|(priority, _, _)| *priority);
+
+        if let Some((_, symbol_id, symbol)) = candidates.first() {
+            Some((*symbol_id, symbol.clone()))
         } else {
-            symbols.first().cloned()
+            // Search in parent scope
+            self.scopes[scope_id].parent_id.and_then(|parent_scope_id| {
+                self.resolve_ref_symbol_of_scope(parent_scope_id, ref_name, ref_symbol_id)
+            })
         }
     }
 }
