@@ -72,14 +72,14 @@ def _split_csv_lines(input):
         | let next_char = if (i + 1 < len(input)): input[i + 1] else: ""
         | let result = if (char == "\"" && !in_quotes):
               [lines, current_line + char, true, false]
-            elif (char == "\"" && in_quotes && next_char == "\""):
-              [lines, current_line + char + next_char, in_quotes, true]
             elif (char == "\"" && in_quotes):
               [lines, current_line + char, false, false]
+            elif (char != "\"" && in_quotes):
+              [lines, current_line + char, true, false]
             elif ((char == "\n" || char == "\r") && !in_quotes):
-              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", in_quotes, false]
+              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", false, false]
             elif (char == "\\" && (next_char == "r" || next_char == "n") && !in_quotes):
-              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", in_quotes, true]
+              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", false, true]
             else:
               [lines, current_line + char, in_quotes, false]
         | let lines = result[0]
@@ -118,6 +118,11 @@ def _parse_csv_content(input, delimiter, has_header):
       data_lines
 end
 
+def csv_needs_quote(field, delimiter):
+  let s = to_string(field)
+  | contains(s, "\"") || contains(s, "\n") || contains(s, "\r") || contains(s, delimiter) || starts_with(s, " ") || ends_with(s, " ")
+end
+
 # Parses CSV content with a specified delimiter and optional header row.
 def csv_parse_with_delimiter(input, delimiter, has_header): _parse_csv_content(input, delimiter, has_header);
 
@@ -131,13 +136,25 @@ def tsv_parse(input, has_header): _parse_csv_content(input, "\t", has_header);
 def csv_stringify(data, delimiter):
   let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
     keys(first(data))
-  else: []
+  else: first(data)
   | let header_line = join(headers, delimiter)
+  | let data = if (is_dict(first(data))): data else: data[1:len(data)]
   | let data_lines = map(data, fn(row):
           if (is_dict(row)):
-            join(map(headers, fn(header): if (row[header]): to_string(row[header]) else: "";), delimiter)
+            join(map(headers, fn(header):
+                          if (row[header]):
+                            if (csv_needs_quote(row[header], delimiter)):
+                              "\"" + to_string(row[header]) + "\""
+                            else:
+                              to_string(row[header])
+                          else:
+                            "";), delimiter)
           else:
-            join(map(row, to_string), delimiter)
+            join(map(row, fn(field):
+                          let s = to_string(field)
+                          | if (csv_needs_quote(field, delimiter)):
+                              s"\"${s}\""
+                            else: s;), delimiter)
         end)
   | [header_line] + data_lines
   | join("\n")
