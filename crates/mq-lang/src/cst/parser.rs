@@ -419,7 +419,7 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Fn,
                     ..
-                } => self.parse_fn(leading_trivia),
+                } => self.parse_fn(leading_trivia, in_loop),
                 Token {
                     range: _,
                     kind: TokenKind::If,
@@ -839,7 +839,11 @@ impl<'a> Parser<'a> {
         Ok(Arc::new(node))
     }
 
-    fn parse_fn(&mut self, leading_trivia: Vec<Trivia>) -> Result<Arc<Node>, ParseError> {
+    fn parse_fn(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        in_loop: bool,
+    ) -> Result<Arc<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Arc<Node>> = Vec::with_capacity(100);
@@ -856,7 +860,7 @@ impl<'a> Parser<'a> {
         children.append(&mut params);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
-        let (mut program, _) = self.parse_program(false, false);
+        let (mut program, _) = self.parse_program(false, in_loop);
 
         children.append(&mut program);
 

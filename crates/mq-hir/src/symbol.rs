@@ -60,6 +60,10 @@ impl Symbol {
         matches!(self.kind, SymbolKind::Parameter)
     }
 
+    pub fn is_argument(&self) -> bool {
+        matches!(self.kind, SymbolKind::Argument)
+    }
+
     pub fn is_internal_function(&self) -> bool {
         if matches!(self.kind, SymbolKind::Function(_)) {
             self.value

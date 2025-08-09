@@ -103,7 +103,10 @@ impl Hir {
             if symbol_id != ref_symbol_id
                 && symbol.scope == scope_id
                 && symbol.value.as_ref() == Some(ref_name)
-                && (symbol.is_function() || symbol.is_parameter() || symbol.is_variable())
+                && (symbol.is_function()
+                    || symbol.is_parameter()
+                    || symbol.is_variable()
+                    || symbol.is_argument())
             {
                 symbols.push((symbol_id, symbol.clone()));
                 break;
