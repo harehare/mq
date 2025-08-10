@@ -399,10 +399,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_self(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
-        Ok(Rc::new(Node {
+        let node = Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
             expr: Rc::new(Expr::Self_),
-        }))
+        });
+
+        match self.tokens.peek().map(|t| &t.kind) {
+            Some(TokenKind::LBracket) => self.parse_bracket_access(node, token),
+            _ => Ok(node),
+        }
     }
 
     fn parse_break(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
@@ -4795,6 +4800,60 @@ mod tests {
                             })
                         ])
                     )]
+    #[case::self_bracket_access_with_number(
+                vec![
+                    token(TokenKind::Self_),
+                    token(TokenKind::LBracket),
+                    token(TokenKind::NumberLiteral(5.into())),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 2.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Self_)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(Expr::Self_),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
+    #[case::self_bracket_access_with_string(
+                vec![
+                    token(TokenKind::Self_),
+                    token(TokenKind::LBracket),
+                    token(TokenKind::StringLiteral("key".to_owned())),
+                    token(TokenKind::RBracket),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Rc::new(Node {
+                        token_id: 2.into(),
+                        expr: Rc::new(Expr::Call(
+                            Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Self_)))),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(Expr::Self_),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })
+                ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         let tokens: Vec<Rc<Token>> = input.into_iter().map(Rc::new).collect();
