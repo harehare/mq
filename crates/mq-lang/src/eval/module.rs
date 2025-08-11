@@ -69,8 +69,10 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     }
 
     std_module!(csv);
+    std_module!(yaml);
 
     map.insert(CompactString::new("csv"), csv as fn() -> &'static str);
+    map.insert(CompactString::new("yaml"), yaml as fn() -> &'static str);
     map
 });
 

@@ -29,7 +29,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             filter_none: true,
-            max_call_stack_depth: 32,
+            max_call_stack_depth: 40,
         }
     }
 }
@@ -481,6 +481,7 @@ impl Evaluator {
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
+            let mut i = 0;
 
             while cond_value.is_truthy() {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
@@ -489,10 +490,20 @@ impl Evaluator {
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
+                    Err(EvalError::Break(_)) if i == 0 => {
+                        runtime_value = RuntimeValue::NONE;
+                        break;
+                    }
                     Err(EvalError::Break(_)) => break,
+                    Err(EvalError::Continue(_)) if i == 0 => {
+                        runtime_value = RuntimeValue::NONE;
+                        continue;
+                    }
                     Err(EvalError::Continue(_)) => continue,
                     Err(e) => return Err(e),
                 }
+
+                i += 1;
             }
 
             Ok(runtime_value)

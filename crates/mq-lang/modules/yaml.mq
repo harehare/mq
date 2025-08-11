@@ -1,0 +1,409 @@
+# YAML Implementation in mq
+# Based on YAML 1.2 specification
+
+def is_digit(char):
+  test(char, "^[0-9]+$")
+end
+
+def _parse_yaml_boolean(str):
+  if (str == "true" || str == "True" || str == "TRUE" || str == "yes" || str == "Yes" || str == "YES"):
+    true
+  elif (str == "false" || str == "False" || str == "FALSE" || str == "no" || str == "No" || str == "NO"):
+    false
+  else:
+    None
+end
+
+def _escape_string(str):
+  replace(
+    replace(
+      replace(
+        replace(str, "\\", "\\\\"),
+        "\"", "\\\""
+      ),
+      "\n", "\\n"
+    ),
+    "\t", "\\t"
+  )
+end
+
+def _parse_yaml_value(str):
+  let trimmed = trim(str)
+  | if (is_empty(trimmed)):
+      None
+     # string
+    elif (starts_with(trimmed, "\"") || starts_with(trimmed, "'")):
+      if (starts_with(trimmed, "\"") && ends_with(trimmed, "\"")):
+        _escape_string(trimmed[1:-1])
+      elif (starts_with(trimmed, "'") && ends_with(trimmed, "'")):
+        replace(trimmed[1:len(trimmed) - 1], "''", "'")
+      else:
+        trimmed
+     # boolean
+    elif (_parse_yaml_boolean(trimmed) != None):
+      _parse_yaml_boolean(trimmed)
+     # number
+    elif (is_digit(trimmed) || first(to_array(trimmed)) == "-" || first(to_array(trimmed)) == "+"):
+      if (contains(trimmed, ".")): to_number(trimmed) else: to_number(trimmed)
+     # null
+    elif (trimmed == "null" || trimmed == "Null" || trimmed == "NULL" || trimmed == "~" || trimmed == ""):
+      None
+    else:
+      trimmed
+end
+
+def _parse_yaml_array_line(line):
+  let trimed_line = trim(line)
+  | if (starts_with(trimed_line, "- ")):
+      _parse_yaml_value(trimed_line[2:len(trim(line))])
+    else:
+      None
+end
+
+def _parse_yaml_key_value(line):
+  let colon_pos = index(line, ":")
+  | let key = trim(line[0:colon_pos])
+  | let value_part = if (colon_pos + 1 < len(line)): line[colon_pos + 1:len(line)] else: ""
+  | let value = _parse_yaml_value(value_part)
+  | let result = [key, value]
+  | if (colon_pos != -1):
+      result
+    else:
+      None
+end
+
+def _get_indent_level(line):
+  let i = 0
+  | let count = until (i < len(line) && line[i] == " "):
+        let i = i + 1
+        | i
+      end
+  | let count = if (is_none(count)): i else: count
+  | count / 2
+  | floor()
+end
+
+def _is_yaml_array_item(line):
+  starts_with(trim(line), "- ")
+end
+
+def _is_yaml_key_value(line):
+  contains(line, ":") && !starts_with(trim(line), "- ")
+end
+
+def parse_yaml_content(input):
+  def _handle_object_empty_or_comment(result, current_index):
+    [result, current_index + 1]
+  end
+
+  def _handle_object_indent_break(result, current_index):
+    [result, current_index, true]
+  end
+
+  def _handle_nested_object_item(result, key, nested_result):
+    [set(result, key, nested_result[0]), nested_result[1]]
+  end
+
+  def _process_key_value_pair(result, lines, current_index, target_indent, kv_pair):
+    let key = kv_pair[0]
+    | let value = kv_pair[1]
+    | let next_index = current_index + 1
+    | let next_line = lines[next_index]
+    | if (next_index < len(lines) && _get_indent_level(lines[next_index]) > target_indent):
+        if (trim(to_string(value)) == "|"):
+          _handle_nested_object_item(result, key, parse_yaml_lines_with_options(lines, next_index, _get_indent_level(lines[next_index]), true))
+        elif (!_is_yaml_array_item(to_string(next_line)) && !_is_yaml_key_value(to_string(next_line))):
+          _handle_nested_object_item(result, key, parse_yaml_lines_with_options(lines, next_index, _get_indent_level(lines[next_index]), true))
+        else:
+          _handle_nested_object_item(result, key, parse_yaml_lines(lines, next_index, _get_indent_level(lines[next_index])))
+      else:
+        [set(result, key, value), next_index]
+  end
+
+  def _handle_object_key_value(result, lines, current_index, target_indent):
+    let kv_pair = _parse_yaml_key_value(lines[current_index])
+    | if (kv_pair != None):
+        _process_key_value_pair(result, lines, current_index, target_indent, kv_pair)
+      else:
+        [result, current_index + 1]
+  end
+
+  def _handle_array_empty_or_comment(result, current_index):
+    [result, current_index + 1]
+  end
+
+  def _handle_array_indent_break(result, current_index):
+    [result, current_index, true]
+  end
+
+  def _handle_nested_array_item(result, lines, next_index, nested_result):
+    [result + [nested_result[0]], nested_result[1]]
+  end
+
+  def _handle_array_item(result, lines, current_index, target_indent):
+    let item_value = _parse_yaml_array_line(lines[current_index])
+    | let next_index = current_index + 1
+    | if (next_index < len(lines) && _get_indent_level(lines[next_index]) > target_indent):
+        _handle_nested_array_item(result, lines, next_index, parse_yaml_lines(lines, next_index, _get_indent_level(lines[next_index])))
+      else:
+        [result + [item_value], next_index]
+  end
+
+  def _parse_yaml_object(lines, start_index, target_indent):
+    let obj = {}
+    | let current_index = start_index
+    | until (current_index < len(lines)):
+        let line = lines[current_index]
+        | let trimmed_line = trim(line)
+        | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
+              _handle_object_empty_or_comment(obj, current_index)
+            elif (_get_indent_level(line) < target_indent):
+              _handle_object_indent_break(obj, current_index)
+            elif (_get_indent_level(line) == target_indent && _is_yaml_key_value(line)):
+              _handle_object_key_value(obj, lines, current_index, target_indent)
+            elif (line == "---"):
+              [obj, current_index + 1]
+            else:
+              _handle_object_indent_break(obj, current_index)
+
+        | let obj = result[0]
+        | let current_index = result[1]
+        | if (result[2]): break else: result
+      end
+  end
+
+  def _parse_yaml_array(lines, start_index, target_indent):
+    let arr = []
+    | let current_index = start_index
+    | until (current_index < len(lines)):
+        let line = lines[current_index]
+        | let trimmed_line = trim(line)
+        | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
+              _handle_array_empty_or_comment(arr, current_index)
+            elif (_get_indent_level(line) < target_indent):
+              _handle_array_indent_break(arr, current_index)
+            elif (_get_indent_level(line) == target_indent && _is_yaml_array_item(line)):
+              _handle_array_item(arr, lines, current_index, target_indent)
+            elif (line == "---"):
+              [arr + line, current_index + 1]
+            else:
+              _handle_array_indent_break(arr, current_index)
+
+        | let arr = result[0]
+        | let current_index = result[1]
+        | if (result[2]): break else: result
+      end
+  end
+
+  def _parse_yaml_multi_lines(lines, start_index, target_indent):
+    let multi_line = ""
+    | let current_index = start_index
+    | until (current_index < len(lines)):
+        let line = lines[current_index]
+        | let trimmed_line = trim(line)
+        | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
+              [multi_line, current_index + 1]
+            elif (_get_indent_level(line) < target_indent):
+              break
+            else:
+              [if (is_empty(multi_line)): trimmed_line else: s"${multi_line}
+${trimmed_line}", current_index + 1]
+        | let multi_line = result[0]
+        | let current_index = result[1]
+        | result
+      end
+  end
+
+  def handle_indent_decrease(current_index):
+    [{}, current_index]
+  end
+
+  def parse_yaml_lines_with_options(lines, current_index, current_indent, is_multi_line):
+    def handle_empty_or_comment_line(lines, current_index, current_indent):
+      parse_yaml_lines(lines, current_index + 1, current_indent)
+    end
+
+    def _handle_skip_line(lines, current_index, current_indent):
+      parse_yaml_lines(lines, current_index + 1, current_indent)
+    end
+
+    | let line = lines[current_index]
+    | let trimmed_line = trim(line)
+    | if (current_index >= len(lines)):
+        [{}, current_index]
+      elif (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
+        handle_empty_or_comment_line(lines, current_index, current_indent)
+      elif (is_multi_line):
+        _parse_yaml_multi_lines(lines, current_index, current_indent)
+      elif (_get_indent_level(line) < current_indent):
+        [{}, current_index]
+      elif (_is_yaml_array_item(line)):
+        _parse_yaml_array(lines, current_index, current_indent)
+      elif (_is_yaml_key_value(line)):
+        _parse_yaml_object(lines, current_index, current_indent)
+      else:
+        _handle_skip_line(lines, current_index, current_indent)
+  end
+
+  def parse_yaml_lines(lines, current_index, current_indent):
+    parse_yaml_lines_with_options(lines, current_index, current_indent, false)
+  end
+
+  | let lines = split(input, "\n")
+  | parse_yaml_lines(lines, 0, 0)
+end
+
+# Parses a YAML string and returns the parsed data structure.
+def yaml_parse(input):
+  let result = parse_yaml_content(input)
+  | result[0]
+end
+
+# Returns all keys in a YAML data structure, including nested keys, with dot notation.
+def yaml_keys(data, prefix):
+  def _process_dict_keys(data, prefix_with_dot):
+    let all_keys = []
+    | let dict_keys = keys(data)
+    | let i = 0
+    | until (i < len(dict_keys)):
+        let key = dict_keys[i]
+        | let full_key = prefix_with_dot + key
+        | let value = data[key]
+        | let all_keys = all_keys + [full_key]
+        | let all_keys = if (is_dict(value) || is_array(value)): all_keys + yaml_keys(value, full_key) else: all_keys
+        | let i = i + 1
+        | all_keys
+      end
+  end
+
+  def _process_array_keys(data, prefix_with_dot):
+    let all_keys = []
+    | let i = 0
+    | until (i < len(data)):
+        let full_key = prefix_with_dot + to_string(i)
+        | let value = data[i]
+        | let all_keys = all_keys + [full_key]
+        | let all_keys = if (is_dict(value) || is_array(value)): all_keys + yaml_keys(value, full_key) else: all_keys
+        | let i = i + 1
+        | all_keys
+      end
+  end
+
+  let all_keys = []
+  | let prefix_with_dot = if (!is_empty(prefix)): prefix + "." else: ""
+  | if (is_dict(data)):
+      _process_dict_keys(data, prefix_with_dot)
+    elif (is_array(data)):
+      _process_array_keys(data, prefix_with_dot)
+    else:
+      all_keys
+end
+
+def _stringify_string_value(value):
+  if (contains(value, "\n") || contains(value, "\"") || contains(value, "'")):
+    "\"" + _escape_string(value) + "\""
+  else:
+    value
+end
+
+def _stringify_array_value(value, indent, indent_level):
+  if (is_empty(value)):
+    "[]"
+  else:
+    join(map(value, fn(item): "\n" + indent + "- " + yaml_stringify_value(item, indent_level + 1);), "")
+end
+
+def _stringify_dict_value(value, indent, indent_level):
+  if (is_empty(keys(value))):
+    "{}"
+  else:
+    join(map(keys(value), fn(k): "\n" + indent + k + ": " + yaml_stringify_value(value[k], indent_level + 1);), "")
+end
+
+def _yaml_stringify_value(value, indent_level):
+  let indent = join(map(range(0, indent_level * 2), fn(_): " ";), "")
+  | if (is_string(value)):
+      _stringify_string_value(value)
+    elif (is_number(value)):
+      to_string(value)
+    elif (is_bool(value)):
+      if (value): "true" else: "false"
+    elif (is_none(value)):
+      "null"
+    elif (is_array(value)):
+      _stringify_array_value(value, indent, indent_level)
+    elif (is_dict(value)):
+      _stringify_dict_value(value, indent, indent_level)
+    else:
+      to_string(value)
+end
+
+# Converts a data structure to a YAML string representation.
+def yaml_stringify(data):
+  if (is_array(data)):
+    if (is_empty(data)):
+      "[]"
+    else:
+      join(map(data, fn(item): "- " + _yaml_stringify_value(item, 1);), "\n")
+  elif (is_dict(data)):
+    if (is_empty(keys(data))):
+      "{}"
+    else:
+      join(map(keys(data), fn(k): k + ": " + _yaml_stringify_value(data[k], 1);), "\n")
+  else:
+    _yaml_stringify_value(data, 0)
+end
+
+# Converts a data structure to a JSON string representation.
+def yaml_to_json(data):
+  if (is_dict(data)):
+    "{" + join(map(keys(data), fn(k): "\"" + k + "\": " + yaml_to_json(data[k]);), ", ") + "}"
+  elif (is_array(data)):
+    "[" + join(map(data, yaml_to_json), ", ") + "]"
+  elif (is_string(data)):
+    "\"" + _escape_string(data) + "\""
+  elif (is_number(data)):
+    to_string(data)
+  elif (is_bool(data)):
+    if (data): "true" else: "false"
+  elif (is_none(data)):
+    "null"
+  else:
+    "\"" + to_string(data) + "\""
+end
+
+def _create_array_markdown_table(data):
+  let headers = keys(first(data))
+  | let header_row = "| " + join(headers, " | ") + " |"
+  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+  | let data_rows = map(data, fn(row):
+          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+        end)
+  | [header_row, separator_row] + data_rows
+  | join("\n")
+end
+
+def _create_dict_markdown_table(data):
+  let headers = ["Key", "Value"]
+  | let header_row = "| " + join(headers, " | ") + " |"
+  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+  | let data_rows = map(keys(data), fn(key):
+          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+        end)
+  | [header_row, separator_row] + data_rows
+  | join("\n")
+end
+
+def _create_simple_markdown_table(data):
+  "| Value |\n| --- |\n| " + to_string(data) + " |"
+end
+
+# Converts a YAML data structure to a Markdown table.
+def yaml_to_markdown_table(data):
+  if (is_array(data)):
+    _create_array_markdown_table(data)
+  elif (is_dict(data)):
+    _create_dict_markdown_table(data)
+  else:
+    _create_simple_markdown_table(data)
+end
