@@ -10,7 +10,9 @@ macro_rules! impl_value_display {
                     Self::Array(_) => self.string(),
                     Self::Markdown(m, ..) => m.to_string(),
                     Self::None => "".to_string(),
-                    Self::Function(..) => "function".to_string(),
+                    Self::Function(params, ..) => {
+                        format!("function({})", params.len())
+                    }
                     Self::NativeFunction(_) => "native_function".to_string(),
                     Self::Dict(_) => self.string(),
                 };

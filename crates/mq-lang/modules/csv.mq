@@ -186,7 +186,7 @@ def csv_to_json(data):
     elif (is_array(value)):
       "[" + join(map(value, _to_json), ",") + "]"
     elif (is_string(value)):
-      "\"" + replace(value, "\"", "\\\"") + "\""
+      "\"" + replace(replace(value, "\"", "\\\""), "\n", "\\n") + "\""
     elif (is_number(value)):
       to_string(value)
     elif (is_bool(value)):

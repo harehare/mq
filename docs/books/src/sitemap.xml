@@ -133,4 +133,8 @@
     <loc>https://mqlang.org/book/reference/csv_functions</loc>
     <priority>1.0</priority>
   </url>
+  <url>
+    <loc>https://mqlang.org/book/reference/yaml_functions</loc>
+    <priority>1.0</priority>
+  </url>
 </urlset>
