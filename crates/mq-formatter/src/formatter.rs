@@ -552,7 +552,10 @@ impl Formatter {
                         self.append_indent(indent_level);
                     }
 
-                    if !self.output.is_empty() && !self.output.ends_with('\n') {
+                    if !self.output.is_empty()
+                        && !self.output.ends_with('\n')
+                        && !self.output.ends_with(' ')
+                    {
                         self.append_space();
                     }
 
