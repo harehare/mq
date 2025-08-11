@@ -25,7 +25,7 @@ export interface Diagnostic {
 
 export interface Options {
     isUpdate: boolean,
-    inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | null,
+    inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -86,6 +86,8 @@ pub enum InputFormat {
     Html,
     #[serde(rename = "null")]
     Null,
+    #[serde(rename = "raw")]
+    Raw,
 }
 
 impl FromStr for InputFormat {
@@ -189,6 +191,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
         InputFormat::Html => mq_lang::parse_html_input(content),
         InputFormat::Mdx => mq_lang::parse_mdx_input(content),
         InputFormat::Markdown => mq_lang::parse_markdown_input(content),
+        InputFormat::Raw => Ok(mq_lang::raw_input(content)),
         InputFormat::Null => Ok(mq_lang::null_input()),
     }
     .map_err(|e| JsValue::from_str(&format!("Failed to parse input content: {}", e)))?;
