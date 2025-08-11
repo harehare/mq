@@ -310,14 +310,14 @@ def _stringify_array_value(value, indent, indent_level):
   if (is_empty(value)):
     "[]"
   else:
-    join(map(value, fn(item): "\n" + indent + "- " + yaml_stringify_value(item, indent_level + 1);), "")
+    join(map(value, fn(item): "\n" + indent + "- " + _yaml_stringify_value(item, indent_level + 1);), "")
 end
 
 def _stringify_dict_value(value, indent, indent_level):
   if (is_empty(keys(value))):
     "{}"
   else:
-    join(map(keys(value), fn(k): "\n" + indent + k + ": " + yaml_stringify_value(value[k], indent_level + 1);), "")
+    join(map(keys(value), fn(k): "\n" + indent + k + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
 end
 
 def _yaml_stringify_value(value, indent_level):

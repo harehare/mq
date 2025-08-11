@@ -29,11 +29,11 @@ Parses CSV content using a comma as the delimiter.
 include "csv"
 
 # Parse CSV with headers
-"name,age,city\nJohn,30,New York\nJane,25,Boston" | csv_parse(true)
+| "name,age,city\nJohn,30,New York\nJane,25,Boston" | csv_parse(true)
 # Returns: [{"name": "John", "age": "30", "city": "New York"}, {"name": "Jane", "age": "25", "city": "Boston"}]
 
 # Parse CSV without headers
-"John,30,New York\nJane,25,Boston" | csv_parse(false)
+| "John,30,New York\nJane,25,Boston" | csv_parse(false)
 # Returns: [["John", "30", "New York"], ["Jane", "25", "Boston"]]
 ```
 
@@ -55,7 +55,7 @@ Parses CSV content with a custom delimiter.
 include "csv"
 
 # Parse semicolon-separated values
-"name;age;city\nJohn;30;New York\nJane;25;Boston" | csv_parse_with_delimiter(";", true)
+| "name;age;city\nJohn;30;New York\nJane;25;Boston" | csv_parse_with_delimiter(";", true)
 # Returns: [{"name": "John", "age": "30", "city": "New York"}, {"name": "Jane", "age": "25", "city": "Boston"}]
 ```
 
@@ -76,7 +76,7 @@ Parses TSV (Tab-Separated Values) content.
 include "csv"
 
 # Parse TSV with headers
-"name	age	city\nJohn	30	New York\nJane	25	Boston" | tsv_parse(true)
+| "name	age	city\nJohn	30	New York\nJane	25	Boston" | tsv_parse(true)
 # Returns: [{"name": "John", "age": "30", "city": "New York"}, {"name": "Jane", "age": "25", "city": "Boston"}]
 ```
 
@@ -96,11 +96,11 @@ Converts data to a CSV string with a specified delimiter.
 include "csv"
 
 # Convert array of dictionaries to CSV
-[{"name": "John", "age": "30"}, {"name": "Jane", "age": "25"}] | csv_stringify(",")
+| [{"name": "John", "age": "30"}, {"name": "Jane", "age": "25"}] | csv_stringify(",")
 # Returns: "name,age\nJohn,30\nJane,25"
 
 # Convert array of arrays to CSV
-[["name", "age"], ["John", "30"], ["Jane", "25"]] | csv_stringify(",")
+| [["name", "age"], ["John", "30"], ["Jane", "25"]] | csv_stringify(",")
 # Returns: "name,age\nJohn,30\nJane,25"
 ```
 
@@ -119,7 +119,7 @@ Converts CSV data to a Markdown table format.
 include "csv"
 
 # Convert to Markdown table
-[{"name": "John", "age": "30"}, {"name": "Jane", "age": "25"}] | csv_to_markdown_table()
+| [{"name": "John", "age": "30"}, {"name": "Jane", "age": "25"}] | csv_to_markdown_table()
 # Returns:
 # | name | age |
 # | --- | --- |
@@ -142,7 +142,7 @@ Converts CSV data to a JSON string.
 include "csv"
 
 # Convert to JSON
-[{"name": "John", "age": "30"}, {"name": "Jane", "age": "25"}] | csv_to_json()
+| [{"name": "John", "age": "30"}, {"name": "Jane", "age": "25"}] | csv_to_json()
 # Returns: [{"name":"John","age":"30"},{"name":"Jane","age":"25"}]
 ```
 
