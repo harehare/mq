@@ -821,6 +821,21 @@ impl<'a> Parser<'a> {
             }
             | Token {
                 range: _,
+                kind: TokenKind::Until,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Foreach,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::While,
+                ..
+            }
+            | Token {
+                range: _,
                 kind: TokenKind::LParen,
                 ..
             } => self.parse_expr(leading_trivia, false, false),
