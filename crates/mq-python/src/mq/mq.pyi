@@ -8,6 +8,8 @@ class InputFormat(Enum):
     MDX: 2
     TEXT: 3
     HTML: 4
+    RAW: 5
+    NULL: 6
 
 class ListStyle(Enum):
     """Style to use for markdown lists."""
