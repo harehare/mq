@@ -31,7 +31,7 @@ def _parse_yaml_value(str):
   let trimmed = trim(str)
   | if (is_empty(trimmed)):
       None
-     # string
+    # string
     elif (starts_with(trimmed, "\"") || starts_with(trimmed, "'")):
       if (starts_with(trimmed, "\"") && ends_with(trimmed, "\"")):
         _escape_string(trimmed[1:-1])
@@ -39,13 +39,13 @@ def _parse_yaml_value(str):
         replace(trimmed[1:len(trimmed) - 1], "''", "'")
       else:
         trimmed
-     # boolean
+    # boolean
     elif (_parse_yaml_boolean(trimmed) != None):
       _parse_yaml_boolean(trimmed)
-     # number
+    # number
     elif (is_digit(trimmed) || first(to_array(trimmed)) == "-" || first(to_array(trimmed)) == "+"):
       if (contains(trimmed, ".")): to_number(trimmed) else: to_number(trimmed)
-     # null
+    # null
     elif (trimmed == "null" || trimmed == "Null" || trimmed == "NULL" || trimmed == "~" || trimmed == ""):
       None
     else:
@@ -253,52 +253,6 @@ ${trimmed_line}", current_index + 1]
   | parse_yaml_lines(lines, 0, 0)
 end
 
-# Parses a YAML string and returns the parsed data structure.
-def yaml_parse(input):
-  let result = parse_yaml_content(input)
-  | result[0]
-end
-
-# Returns all keys in a YAML data structure, including nested keys, with dot notation.
-def yaml_keys(data, prefix):
-  def _process_dict_keys(data, prefix_with_dot):
-    let all_keys = []
-    | let dict_keys = keys(data)
-    | let i = 0
-    | until (i < len(dict_keys)):
-        let key = dict_keys[i]
-        | let full_key = prefix_with_dot + key
-        | let value = data[key]
-        | let all_keys = all_keys + [full_key]
-        | let all_keys = if (is_dict(value) || is_array(value)): all_keys + yaml_keys(value, full_key) else: all_keys
-        | let i = i + 1
-        | all_keys
-      end
-  end
-
-  def _process_array_keys(data, prefix_with_dot):
-    let all_keys = []
-    | let i = 0
-    | until (i < len(data)):
-        let full_key = prefix_with_dot + to_string(i)
-        | let value = data[i]
-        | let all_keys = all_keys + [full_key]
-        | let all_keys = if (is_dict(value) || is_array(value)): all_keys + yaml_keys(value, full_key) else: all_keys
-        | let i = i + 1
-        | all_keys
-      end
-  end
-
-  let all_keys = []
-  | let prefix_with_dot = if (!is_empty(prefix)): prefix + "." else: ""
-  | if (is_dict(data)):
-      _process_dict_keys(data, prefix_with_dot)
-    elif (is_array(data)):
-      _process_array_keys(data, prefix_with_dot)
-    else:
-      all_keys
-end
-
 def _stringify_string_value(value):
   if (contains(value, "\n") || contains(value, "\"") || contains(value, "'")):
     "\"" + _escape_string(value) + "\""
@@ -338,40 +292,6 @@ def _yaml_stringify_value(value, indent_level):
       to_string(value)
 end
 
-# Converts a data structure to a YAML string representation.
-def yaml_stringify(data):
-  if (is_array(data)):
-    if (is_empty(data)):
-      "[]"
-    else:
-      join(map(data, fn(item): "- " + _yaml_stringify_value(item, 1);), "\n")
-  elif (is_dict(data)):
-    if (is_empty(keys(data))):
-      "{}"
-    else:
-      join(map(keys(data), fn(k): k + ": " + _yaml_stringify_value(data[k], 1);), "\n")
-  else:
-    _yaml_stringify_value(data, 0)
-end
-
-# Converts a data structure to a JSON string representation.
-def yaml_to_json(data):
-  if (is_dict(data)):
-    "{" + join(map(keys(data), fn(k): "\"" + k + "\": " + yaml_to_json(data[k]);), ", ") + "}"
-  elif (is_array(data)):
-    "[" + join(map(data, yaml_to_json), ", ") + "]"
-  elif (is_string(data)):
-    "\"" + _escape_string(data) + "\""
-  elif (is_number(data)):
-    to_string(data)
-  elif (is_bool(data)):
-    if (data): "true" else: "false"
-  elif (is_none(data)):
-    "null"
-  else:
-    "\"" + to_string(data) + "\""
-end
-
 def _create_array_markdown_table(data):
   let headers = keys(first(data))
   | let header_row = "| " + join(headers, " | ") + " |"
@@ -398,6 +318,28 @@ def _create_simple_markdown_table(data):
   "| Value |\n| --- |\n| " + to_string(data) + " |"
 end
 
+# Parses a YAML string and returns the parsed data structure.
+def yaml_parse(input):
+  let result = parse_yaml_content(input)
+  | result[0]
+end
+
+# Converts a data structure to a YAML string representation.
+def yaml_stringify(data):
+  if (is_array(data)):
+    if (is_empty(data)):
+      "[]"
+    else:
+      join(map(data, fn(item): "- " + _yaml_stringify_value(item, 1);), "\n")
+  elif (is_dict(data)):
+    if (is_empty(keys(data))):
+      "{}"
+    else:
+      join(map(keys(data), fn(k): k + ": " + _yaml_stringify_value(data[k], 1);), "\n")
+  else:
+    _yaml_stringify_value(data, 0)
+end
+
 # Converts a YAML data structure to a Markdown table.
 def yaml_to_markdown_table(data):
   if (is_array(data)):
@@ -406,4 +348,22 @@ def yaml_to_markdown_table(data):
     _create_dict_markdown_table(data)
   else:
     _create_simple_markdown_table(data)
+end
+
+# Converts a data structure to a JSON string representation.
+def yaml_to_json(data):
+  if (is_dict(data)):
+    "{" + join(map(keys(data), fn(k): "\"" + k + "\": " + yaml_to_json(data[k]);), ", ") + "}"
+  elif (is_array(data)):
+    "[" + join(map(data, yaml_to_json), ", ") + "]"
+  elif (is_string(data)):
+    "\"" + _escape_string(data) + "\""
+  elif (is_number(data)):
+    to_string(data)
+  elif (is_bool(data)):
+    if (data): "true" else: "false"
+  elif (is_none(data)):
+    "null"
+  else:
+    "\"" + to_string(data) + "\""
 end

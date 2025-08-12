@@ -70,9 +70,11 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
 
     std_module!(csv);
     std_module!(yaml);
+    std_module!(json);
 
     map.insert(CompactString::new("csv"), csv as fn() -> &'static str);
     map.insert(CompactString::new("yaml"), yaml as fn() -> &'static str);
+    map.insert(CompactString::new("json"), json as fn() -> &'static str);
     map
 });
 
@@ -149,7 +151,7 @@ impl ModuleLoader {
         self.load(module_name, &program, token_arena)
     }
 
-    pub fn read_file(&mut self, module_name: &str) -> Result<String, ModuleError> {
+    pub fn read_file(&self, module_name: &str) -> Result<String, ModuleError> {
         if STANDARD_MODULES.contains_key(module_name) {
             Ok(STANDARD_MODULES
                 .get(module_name)
