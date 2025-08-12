@@ -122,19 +122,6 @@ include "json"
 # | Hello World |
 ```
 
-## JSON Format Support
-
-The JSON parser supports RFC 7159/ECMA-404 JSON specifications and handles:
-
-- **Scalars**: strings, numbers, booleans, and null values
-- **Collections**: arrays and objects (dictionaries)
-- **Nested structures** with proper nesting
-- **Quoted strings** with escape sequences
-- **Numbers**: integers and floating-point numbers
-- **Boolean values**: `true` and `false`
-- **Null values**: `null`
-- **Proper handling** of special characters and escape sequences in strings
-- **Whitespace handling** around values and separators
 
 ## Type Conversion
 
@@ -146,15 +133,3 @@ The JSON parser automatically converts values to appropriate mq types:
 - **Null**: JSON `null` becomes mq `None`
 - **Arrays**: JSON arrays become mq arrays
 - **Objects**: JSON objects become mq dictionaries
-
-## Error Handling
-
-The JSON parser will raise errors for:
-
-- Invalid JSON syntax
-- Malformed strings, numbers, or other values
-- Missing commas, brackets, or braces
-- Unexpected characters in JSON input
-- Incomplete JSON structures
-
-Make sure your JSON input is well-formed to avoid parsing errors.
