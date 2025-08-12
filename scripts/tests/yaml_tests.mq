@@ -20,4 +20,4 @@ include "yaml"
 | test_yaml_parse()
 | test_yaml_to_json()
 | test_yaml_to_markdown_table()
-| "✅ All YAML tests passed successfully! 🚀"
+| "✅ All tests passed successfully! 🚀"
