@@ -16,6 +16,11 @@ pub enum HirError {
         symbol: Symbol,
         similar_name: Option<Vec<CompactString>>,
     },
+    #[error("Included module not found: {module_name}")]
+    ModuleNotFound {
+        symbol: Symbol,
+        module_name: CompactString,
+    },
 }
 
 impl Hir {
@@ -24,14 +29,28 @@ impl Hir {
             .iter()
             .filter_map(|(symbol_id, symbol)| match symbol.kind {
                 SymbolKind::Call | SymbolKind::Ref => {
-                    if !self.references.contains_key(&symbol_id) {
+                    if self.references.contains_key(&symbol_id) {
+                        None
+                    } else {
                         Some(HirError::UnresolvedSymbol {
                             symbol: symbol.clone(),
                             similar_name: self
                                 .find_similar_names(&symbol.clone().value.unwrap_or_default()),
                         })
-                    } else {
-                        None
+                    }
+                }
+                SymbolKind::Include(_) => {
+                    let module_name = symbol
+                        .clone()
+                        .value
+                        .unwrap_or(CompactString::new("unknown"))
+                        .clone();
+                    match self.module_loader.read_file(&module_name) {
+                        Ok(_) => None,
+                        Err(_) => Some(HirError::ModuleNotFound {
+                            symbol: symbol.clone(),
+                            module_name,
+                        }),
                     }
                 }
                 _ => None,
@@ -47,6 +66,9 @@ impl Hir {
                     e.to_string(),
                     match e {
                         HirError::UnresolvedSymbol { symbol, .. } => {
+                            symbol.source.text_range.clone().unwrap_or_default()
+                        }
+                        HirError::ModuleNotFound { symbol, .. } => {
                             symbol.source.text_range.clone().unwrap_or_default()
                         }
                     },
@@ -117,6 +139,9 @@ mod tests {
             } => {
                 assert_eq!(symbol.value.as_deref(), Some("unknown_var"));
                 assert!(similar_name.is_none());
+            }
+            _ => {
+                panic!("Expected UnresolvedSymbol error");
             }
         }
     }
