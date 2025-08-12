@@ -37,7 +37,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install codspeed
         run: cargo install cargo-codspeed --locked
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v3
       - name: Run benchmarks
         uses: CodSpeedHQ/action@v3
         with:

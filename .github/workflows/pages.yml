@@ -25,7 +25,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install wasm-pack and mdbook
         run: cargo install wasm-pack mdbook
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v3
       - name: Build
         run: just build-wasm
       - name: Build mdbook
