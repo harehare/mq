@@ -1,0 +1,214 @@
+# Testing framework for mq
+# A simple testing framework to execute test functions and output results
+
+# Verifies that a condition is true and raises an error if it's false.
+def assert(cond):
+  if (cond):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: It is not true."}
+end
+
+# Verifies that two values are equal
+def assert_eq(actual, expected):
+  if (actual == expected):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected " + to_string(expected) + " but got " + to_string(actual)}
+end
+
+# Verifies that two values are not equal
+def assert_ne(actual, expected):
+  if (actual != expected):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected values to be different, but both were " + to_string(actual)}
+end
+
+# Verifies that a value is true
+def assert_true(value):
+  if (value == true):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected true but got " + to_string(value)}
+end
+
+# Verifies that a value is false
+def assert_false(value):
+  if (value == false):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected false but got " + to_string(value)}
+end
+
+# Verifies that a value is None
+def assert_none(value):
+  if (is_none(value)):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected None but got " + to_string(value)}
+end
+
+# Verifies that a value is not None
+def assert_not_none(value):
+  if (not(is_none(value))):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected non-None value but got None"}
+end
+
+# Verifies that an array contains a specific value
+def assert_contains(array, value):
+  if (in(array, value)):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Array does not contain " + to_string(value)}
+end
+
+# Verifies that an array has a specific length
+def assert_len(array, expected_length):
+  let actual_length = len(array)
+  | if (actual_length == expected_length):
+      self
+    else:
+      {"error": true, "message": "Assertion failed: Expected length " + to_string(expected_length) + " but got " + to_string(actual_length)}
+end
+
+# Verifies that an array is empty
+def assert_empty(array):
+  if (is_empty(array)):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected empty array but got " + to_string(array)}
+end
+
+# Verifies that an array is not empty
+def assert_not_empty(array):
+  if (not(is_empty(array))):
+    self
+  else:
+    {"error": true, "message": "Assertion failed: Expected non-empty array but got empty array"}
+end
+
+# Test execution helper functions
+
+# Runs a single test function and captures the result
+def run_test(test_name, test_func):
+  let test_count = 1
+  | let start_time = now()
+  | let result = test_func()
+  | let end_time = now()
+  | let duration = end_time - start_time
+  | if (is_dict(result) && contains(result, "error")):
+      {
+        "name": test_name,
+        "status": "failed",
+        "duration": duration,
+        "error": result["message"]
+      }
+    else:
+      {
+        "name": test_name,
+        "status": "passed",
+        "duration": duration,
+        "error": None
+      }
+end
+
+def _succeed(message):
+  "\x1b[32m" + message + "\x1b[0m"
+end
+
+def _failed(message):
+  "\x1b[31m" + message + "\x1b[0m"
+end
+
+# Executes multiple test functions
+def run_tests(tests):
+  let test_count = 0
+  | let failed_count = 0
+  | let test_results = foreach (test, tests):
+        if (is_dict(test) && contains(test, "name") && contains(test, "func")):
+          run_test(get(test, "name"), get(test, "func"))
+        else:
+          error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
+      end
+  | let final_test_count = len(test_results)
+  | let final_failed_count = len(filter(test_results, fn(r): get(r, "status") == "failed";))
+  | let passed_count = sub(final_test_count, final_failed_count)
+
+  # Print test results
+  | let results = ["\x1b[1m\x1b[36m=== mq Test Suite Results ===\x1b[0m"]
+  | let results = results + foreach (result, test_results):
+        let name = result["name"]
+        | let status = result["status"]
+        | let duration = result["duration"]
+        | if (status == "passed"):
+            [_succeed("✅ " + name + " (" + to_string(duration) + "ms)")]
+          else:
+            [_failed("❌ " + name + " (" + to_string(duration) + "ms)"), "    └─ " + _failed(result["error"])]
+      end
+  | let results = results + ["\x1b[36m=== Summary ===\x1b[0m"]
+  | let results = results + ["Tests run: " + to_string(final_test_count)]
+  | let results = results + ["Passed: " + to_string(passed_count)]
+  | let results = results + ["Failed: " + to_string(final_failed_count)]
+  | if (final_failed_count == 0):
+      results + [_succeed("🎉 All tests passed! 🚀")]
+    else:
+      results + [_failed("💥 " + to_string(final_failed_count) + " test(s) failed")]
+  | flatten()
+  | join("\n")
+  | print()
+  | if (final_failed_count > 0): halt(1)
+end
+
+# Helper function to create a test case
+def test_case(name, func):
+  {
+    "name": name,
+    "func": func
+  }
+end
+
+# Example usage and built-in self-tests
+def test_assertions():
+  let r1 = assert_eq(1, 1)
+  | if (is_dict(r1) && contains(r1, "error")): r1
+  | let r2 = assert_ne(1, 2)
+  | if (is_dict(r2) && contains(r2, "error")): r2
+  | let r3 = assert_true(true)
+  | if (is_dict(r3) && contains(r3, "error")): r3
+  | let r4 = assert_false(false)
+  | if (is_dict(r4) && contains(r4, "error")): r4
+  | let r5 = assert_none(None)
+  | if (is_dict(r5) && contains(r5, "error")): r5
+  | let r6 = assert_not_none("hello")
+  | if (is_dict(r6) && contains(r6, "error")): r6
+  | let r7 = assert_contains([1, 2, 3], 2)
+  | if (is_dict(r7) && contains(r7, "error")): r7
+  | let r8 = assert_len([1, 2, 3], 3)
+  | if (is_dict(r8) && contains(r8, "error")): r8
+  | let r9 = assert_empty([])
+  | if (is_dict(r9) && contains(r9, "error")): r9
+  | let r10 = assert_not_empty([1])
+  | if (is_dict(r10) && contains(r10, "error")): r10
+  | self
+end
+
+def test_basic_operations():
+  let r1 = assert_eq(2 + 3, 5)
+  | if (is_dict(r1) && contains(r1, "error")): r1
+  | let r2 = assert_eq(len("hello"), 5)
+  | if (is_dict(r2) && contains(r2, "error")): r2
+  | let r3 = assert_true(is_string("test"))
+  | if (is_dict(r3) && contains(r3, "error")): r3
+  | let r4 = assert_false(is_number("test"))
+  | if (is_dict(r4) && contains(r4, "error")): r4
+  | self
+end
+
+| if (true):
+    run_tests([
+  test_case("Assertion Functions", test_assertions),
+  test_case("Basic Operations", test_basic_operations)
+])
