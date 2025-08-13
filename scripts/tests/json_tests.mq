@@ -1,24 +1,28 @@
 include "json"
+| include "test"
 
 | let input = "{\"users\":[{\"id\":1,\"name\":\"Alice\",\"email\":\"alice@example.com\",\"roles\":[\"admin\",\"user\"]},{\"id\":2,\"name\":\"Bob\",\"email\":\"bob@example.com\",\"roles\":[\"user\"]},{\"id\":3,\"name\":\"Charlie\",\"email\":\"charlie@example.com\",\"roles\":[\"editor\",\"user\"]}],\"meta\":{\"count\":3,\"generated_at\":\"2024-06-01T12:00:00Z\"}}"
 
 | def test_json_parse():
     let result = json_parse(input)
-    | assert(len(result["users"]) == 3)
+    | assert_eq(len(result["users"]), 3)
   end
 
 | def test_json_stringify():
     let result = json_stringify(json_parse(input))
-    | assert(result == "{\"meta\": {\"count\": 3, \"generated_at\": \"2024-06-01T12:00:00Z\"}, \"users\": [{\"email\": \"alice@example.com\", \"id\": 1, \"name\": \"Alice\", \"roles\": [\"admin\", \"user\"]}, {\"email\": \"bob@example.com\", \"id\": 2, \"name\": \"Bob\", \"roles\": [\"user\"]}, {\"email\": \"charlie@example.com\", \"id\": 3, \"name\": \"Charlie\", \"roles\": [\"editor\", \"user\"]}]}")
+    | assert_eq(result, "{\"meta\": {\"count\": 3, \"generated_at\": \"2024-06-01T12:00:00Z\"}, \"users\": [{\"email\": \"alice@example.com\", \"id\": 1, \"name\": \"Alice\", \"roles\": [\"admin\", \"user\"]}, {\"email\": \"bob@example.com\", \"id\": 2, \"name\": \"Bob\", \"roles\": [\"user\"]}, {\"email\": \"charlie@example.com\", \"id\": 3, \"name\": \"Charlie\", \"roles\": [\"editor\", \"user\"]}]}")
   end
 
 | def test_json_to_markdown_table():
     let result = json_parse(input)
     | let result = json_to_markdown_table(result["users"])
-    | assert(result == "| email | id | name | roles |\n| --- | --- | --- | --- |\n| alice@example.com | 1 | Alice | [\"admin\", \"user\"] |\n| bob@example.com | 2 | Bob | [\"user\"] |\n| charlie@example.com | 3 | Charlie | [\"editor\", \"user\"] |")
+    | assert_eq(result, "| email | id | name | roles |\n| --- | --- | --- | --- |\n| alice@example.com | 1 | Alice | [\"admin\", \"user\"] |\n| bob@example.com | 2 | Bob | [\"user\"] |\n| charlie@example.com | 3 | Charlie | [\"editor\", \"user\"] |")
   end
 
-| test_json_parse()
-| test_json_stringify()
-| test_json_to_markdown_table()
-| "✅ All tests passed successfully! 🚀"
+|
+
+run_tests([
+  test_case("JSON Parse", test_json_parse),
+  test_case("JSON Stringify", test_json_stringify),
+  test_case("JSON to Markdown Table", test_json_to_markdown_table)
+])

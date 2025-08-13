@@ -1,23 +1,27 @@
 include "yaml"
+| include "test"
 
 | let input = "---\nstring: hello\nnumber: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\nmultiline: |\n  This is a\n  multiline string\nquoted: \"quoted string\"\nsingle_quoted: 'single quoted string'\ndate: 2024-06-01\ntimestamp: 2024-06-01T12:34:56Z\nempty_array: []\nempty_object: {}\nanchors:\n  &anchor_val anchored value\nref: *anchor_val\ncomplex:\n  - foo: bar\n    baz:\n      - qux\n      - quux\n  - corge: grault\nspecial_chars: \"!@#$%^&*()_+-=[]{}|;:',.<>/?\"\nunicode: \"こんにちは世界\"\nbool_list:\n  - true\n  - false\nnull_list:\n  - null\n  - ~"
 
 | def test_yaml_parse():
     let result = yaml_parse(input)
-    | assert(len(keys(result)) == 23)
+    | assert_eq(len(keys(result)), 23)
   end
 
 | def test_yaml_to_json():
     let result = yaml_to_json(yaml_parse(input))
-    | assert(result == "{\"anchors\": \"&anchor_val anchored value\", \"array\": [\"item1\", \"item2\", \"item3\"], \"bool_false\": false, \"bool_list\": [true, false], \"bool_true\": true, \"complex\": [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"], \"date\": \"2024-06-01\", \"empty_array\": \"[]\", \"empty_object\": \"{}\", \"float\": \"3.14\", \"multiline\": \"This is a\\nmultiline string\", \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"null_list\": [null, null], \"null_value\": null, \"number\": 42, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"quoted\": \"quoted string\", \"ref\": \"*anchor_val\", \"single_quoted\": \"single quoted string\", \"special_chars\": \"!@#$%^&*()_+-=[]{}|;:',.<>/?\", \"string\": \"hello\", \"timestamp\": \"2024-06-01T12:34:56Z\", \"unicode\": \"こんにちは世界\"}")
+    | assert_eq(result, "{\"anchors\": \"&anchor_val anchored value\", \"array\": [\"item1\", \"item2\", \"item3\"], \"bool_false\": false, \"bool_list\": [true, false], \"bool_true\": true, \"complex\": [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"], \"date\": \"2024-06-01\", \"empty_array\": \"[]\", \"empty_object\": \"{}\", \"float\": \"3.14\", \"multiline\": \"This is a\\nmultiline string\", \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"null_list\": [null, null], \"null_value\": null, \"number\": 42, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"quoted\": \"quoted string\", \"ref\": \"*anchor_val\", \"single_quoted\": \"single quoted string\", \"special_chars\": \"!@#$%^&*()_+-=[]{}|;:',.<>/?\", \"string\": \"hello\", \"timestamp\": \"2024-06-01T12:34:56Z\", \"unicode\": \"こんにちは世界\"}")
   end
 
 | def test_yaml_to_markdown_table():
     let result = yaml_to_markdown_table(yaml_parse(input))
-    | assert(result == "| Key | Value |\n| --- | --- |\n| anchors | &anchor_val anchored value |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| bool_false | false |\n| bool_list | [true, false] |\n| bool_true | true |\n| complex | [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"] |\n| date | 2024-06-01 |\n| empty_array | [] |\n| empty_object | {} |\n| float | 3.14 |\n| multiline | This is a\\nmultiline string |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| null_list | [None, None] |\n| null_value |  |\n| number | 42 |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| quoted | quoted string |\n| ref | *anchor_val |\n| single_quoted | single quoted string |\n| special_chars | !@#$%^&*()_+-=[]{}|;:',.<>/? |\n| string | hello |\n| timestamp | 2024-06-01T12:34:56Z |\n| unicode | こんにちは世界 |")
+    | assert_eq(result, "| Key | Value |\n| --- | --- |\n| anchors | &anchor_val anchored value |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| bool_false | false |\n| bool_list | [true, false] |\n| bool_true | true |\n| complex | [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"] |\n| date | 2024-06-01 |\n| empty_array | [] |\n| empty_object | {} |\n| float | 3.14 |\n| multiline | This is a\\nmultiline string |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| null_list | [None, None] |\n| null_value |  |\n| number | 42 |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| quoted | quoted string |\n| ref | *anchor_val |\n| single_quoted | single quoted string |\n| special_chars | !@#$%^&*()_+-=[]{}|;:',.<>/? |\n| string | hello |\n| timestamp | 2024-06-01T12:34:56Z |\n| unicode | こんにちは世界 |")
   end
 
-| test_yaml_parse()
-| test_yaml_to_json()
-| test_yaml_to_markdown_table()
-| "✅ All tests passed successfully! 🚀"
+|
+
+run_tests([
+  test_case("YAML Parse", test_yaml_parse),
+  test_case("YAML Stringify", test_yaml_to_json),
+  test_case("YAML to Markdown Table", test_yaml_to_markdown_table)
+])
