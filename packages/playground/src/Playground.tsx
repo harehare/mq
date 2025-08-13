@@ -216,9 +216,8 @@ end
   },
   {
     name: "CSV to markdown table",
-    code: `nodes | csv2table()`,
+    code: `include "csv" | csv_parse(true) | csv_to_markdown_table()`,
     markdown: `Product, Category, Price, Stock
----,---,---,---
 Laptop, Electronics, $1200, 45
 Monitor, Electronics, $350, 28
 Chair, Furniture, $150, 73
@@ -226,7 +225,22 @@ Desk,  Furniture, $200, 14
 Keyboard, Accessories, $80, 35
 `,
     isUpdate: false,
-    format: "text",
+    format: "raw",
+  },
+  {
+    name: "JSON to markdown table",
+    code: `include "json" | json_parse() | json_to_markdown_table()`,
+    markdown: `
+    [
+      { "Product": "Laptop", "Category": "Electronics", "Price": "$1200", "Stock": 45 },
+      { "Product": "Monitor", "Category": "Electronics", "Price": "$350", "Stock": 28 },
+      { "Product": "Chair", "Category": "Furniture", "Price": "$150", "Stock": 73 },
+      { "Product": "Desk", "Category": "Furniture", "Price": "$200", "Stock": 14 },
+      { "Product": "Keyboard", "Category": "Accessories", "Price": "$80", "Stock": 35 }
+    ]
+`,
+    isUpdate: false,
+    format: "raw",
   },
 ];
 
@@ -258,6 +272,10 @@ export const Playground = () => {
         ? "mdx"
         : format === "html"
         ? "html"
+        : format === "raw"
+        ? "raw"
+        : format === "null"
+        ? "null"
         : null;
     })()
   );
@@ -796,6 +814,8 @@ export const Playground = () => {
                   <option value="mdx">MDX</option>
                   <option value="text">Text</option>
                   <option value="html">HTML</option>
+                  <option value="null">NULL</option>
+                  <option value="raw">Raw</option>
                 </select>
               </label>
             </div>
