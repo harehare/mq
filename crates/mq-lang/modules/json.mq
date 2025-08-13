@@ -105,7 +105,6 @@ def _parse_json_value(input):
       | let tokens = _parse_json_value(input)
       | let value = tokens[0]
       | let rest = tokens[1]
-      | let _ = if (is_none(value)): error("Invalid JSON object value")
       | let obj = set(obj, key, value)
       | let input = trim(rest)
       | if (starts_with(input, ",")):

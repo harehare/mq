@@ -15,7 +15,6 @@ include "json"
 | def test_json_to_markdown_table():
     let result = json_parse(input)
     | let result = json_to_markdown_table(result["users"])
-    | debug(result)
     | assert(result == "| email | id | name | roles |\n| --- | --- | --- | --- |\n| alice@example.com | 1 | Alice | [\"admin\", \"user\"] |\n| bob@example.com | 2 | Bob | [\"user\"] |\n| charlie@example.com | 3 | Charlie | [\"editor\", \"user\"] |")
   end
 
