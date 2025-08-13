@@ -148,7 +148,7 @@ def run_tests(tests):
           else:
             [_failed("❌ " + name + " (" + to_string(duration) + "ms)"), "    └─ " + _failed(result["error"])]
       end
-  | let results = results + ["\x1b[36m=== Summary ===\x1b[0m"]
+  | let results = results + ["\x1b[1m\x1b[36m=== Summary ===\x1b[0m"]
   | let results = results + ["Tests run: " + to_string(final_test_count)]
   | let results = results + ["Passed: " + to_string(passed_count)]
   | let results = results + ["Failed: " + to_string(final_failed_count)]
