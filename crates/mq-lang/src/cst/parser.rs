@@ -836,6 +836,11 @@ impl<'a> Parser<'a> {
             }
             | Token {
                 range: _,
+                kind: TokenKind::If,
+                ..
+            }
+            | Token {
+                range: _,
                 kind: TokenKind::LParen,
                 ..
             } => self.parse_expr(leading_trivia, false, false),
