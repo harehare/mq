@@ -93,7 +93,7 @@ end
 # Test execution helper functions
 
 # Runs a single test function and captures the result
-def run_test(test_name, test_func):
+def _run_test(test_name, test_func):
   let test_count = 1
   | let start_time = now()
   | let result = test_func()
@@ -129,7 +129,7 @@ def run_tests(tests):
   | let failed_count = 0
   | let test_results = foreach (test, tests):
         if (is_dict(test) && contains(test, "name") && contains(test, "func")):
-          run_test(get(test, "name"), get(test, "func"))
+          _run_test(get(test, "name"), get(test, "func"))
         else:
           error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
       end
