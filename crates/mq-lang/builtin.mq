@@ -217,14 +217,6 @@ def fill(value, n):
     foreach (i, range(0, n)): value;
 end
 
-# Verifies that a condition is true and raises an error if it's false.
-def assert(cond):
-  if (cond):
-    self
-  else:
-    error("Assertion failed: It is not true.")
-end
-
 # Prints the debug information of the given value.
 def debug(msg):
   let s = to_string(msg) | stderr(s"DEBUG: ${s}");
