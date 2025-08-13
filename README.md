@@ -144,8 +144,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -216,7 +216,7 @@ $ mq 'select(.[] || .h) | select(contains("name"))'
 # Exclude js code
 $ mq 'select(!.code("js"))'
 # CSV to markdown table
-$ mq 'include "csv" | nodes | csv_parse(true) | csv_to_markdown_table()' example.csv
+$ mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
 
 ### Advanced Usage
