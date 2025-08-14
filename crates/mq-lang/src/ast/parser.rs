@@ -567,15 +567,23 @@ impl<'a> Parser<'a> {
                     let _ = self.tokens.next();
                 }
 
-                if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
-                    Ok(Rc::new(Node {
-                        token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
-                        expr: Rc::new(Expr::Call(
-                            Ident::new_with_token(ident, Some(Rc::clone(&ident_token))),
-                            args,
-                            optional,
-                        )),
-                    }))
+                let call_node = Rc::new(Node {
+                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
+                    expr: Rc::new(Expr::Call(
+                        Ident::new_with_token(ident, Some(Rc::clone(&ident_token))),
+                        args,
+                        optional,
+                    )),
+                });
+
+                // Check for bracket access after function call (e.g., foo()[0])
+                if matches!(
+                    self.tokens.peek().map(|t| &t.kind),
+                    Some(TokenKind::LBracket)
+                ) {
+                    self.parse_bracket_access(call_node, ident_token)
+                } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
+                    Ok(call_node)
                 } else {
                     Err(ParseError::UnexpectedToken(
                         (***self.tokens.peek().unwrap()).clone(),
@@ -4854,6 +4862,130 @@ mod tests {
                         )),
                     })
                 ]))]
+    // Test function call followed by index access (e.g., foo()[0])
+    #[case::function_call_with_index_access(
+        vec![
+            token(TokenKind::Ident(CompactString::new("foo"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                                SmallVec::new(),
+                                false,
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
+    // Test function call with arguments followed by index access
+    #[case::function_call_with_args_and_index_access(
+        vec![
+            token(TokenKind::Ident(CompactString::new("bar"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("arg".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 1.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 1.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                    })
+                                ],
+                                false,
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
+    // Test chained index access on function call result
+    #[case::function_call_with_chained_index_access(
+        vec![
+            token(TokenKind::Ident(CompactString::new("baz"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Rc::new(Node {
+                token_id: 2.into(),
+                expr: Rc::new(Expr::Call(
+                    Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 2.into(),
+                            expr: Rc::new(Expr::Call(
+                                Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(Expr::Call(
+                                            Ident::new_with_token("baz", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                                            SmallVec::new(),
+                                            false,
+                                        )),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 1.into(),
+                                        expr: Rc::new(Expr::Literal(Literal::Number(0.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 3.into(),
+                            expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         let tokens: Vec<Rc<Token>> = input.into_iter().map(Rc::new).collect();
