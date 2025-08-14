@@ -8,7 +8,7 @@ version = "0.2.8"
 cargo-fuzz = true
 
 [dependencies]
-arbitrary = {version = "1.4.1", features = ["derive"]}
+arbitrary = {version = "1.4.2", features = ["derive"]}
 itertools.workspace = true
 libfuzzer-sys = "0.4"
 mq-lang.workspace = true
