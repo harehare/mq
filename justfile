@@ -70,8 +70,13 @@ publish-python: build-python
 fmt:
     cargo fmt --all -- --check
 
+test-mq:
+    mq -f scripts/tests/csv_tests.mq
+    mq -f scripts/tests/json_tests.mq
+    mq -f scripts/tests/yaml_tests.mq
+
 # Run formatting, linting and all tests
-test: fmt lint
+test: fmt lint test-mq
     cargo test --workspace --all-features
 
 # Run tests with code coverage reporting
