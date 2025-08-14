@@ -615,7 +615,16 @@ impl<'a> Parser<'a> {
 
                 node.kind = NodeKind::Call;
                 node.children = children;
-                Ok(Arc::new(node))
+
+                // Check for bracket access after function call (e.g., foo()[0])
+                if matches!(
+                    self.tokens.peek().map(|t| &t.kind),
+                    Some(TokenKind::LBracket)
+                ) {
+                    self.parse_bracket_access(node)
+                } else {
+                    Ok(Arc::new(node))
+                }
             }
             Some(token) if matches!(token.kind, TokenKind::LBracket) => {
                 self.parse_bracket_access(node)
@@ -626,7 +635,7 @@ impl<'a> Parser<'a> {
 
     // Parses bracket access operations recursively to handle nested access like arr[0][1][2]
     fn parse_bracket_access(&mut self, mut node: Node) -> Result<Arc<Node>, ParseError> {
-        let mut children: Vec<Arc<Node>> = Vec::with_capacity(100);
+        let mut children: Vec<Arc<Node>> = node.children;
 
         // Parse bracket access: ident[key] -> get(ident, key) or ident[start:end] -> slice(ident, start, end)
         children.push(self.next_node(
@@ -5046,6 +5055,72 @@ mod tests {
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::NumberLiteral(3.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::call_with_index_access(
+        vec![
+            Arc::new(token(TokenKind::Ident("foo".into()))),
+            Arc::new(token(TokenKind::LParen)),
+            Arc::new(token(TokenKind::Ident("bar".into()))),
+            Arc::new(token(TokenKind::RParen)),
+            Arc::new(token(TokenKind::LBracket)),
+            Arc::new(token(TokenKind::NumberLiteral(3.into()))),
+            Arc::new(token(TokenKind::RBracket)),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Arc::new(token(TokenKind::Ident("foo".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Arc::new(token(TokenKind::Ident("bar".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Arc::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Arc::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
                         Arc::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Arc::new(token(TokenKind::LBracket))),
