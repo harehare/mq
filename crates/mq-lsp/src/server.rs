@@ -8,6 +8,7 @@ use tower_lsp::lsp_types::CompletionParams;
 use tower_lsp::lsp_types::CompletionResponse;
 use tower_lsp::lsp_types::Diagnostic;
 use tower_lsp::lsp_types::DidChangeTextDocumentParams;
+use tower_lsp::lsp_types::DidCloseTextDocumentParams;
 use tower_lsp::lsp_types::DidOpenTextDocumentParams;
 use tower_lsp::lsp_types::DidSaveTextDocumentParams;
 use tower_lsp::lsp_types::DocumentFormattingParams;
@@ -80,6 +81,22 @@ impl LanguageServer for Backend {
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         self.diagnostics(params.text_document.uri, None).await;
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        let uri_string = params.text_document.uri.to_string();
+
+        // Remove error information for the closed file
+        self.error_map.remove(&uri_string);
+        self.cst_nodes_map.remove(&uri_string);
+
+        // Remove from source map
+        self.source_map.write().unwrap().remove_by_left(&uri_string);
+
+        // Clear diagnostics for the closed file
+        self.client
+            .publish_diagnostics(params.text_document.uri, Vec::new(), None)
+            .await;
     }
 
     async fn semantic_tokens_full(
@@ -214,16 +231,16 @@ impl Backend {
     }
 
     async fn diagnostics(&self, uri: Url, version: Option<i32>) {
-        self.client
-            .publish_diagnostics(uri.clone(), Vec::new(), version)
-            .await;
+        let uri_string = uri.to_string();
 
-        let errors = self.error_map.get(&uri.to_string()).unwrap();
+        // Get errors for this specific file
+        let file_errors = self.error_map.get(&uri_string);
 
-        let mut diagnostics = errors
-            .iter()
-            .cloned()
-            .map(|(message, item)| {
+        let mut diagnostics = Vec::new();
+
+        // Add parsing errors if they exist
+        if let Some(errors) = file_errors {
+            diagnostics.extend(errors.iter().cloned().map(|(message, item)| {
                 Diagnostic::new_simple(
                     Range::new(
                         Position {
@@ -237,32 +254,51 @@ impl Backend {
                     ),
                     message,
                 )
-            })
-            .collect::<Vec<_>>();
+            }));
+        }
 
-        diagnostics.extend(
-            self.hir
-                .read()
-                .unwrap()
-                .error_ranges()
-                .into_iter()
-                .map(|(message, item)| {
-                    Diagnostic::new_simple(
-                        Range::new(
-                            Position {
-                                line: item.start.line - 1,
-                                character: (item.start.column - 1) as u32,
-                            },
-                            Position {
-                                line: item.end.line - 1,
-                                character: (item.end.column - 1) as u32,
-                            },
-                        ),
-                        message,
-                    )
-                })
-                .collect::<Vec<_>>(),
-        );
+        // Add HIR errors for this specific file
+        if let Some(source_id) = self.source_map.read().unwrap().get_by_left(&uri_string) {
+            // Filter HIR errors to only include ones from this specific source
+            diagnostics.extend(
+                self.hir
+                    .read()
+                    .unwrap()
+                    .error_ranges()
+                    .into_iter()
+                    .filter_map(|(message, item)| {
+                        // Only include errors if they are related to this file's source
+                        // We'll check this by examining the source_id of symbols in HIR
+                        let hir = self.hir.read().unwrap();
+                        let has_error_in_this_file = hir.symbols().any(|(_, symbol)| {
+                            symbol.source.source_id == Some(*source_id)
+                                && symbol
+                                    .source
+                                    .text_range
+                                    .as_ref()
+                                    .map_or(false, |range| range == &item)
+                        });
+
+                        if has_error_in_this_file {
+                            Some(Diagnostic::new_simple(
+                                Range::new(
+                                    Position {
+                                        line: item.start.line - 1,
+                                        character: (item.start.column - 1) as u32,
+                                    },
+                                    Position {
+                                        line: item.end.line - 1,
+                                        character: (item.end.column - 1) as u32,
+                                    },
+                                ),
+                                message,
+                            ))
+                        } else {
+                            None
+                        }
+                    }),
+            );
+        }
 
         self.client
             .publish_diagnostics(uri, diagnostics, version)
@@ -645,6 +681,63 @@ mod tests {
         // Check if content was updated
         let nodes = backend.cst_nodes_map.get(&uri.to_string()).unwrap();
         assert!(!nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_did_close() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Open and setup a file with content
+        backend
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "mq".to_string(),
+                    version: 1,
+                    text: "def main(): invalid_syntax".to_string(),
+                },
+            })
+            .await;
+
+        // Verify data exists before close
+        assert!(backend.error_map.contains_key(&uri.to_string()));
+        assert!(backend.cst_nodes_map.contains_key(&uri.to_string()));
+        assert!(
+            backend
+                .source_map
+                .read()
+                .unwrap()
+                .contains_left(&uri.to_string())
+        );
+
+        // Close the file
+        use tower_lsp::lsp_types::DidCloseTextDocumentParams;
+        use tower_lsp::lsp_types::TextDocumentIdentifier;
+        backend
+            .did_close(DidCloseTextDocumentParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+            })
+            .await;
+
+        // Verify data is cleaned up after close
+        assert!(!backend.error_map.contains_key(&uri.to_string()));
+        assert!(!backend.cst_nodes_map.contains_key(&uri.to_string()));
+        assert!(
+            !backend
+                .source_map
+                .read()
+                .unwrap()
+                .contains_left(&uri.to_string())
+        );
     }
 
     #[tokio::test]
