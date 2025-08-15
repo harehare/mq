@@ -272,11 +272,7 @@ impl Backend {
                         let hir = self.hir.read().unwrap();
                         let has_error_in_this_file = hir.symbols().any(|(_, symbol)| {
                             symbol.source.source_id == Some(*source_id)
-                                && symbol
-                                    .source
-                                    .text_range
-                                    .as_ref()
-                                    .map_or(false, |range| range == &item)
+                                && symbol.source.text_range.as_ref() == Some(&item)
                         });
 
                         if has_error_in_this_file {
