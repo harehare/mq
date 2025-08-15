@@ -104,20 +104,10 @@ def filter(v, f):
 end
 
 # Returns the first element of an array
-def first(arr):
-  if (is_empty(arr)):
-    None
-  else:
-    get(arr, 0)
-end
+def first(arr): get(arr, 0);
 
 # Returns the last element of an array
-def last(arr):
-  if (is_empty(arr)):
-    None
-  else:
-    get(arr, sub(len(arr), 1))
-end
+def last(arr): get(arr, len(arr) - 1);
 
 # Returns the second element of an array
 def second(arr): if (len(arr) > 1): get(arr, 1);

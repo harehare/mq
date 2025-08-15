@@ -69,7 +69,6 @@ def _split_csv_lines(input):
         | let _next_skip = next_skip
         | let next_skip = false
         | let _ = if (_next_skip): continue
-        | let next_char = if (i + 1 < len(input)): input[i + 1] else: ""
         | let result = if (char == "\"" && !in_quotes):
               [lines, current_line + char, true, false]
             elif (char == "\"" && in_quotes):
@@ -77,9 +76,7 @@ def _split_csv_lines(input):
             elif (char != "\"" && in_quotes):
               [lines, current_line + char, true, false]
             elif ((char == "\n" || char == "\r") && !in_quotes):
-              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", false, false]
-            elif (char == "\\" && (next_char == "r" || next_char == "n") && !in_quotes):
-              [if (!is_empty(trim(current_line))): lines + current_line else: lines, "", false, true]
+              [if (is_empty(trim(current_line))): lines else: lines + current_line, "", false, false]
             else:
               [lines, current_line + char, in_quotes, false]
         | let lines = result[0]
