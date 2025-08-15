@@ -89,7 +89,7 @@ def _split_csv_lines(input):
   | let result = last(result)
   | let lines = result[0]
   | let current_line = result[1]
-  | let lines = if (!is_empty(trim(current_line))): lines + [current_line] else: lines
+  | let lines = if (is_empty(trim(current_line))): lines else: lines + [current_line]
   | lines
 end
 
