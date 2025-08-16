@@ -34,11 +34,10 @@ def _parse_unquoted_field(input, delimiter, pos):
 end
 
 def _parse_csv_field(input, delimiter, pos):
-  let quoted = starts_with(input[pos], "\"")
-  | if (quoted):
-      _parse_quoted_field(input, delimiter, pos)
-    else:
-      _parse_unquoted_field(input, delimiter, pos)
+  if (starts_with(input[pos], "\"")):
+    _parse_quoted_field(input, delimiter, pos)
+  else:
+    _parse_unquoted_field(input, delimiter, pos)
 end
 
 def _parse_csv_line(line, delimiter):
