@@ -1,6 +1,62 @@
 # Example
 
-## Markdown TOC
+## Basic Element Selection
+
+### Heading
+
+```js
+.h
+```
+
+### Extract table
+
+```js
+.[1][]
+```
+
+### Extract list
+
+```js
+.[1]
+```
+
+## Code Block Operations
+
+### Exclude code
+
+```js
+select(!.code)
+```
+
+### Extract js code
+
+```js
+.code("js")
+```
+
+### Extracts the language name from code blocks
+
+```js
+.code.lang
+```
+
+## Link and MDX Operations
+
+### Extract MDX
+
+```python
+select(is_mdx())
+```
+
+### Extracts the url from link
+
+```js
+.link.url
+```
+
+## Advanced Markdown Processing
+
+### Markdown TOC
 
 ```js
 .h
@@ -9,49 +65,21 @@
 | if (!is_none(level)): to_md_list(link, to_number(level))
 ```
 
-## Exclude code
+### Generate sitemap
 
-```js
-select(!.code)
+```scala
+def sitemap(item, base_url):
+  let path = replace(to_text(item), ".md", ".html")
+  | let loc = add(base_url, path)
+  | s"<url>
+  <loc>${loc}</loc>
+  <priority>1.0</priority>
+</url>";
 ```
 
-## Extract js code
+## Custom Functions and Programming
 
-```js
-.code("js")
-```
-
-## Extract table
-
-```js
-.[1][]
-```
-
-## Extract list
-
-```js
-.[1]
-```
-
-## Extract MDX
-
-```python
-select(is_mdx())
-```
-
-## Extracts the language name from code blocks
-
-```js
-.code.lang
-```
-
-## Extracts the url from link
-
-```js
-.link.url
-```
-
-## Custom function
+### Custom function
 
 ```ruby
 def snake_to_camel(x):
@@ -65,25 +93,27 @@ end
 | snake_to_camel()
 ```
 
-## Generate sitemap
+### Map
 
-```scala
-def sitemap(item, base_url):
-  let path = replace(to_text(item), ".md", ".html")
-  | let loc = add(base_url, path)
-  | s"<url>
-  <loc>${loc}</loc>
-  <priority>1.0</priority>
-</url>";
+```js
+map(arr, fn(x): x + 1;)
 ```
 
-## CSV to markdown table
+### Filter
+
+```js
+filter(arr, fn(x): x > 10;)
+```
+
+## File Processing
+
+### CSV to markdown table
 
 ```bash
 $ mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
 
-## Merging Multiple Files
+### Merging Multiple Files
 
 ```bash
 $ mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
