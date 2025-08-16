@@ -34,7 +34,7 @@ pub type Args = SmallVec<[RuntimeValue; 4]>;
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
     pub num_params: ParamNum,
-    pub func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
+    pub func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -76,7 +76,7 @@ impl ParamNum {
 impl BuiltinFunction {
     pub fn new(
         num_params: ParamNum,
-        func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
+        func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
     ) -> Self {
         BuiltinFunction { num_params, func }
     }
@@ -402,7 +402,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
                     .last()
                     .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, smallvec![RuntimeValue::String(s.clone())])
+                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
                     })
                     .unwrap_or(RuntimeValue::FALSE)),
                 [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -426,7 +426,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
                     .first()
                     .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, smallvec![RuntimeValue::String(s.clone())])
+                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
                     })
                     .unwrap_or(RuntimeValue::FALSE)),
                 [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -3130,7 +3130,7 @@ impl Error {
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
     ident: &ast::Ident,
-    args: Args,
+    args: &Args,
 ) -> Result<RuntimeValue, Error> {
     BUILTIN_FUNCTIONS.get(&ident.name).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
@@ -3140,7 +3140,7 @@ pub fn eval_builtin(
             } else if f.num_params.is_missing_one_params(args.len() as u8) {
                 let mut new_args = smallvec![runtime_value.clone()];
                 new_args.extend(args.clone());
-                (f.func)(ident, runtime_value, new_args)
+                (f.func)(ident, runtime_value, &new_args)
             } else {
                 Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
@@ -3478,7 +3478,7 @@ mod tests {
             token: None,
         };
 
-        assert_eq!(eval_builtin(&RuntimeValue::None, &ident, args), expected);
+        assert_eq!(eval_builtin(&RuntimeValue::None, &ident, &args), expected);
     }
 
     #[rstest]
@@ -3497,7 +3497,7 @@ mod tests {
             token: None,
         };
 
-        let result = eval_builtin(&RuntimeValue::None, &ident, args);
+        let result = eval_builtin(&RuntimeValue::None, &ident, &args);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected_error);
     }
@@ -3512,7 +3512,7 @@ mod tests {
         let first_arg = RuntimeValue::String("hello world".into());
         let args = smallvec![RuntimeValue::String("hello".into())];
 
-        let result = eval_builtin(&first_arg, &ident, args);
+        let result = eval_builtin(&first_arg, &ident, &args);
         assert_eq!(result, Ok(RuntimeValue::Bool(true)));
     }
     #[rstest]
@@ -3740,7 +3740,7 @@ mod tests {
             name: CompactString::new("dict"),
             token: None,
         };
-        let result = eval_builtin(&RuntimeValue::None, &ident, smallvec![]);
+        let result = eval_builtin(&RuntimeValue::None, &ident, &smallvec![]);
         assert!(result.is_ok());
         let map_val = result.unwrap();
         match map_val {
@@ -3753,7 +3753,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            smallvec![RuntimeValue::Array(vec![
+            &smallvec![RuntimeValue::Array(vec![
                 RuntimeValue::String("key".into()),
                 RuntimeValue::String("value".into())
             ])],
@@ -3780,7 +3780,7 @@ mod tests {
             RuntimeValue::String("name".into()),
             RuntimeValue::String("Jules".into())
         ];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, args1);
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, &args1);
         assert!(result1.is_ok());
         let map_val1 = result1.unwrap();
         match &map_val1 {
@@ -3796,7 +3796,7 @@ mod tests {
             RuntimeValue::String("age".into()),
             RuntimeValue::Number(30.into())
         ];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, args2);
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, &args2);
         assert!(result2.is_ok());
         let map_val2 = result2.unwrap();
         match &map_val2 {
@@ -3813,7 +3813,7 @@ mod tests {
             RuntimeValue::String("name".into()),
             RuntimeValue::String("Vincent".into())
         ];
-        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, args3);
+        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, &args3);
         assert!(result3.is_ok());
         let map_val3 = result3.unwrap();
         match &map_val3 {
@@ -3836,7 +3836,7 @@ mod tests {
             RuntimeValue::String("nested".into()),
             nested_map.clone()
         ];
-        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, args4);
+        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, &args4);
         assert!(result4.is_ok());
         match result4.unwrap() {
             RuntimeValue::Dict(map) => {
@@ -3851,7 +3851,7 @@ mod tests {
             RuntimeValue::String("key".into()),
             RuntimeValue::String("value".into())
         ];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, args_err1);
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -3869,7 +3869,7 @@ mod tests {
             RuntimeValue::Number(123.into()),
             RuntimeValue::String("value".into())
         ];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, args_err2);
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -3895,18 +3895,18 @@ mod tests {
         let map_val: RuntimeValue = map_data.into();
 
         let args1 = smallvec![map_val.clone(), RuntimeValue::String("name".into())];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, args1);
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, &args1);
         assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
 
         let args2 = smallvec![map_val.clone(), RuntimeValue::String("location".into())];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, args2);
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, &args2);
         assert_eq!(result2, Ok(RuntimeValue::None));
 
         let args_err1 = smallvec![
             RuntimeValue::String("not_a_map".into()),
             RuntimeValue::String("key".into())
         ];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, args_err1);
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -3919,7 +3919,7 @@ mod tests {
         );
 
         let args_err2 = smallvec![map_val.clone(), RuntimeValue::Number(123.into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, args_err2);
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -3938,7 +3938,7 @@ mod tests {
 
         let empty_map = RuntimeValue::new_dict();
         let args1 = smallvec![empty_map.clone()];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1);
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args1);
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
         let mut map_data = BTreeMap::default();
@@ -3946,7 +3946,7 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = smallvec![map_val.clone()];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, args2);
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args2);
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(keys_array) => {
@@ -3964,7 +3964,7 @@ mod tests {
         }
 
         let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err1);
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -3974,7 +3974,7 @@ mod tests {
         );
 
         let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err2);
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("keys".to_string(), 1, 2))
@@ -3990,7 +3990,7 @@ mod tests {
 
         let empty_map = RuntimeValue::new_dict();
         let args1 = smallvec![empty_map.clone()];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1);
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, &args1);
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
         let mut map_data = BTreeMap::default();
@@ -3998,7 +3998,7 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = smallvec![map_val.clone()];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, args2);
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, &args2);
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(values_array) => {
@@ -4010,7 +4010,7 @@ mod tests {
         }
 
         let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, args_err1);
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -4020,7 +4020,7 @@ mod tests {
         );
 
         let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, args_err2);
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))
