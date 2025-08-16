@@ -481,21 +481,21 @@ impl Evaluator {
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
-            let mut i = 0;
+            let mut first = true;
 
             while cond_value.is_truthy() {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
-                    Ok(new_runtime_value) => {
-                        runtime_value = new_runtime_value;
+                    Ok(mut new_runtime_value) => {
+                        std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
-                    Err(EvalError::Break(_)) if i == 0 => {
+                    Err(EvalError::Break(_)) if first => {
                         runtime_value = RuntimeValue::NONE;
                         break;
                     }
                     Err(EvalError::Break(_)) => break,
-                    Err(EvalError::Continue(_)) if i == 0 => {
+                    Err(EvalError::Continue(_)) if first => {
                         runtime_value = RuntimeValue::NONE;
                         continue;
                     }
@@ -503,7 +503,7 @@ impl Evaluator {
                     Err(e) => return Err(e),
                 }
 
-                i += 1;
+                first = false;
             }
 
             Ok(runtime_value)
@@ -530,7 +530,7 @@ impl Evaluator {
             }
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                match self.eval_program(body, std::mem::take(&mut runtime_value), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
                         runtime_value = new_runtime_value;
                         cond_value =
@@ -652,6 +652,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -664,7 +665,7 @@ impl Evaluator {
             .iter()
             .map(|arg| self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env)))
             .collect();
-        builtin::eval_builtin(runtime_value, ident, &args?)
+        builtin::eval_builtin(runtime_value, ident, args?)
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 

@@ -36,7 +36,7 @@ impl Display for ListStyle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -144,7 +144,7 @@ impl Display for TableAlignKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -209,7 +209,7 @@ pub struct Fragment {
     pub values: Vec<Node>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -238,7 +238,7 @@ pub struct Image {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -265,7 +265,7 @@ pub struct Link {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -278,7 +278,7 @@ pub struct FootnoteRef {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -291,7 +291,7 @@ pub struct Footnote {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -305,7 +305,7 @@ pub struct LinkRef {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
@@ -318,7 +318,7 @@ pub struct Heading {
     pub position: Option<Position>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),

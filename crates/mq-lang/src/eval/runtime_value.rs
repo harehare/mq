@@ -10,7 +10,7 @@ pub enum Selector {
     Index(usize),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub enum RuntimeValue {
     Number(Number),
     Bool(bool),
@@ -20,6 +20,7 @@ pub enum RuntimeValue {
     Function(AstParams, Program, Rc<RefCell<Env>>),
     NativeFunction(AstIdent),
     Dict(BTreeMap<String, RuntimeValue>),
+    #[default]
     None,
 }
 
@@ -43,6 +44,12 @@ impl From<String> for RuntimeValue {
 
 impl From<&str> for RuntimeValue {
     fn from(s: &str) -> Self {
+        RuntimeValue::String(s.to_string())
+    }
+}
+
+impl From<&mut str> for RuntimeValue {
+    fn from(s: &mut str) -> Self {
         RuntimeValue::String(s.to_string())
     }
 }

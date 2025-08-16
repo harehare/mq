@@ -71,9 +71,9 @@ fmt:
     cargo fmt --all -- --check
 
 test-mq:
-    mq -f scripts/tests/csv_tests.mq
-    mq -f scripts/tests/json_tests.mq
-    mq -f scripts/tests/yaml_tests.mq
+    cargo run -p mq-cli -- -f scripts/tests/csv_tests.mq
+    cargo run -p mq-cli -- -f scripts/tests/json_tests.mq
+    cargo run -p mq-cli -- -f scripts/tests/yaml_tests.mq
 
 # Run formatting, linting and all tests
 test: fmt lint test-mq
