@@ -1,0 +1,278 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
+import MarkdownIt from "markdown-it";
+import Editor from "@monaco-editor/react";
+import * as monaco from "monaco-editor";
+import "./App.css";
+import type { ViewMode } from "./types";
+import { generateTreeView } from "./utils";
+import { useResizer } from "./hooks/useResizer";
+import { useDarkMode } from "./hooks/useDarkMode";
+import { TREE_VIEW_SETTINGS } from "./constants";
+import { tools } from "./tools";
+
+const mdParser = new MarkdownIt();
+
+function ToolPage() {
+  const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(
+    null
+  ) as React.RefObject<HTMLDivElement>;
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+
+  const [inputText, setInputText] = useState("");
+  const [outputText, setOutputText] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("text");
+  const [isTreeViewOpen, setIsTreeViewOpen] = useState(false);
+  const [isTransforming, setIsTransforming] = useState(false);
+
+  const { isDarkMode, toggleDarkMode } = useDarkMode();
+  const { leftPanelWidth, handleMouseDown } = useResizer({ containerRef });
+
+  // Find the current tool based on current path
+  const currentPath = window.location.pathname;
+  const selectedTool =
+    tools.find((tool) => tool.path === currentPath) || tools[0];
+
+  const handleToolChange = (newToolId: string) => {
+    const tool = tools.find((tool) => tool.id === newToolId);
+    if (tool) {
+      navigate(tool.path);
+    }
+  };
+
+  const toggleTreeView = () => {
+    setIsTreeViewOpen(!isTreeViewOpen);
+  };
+
+  const treeViewData = generateTreeView(inputText);
+
+  const handleLineClick = (lineNumber: number) => {
+    if (editorRef.current) {
+      editorRef.current.revealLineInCenter(lineNumber);
+      editorRef.current.setPosition({ lineNumber, column: 1 });
+      editorRef.current.focus();
+    }
+  };
+
+  const handleTransform = useCallback(async (text: string) => {
+    if (!text.trim()) {
+      setOutputText("");
+      return;
+    }
+
+    setIsTransforming(true);
+
+    try {
+      const result = await selectedTool.transform(text);
+      setOutputText(result);
+    } catch (error) {
+      console.error("Transformation failed:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      setOutputText(`Error: ${errorMessage}`);
+    } finally {
+      setIsTransforming(false);
+    }
+  }, [selectedTool]);
+
+  // Debounce effect for auto-transformation
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleTransform(inputText);
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timer);
+  }, [inputText, handleTransform]);
+
+  return (
+    <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
+      <header className="app-header">
+        <div className="header-left">
+          <a
+            href="https://github.com/harehare/mq"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mq-link"
+            title="Powered by mq"
+          >
+            <img src="/logo.svg" alt="mq" style={{ width: "32px" }} />
+          </a>
+          <h1>Markdown Tools</h1>
+          <p className="header-subtitle">A collection of useful tools for working with Markdown documents. Transform, analyze, and process your Markdown content with ease.</p>
+        </div>
+        <div className="header-controls">
+          <a
+            href="https://github.com/harehare/mq"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="github-link"
+            title="View mq on GitHub"
+          >
+            <svg className="github-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </svg>
+          </a>
+          <a
+            href="https://mqlang.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mq-logo-link"
+            title="mq - Command-line tool for processing Markdown with jq-like syntax"
+          >
+            <img src="/logo.svg" alt="mq" className="mq-logo-small" />
+          </a>
+          <button onClick={toggleTreeView} className="tree-view-toggle">
+            {isTreeViewOpen ? "📖" : "🌲"}
+          </button>
+          <button onClick={toggleDarkMode} className="theme-toggle">
+            {isDarkMode ? "☀️" : "🌙"}
+          </button>
+        </div>
+      </header>
+
+      <div className="toolbar">
+        <select
+          onChange={(e) => handleToolChange(e.target.value)}
+          value={selectedTool.id}
+        >
+          {tools.map((tool) => (
+            <option key={tool.id} value={tool.id}>
+              {tool.name}
+            </option>
+          ))}
+        </select>
+        <span className="tool-description">{selectedTool.description}</span>
+      </div>
+
+      <div className="main-layout">
+        {isTreeViewOpen && (
+          <div className="tree-view">
+            <div className="tree-view-header">
+              <h3>Document Outline</h3>
+            </div>
+            <div className="tree-view-content">
+              {treeViewData.length > 0 ? (
+                <ul className="tree-list">
+                  {treeViewData.map((heading, index) => (
+                    <li
+                      key={index}
+                      className={`tree-item level-${heading.level}`}
+                      style={{
+                        marginLeft: `${
+                          (heading.level - 1) *
+                          TREE_VIEW_SETTINGS.INDENT_PX_PER_LEVEL
+                        }px`,
+                      }}
+                      onClick={() => handleLineClick(heading.line)}
+                    >
+                      <span className="heading-text">{heading.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="empty-tree">No headings found</p>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="container" ref={containerRef}>
+          <div className="input-area" style={{ width: `${leftPanelWidth}%` }}>
+            <div className="editor-header">
+              <h2>Input</h2>
+            </div>
+            <div className="editor-content">
+              <Editor
+                height="100%"
+                defaultLanguage="markdown"
+                value={inputText}
+                onChange={(value) => setInputText(value || "")}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
+                options={{
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 14,
+                  automaticLayout: true,
+                  fontFamily:
+                    "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+                  lineHeight: 1.6,
+                  wordWrap: "on",
+                  theme: isDarkMode ? "vs-dark" : "vs",
+                }}
+                theme={isDarkMode ? "vs-dark" : "vs"}
+              />
+            </div>
+          </div>
+          <div className="resizer" onMouseDown={handleMouseDown}></div>
+          <div
+            className="output-area"
+            style={{ width: `${100 - leftPanelWidth}%` }}
+          >
+            <div className="editor-header">
+              <h2>Output</h2>
+              <div className="view-mode-toggle">
+                <button
+                  onClick={() => setViewMode("text")}
+                  className={viewMode === "text" ? "active" : ""}
+                >
+                  Text
+                </button>
+                <button
+                  onClick={() => setViewMode("preview")}
+                  className={viewMode === "preview" ? "active" : ""}
+                >
+                  Preview
+                </button>
+              </div>
+            </div>
+            <div className="editor-content">
+              {viewMode === "text" ? (
+                <Editor
+                  height="100%"
+                  defaultLanguage="markdown"
+                  value={isTransforming ? "Processing..." : outputText}
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 14,
+                    automaticLayout: true,
+                    fontFamily:
+                      "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+                    lineHeight: 1.6,
+                    wordWrap: "on",
+                  }}
+                  theme={isDarkMode ? "vs-dark" : "vs"}
+                />
+              ) : (
+                <div
+                  className="preview"
+                  dangerouslySetInnerHTML={{
+                    __html: isTransforming
+                      ? "<p>Processing...</p>"
+                      : mdParser.render(outputText),
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to={tools[0].path} replace />} />
+      {tools.map((tool) => (
+        <Route key={tool.id} path={tool.path} element={<ToolPage />} />
+      ))}
+    </Routes>
+  );
+}
+
+export default App;
