@@ -484,9 +484,9 @@ impl Evaluator {
             let mut i = 0;
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
-                    Ok(new_runtime_value) => {
-                        runtime_value = new_runtime_value;
+                match self.eval_program(body, std::mem::take(&mut runtime_value), Rc::clone(&env)) {
+                    Ok(mut new_runtime_value) => {
+                        std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
@@ -530,7 +530,7 @@ impl Evaluator {
             }
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                match self.eval_program(body, std::mem::take(&mut runtime_value), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
                         runtime_value = new_runtime_value;
                         cond_value =
