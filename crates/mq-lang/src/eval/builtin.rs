@@ -2059,13 +2059,13 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 match args.as_mut_slice() {
                     [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map
                         .get_mut(key)
-                        .map(|v| std::mem::take(v))
+                        .map(std::mem::take)
                         .unwrap_or(RuntimeValue::NONE)),
                     [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
                         let index = index.value() as usize;
                         Ok(array
                             .get_mut(index)
-                            .map(|v| std::mem::take(v))
+                            .map(std::mem::take)
                             .unwrap_or(RuntimeValue::NONE))
                     }
                     [RuntimeValue::String(s), RuntimeValue::Number(n)] => {

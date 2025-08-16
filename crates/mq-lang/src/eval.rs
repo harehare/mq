@@ -484,7 +484,7 @@ impl Evaluator {
             let mut i = 0;
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, std::mem::take(&mut runtime_value), Rc::clone(&env)) {
+                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
                     Ok(mut new_runtime_value) => {
                         std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                         cond_value =
