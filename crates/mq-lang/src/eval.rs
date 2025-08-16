@@ -481,7 +481,7 @@ impl Evaluator {
             if !cond_value.is_truthy() {
                 return Ok(RuntimeValue::NONE);
             }
-            let mut i = 0;
+            let mut first = true;
 
             while cond_value.is_truthy() {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
@@ -490,12 +490,12 @@ impl Evaluator {
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
-                    Err(EvalError::Break(_)) if i == 0 => {
+                    Err(EvalError::Break(_)) if first => {
                         runtime_value = RuntimeValue::NONE;
                         break;
                     }
                     Err(EvalError::Break(_)) => break,
-                    Err(EvalError::Continue(_)) if i == 0 => {
+                    Err(EvalError::Continue(_)) if first => {
                         runtime_value = RuntimeValue::NONE;
                         continue;
                     }
@@ -503,7 +503,7 @@ impl Evaluator {
                     Err(e) => return Err(e),
                 }
 
-                i += 1;
+                first = false;
             }
 
             Ok(runtime_value)
