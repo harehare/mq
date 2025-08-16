@@ -8,7 +8,6 @@ use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::process::exit;
@@ -29,12 +28,12 @@ static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> =
 
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
-pub type Args = SmallVec<[RuntimeValue; 4]>;
+pub type Args = Vec<RuntimeValue>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
     pub num_params: ParamNum,
-    pub func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
+    pub func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -76,7 +75,7 @@ impl ParamNum {
 impl BuiltinFunction {
     pub fn new(
         num_params: ParamNum,
-        func: fn(&ast::Ident, &RuntimeValue, &Args) -> Result<RuntimeValue, Error>,
+        func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
     ) -> Self {
         BuiltinFunction { num_params, func }
     }
@@ -88,18 +87,28 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("halt"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("error"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(message)] => Err(Error::UserDefined(message.clone())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(message)] => Err(Error::UserDefined(message.to_string())),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -141,32 +150,43 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("flatten"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::Array(arrays)] => Ok(flatten(arrays).into()),
-                [a] => Ok(a.clone()),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(arrays)] => Ok(flatten(std::mem::take(arrays)).into()),
+                    [a] => Ok(std::mem::take(a)),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("from_date"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(date_str)] => from_date(date_str),
-                [RuntimeValue::Markdown(node_value, _)] => from_date(node_value.value().as_str()),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(date_str)] => from_date(date_str),
+                    [RuntimeValue::Markdown(node_value, _)] => {
+                        from_date(node_value.value().as_str())
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("to_date"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
-                    to_date(*ms, Some(format.as_str()))
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
+                        to_date(*ms, Some(format.as_str()))
+                    }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
@@ -183,86 +203,105 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("base64"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => base64(s),
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        base64(md.value().as_str()).and_then(|b| match b {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s)] => base64(s),
+                    [node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            base64(md.value().as_str()).and_then(|b| match b {
+                                RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                                a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                            })
                         })
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("base64d"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => base64d(s),
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        base64d(md.value().as_str()).and_then(|o| match o {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s)] => base64d(s),
+                    [node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            base64d(md.value().as_str()).and_then(|o| match o {
+                                RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                                a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                            })
                         })
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("min"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
-                    Ok(std::cmp::min(*n1, *n2).into())
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
+                        Ok(std::cmp::min(*n1, *n2).into())
+                    }
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+                        Ok(std::mem::take(std::cmp::min(s1, s2)).into())
+                    }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::min(s1, s2).clone().into())
-                }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("max"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
-                    Ok(std::cmp::max(*n1, *n2).into())
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
+                        Ok(std::cmp::max(*n1, *n2).into())
+                    }
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+                        Ok(std::mem::take(std::cmp::max(s1, s2)).into())
+                    }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(std::cmp::max(s1, s2).clone().into())
-                }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("to_html"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
-                [RuntimeValue::Markdown(node_value, _)] => {
-                    Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+                    [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
+                    [RuntimeValue::Markdown(node_value, _)] => {
+                        Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("to_markdown_string"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| {
-                let args = flatten(&args.to_vec());
+                let args = flatten(args);
 
                 Ok(mq_markdown::Markdown::new(
                     args.iter()
@@ -294,81 +333,92 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_number"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        md.to_string()
-                            .parse::<f64>()
-                            .map(|n| RuntimeValue::Number(n.into()))
-                            .map_err(|e| Error::Runtime(format!("{}", e)))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::String(s)] => s
-                    .parse::<f64>()
-                    .map(|n| RuntimeValue::Number(n.into()))
-                    .map_err(|e| Error::Runtime(format!("{}", e))),
-                [RuntimeValue::Array(array)] => {
-                    let result_value: Result<Vec<RuntimeValue>, Error> = array
-                        .clone()
-                        .into_iter()
-                        .map(|o| match o {
-                            node @ RuntimeValue::Markdown(_, _) => node
-                                .markdown_node()
-                                .map(|md| {
-                                    md.to_string()
-                                        .parse::<f64>()
-                                        .map(|n| RuntimeValue::Number(n.into()))
-                                        .map_err(|e| Error::Runtime(format!("{}", e)))
-                                })
-                                .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                            RuntimeValue::String(s) => s
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            md.to_string()
                                 .parse::<f64>()
                                 .map(|n| RuntimeValue::Number(n.into()))
-                                .map_err(|e| Error::Runtime(format!("{}", e))),
-                            RuntimeValue::Bool(b) => {
-                                Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into()))
-                            }
-                            n @ RuntimeValue::Number(_) => Ok(n),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                                .map_err(|e| Error::Runtime(format!("{}", e)))
                         })
-                        .collect();
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [RuntimeValue::String(s)] => s
+                        .parse::<f64>()
+                        .map(|n| RuntimeValue::Number(n.into()))
+                        .map_err(|e| Error::Runtime(format!("{}", e))),
+                    [RuntimeValue::Array(array)] => {
+                        let result_value: Result<Vec<RuntimeValue>, Error> = std::mem::take(array)
+                            .into_iter()
+                            .map(|o| match o {
+                                node @ RuntimeValue::Markdown(_, _) => node
+                                    .markdown_node()
+                                    .map(|md| {
+                                        md.to_string()
+                                            .parse::<f64>()
+                                            .map(|n| RuntimeValue::Number(n.into()))
+                                            .map_err(|e| Error::Runtime(format!("{}", e)))
+                                    })
+                                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                                RuntimeValue::String(s) => s
+                                    .parse::<f64>()
+                                    .map(|n| RuntimeValue::Number(n.into()))
+                                    .map_err(|e| Error::Runtime(format!("{}", e))),
+                                RuntimeValue::Bool(b) => {
+                                    Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into()))
+                                }
+                                n @ RuntimeValue::Number(_) => Ok(n),
+                                a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                            })
+                            .collect();
 
-                    result_value.map(RuntimeValue::Array)
+                        result_value.map(RuntimeValue::Array)
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("to_array"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(array.clone())),
-                [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
-                    s.chars()
-                        .map(|c| RuntimeValue::String(c.to_string()))
-                        .collect(),
-                )),
-                [RuntimeValue::None] => Ok(RuntimeValue::Array(Vec::new())),
-                [value] => Ok(RuntimeValue::Array(vec![value.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(std::mem::take(array))),
+                    [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
+                        s.chars()
+                            .map(|c| RuntimeValue::String(c.to_string()))
+                            .collect(),
+                    )),
+                    [RuntimeValue::None] => Ok(RuntimeValue::Array(Vec::new())),
+                    [value] => Ok(RuntimeValue::Array(vec![std::mem::take(value)])),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("url_encode"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => url_encode(s),
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        url_encode(md.value().as_str()).and_then(|o| match o {
-                            RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
-                            a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s)] => url_encode(s),
+                    [node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            url_encode(md.value().as_str()).and_then(|o| match o {
+                                RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                                a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                            })
                         })
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -393,67 +443,77 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("ends_with"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| Ok(md.value().ends_with(s).into()))
-                    .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.ends_with(s2).into()),
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
-                    .last()
-                    .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
-                    })
-                    .unwrap_or(RuntimeValue::FALSE)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+                        .markdown_node()
+                        .map(|md| Ok(md.value().ends_with(&*s).into()))
+                        .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+                        Ok(s1.ends_with(&*s2).into())
+                    }
+                    [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                        .last()
+                        .map_or(Ok(RuntimeValue::FALSE), |o| {
+                            eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))])
+                        })
+                        .unwrap_or(RuntimeValue::FALSE)),
+                    [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("starts_with"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| Ok(md.value().starts_with(s).into()))
-                    .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(s1.starts_with(s2).into())
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+                        .markdown_node()
+                        .map(|md| Ok(md.value().starts_with(&*s).into()))
+                        .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+                        Ok(s1.starts_with(&*s2).into())
+                    }
+                    [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                        .first()
+                        .map_or(Ok(RuntimeValue::FALSE), |o| {
+                            eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))])
+                        })
+                        .unwrap_or(RuntimeValue::FALSE)),
+                    [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
-                    .first()
-                    .map_or(Ok(RuntimeValue::FALSE), |o| {
-                        eval_builtin(o, ident, &smallvec![RuntimeValue::String(s.clone())])
-                    })
-                    .unwrap_or(RuntimeValue::FALSE)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("match"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_re(s, pattern),
-                [
-                    node @ RuntimeValue::Markdown(_, _),
-                    RuntimeValue::String(pattern),
-                ] => node
-                    .markdown_node()
-                    .map(|md| match_re(&md.value(), pattern))
-                    .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s), RuntimeValue::String(pattern)] => {
+                        match_re(s, pattern)
+                    }
+                    [
+                        node @ RuntimeValue::Markdown(_, _),
+                        RuntimeValue::String(pattern),
+                    ] => node
+                        .markdown_node()
+                        .map(|md| match_re(&md.value(), pattern))
+                        .unwrap_or_else(|| Ok(RuntimeValue::EMPTY_ARRAY)),
+                    [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -470,254 +530,255 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("gsub"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::String(s1),
-                    RuntimeValue::String(s2),
-                    RuntimeValue::String(s3),
-                ] => Ok(replace_re(s1, s2, s3)?),
-                [
-                    node @ RuntimeValue::Markdown(_, _),
-                    RuntimeValue::String(s1),
-                    RuntimeValue::String(s2),
-                ] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(
-                            &replace_re(md.value().as_str(), s1.as_str(), s2.as_str())?.to_string(),
-                        ))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [
-                    RuntimeValue::None,
-                    RuntimeValue::String(_),
-                    RuntimeValue::String(_),
-                ] => Ok(RuntimeValue::NONE),
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::String(s1),
+                        RuntimeValue::String(s2),
+                        RuntimeValue::String(s3),
+                    ] => Ok(replace_re(s1, s2, s3)?),
+                    [
+                        node @ RuntimeValue::Markdown(_, _),
+                        RuntimeValue::String(s1),
+                        RuntimeValue::String(s2),
+                    ] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(node.update_markdown_value(
+                                &replace_re(md.value().as_str(), &*s1, &*s2)?.to_string(),
+                            ))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [
+                        RuntimeValue::None,
+                        RuntimeValue::String(_),
+                        RuntimeValue::String(_),
+                    ] => Ok(RuntimeValue::NONE),
+                    [a, b, c] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("replace"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::String(s1),
-                    RuntimeValue::String(s2),
-                    RuntimeValue::String(s3),
-                ] => Ok(s1.replace(s2, s3).into()),
-                [
-                    node @ RuntimeValue::Markdown(_, _),
-                    RuntimeValue::String(s1),
-                    RuntimeValue::String(s2),
-                ] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(
-                            md.value().replace(s1.as_str(), s2.as_str()).as_str(),
-                        ))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [
-                    RuntimeValue::None,
-                    RuntimeValue::String(_),
-                    RuntimeValue::String(_),
-                ] => Ok(RuntimeValue::NONE),
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::String(s1),
+                        RuntimeValue::String(s2),
+                        RuntimeValue::String(s3),
+                    ] => Ok(s1.replace(&*s2, &*s3).into()),
+                    [
+                        node @ RuntimeValue::Markdown(_, _),
+                        RuntimeValue::String(s1),
+                        RuntimeValue::String(s2),
+                    ] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(node.update_markdown_value(md.value().replace(&*s1, &*s2).as_str()))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [
+                        RuntimeValue::None,
+                        RuntimeValue::String(_),
+                        RuntimeValue::String(_),
+                    ] => Ok(RuntimeValue::NONE),
+                    [a, b, c] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("repeat"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-                    Ok(s.repeat(n.value() as usize).into())
-                }
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(n)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node
-                            .update_markdown_value(md.value().repeat(n.value() as usize).as_str()))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
-                    let n = n.value() as usize;
-                    if n == 0 {
-                        return Ok(RuntimeValue::EMPTY_ARRAY);
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
+                        Ok(s.repeat(n.value() as usize).into())
                     }
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(n)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(node.update_markdown_value(
+                                md.value().repeat(n.value() as usize).as_str(),
+                            ))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
+                        let n = n.value() as usize;
+                        if n == 0 {
+                            return Ok(RuntimeValue::EMPTY_ARRAY);
+                        }
 
-                    let mut repeated_array = Vec::with_capacity(array.len() * n);
-                    for _ in 0..n {
-                        repeated_array.extend_from_slice(array);
+                        let mut repeated_array = Vec::with_capacity(array.len() * n);
+                        for _ in 0..n {
+                            repeated_array.extend_from_slice(array);
+                        }
+                        Ok(RuntimeValue::Array(repeated_array))
                     }
-                    Ok(RuntimeValue::Array(repeated_array))
+                    [RuntimeValue::None, _] => Ok(RuntimeValue::None),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::None, _] => Ok(RuntimeValue::None),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("explode"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
-                    s.chars()
-                        .map(|c| RuntimeValue::Number((c as u32).into()))
-                        .collect::<Vec<_>>(),
-                )),
-                [node @ RuntimeValue::Markdown(_, _)] => Ok(RuntimeValue::Array(
-                    node.markdown_node()
-                        .map(|md| {
-                            md.value()
-                                .chars()
-                                .map(|c| RuntimeValue::Number((c as u32).into()))
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default(),
-                )),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
+                        s.chars()
+                            .map(|c| RuntimeValue::Number((c as u32).into()))
+                            .collect::<Vec<_>>(),
+                    )),
+                    [node @ RuntimeValue::Markdown(_, _)] => Ok(RuntimeValue::Array(
+                        node.markdown_node()
+                            .map(|md| {
+                                md.value()
+                                    .chars()
+                                    .map(|c| RuntimeValue::Number((c as u32).into()))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default(),
+                    )),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("implode"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => {
-                    let result: String = array
-                        .iter()
-                        .map(|o| match o {
-                            RuntimeValue::Number(n) => std::char::from_u32(n.value() as u32)
-                                .unwrap_or_default()
-                                .to_string(),
-                            _ => "".to_string(),
-                        })
-                        .collect();
-                    Ok(result.into())
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => {
+                        let result: String = array
+                            .iter()
+                            .map(|o| match o {
+                                RuntimeValue::Number(n) => std::char::from_u32(n.value() as u32)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                _ => "".to_string(),
+                            })
+                            .collect();
+                        Ok(result.into())
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("trim"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s)] => Ok(s.trim().to_string().into()),
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(node.update_markdown_value(md.to_string().trim())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::None] => Ok(RuntimeValue::None),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s)] => Ok(s.trim().to_string().into()),
+                    [node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(|md| Ok(node.update_markdown_value(md.to_string().trim())))
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("upcase"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| Ok(node.update_markdown_value(md.value().to_uppercase().as_str())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::String(s)] => Ok(s.to_uppercase().into()),
-                [RuntimeValue::None] => Ok(RuntimeValue::None),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(
+                            |md| Ok(node.update_markdown_value(md.value().to_uppercase().as_str())),
+                        )
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [RuntimeValue::String(s)] => Ok(s.to_uppercase().into()),
+                    [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("update"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [
-                    node1 @ RuntimeValue::Markdown(_, _),
-                    node2 @ RuntimeValue::Markdown(_, _),
-                ] => node2
-                    .markdown_node()
-                    .map(|md| Ok(node1.update_markdown_value(&md.value())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [
-                    RuntimeValue::Markdown(node_value, _),
-                    RuntimeValue::String(s),
-                ] => Ok(node_value.with_value(s).into()),
-                [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
-                [_, a] => Ok(a.clone()),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        node1 @ RuntimeValue::Markdown(_, _),
+                        node2 @ RuntimeValue::Markdown(_, _),
+                    ] => node2
+                        .markdown_node()
+                        .map(|md| Ok(node1.update_markdown_value(&md.value())))
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [
+                        RuntimeValue::Markdown(node_value, _),
+                        RuntimeValue::String(s),
+                    ] => Ok(node_value.with_value(s).into()),
+                    [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+                    [_, a] => Ok(std::mem::take(a)),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("slice"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::String(s),
-                    RuntimeValue::Number(start),
-                    RuntimeValue::Number(end),
-                ] => {
-                    let chars: Vec<char> = s.chars().collect();
-                    let len = chars.len();
-                    let start = start.value() as isize;
-                    let end = end.value() as isize;
-
-                    let real_start = if start < 0 {
-                        (len as isize + start).max(0) as usize
-                    } else {
-                        (start as usize).min(len)
-                    };
-
-                    let real_end = if end < 0 {
-                        (len as isize + end).max(0) as usize
-                    } else {
-                        (end as usize).min(len)
-                    };
-
-                    if real_start >= len || real_end <= real_start {
-                        return Ok("".into());
-                    }
-
-                    let sub: String = chars[real_start..real_end].iter().collect();
-                    Ok(sub.into())
-                }
-                [
-                    RuntimeValue::Array(arrays),
-                    RuntimeValue::Number(start),
-                    RuntimeValue::Number(end),
-                ] => {
-                    let len = arrays.len();
-                    let start = start.value() as isize;
-                    let end = end.value() as isize;
-
-                    let real_start = if start < 0 {
-                        (len as isize + start).max(0) as usize
-                    } else {
-                        (start as usize).min(len)
-                    };
-                    let real_end = if end < 0 {
-                        (len as isize + end).max(0) as usize
-                    } else {
-                        (end as usize).min(len)
-                    };
-
-                    if real_start >= len || real_end <= real_start {
-                        return Ok(RuntimeValue::EMPTY_ARRAY);
-                    }
-
-                    Ok(RuntimeValue::Array(arrays[real_start..real_end].to_vec()))
-                }
-                [
-                    node @ RuntimeValue::Markdown(_, _),
-                    RuntimeValue::Number(start),
-                    RuntimeValue::Number(end),
-                ] => node
-                    .markdown_node()
-                    .map(|md| {
-                        let chars: Vec<char> = md.value().chars().collect();
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::String(s),
+                        RuntimeValue::Number(start),
+                        RuntimeValue::Number(end),
+                    ] => {
+                        let chars: Vec<char> = s.chars().collect();
                         let len = chars.len();
+                        let start = start.value() as isize;
+                        let end = end.value() as isize;
+
+                        let real_start = if start < 0 {
+                            (len as isize + start).max(0) as usize
+                        } else {
+                            (start as usize).min(len)
+                        };
+
+                        let real_end = if end < 0 {
+                            (len as isize + end).max(0) as usize
+                        } else {
+                            (end as usize).min(len)
+                        };
+
+                        if real_start >= len || real_end <= real_start {
+                            return Ok("".into());
+                        }
+
+                        let sub: String = chars[real_start..real_end].iter().collect();
+                        Ok(sub.into())
+                    }
+                    [
+                        RuntimeValue::Array(arrays),
+                        RuntimeValue::Number(start),
+                        RuntimeValue::Number(end),
+                    ] => {
+                        let len = arrays.len();
                         let start = start.value() as isize;
                         let end = end.value() as isize;
 
@@ -733,67 +794,109 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         };
 
                         if real_start >= len || real_end <= real_start {
-                            return Ok(node.update_markdown_value(""));
+                            return Ok(RuntimeValue::EMPTY_ARRAY);
                         }
 
-                        let sub: String = chars[real_start..real_end].iter().collect();
-                        Ok(node.update_markdown_value(&sub))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [
-                    RuntimeValue::None,
-                    RuntimeValue::Number(_),
-                    RuntimeValue::Number(_),
-                ] => Ok(RuntimeValue::NONE),
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
-                _ => unreachable!(),
+                        Ok(RuntimeValue::Array(arrays[real_start..real_end].to_vec()))
+                    }
+                    [
+                        node @ RuntimeValue::Markdown(_, _),
+                        RuntimeValue::Number(start),
+                        RuntimeValue::Number(end),
+                    ] => node
+                        .markdown_node()
+                        .map(|md| {
+                            let chars: Vec<char> = md.value().chars().collect();
+                            let len = chars.len();
+                            let start = start.value() as isize;
+                            let end = end.value() as isize;
+
+                            let real_start = if start < 0 {
+                                (len as isize + start).max(0) as usize
+                            } else {
+                                (start as usize).min(len)
+                            };
+                            let real_end = if end < 0 {
+                                (len as isize + end).max(0) as usize
+                            } else {
+                                (end as usize).min(len)
+                            };
+
+                            if real_start >= len || real_end <= real_start {
+                                return Ok(node.update_markdown_value(""));
+                            }
+
+                            let sub: String = chars[real_start..real_end].iter().collect();
+                            Ok(node.update_markdown_value(&sub))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [
+                        RuntimeValue::None,
+                        RuntimeValue::Number(_),
+                        RuntimeValue::Number(_),
+                    ] => Ok(RuntimeValue::NONE),
+                    [a, b, c] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("pow"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => Ok(
-                    RuntimeValue::Number((base.value() as i64).pow(exp.value() as u32).into()),
-                ),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => Ok(
+                        RuntimeValue::Number((base.value() as i64).pow(exp.value() as u32).into()),
+                    ),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("index"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
-                    (s1.find(s2).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
-                )),
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
                         Ok(RuntimeValue::Number(
-                            (md.value().find(s).map(|v| v as isize).unwrap_or_else(|| -1) as i64)
+                            (s1.find(s2.as_str())
+                                .map(|v| v as isize)
+                                .unwrap_or_else(|| -1) as i64)
                                 .into(),
                         ))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
-                    .iter()
-                    .position(|o| match o {
-                        RuntimeValue::String(s1) => s1 == s,
-                        _ => false,
-                    })
-                    .map(|i| RuntimeValue::Number((i as i64).into()))
-                    .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::None, _] => Ok(RuntimeValue::Number((-1_i64).into())),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+                    }
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(RuntimeValue::Number(
+                                (md.value()
+                                    .find(&*s)
+                                    .map(|v| v as isize)
+                                    .unwrap_or_else(|| -1) as i64)
+                                    .into(),
+                            ))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
+                    [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                        .iter()
+                        .position(|o| match o {
+                            RuntimeValue::String(s1) => s1 == s,
+                            _ => false,
+                        })
+                        .map(|i| RuntimeValue::Number((i as i64).into()))
+                        .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
+                    [RuntimeValue::None, _] => Ok(RuntimeValue::Number((-1_i64).into())),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -818,47 +921,51 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         map.insert(
             CompactString::new("rindex"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
-                    s1.rfind(s2)
-                        .map(|v| v as isize)
-                        .unwrap_or_else(|| -1)
-                        .into(),
-                )),
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| {
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
                         Ok(RuntimeValue::Number(
-                            md.value()
-                                .rfind(s)
+                            s1.rfind(&*s2)
                                 .map(|v| v as isize)
                                 .unwrap_or_else(|| -1)
                                 .into(),
                         ))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
-                    .iter()
-                    .rposition(|o| match o {
-                        RuntimeValue::String(s1) => s1 == s,
-                        _ => false,
-                    })
-                    .map(|i| RuntimeValue::Number(i.into()))
-                    .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
-                [RuntimeValue::None, RuntimeValue::String(_)] => {
-                    Ok(RuntimeValue::Number((-1_i64).into()))
+                    }
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(RuntimeValue::Number(
+                                md.value()
+                                    .rfind(&*s)
+                                    .map(|v| v as isize)
+                                    .unwrap_or_else(|| -1)
+                                    .into(),
+                            ))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
+                    [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+                        .iter()
+                        .rposition(|o| match o {
+                            RuntimeValue::String(s1) => s1 == s,
+                            _ => false,
+                        })
+                        .map(|i| RuntimeValue::Number(i.into()))
+                        .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
+                    [RuntimeValue::None, RuntimeValue::String(_)] => {
+                        Ok(RuntimeValue::Number((-1_i64).into()))
+                    }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("range"),
-            BuiltinFunction::new(ParamNum::Range(1, 3), |ident, _, args| {
-                match args.as_slice() {
+            BuiltinFunction::new(ParamNum::Range(1, 3), |ident, _, mut args| {
+                match args.as_mut_slice() {
                     // Numeric range: range(end)
                     [RuntimeValue::Number(end)] => {
                         let end_val = end.value() as isize;
@@ -915,238 +1022,290 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             ))
                         }
                     }
-                    _ => Err(Error::InvalidTypes(
-                        ident.to_string(),
-                        args.iter().cloned().collect(),
-                    )),
+                    _ => Err(Error::InvalidTypes(ident.to_string(), args.to_vec())),
                 }
             }),
         );
         map.insert(
             CompactString::new("del"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
-                    let mut array = array.clone();
-                    array.remove(n.value() as usize);
-                    Ok(RuntimeValue::Array(array))
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
+                        let mut array = std::mem::take(array);
+                        array.remove(n.value() as usize);
+                        Ok(RuntimeValue::Array(array))
+                    }
+                    [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
+                        let mut s = std::mem::take(s).chars().collect::<Vec<_>>();
+                        s.remove(n.value() as usize);
+                        Ok(s.into_iter().collect::<String>().into())
+                    }
+                    [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+                    [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
+                        let mut dict = std::mem::take(dict);
+                        dict.remove(key);
+                        Ok(RuntimeValue::Dict(dict))
+                    }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-                    let mut s = s.clone().chars().collect::<Vec<_>>();
-                    s.remove(n.value() as usize);
-                    Ok(s.into_iter().collect::<String>().into())
-                }
-                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
-                [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
-                    let mut dict = dict.clone();
-                    dict.remove(key);
-                    Ok(RuntimeValue::Dict(dict))
-                }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("join"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array), RuntimeValue::String(s)] => {
-                    Ok(array.iter().join(s).into())
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array), RuntimeValue::String(s)] => {
+                        Ok(array.iter().join(s).into())
+                    }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("reverse"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => {
-                    let mut vec = array.to_vec();
-                    vec.reverse();
-                    Ok(RuntimeValue::Array(vec))
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => {
+                        let mut vec = std::mem::take(array);
+                        vec.reverse();
+                        Ok(RuntimeValue::Array(vec))
+                    }
+                    [RuntimeValue::String(s)] => Ok(s.chars().rev().collect::<String>().into()),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::String(s)] => Ok(s.chars().rev().collect::<String>().into()),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("sort"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => {
-                    let mut vec = array.to_vec();
-                    vec.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => {
+                        let mut vec = std::mem::take(array);
+                        vec.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-                    let vec = vec
-                        .into_iter()
-                        .map(|v| match v {
-                            RuntimeValue::Markdown(mut node, s) => {
-                                node.set_position(None);
-                                RuntimeValue::Markdown(node, s)
-                            }
-                            _ => v,
-                        })
-                        .collect();
-                    Ok(RuntimeValue::Array(vec))
+                        let vec = vec
+                            .into_iter()
+                            .map(|v| match v {
+                                RuntimeValue::Markdown(mut node, s) => {
+                                    node.set_position(None);
+                                    RuntimeValue::Markdown(node, s)
+                                }
+                                _ => v,
+                            })
+                            .collect();
+                        Ok(RuntimeValue::Array(vec))
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("_sort_by_impl"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => {
-                    let mut vec = array.to_vec();
-                    vec.sort_by(|a, b| match (a, b) {
-                        (RuntimeValue::Array(a1), RuntimeValue::Array(a2)) => a1
-                            .first()
-                            .unwrap()
-                            .partial_cmp(a2.first().unwrap())
-                            .unwrap_or(std::cmp::Ordering::Equal),
-                        _ => unreachable!(),
-                    });
-                    let vec = vec
-                        .into_iter()
-                        .map(|v| match v {
-                            RuntimeValue::Array(mut arr) if arr.len() >= 2 => {
-                                if let RuntimeValue::Markdown(node, s) = &arr[1] {
-                                    let mut new_node = node.clone();
-                                    new_node.set_position(None);
-
-                                    arr[1] = RuntimeValue::Markdown(new_node, s.clone());
-                                    RuntimeValue::Array(arr)
-                                } else {
-                                    RuntimeValue::Array(arr)
-                                }
-                            }
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => {
+                        let mut vec = std::mem::take(array);
+                        vec.sort_by(|a, b| match (a, b) {
+                            (RuntimeValue::Array(a1), RuntimeValue::Array(a2)) => a1
+                                .first()
+                                .unwrap()
+                                .partial_cmp(a2.first().unwrap())
+                                .unwrap_or(std::cmp::Ordering::Equal),
                             _ => unreachable!(),
-                        })
-                        .collect();
+                        });
+                        let vec = vec
+                            .into_iter()
+                            .map(|v| match v {
+                                RuntimeValue::Array(mut arr) if arr.len() >= 2 => {
+                                    if let RuntimeValue::Markdown(node, s) = &arr[1] {
+                                        let mut new_node = node.clone();
+                                        new_node.set_position(None);
 
-                    Ok(RuntimeValue::Array(vec))
+                                        arr[1] = RuntimeValue::Markdown(new_node, s.clone());
+                                        RuntimeValue::Array(arr)
+                                    } else {
+                                        RuntimeValue::Array(arr)
+                                    }
+                                }
+                                _ => unreachable!(),
+                            })
+                            .collect();
+
+                        Ok(RuntimeValue::Array(vec))
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("compact"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
-                    array
-                        .iter()
-                        .filter(|v| !v.is_none())
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                )),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
+                        std::mem::take(array)
+                            .into_iter()
+                            .filter(|v| !v.is_none())
+                            .collect::<Vec<_>>(),
+                    )),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("split"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| split_re(md.value().as_str(), s))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::Array(array), v] => {
-                    if array.is_empty() {
-                        return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())]));
-                    }
-
-                    let mut positions = Vec::new();
-                    for (i, a) in array.iter().enumerate() {
-                        if a == v {
-                            positions.push(i);
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+                        .markdown_node()
+                        .map(|md| split_re(md.value().as_str(), s))
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [RuntimeValue::Array(array), v] => {
+                        if array.is_empty() {
+                            return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())]));
                         }
+
+                        let mut positions = Vec::new();
+                        for (i, a) in array.iter().enumerate() {
+                            if a == v {
+                                positions.push(i);
+                            }
+                        }
+
+                        if positions.is_empty() {
+                            return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(
+                                std::mem::take(array),
+                            )]));
+                        }
+
+                        let mut result = Vec::with_capacity(positions.len() + 1);
+                        let mut start = 0;
+
+                        for pos in positions {
+                            result.push(RuntimeValue::Array(array[start..pos].to_vec()));
+                            start = pos + 1;
+                        }
+
+                        if start < array.len() {
+                            result.push(RuntimeValue::Array(array[start..].to_vec()));
+                        }
+
+                        Ok(RuntimeValue::Array(result))
                     }
-
-                    if positions.is_empty() {
-                        return Ok(RuntimeValue::Array(vec![RuntimeValue::Array(
-                            array.clone(),
-                        )]));
-                    }
-
-                    let mut result = Vec::with_capacity(positions.len() + 1);
-                    let mut start = 0;
-
-                    for pos in positions {
-                        result.push(RuntimeValue::Array(array[start..pos].to_vec()));
-                        start = pos + 1;
-                    }
-
-                    if start < array.len() {
-                        result.push(RuntimeValue::Array(array[start..].to_vec()));
-                    }
-
-                    Ok(RuntimeValue::Array(result))
+                    [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::EMPTY_ARRAY),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("uniq"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Array(array)] => {
-                    let mut vec = array.to_vec();
-                    let mut seen = FxHashSet::default();
-                    vec.retain(|item| seen.insert(item.to_string()));
-                    Ok(RuntimeValue::Array(vec))
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Array(array)] => {
+                        let mut vec = std::mem::take(array);
+                        let mut seen = FxHashSet::default();
+                        vec.retain(|item| seen.insert(item.to_string()));
+                        Ok(RuntimeValue::Array(vec))
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("ceil"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ceil().into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ceil().into())),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("floor"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().floor().into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().floor().into())),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("round"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().round().into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().round().into())),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("trunc"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().trunc().into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().trunc().into())),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("abs"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().abs().into())),
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().abs().into())),
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -1217,104 +1376,115 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("add"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                    Ok(format!("{}{}", s1, s2).into())
-                }
-                [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(format!("{}{}", md.value(), s).as_str()))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [RuntimeValue::String(s), node @ RuntimeValue::Markdown(_, _)] => node
-                    .markdown_node()
-                    .map(|md| {
-                        Ok(node.update_markdown_value(format!("{}{}", s, md.value()).as_str()))
-                    })
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [
-                    node1 @ RuntimeValue::Markdown(_, _),
-                    node2 @ RuntimeValue::Markdown(_, _),
-                ] => Ok(node2
-                    .markdown_node()
-                    .and_then(|md2| {
-                        node1.markdown_node().map(|md1| {
-                            node1.update_markdown_value(
-                                format!("{}{}", md1.value(), md2.value()).as_str(),
-                            )
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+                        s1.push_str(s2);
+                        Ok(std::mem::take(s1).into())
+                    }
+                    [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(node.update_markdown_value(format!("{}{}", md.value(), s).as_str()))
                         })
-                    })
-                    .unwrap_or(RuntimeValue::NONE)),
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
-                [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
-                    let mut a = Vec::with_capacity(a1.len() + a2.len());
-                    a.extend_from_slice(a1);
-                    a.extend_from_slice(a2);
-                    Ok(RuntimeValue::Array(a))
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [RuntimeValue::String(s), node @ RuntimeValue::Markdown(_, _)] => node
+                        .markdown_node()
+                        .map(|md| {
+                            Ok(node.update_markdown_value(format!("{}{}", s, md.value()).as_str()))
+                        })
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [
+                        node1 @ RuntimeValue::Markdown(_, _),
+                        node2 @ RuntimeValue::Markdown(_, _),
+                    ] => Ok(node2
+                        .markdown_node()
+                        .and_then(|md2| {
+                            node1.markdown_node().map(|md1| {
+                                node1.update_markdown_value(
+                                    format!("{}{}", md1.value(), md2.value()).as_str(),
+                                )
+                            })
+                        })
+                        .unwrap_or(RuntimeValue::NONE)),
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
+                    [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
+                        let mut a = std::mem::take(a1);
+                        a.reserve(a2.len());
+                        a.extend_from_slice(a2);
+                        Ok(RuntimeValue::Array(a))
+                    }
+                    [RuntimeValue::Array(a1), a2] => {
+                        let mut a = std::mem::take(a1);
+                        a.reserve(1);
+                        a.push(std::mem::take(a2));
+                        Ok(RuntimeValue::Array(a))
+                    }
+                    [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(std::mem::take(a)),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::Array(a1), a2] => {
-                    let mut a = Vec::with_capacity(a1.len() + 1);
-                    a.extend_from_slice(a1);
-                    a.push(a2.clone());
-                    Ok(RuntimeValue::Array(a))
-                }
-                [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(a.clone()),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("sub"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("div"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
-                    if n2.is_zero() {
-                        Err(Error::ZeroDivision)
-                    } else {
-                        Ok((*n1 / *n2).into())
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
+                        if n2.is_zero() {
+                            Err(Error::ZeroDivision)
+                        } else {
+                            Ok((*n1 / *n2).into())
+                        }
                     }
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("mul"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
             CompactString::new("mod"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -1340,32 +1510,36 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         // markdown
         map.insert(
             CompactString::new("attr"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
-                    let value = node.attr(attr);
-                    match value {
-                        Some(val) => Ok(RuntimeValue::String(val)),
-                        None => Ok(RuntimeValue::None),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
+                        let value = node.attr(attr);
+                        match value {
+                            Some(val) => Ok(RuntimeValue::String(val)),
+                            None => Ok(RuntimeValue::None),
+                        }
                     }
+                    [a, ..] => Ok(std::mem::take(a)),
+                    _ => unreachable!(),
                 }
-                [a, ..] => Ok(a.clone()),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("set_attr"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(node, selector),
-                    RuntimeValue::String(attr),
-                    RuntimeValue::String(value),
-                ] => {
-                    let mut new_node = node.clone();
-                    new_node.set_attr(attr, value);
-                    Ok(RuntimeValue::Markdown(new_node, selector.clone()))
+            BuiltinFunction::new(ParamNum::Fixed(3), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Markdown(node, selector),
+                        RuntimeValue::String(attr),
+                        RuntimeValue::String(value),
+                    ] => {
+                        let mut new_node = std::mem::replace(node, mq_markdown::Node::Empty);
+                        new_node.set_attr(attr, value);
+                        Ok(RuntimeValue::Markdown(new_node, selector.take()))
+                    }
+                    [a, ..] => Ok(std::mem::take(a)),
+                    _ => unreachable!(),
                 }
-                [a, ..] => Ok(a.clone()),
-                _ => unreachable!(),
             }),
         );
         map.insert(
@@ -1389,7 +1563,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .into())
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1400,7 +1574,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1422,41 +1596,51 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .into())
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
             CompactString::new("increase_header_level"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a @ RuntimeValue::Markdown(node, _)] => {
-                    if let mq_markdown::Node::Heading(mut heading) = node.clone() {
-                        if heading.depth < 6 {
-                            heading.depth += 1;
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Markdown(node, selector)] => {
+                        if let mq_markdown::Node::Heading(heading) = node {
+                            if heading.depth < 6 {
+                                heading.depth += 1;
+                            }
+                            Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
+                        } else {
+                            Ok(RuntimeValue::Markdown(
+                                std::mem::replace(node, mq_markdown::Node::Empty),
+                                selector.take(),
+                            ))
                         }
-                        Ok(mq_markdown::Node::Heading(heading).into())
-                    } else {
-                        Ok(a.clone())
                     }
+                    [a] => Ok(std::mem::take(a)),
+                    _ => unreachable!(),
                 }
-                [a] => Ok(a.clone()),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("decrease_header_level"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [a @ RuntimeValue::Markdown(node, _)] => {
-                    if let mq_markdown::Node::Heading(mut heading) = node.clone() {
-                        if heading.depth > 1 {
-                            heading.depth -= 1;
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Markdown(node, selector)] => {
+                        if let mq_markdown::Node::Heading(heading) = node {
+                            if heading.depth > 1 {
+                                heading.depth -= 1;
+                            }
+                            Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
+                        } else {
+                            Ok(RuntimeValue::Markdown(
+                                std::mem::replace(node, mq_markdown::Node::Empty),
+                                selector.take(),
+                            ))
                         }
-                        Ok(mq_markdown::Node::Heading(heading).into())
-                    } else {
-                        Ok(a.clone())
                     }
+                    [a] => Ok(std::mem::take(a)),
+                    _ => unreachable!(),
                 }
-                [a] => Ok(a.clone()),
-                _ => unreachable!(),
             }),
         );
 
@@ -1473,28 +1657,30 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_link"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::String(url),
-                    RuntimeValue::String(value),
-                    RuntimeValue::String(title),
-                ] => Ok(mq_markdown::Node::Link(mq_markdown::Link {
-                    url: mq_markdown::Url::new(url.to_string()),
-                    values: vec![value.to_string().into()],
-                    title: if title.is_empty() {
-                        None
-                    } else {
-                        Some(mq_markdown::Title::new(title.into()))
-                    },
-                    position: None,
-                })
-                .into()),
-                [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::String(url),
+                        RuntimeValue::String(value),
+                        RuntimeValue::String(title),
+                    ] => Ok(mq_markdown::Node::Link(mq_markdown::Link {
+                        url: mq_markdown::Url::new(url.to_string()),
+                        values: vec![value.to_string().into()],
+                        title: if title.is_empty() {
+                            None
+                        } else {
+                            Some(mq_markdown::Title::new((&*title).into()))
+                        },
+                        position: None,
+                    })
+                    .into()),
+                    [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
+                    [a, b, c] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+                    )),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -1511,7 +1697,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1522,7 +1708,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1533,29 +1719,31 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
             CompactString::new("to_md_name"),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [RuntimeValue::Markdown(node, _)] => Ok(node.name().to_string().into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
             CompactString::new("set_list_ordered"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
-                    RuntimeValue::Bool(ordered),
-                ] => Ok(mq_markdown::Node::List(mq_markdown::List {
-                    ordered: *ordered,
-                    ..list.clone()
-                })
-                .into()),
-                [a, ..] => Ok(a.clone()),
-                _ => Ok(RuntimeValue::None),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
+                        RuntimeValue::Bool(ordered),
+                    ] => Ok(mq_markdown::Node::List(mq_markdown::List {
+                        ordered: *ordered,
+                        ..std::mem::take(list)
+                    })
+                    .into()),
+                    [a, ..] => Ok(std::mem::take(a)),
+                    _ => Ok(RuntimeValue::NONE),
+                }
             }),
         );
         map.insert(
@@ -1573,7 +1761,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1591,7 +1779,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1602,7 +1790,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     position: None,
                 })
                 .into()),
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1630,7 +1818,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     })
                     .into())
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
@@ -1685,31 +1873,33 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("get_title"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(
-                        mq_markdown::Node::Definition(mq_markdown::Definition { title, .. }),
-                        _,
-                    )
-                    | RuntimeValue::Markdown(
-                        mq_markdown::Node::Link(mq_markdown::Link { title, .. }),
-                        _,
-                    ),
-                ] => title
-                    .as_ref()
-                    .map(|t| Ok(RuntimeValue::String(t.to_value())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [
-                    RuntimeValue::Markdown(
-                        mq_markdown::Node::Image(mq_markdown::Image { title, .. }),
-                        _,
-                    ),
-                ] => title
-                    .as_ref()
-                    .map(|t| Ok(RuntimeValue::String(t.clone())))
-                    .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                [_] => Ok(RuntimeValue::NONE),
-                _ => unreachable!(),
+            BuiltinFunction::new(ParamNum::Fixed(1), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Markdown(
+                            mq_markdown::Node::Definition(mq_markdown::Definition {
+                                title, ..
+                            }),
+                            _,
+                        )
+                        | RuntimeValue::Markdown(
+                            mq_markdown::Node::Link(mq_markdown::Link { title, .. }),
+                            _,
+                        ),
+                    ] => std::mem::take(title)
+                        .map(|t| Ok(RuntimeValue::String(t.to_value())))
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [
+                        RuntimeValue::Markdown(
+                            mq_markdown::Node::Image(mq_markdown::Image { title, .. }),
+                            _,
+                        ),
+                    ] => std::mem::take(title)
+                        .map(|t| Ok(RuntimeValue::String(t)))
+                        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+                    [_] => Ok(RuntimeValue::NONE),
+                    _ => unreachable!(),
+                }
             }),
         );
         map.insert(
@@ -1724,96 +1914,103 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 [RuntimeValue::Markdown(mq_markdown::Node::Image(image), _)] => {
                     Ok(image.url.to_owned().into())
                 }
-                _ => Ok(RuntimeValue::None),
+                _ => Ok(RuntimeValue::NONE),
             }),
         );
         map.insert(
             CompactString::new("set_check"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
-                    RuntimeValue::Bool(checked),
-                ] => Ok(mq_markdown::Node::List(mq_markdown::List {
-                    checked: Some(*checked),
-                    ..list.clone()
-                })
-                .into()),
-                [a, ..] => Ok(a.clone()),
-                _ => Ok(RuntimeValue::None),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
+                        RuntimeValue::Bool(checked),
+                    ] => Ok(mq_markdown::Node::List(mq_markdown::List {
+                        checked: Some(*checked),
+                        ..std::mem::take(list)
+                    })
+                    .into()),
+                    [a, ..] => Ok(std::mem::take(a)),
+                    _ => Ok(RuntimeValue::NONE),
+                }
             }),
         );
         map.insert(
             CompactString::new("set_ref"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
-                    RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
-                    label: Some(s.to_owned()),
-                    ..def.clone()
-                })
-                .into()),
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::ImageRef(image_ref), _),
-                    RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
-                    label: if s == &image_ref.ident {
-                        None
-                    } else {
-                        Some(s.to_owned())
-                    },
-                    ..image_ref.clone()
-                })
-                .into()),
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::LinkRef(link_ref), _),
-                    RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
-                    label: if s == &link_ref.ident {
-                        None
-                    } else {
-                        Some(s.to_owned())
-                    },
-                    ..link_ref.clone()
-                })
-                .into()),
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::Footnote(footnote), _),
-                    RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
-                    ident: s.to_owned(),
-                    ..footnote.clone()
-                })
-                .into()),
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
-                    RuntimeValue::String(s),
-                ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
-                    label: Some(s.to_owned()),
-                    ..footnote_ref.clone()
-                })
-                .into()),
-                [a, ..] => Ok(a.clone()),
-                _ => Ok(RuntimeValue::None),
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
+                        RuntimeValue::String(s),
+                    ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
+                        label: Some(s.to_owned()),
+                        ..std::mem::take(def)
+                    })
+                    .into()),
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::ImageRef(image_ref), _),
+                        RuntimeValue::String(s),
+                    ] => Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
+                        label: if s == &image_ref.ident {
+                            None
+                        } else {
+                            Some(s.to_owned())
+                        },
+                        ..std::mem::take(image_ref)
+                    })
+                    .into()),
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::LinkRef(link_ref), _),
+                        RuntimeValue::String(s),
+                    ] => Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
+                        label: if s == &link_ref.ident {
+                            None
+                        } else {
+                            Some(s.to_owned())
+                        },
+                        ..std::mem::take(link_ref)
+                    })
+                    .into()),
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::Footnote(footnote), _),
+                        RuntimeValue::String(s),
+                    ] => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
+                        ident: s.to_owned(),
+                        ..std::mem::take(footnote)
+                    })
+                    .into()),
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
+                        RuntimeValue::String(s),
+                    ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
+                        label: Some(s.to_owned()),
+                        ..std::mem::take(footnote_ref)
+                    })
+                    .into()),
+                    [a, ..] => Ok(std::mem::take(a)),
+                    _ => Ok(RuntimeValue::None),
+                }
             }),
         );
 
         map.insert(
             CompactString::new("set_code_block_lang"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Markdown(mq_markdown::Node::Code(code), _),
-                    RuntimeValue::String(lang),
-                ] => {
-                    let mut new_code = code.clone();
-                    new_code.lang = if lang.is_empty() {
-                        None
-                    } else {
-                        Some(lang.clone())
-                    };
-                    Ok(mq_markdown::Node::Code(new_code).into())
+            BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Markdown(mq_markdown::Node::Code(code), _),
+                        RuntimeValue::String(lang),
+                    ] => {
+                        let mut new_code = std::mem::take(code);
+                        new_code.lang = if lang.is_empty() {
+                            None
+                        } else {
+                            Some(std::mem::take(lang))
+                        };
+                        Ok(mq_markdown::Node::Code(new_code).into())
+                    }
+                    [a, ..] => Ok(std::mem::take(a)),
+                    _ => Ok(RuntimeValue::NONE),
                 }
-                _ => Ok(args[0].clone()),
             }),
         );
 
@@ -1834,7 +2031,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             }
                             _ => entries.clone(),
                         },
-                        _ => args.to_vec(),
+                        _ => args,
                     };
 
                     for entry in entries {
@@ -1858,163 +2055,187 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("get"),
-            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
-                    Ok(map.get(key).cloned().unwrap_or(RuntimeValue::None))
-                }
-                [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
-                    let index = index.value() as usize;
-                    Ok(array.get(index).cloned().unwrap_or(RuntimeValue::None))
-                }
-                [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-                    match s.chars().nth(n.value() as usize) {
-                        Some(o) => Ok(o.to_string().into()),
-                        None => Ok(RuntimeValue::None),
+            BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+                        Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE))
                     }
+                    [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+                        let index = index.value() as usize;
+                        Ok(array.get(index).cloned().unwrap_or(RuntimeValue::NONE))
+                    }
+                    [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
+                        match s.chars().nth(n.value() as usize) {
+                            Some(o) => Ok(o.to_string().into()),
+                            None => Ok(RuntimeValue::NONE),
+                        }
+                    }
+                    [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
+                        Ok(RuntimeValue::Markdown(
+                            std::mem::replace(node, mq_markdown::Node::Empty),
+                            Some(runtime_value::Selector::Index(i.value() as usize)),
+                        ))
+                    }
+                    [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
+                    [a, b] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-                    Ok(RuntimeValue::Markdown(
-                        node.clone(),
-                        Some(runtime_value::Selector::Index(i.value() as usize)),
-                    ))
-                }
-                [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
-                [a, b] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("set"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
-                [
-                    RuntimeValue::Dict(map_val),
-                    RuntimeValue::String(key_val),
-                    value_val,
-                ] => {
-                    let mut new_dict = map_val.clone();
-                    new_dict.insert(key_val.clone(), value_val.clone());
-                    Ok(RuntimeValue::Dict(new_dict))
-                }
-                [
-                    RuntimeValue::Array(array_val),
-                    RuntimeValue::Number(index_val),
-                    value_val,
-                ] => {
-                    let index = index_val.value() as usize;
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [
+                        RuntimeValue::Dict(map_val),
+                        RuntimeValue::String(key_val),
+                        value_val,
+                    ] => {
+                        let mut new_dict = std::mem::take(map_val);
+                        new_dict.insert(std::mem::take(key_val), std::mem::take(value_val));
+                        Ok(RuntimeValue::Dict(new_dict))
+                    }
+                    [
+                        RuntimeValue::Array(array_val),
+                        RuntimeValue::Number(index_val),
+                        value_val,
+                    ] => {
+                        let index = index_val.value() as usize;
 
-                    // Extend array size if necessary
-                    let mut new_array = if index >= array_val.len() {
-                        // If index is out of bounds, extend array and fill with None
-                        let mut resized_array = Vec::with_capacity(index + 1);
-                        resized_array.extend_from_slice(array_val);
-                        resized_array.resize(index + 1, RuntimeValue::None);
-                        resized_array
-                    } else {
-                        // If index is within bounds, clone existing array
-                        array_val.clone()
-                    };
+                        // Extend array size if necessary
+                        let mut new_array = if index >= array_val.len() {
+                            // If index is out of bounds, extend array and fill with None
+                            let mut resized_array = Vec::with_capacity(index + 1);
+                            resized_array.extend_from_slice(array_val);
+                            resized_array.resize(index + 1, RuntimeValue::NONE);
+                            resized_array
+                        } else {
+                            // If index is within bounds, clone existing array
+                            std::mem::take(array_val)
+                        };
 
-                    // Set value at specified index
-                    new_array[index] = value_val.clone();
-                    Ok(RuntimeValue::Array(new_array))
+                        // Set value at specified index
+                        new_array[index] = std::mem::take(value_val);
+                        Ok(RuntimeValue::Array(new_array))
+                    }
+                    [a, b, c] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("keys"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Dict(map)] => {
-                    let keys = map
-                        .keys()
-                        .map(|k| RuntimeValue::String(k.clone()))
-                        .collect::<Vec<RuntimeValue>>();
-                    Ok(RuntimeValue::Array(keys))
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Dict(map)] => {
+                        let keys = map
+                            .keys()
+                            .map(|k| RuntimeValue::String(k.to_owned()))
+                            .collect::<Vec<RuntimeValue>>();
+                        Ok(RuntimeValue::Array(keys))
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("values"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Dict(map)] => {
-                    let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
-                    Ok(RuntimeValue::Array(values))
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Dict(map)] => {
+                        let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
+                        Ok(RuntimeValue::Array(values))
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("entries"),
-            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, args| match args.as_slice() {
-                [RuntimeValue::Dict(map)] => {
-                    let entries = map
-                        .iter()
-                        .map(|(k, v)| {
-                            RuntimeValue::Array(vec![RuntimeValue::String(k.clone()), v.clone()])
-                        })
-                        .collect::<Vec<RuntimeValue>>();
-                    Ok(RuntimeValue::Array(entries))
+            BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    [RuntimeValue::Dict(map)] => {
+                        let entries = map
+                            .iter()
+                            .map(|(k, v)| {
+                                RuntimeValue::Array(vec![
+                                    RuntimeValue::String(k.to_owned()),
+                                    v.to_owned(),
+                                ])
+                            })
+                            .collect::<Vec<RuntimeValue>>();
+                        Ok(RuntimeValue::Array(entries))
+                    }
+                    [a] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a)],
+                    )),
+                    _ => unreachable!(),
                 }
-                [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
-                _ => unreachable!(),
             }),
         );
         map.insert(
             CompactString::new("insert"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, args| match args.as_slice() {
-                // Insert into array at index
-                [
-                    RuntimeValue::Array(array),
-                    RuntimeValue::Number(index),
-                    value,
-                ] => {
-                    let mut new_array = array.clone();
-                    let idx = index.value() as usize;
-                    if idx > new_array.len() {
-                        new_array.resize(idx, RuntimeValue::None);
+            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+                match args.as_mut_slice() {
+                    // Insert into array at index
+                    [
+                        RuntimeValue::Array(array),
+                        RuntimeValue::Number(index),
+                        value,
+                    ] => {
+                        let mut new_array = std::mem::take(array);
+                        let idx = index.value() as usize;
+                        if idx > new_array.len() {
+                            new_array.resize(idx, RuntimeValue::NONE);
+                        }
+                        new_array.insert(idx, std::mem::take(value));
+                        Ok(RuntimeValue::Array(new_array))
                     }
-                    new_array.insert(idx, value.clone());
-                    Ok(RuntimeValue::Array(new_array))
-                }
-                // Insert into string at index
-                [RuntimeValue::String(s), RuntimeValue::Number(index), value] => {
-                    let mut chars: Vec<char> = s.chars().collect();
-                    let idx = index.value() as usize;
-                    let insert_str = value.to_string();
-                    if idx > chars.len() {
-                        chars.resize(idx, ' ');
+                    // Insert into string at index
+                    [RuntimeValue::String(s), RuntimeValue::Number(index), value] => {
+                        let mut chars: Vec<char> = s.chars().collect();
+                        let idx = index.value() as usize;
+                        let insert_str = value.to_string();
+                        if idx > chars.len() {
+                            chars.resize(idx, ' ');
+                        }
+                        for (i, c) in insert_str.chars().enumerate() {
+                            chars.insert(idx + i, c);
+                        }
+                        let result: String = chars.into_iter().collect();
+                        Ok(RuntimeValue::String(result))
                     }
-                    for (i, c) in insert_str.chars().enumerate() {
-                        chars.insert(idx + i, c);
+                    // Insert into dict (same as set, but error if key exists)
+                    [
+                        RuntimeValue::Dict(map_val),
+                        RuntimeValue::String(key_val),
+                        value_val,
+                    ] => {
+                        let mut new_dict = std::mem::take(map_val);
+                        new_dict.insert(std::mem::take(key_val), std::mem::take(value_val));
+                        Ok(RuntimeValue::Dict(new_dict))
                     }
-                    let result: String = chars.into_iter().collect();
-                    Ok(RuntimeValue::String(result))
+                    [a, b, c] => Err(Error::InvalidTypes(
+                        ident.to_string(),
+                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+                    )),
+                    _ => unreachable!(),
                 }
-                // Insert into dict (same as set, but error if key exists)
-                [
-                    RuntimeValue::Dict(map_val),
-                    RuntimeValue::String(key_val),
-                    value_val,
-                ] => {
-                    let mut new_dict = map_val.clone();
-                    new_dict.insert(key_val.clone(), value_val.clone());
-                    Ok(RuntimeValue::Dict(new_dict))
-                }
-                [a, b, c] => Err(Error::InvalidTypes(
-                    ident.to_string(),
-                    vec![a.clone(), b.clone(), c.clone()],
-                )),
-                _ => unreachable!(),
             }),
         );
 
@@ -3038,8 +3259,9 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
         map.insert(
             CompactString::new("increase_header_level"),
             BuiltinFunctionDoc {
-            description: "Increases the level of a markdown heading node by one, up to a maximum of 6.",
-            params: &["heading_node"],
+                description:
+                    "Increases the level of a markdown heading node by one, up to a maximum of 6.",
+                params: &["heading_node"],
             },
         );
         map.insert(
@@ -3130,22 +3352,23 @@ impl Error {
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
     ident: &ast::Ident,
-    args: &Args,
+    args: Args,
 ) -> Result<RuntimeValue, Error> {
     BUILTIN_FUNCTIONS.get(&ident.name).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
         |f| {
-            if f.num_params.is_valid(args.len() as u8) {
+            let args_len = args.len() as u8;
+            if f.num_params.is_valid(args_len) {
                 (f.func)(ident, runtime_value, args)
-            } else if f.num_params.is_missing_one_params(args.len() as u8) {
-                let mut new_args = smallvec![runtime_value.clone()];
-                new_args.extend(args.clone());
-                (f.func)(ident, runtime_value, &new_args)
+            } else if f.num_params.is_missing_one_params(args_len) {
+                let mut new_args: Args = vec![runtime_value.clone()];
+                new_args.extend(args);
+                (f.func)(ident, runtime_value, new_args)
             } else {
                 Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
                     f.num_params.to_num(),
-                    args.len() as u8,
+                    args_len,
                 ))
             }
         },
@@ -3435,12 +3658,12 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
     Ok(result)
 }
 
-fn flatten(args: &Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut result = Vec::new();
     for arg in args {
         match arg {
             RuntimeValue::Array(arr) => result.extend(flatten(arr)),
-            other => result.push(other.clone()),
+            other => result.push(other),
         }
     }
     result
@@ -3456,18 +3679,18 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("type", smallvec![RuntimeValue::String("test".into())], Ok(RuntimeValue::String("string".into())))]
-    #[case("len", smallvec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
-    #[case("abs", smallvec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
-    #[case("ceil", smallvec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("floor", smallvec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
-    #[case("round", smallvec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("add", smallvec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
-    #[case("sub", smallvec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
-    #[case("mul", smallvec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
-    #[case("div", smallvec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("eq", smallvec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
-    #[case("ne", smallvec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
+    #[case("type", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::String("string".into())))]
+    #[case("len", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
+    #[case("abs", vec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
+    #[case("ceil", vec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("floor", vec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
+    #[case("round", vec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
+    #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
+    #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
+    #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
+    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
     fn test_eval_builtin(
         #[case] func_name: &str,
         #[case] args: Args,
@@ -3478,14 +3701,14 @@ mod tests {
             token: None,
         };
 
-        assert_eq!(eval_builtin(&RuntimeValue::None, &ident, &args), expected);
+        assert_eq!(eval_builtin(&RuntimeValue::None, &ident, args), expected);
     }
 
     #[rstest]
-    #[case("div", smallvec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
-    #[case("unknown_func", smallvec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
-    #[case("add", SmallVec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
-    #[case("add", smallvec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
+    #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
+    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
+    #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+    #[case("add", vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(
         #[case] func_name: &str,
@@ -3497,7 +3720,7 @@ mod tests {
             token: None,
         };
 
-        let result = eval_builtin(&RuntimeValue::None, &ident, &args);
+        let result = eval_builtin(&RuntimeValue::None, &ident, args);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected_error);
     }
@@ -3510,9 +3733,9 @@ mod tests {
         };
 
         let first_arg = RuntimeValue::String("hello world".into());
-        let args = smallvec![RuntimeValue::String("hello".into())];
+        let args = vec![RuntimeValue::String("hello".into())];
 
-        let result = eval_builtin(&first_arg, &ident, &args);
+        let result = eval_builtin(&first_arg, &ident, args);
         assert_eq!(result, Ok(RuntimeValue::Bool(true)));
     }
     #[rstest]
@@ -3740,7 +3963,7 @@ mod tests {
             name: CompactString::new("dict"),
             token: None,
         };
-        let result = eval_builtin(&RuntimeValue::None, &ident, &smallvec![]);
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![]);
         assert!(result.is_ok());
         let map_val = result.unwrap();
         match map_val {
@@ -3753,9 +3976,9 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            &smallvec![RuntimeValue::Array(vec![
+            vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("key".into()),
-                RuntimeValue::String("value".into())
+                RuntimeValue::String("value".into()),
             ])],
         );
         assert_eq!(
@@ -3775,12 +3998,12 @@ mod tests {
         };
         let initial_map = RuntimeValue::new_dict();
 
-        let args1 = smallvec![
+        let args1 = vec![
             initial_map.clone(),
             RuntimeValue::String("name".into()),
-            RuntimeValue::String("Jules".into())
+            RuntimeValue::String("Jules".into()),
         ];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, &args1);
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, args1);
         assert!(result1.is_ok());
         let map_val1 = result1.unwrap();
         match &map_val1 {
@@ -3791,12 +4014,12 @@ mod tests {
             _ => panic!("Expected Dict, got {:?}", map_val1),
         }
 
-        let args2 = smallvec![
+        let args2 = vec![
             map_val1.clone(),
             RuntimeValue::String("age".into()),
-            RuntimeValue::Number(30.into())
+            RuntimeValue::Number(30.into()),
         ];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, &args2);
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, args2);
         assert!(result2.is_ok());
         let map_val2 = result2.unwrap();
         match &map_val2 {
@@ -3808,12 +4031,12 @@ mod tests {
             _ => panic!("Expected Dict, got {:?}", map_val2),
         }
 
-        let args3 = smallvec![
+        let args3 = vec![
             map_val2.clone(),
             RuntimeValue::String("name".into()),
-            RuntimeValue::String("Vincent".into())
+            RuntimeValue::String("Vincent".into()),
         ];
-        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, &args3);
+        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, args3);
         assert!(result3.is_ok());
         let map_val3 = result3.unwrap();
         match &map_val3 {
@@ -3831,12 +4054,12 @@ mod tests {
         let mut nested_map_data = BTreeMap::default();
         nested_map_data.insert("level".into(), RuntimeValue::Number(2.into()));
         let nested_map: RuntimeValue = nested_map_data.into();
-        let args4 = smallvec![
+        let args4 = vec![
             map_val3.clone(),
             RuntimeValue::String("nested".into()),
-            nested_map.clone()
+            nested_map.clone(),
         ];
-        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, &args4);
+        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, args4);
         assert!(result4.is_ok());
         match result4.unwrap() {
             RuntimeValue::Dict(map) => {
@@ -3846,12 +4069,12 @@ mod tests {
             _ => panic!("Expected Dict"),
         }
 
-        let args_err1 = smallvec![
+        let args_err1 = vec![
             RuntimeValue::String("not_a_map".into()),
             RuntimeValue::String("key".into()),
-            RuntimeValue::String("value".into())
+            RuntimeValue::String("value".into()),
         ];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err1);
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -3864,12 +4087,12 @@ mod tests {
             ))
         );
 
-        let args_err2 = smallvec![
+        let args_err2 = vec![
             initial_map.clone(),
             RuntimeValue::Number(123.into()),
-            RuntimeValue::String("value".into())
+            RuntimeValue::String("value".into()),
         ];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, &args_err2);
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -3894,19 +4117,19 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
 
-        let args1 = smallvec![map_val.clone(), RuntimeValue::String("name".into())];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, &args1);
+        let args1 = vec![map_val.clone(), RuntimeValue::String("name".into())];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, args1);
         assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
 
-        let args2 = smallvec![map_val.clone(), RuntimeValue::String("location".into())];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, &args2);
+        let args2 = vec![map_val.clone(), RuntimeValue::String("location".into())];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, args2);
         assert_eq!(result2, Ok(RuntimeValue::None));
 
-        let args_err1 = smallvec![
+        let args_err1 = vec![
             RuntimeValue::String("not_a_map".into()),
-            RuntimeValue::String("key".into())
+            RuntimeValue::String("key".into()),
         ];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err1);
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -3918,8 +4141,8 @@ mod tests {
             ))
         );
 
-        let args_err2 = smallvec![map_val.clone(), RuntimeValue::Number(123.into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, &args_err2);
+        let args_err2 = vec![map_val.clone(), RuntimeValue::Number(123.into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -3937,16 +4160,16 @@ mod tests {
         };
 
         let empty_map = RuntimeValue::new_dict();
-        let args1 = smallvec![empty_map.clone()];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args1);
+        let args1 = vec![empty_map.clone()];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1);
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
         let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
-        let args2 = smallvec![map_val.clone()];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args2);
+        let args2 = vec![map_val.clone()];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, args2);
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(keys_array) => {
@@ -3963,8 +4186,8 @@ mod tests {
             _ => panic!("Expected Array of keys"),
         }
 
-        let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err1);
+        let args_err1 = vec![RuntimeValue::String("not_a_map".into())];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -3973,8 +4196,8 @@ mod tests {
             ))
         );
 
-        let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, &args_err2);
+        let args_err2 = vec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("keys".to_string(), 1, 2))
@@ -3989,16 +4212,16 @@ mod tests {
         };
 
         let empty_map = RuntimeValue::new_dict();
-        let args1 = smallvec![empty_map.clone()];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, &args1);
+        let args1 = vec![empty_map.clone()];
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1);
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
         let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
-        let args2 = smallvec![map_val.clone()];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, &args2);
+        let args2 = vec![map_val.clone()];
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, args2);
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(values_array) => {
@@ -4009,8 +4232,8 @@ mod tests {
             _ => panic!("Expected Array of values"),
         }
 
-        let args_err1 = smallvec![RuntimeValue::String("not_a_map".into())];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err1);
+        let args_err1 = vec![RuntimeValue::String("not_a_map".into())];
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, args_err1);
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -4019,8 +4242,8 @@ mod tests {
             ))
         );
 
-        let args_err2 = smallvec![map_val.clone(), RuntimeValue::String("extra".into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, &args_err2);
+        let args_err2 = vec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, args_err2);
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))

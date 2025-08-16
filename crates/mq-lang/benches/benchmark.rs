@@ -4,8 +4,8 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(args = [20])]
-fn eval_fibonacci(n: u64) -> mq_lang::Values {
+#[divan::bench()]
+fn eval_fibonacci() -> mq_lang::Values {
     let mut engine = mq_lang::Engine::default();
     engine
         .eval(
@@ -16,8 +16,8 @@ fn eval_fibonacci(n: u64) -> mq_lang::Values {
       elif (x == 1):
           1
       else:
-        fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
-            vec![mq_lang::Value::Number(n.into())].into_iter(),
+        fibonacci(x - 1) + fibonacci(x - 2); | fibonacci(20)",
+            vec![mq_lang::Value::Number(20.into())].into_iter(),
         )
         .unwrap()
 }

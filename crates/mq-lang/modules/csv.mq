@@ -48,7 +48,7 @@ def _parse_csv_line(line, delimiter):
   | let result = until (pos < len(input_chars)):
         let field_result = _parse_csv_field(input_chars, delimiter, pos)
         | let new_pos = field_result[1]
-        | let fields = fields + [field_result[0]]
+        | let fields = fields + field_result[0]
         | let pos = if (new_pos < len(input_chars) && input_chars[new_pos] == delimiter):
               new_pos + 1
             else:
@@ -84,7 +84,7 @@ def _split_csv_lines(input):
   | let result = last(result)
   | let lines = result[0]
   | let current_line = result[1]
-  | let lines = if (is_empty(trim(current_line))): lines else: lines + [current_line]
+  | let lines = if (is_empty(trim(current_line))): lines else: lines + current_line
   | lines
 end
 

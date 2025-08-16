@@ -652,6 +652,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -664,7 +665,7 @@ impl Evaluator {
             .iter()
             .map(|arg| self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env)))
             .collect();
-        builtin::eval_builtin(runtime_value, ident, &args?)
+        builtin::eval_builtin(runtime_value, ident, args?)
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
