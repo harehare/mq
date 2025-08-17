@@ -20,7 +20,7 @@ license-file = "LICENSE"
 name = "mq-cli"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.2.17"
+version = "0.2.18"
 
 [dependencies]
 clap = {version = "4.5.45", features = ["derive"]}
