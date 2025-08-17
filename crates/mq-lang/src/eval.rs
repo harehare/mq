@@ -222,10 +222,6 @@ impl Evaluator {
         program
             .iter()
             .try_fold(runtime_value, |runtime_value, expr| {
-                // if self.options.filter_none && runtime_value.is_none() {
-                //     return Ok(RuntimeValue::NONE);
-                // }
-
                 self.eval_expr(&runtime_value, Rc::clone(expr), Rc::clone(&env))
             })
     }
