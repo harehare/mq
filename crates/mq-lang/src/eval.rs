@@ -183,7 +183,18 @@ impl Evaluator {
 
     pub(crate) fn load_module(&mut self, module: Option<module::Module>) -> Result<(), EvalError> {
         if let Some(module) = module {
-            module.modules.iter().for_each(|node| {
+            module.modules.iter().try_for_each(|node| {
+                if let ast::Expr::Include(_) = &*node.expr {
+                    self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
+                    Ok(())
+                } else {
+                    Err(EvalError::InternalError(
+                        (*self.token_arena.borrow()[node.token_id]).clone(),
+                    ))
+                }
+            })?;
+
+            module.functions.iter().for_each(|node| {
                 if let ast::Expr::Def(ident, params, program) = &*node.expr {
                     self.env.borrow_mut().define(
                         ident,
