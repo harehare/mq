@@ -69,12 +69,13 @@ select(is_mdx())
 
 ```scala
 def sitemap(item, base_url):
-  let path = replace(to_text(item), ".md", ".html")
-  | let loc = add(base_url, path)
-  | s"<url>
-  <loc>${loc}</loc>
-  <priority>1.0</priority>
-</url>";
+    let path = replace(to_text(item), ".md", ".html")
+    | let loc = add(base_url, path)
+    | s"<url>
+    <loc>${loc}</loc>
+    <priority>1.0</priority>
+  </url>"
+end
 ```
 
 ## Custom Functions and Programming

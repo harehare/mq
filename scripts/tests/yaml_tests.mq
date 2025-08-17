@@ -22,6 +22,6 @@ include "yaml"
 
 run_tests([
   test_case("YAML Parse", test_yaml_parse),
-  test_case("YAML Stringify", test_yaml_to_json),
+  test_case("YAML to JSON", test_yaml_to_json),
   test_case("YAML to Markdown Table", test_yaml_to_markdown_table)
 ])

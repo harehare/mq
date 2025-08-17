@@ -80,14 +80,6 @@ impl Engine {
         self.options.optimize = optimize;
     }
 
-    /// Configure whether to filter out None values from results.
-    ///
-    /// When enabled, None values are automatically removed from the output,
-    /// resulting in cleaner results for most use cases.
-    pub fn set_filter_none(&mut self, filter_none: bool) {
-        self.evaluator.options.filter_none = filter_none;
-    }
-
     /// Set the maximum call stack depth for function calls.
     ///
     /// This prevents infinite recursion by limiting how deep function
@@ -283,14 +275,6 @@ mod tests {
         assert_eq!(engine.evaluator.options.max_call_stack_depth, new_depth);
     }
 
-    #[test]
-    fn test_set_filter_none() {
-        let mut engine = Engine::default();
-        let initial_value = engine.evaluator.options.filter_none;
-
-        engine.set_filter_none(!initial_value);
-        assert_eq!(engine.evaluator.options.filter_none, !initial_value);
-    }
     #[test]
     fn test_version() {
         let version = Engine::version();

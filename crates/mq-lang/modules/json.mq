@@ -81,7 +81,7 @@ def _parse_json_value(input):
             | let rest = tokens[1]
             | let elements = elements + [value]
             | let input = trim(rest)
-            | let _ = if (is_none(value)): error("Invalid JSON array element")
+            | if (is_none(value)): error("Invalid JSON array element")
             | let finish = starts_with(input, "]")
             | let input = if (starts_with(input, ",")):
                   trim(input[1:len(input)])
@@ -128,8 +128,8 @@ def _parse_json_value(input):
               let tokens = parse_string(input)
               | let key = tokens[0]
               | let input = trim(tokens[1])
-              | let _ = if (is_none(key)): error("Invalid JSON object key")
-              | let _ = if (!starts_with(input, ":")): error("Expected ':' after object key")
+              | if (is_none(key)): error("Invalid JSON object key")
+              | if (!starts_with(input, ":")): error("Expected ':' after object key")
               | let result = _parse_object_value(obj, key, input)
               | let obj = result[0]
               | let input = trim(result[1])
