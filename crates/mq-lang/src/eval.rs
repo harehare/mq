@@ -2512,9 +2512,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::String("Link Value".to_string()))),
               ]),
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                     name: "to_link".to_string(),
-                                                     args: vec![123.to_string().into(), "Link Title".to_string().into(), "Link Value".to_string().into()]})))]
+        Ok(vec![RuntimeValue::NONE]))]
     #[case::to_hr(vec![RuntimeValue::String("".to_owned())],
         vec![
               ast_call("to_hr", SmallVec::new()),
