@@ -1,4 +1,11 @@
 {
+    "include": {
+        "prefix": "include",
+        "body": [
+            "include \"${1:module}\""
+        ],
+        "description": "Include a module"
+    },
     "foreach": {
         "prefix": "foreach",
         "body": [
