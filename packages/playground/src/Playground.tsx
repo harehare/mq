@@ -558,6 +558,22 @@ export const Playground = () => {
             },
           },
           {
+            label: "include",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: 'include "${1:path}"',
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Include a module",
+            documentation:
+              "Includes the contents of an external module for processing.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
             label: "while",
             kind: monaco.languages.CompletionItemKind.Snippet,
             insertText: "while (${1:condition}): ${0:body};",
