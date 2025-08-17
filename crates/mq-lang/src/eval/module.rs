@@ -43,6 +43,7 @@ pub struct ModuleLoader {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub name: String,
+    pub functions: Program,
     pub modules: Program,
     pub vars: Program,
 }
@@ -123,6 +124,12 @@ impl ModuleLoader {
 
         let modules = program
             .iter()
+            .filter(|node| matches!(*node.expr, ast::Expr::Include(_)))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let functions = program
+            .iter()
             .filter(|node| matches!(*node.expr, ast::Expr::Def(_, _, _)))
             .cloned()
             .collect::<Vec<_>>();
@@ -133,12 +140,13 @@ impl ModuleLoader {
             .cloned()
             .collect::<Vec<_>>();
 
-        if program.len() != modules.len() + vars.len() {
+        if program.len() != functions.len() + modules.len() + vars.len() {
             return Err(ModuleError::InvalidModule);
         }
 
         Ok(Some(Module {
             name: module_name.to_string(),
+            functions,
             modules,
             vars,
         }))
@@ -242,6 +250,7 @@ mod tests {
     #[case::load1("test".to_string(), Err(ModuleError::InvalidModule))]
     #[case::load2("let test = \"value\"".to_string(), Ok(Some(Module{
         name: "test".to_string(),
+        functions: Vec::new(),
         modules: Vec::new(),
         vars: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Let(
@@ -255,7 +264,8 @@ mod tests {
     })))]
     #[case::load3("def test(): 1;".to_string(), Ok(Some(Module{
         name: "test".to_string(),
-        modules: vec![
+        modules: Vec::new(),
+        functions: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
             ast::Ident::new_with_token("test", Some(Rc::new(Token{
                 kind: TokenKind::Ident(CompactString::new("test")),
@@ -271,7 +281,8 @@ mod tests {
     })))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Some(Module{
         name: "test".to_string(),
-        modules: vec![
+        modules: Vec::new(),
+        functions: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
                 ast::Ident::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
@@ -316,6 +327,7 @@ mod tests {
     #[rstest]
     #[case::load_standard_csv("csv", Ok(Some(Module {
         name: "csv".to_string(),
+        functions: Vec::new(),
         modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
         vars: Vec::new(),
     })))]
