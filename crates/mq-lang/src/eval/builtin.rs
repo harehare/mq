@@ -1615,7 +1615,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
         map.insert(
             CompactString::new("to_link"),
-            BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
+            BuiltinFunction::new(ParamNum::Fixed(3), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [
                         RuntimeValue::String(url),
@@ -1632,12 +1632,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         position: None,
                     })
                     .into()),
-                    [RuntimeValue::None, _, _] => Ok(RuntimeValue::NONE),
-                    [a, b, c] => Err(Error::InvalidTypes(
-                        ident.to_string(),
-                        vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
-                    )),
-                    _ => unreachable!(),
+                    _ => Ok(RuntimeValue::NONE),
                 }
             }),
         );
