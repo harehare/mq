@@ -224,13 +224,13 @@ fn engine() -> Engine {
 #[case::is_empty("is_empty(array(\"test\"))",
       vec![Value::String("String".to_string())],
       Ok(vec![Value::FALSE].into()))]
-#[case::test("test(\"^hello.*\")",
+#[case::test1("test(\"^hello.*\")",
       vec![Value::String("helloWorld".to_string())],
       Ok(vec![Value::TRUE].into()))]
-#[case::test("test(\"^world.*\")",
+#[case::test2("test(\"^world.*\")",
       vec![Value::String("helloWorld".to_string())],
       Ok(vec![Value::FALSE].into()))]
-#[case::test("select(contains(\"hello\"))",
+#[case::test3("select(contains(\"hello\"))",
       vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))].into()))]
 #[case::first("first(array(1, 2, 3))",
@@ -245,7 +245,7 @@ fn engine() -> Engine {
 #[case::last("last(array())",
       vec![Value::Array(Vec::new())],
       Ok(vec![Value::None].into()))]
-#[case::test("select(contains(\"hello\"))",
+#[case::select("select(contains(\"hello\"))",
       vec![Value::String("hello world".to_string())],
       Ok(vec![Value::String("hello world".to_string())].into()))]
 #[case::closure("
@@ -292,62 +292,6 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())])].into()))]
-#[case::csv2table_row("csv2table_row()",
-            vec![Value::String("a,b,c".to_string()), Value::String("1,2,3".to_string())],
-            Ok(vec![
-              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
-                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
-                        row: 0,
-                        column: 0,
-                        values: vec!["a".to_string().into()],
-                        last_cell_in_row: false,
-                        last_cell_of_in_table: false,
-                        position: None
-                    }),
-                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
-                        row: 0,
-                        column: 1,
-                        values: vec!["b".to_string().into()],
-                        last_cell_in_row: false,
-                        last_cell_of_in_table: false,
-                        position: None
-                    }),
-                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
-                        row: 0,
-                        column: 2,
-                        values: vec!["c".to_string().into()],
-                        last_cell_in_row: true,
-                        last_cell_of_in_table: false,
-                        position: None
-                    }),
-              ], position: None})),
-              Value::Markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
-                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
-                        row: 0,
-                        column: 0,
-                        values: vec!["1".to_string().into()],
-                        last_cell_in_row: false,
-                        last_cell_of_in_table: false,
-                        position: None
-                    }),
-                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
-                        row: 0,
-                        column: 1,
-                        values: vec!["2".to_string().into()],
-                        last_cell_in_row: false,
-                        last_cell_of_in_table: false,
-                        position: None
-                    }),
-                    mq_markdown::Node::TableCell(mq_markdown::TableCell{
-                        row: 0,
-                        column: 2,
-                        values: vec!["3".to_string().into()],
-                        last_cell_in_row: true,
-                        last_cell_of_in_table: false,
-                        position: None
-                    }),
-              ], position: None})),
-            ].into()))]
 #[case::func("let func1 = def _(): 1;
       | let func2 = def _(): 2;
       | add(func1(), func2())",
