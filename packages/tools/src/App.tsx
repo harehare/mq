@@ -25,6 +25,7 @@ function ToolPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("text");
   const [isTreeViewOpen, setIsTreeViewOpen] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const { isDarkMode, toggleDarkMode } = useDarkMode();
   const { leftPanelWidth, handleMouseDown } = useResizer({ containerRef });
@@ -55,26 +56,72 @@ function ToolPage() {
     }
   };
 
-  const handleTransform = useCallback(async (text: string) => {
-    if (!text.trim()) {
-      setOutputText("");
-      return;
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const textFiles = files.filter(
+      (file) =>
+        file.type === "text/markdown" ||
+        file.type === "text/plain" ||
+        file.name.endsWith(".md") ||
+        file.name.endsWith(".txt") ||
+        file.name.endsWith(".markdown")
+    );
+
+    if (textFiles.length > 0) {
+      const file = textFiles[0];
+      try {
+        const text = await file.text();
+        setInputText(text);
+      } catch (error) {
+        console.error("Failed to read file:", error);
+      }
     }
+  };
 
-    setIsTransforming(true);
-
+  const handleCopyOutput = async () => {
     try {
-      const result = await selectedTool.transform(text);
-      setOutputText(result);
+      await navigator.clipboard.writeText(outputText);
     } catch (error) {
-      console.error("Transformation failed:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      setOutputText(`Error: ${errorMessage}`);
-    } finally {
-      setIsTransforming(false);
+      console.error("Failed to copy output:", error);
     }
-  }, [selectedTool]);
+  };
+
+  const handleTransform = useCallback(
+    async (text: string) => {
+      if (!text.trim()) {
+        setOutputText("");
+        return;
+      }
+
+      setIsTransforming(true);
+
+      try {
+        const result = await selectedTool.transform(text);
+        setOutputText(result);
+      } catch (error) {
+        console.error("Transformation failed:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        setOutputText(`Error: ${errorMessage}`);
+      } finally {
+        setIsTransforming(false);
+      }
+    },
+    [selectedTool]
+  );
 
   // Debounce effect for auto-transformation
   useEffect(() => {
@@ -99,7 +146,10 @@ function ToolPage() {
             <img src="/logo.svg" alt="mq" style={{ width: "32px" }} />
           </a>
           <h1>Markdown Tools</h1>
-          <p className="header-subtitle">A collection of useful tools for working with Markdown documents. Transform, analyze, and process your Markdown content with ease.</p>
+          <p className="header-subtitle">
+            A collection of useful tools for working with Markdown documents.
+            Transform, analyze, and process your Markdown content with ease.
+          </p>
         </div>
         <div className="header-controls">
           <a
@@ -109,8 +159,12 @@ function ToolPage() {
             className="github-link"
             title="View mq on GitHub"
           >
-            <svg className="github-icon" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            <svg
+              className="github-icon"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
             </svg>
           </a>
           <a
@@ -177,9 +231,18 @@ function ToolPage() {
           </div>
         )}
         <div className="container" ref={containerRef}>
-          <div className="input-area" style={{ width: `${leftPanelWidth}%` }}>
+          <div
+            className={`input-area ${isDragOver ? "drag-over" : ""}`}
+            style={{ width: `${leftPanelWidth}%` }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <div className="editor-header">
               <h2>Input</h2>
+              <div className="drag-hint">
+                {isDragOver ? "Drop file here" : "Drag & drop markdown files"}
+              </div>
             </div>
             <div className="editor-content">
               <Editor
@@ -212,19 +275,29 @@ function ToolPage() {
           >
             <div className="editor-header">
               <h2>Output</h2>
-              <div className="view-mode-toggle">
+              <div className="output-controls">
                 <button
-                  onClick={() => setViewMode("text")}
-                  className={viewMode === "text" ? "active" : ""}
+                  onClick={handleCopyOutput}
+                  className="copy-button"
+                  disabled={!outputText.trim()}
+                  title="Copy output to clipboard"
                 >
-                  Text
+                  📋 Copy
                 </button>
-                <button
-                  onClick={() => setViewMode("preview")}
-                  className={viewMode === "preview" ? "active" : ""}
-                >
-                  Preview
-                </button>
+                <div className="view-mode-toggle">
+                  <button
+                    onClick={() => setViewMode("text")}
+                    className={viewMode === "text" ? "active" : ""}
+                  >
+                    Text
+                  </button>
+                  <button
+                    onClick={() => setViewMode("preview")}
+                    className={viewMode === "preview" ? "active" : ""}
+                  >
+                    Preview
+                  </button>
+                </div>
               </div>
             </div>
             <div className="editor-content">

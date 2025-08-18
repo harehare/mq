@@ -493,6 +493,7 @@ textarea:focus {
     color: var(--light-color);
     border-radius: 4px;
     transition: all 0.15s ease;
+    height: 24px;
 }
 
 .view-mode-toggle button:hover {
@@ -691,6 +692,69 @@ textarea:focus {
     .tree-view {
         width: 250px;
     }
+}
+
+/* Drag and drop styles */
+.input-area.drag-over {
+    border: 2px dashed var(--accent-blue);
+    background-color: rgba(77, 144, 254, 0.1);
+}
+
+.drag-hint {
+    font-size: 0.75rem;
+    color: var(--text-color);
+    opacity: 0.7;
+    font-style: italic;
+    margin-left: 8px;
+    transition: all 0.2s ease;
+}
+
+.input-area.drag-over .drag-hint {
+    opacity: 1;
+    color: var(--accent-blue);
+    font-weight: 500;
+}
+
+/* Output controls and copy button */
+.output-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.copy-button {
+    background-color: var(--accent-blue);
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+}
+
+.copy-button:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.copy-button:disabled {
+    background-color: #ccc;
+    color: #666;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.App.dark-mode .copy-button:disabled {
+    background-color: #444;
+    color: #888;
 }
 
 /* Mobile breakpoint - stacks vertically */

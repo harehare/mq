@@ -1,4 +1,4 @@
-import { useState, useEffect, RefObject } from 'react';
+import { useState, useEffect, type RefObject } from 'react';
 import { clampValue } from '../utils';
 import { PANEL_WIDTH_CONSTRAINTS } from '../constants';
 
@@ -7,7 +7,7 @@ interface UseResizerProps {
 }
 
 export const useResizer = ({ containerRef }: UseResizerProps) => {
-  const [leftPanelWidth, setLeftPanelWidth] = useState(PANEL_WIDTH_CONSTRAINTS.DEFAULT);
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(PANEL_WIDTH_CONSTRAINTS.DEFAULT);
   const [isResizing, setIsResizing] = useState(false);
 
   const handleMouseDown = () => {
