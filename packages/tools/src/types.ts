@@ -1,8 +1,11 @@
+export type ToolCategory = "Conversion" | "Extraction" | "Generation";
+
 export interface Tool {
   id: string;
   name: string;
   description: string;
   path: string;
+  category: ToolCategory;
   transform: (input: string) => Promise<string>;
 }
 

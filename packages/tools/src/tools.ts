@@ -45,6 +45,7 @@ export const tools: Tool[] = [
     name: "CSV to Markdown Table",
     description: "Convert CSV data to a Markdown table.",
     path: "/csv-to-markdown",
+    category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun(
         `include "csv" | csv_parse(false) | csv_to_markdown_table()`,
@@ -57,6 +58,7 @@ export const tools: Tool[] = [
     name: "HTML to Markdown",
     description: "Convert HTML to Markdown format.",
     path: "/html-to-markdown",
+    category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun("identity()", input, { inputFormat: "html" }),
   },
@@ -65,6 +67,7 @@ export const tools: Tool[] = [
     name: "JSON to Markdown",
     description: "Convert JSON data to a Markdown table.",
     path: "/json-to-markdown",
+    category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun(
         `include "json" | json_parse() | json_to_markdown_table()`,
@@ -77,6 +80,7 @@ export const tools: Tool[] = [
     name: "Markdown Code Extractor",
     description: "Extract all code blocks from Markdown.",
     path: "/code-extractor",
+    category: "Extraction",
     transform: async (input: string): Promise<string> =>
       safeRun(".code", input, { inputFormat: "markdown" }),
   },
@@ -85,6 +89,7 @@ export const tools: Tool[] = [
     name: "Markdown Link Extractor",
     description: "Extract all links (URLs) from Markdown.",
     path: "/link-extractor",
+    category: "Extraction",
     transform: async (input: string): Promise<string> =>
       safeRun(".link.url", input, { inputFormat: "markdown" }),
   },
@@ -93,6 +98,7 @@ export const tools: Tool[] = [
     name: "Markdown to HTML",
     description: "Convert Markdown to HTML format.",
     path: "/markdown-to-html",
+    category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun("to_html()", input, { inputFormat: "markdown" }),
   },
@@ -101,6 +107,7 @@ export const tools: Tool[] = [
     name: "Markdown to TOC",
     description: "Generate a Table of Contents from Markdown.",
     path: "/markdown-to-toc",
+    category: "Generation",
     transform: async (input: string): Promise<string> =>
       safeRun(
         `.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (not(is_none(level))): to_md_list(link, to_number(level))`,

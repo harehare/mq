@@ -190,11 +190,19 @@ function ToolPage() {
           onChange={(e) => handleToolChange(e.target.value)}
           value={selectedTool.id}
         >
-          {tools.map((tool) => (
-            <option key={tool.id} value={tool.id}>
-              {tool.name}
-            </option>
-          ))}
+          {Array.from(new Set(tools.map(tool => tool.category)))
+            .sort()
+            .map((category) => (
+              <optgroup key={category} label={category}>
+                {tools
+                  .filter((tool) => tool.category === category)
+                  .map((tool) => (
+                    <option key={tool.id} value={tool.id}>
+                      {tool.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
         </select>
         <span className="tool-description">{selectedTool.description}</span>
       </div>
