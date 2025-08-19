@@ -924,11 +924,13 @@ mod tests {
             .insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unused functions are detected
-        let hir_lock = backend.hir.read().unwrap();
-        let unused = hir_lock.unused_functions(source_id);
-        assert_eq!(unused.len(), 1);
-        assert_eq!(unused[0].1.value.as_ref().unwrap(), "unused_function");
-        drop(hir_lock);
+        {
+            let hir_lock = backend.hir.read().unwrap();
+            let unused = hir_lock.unused_functions(source_id);
+            assert_eq!(unused.len(), 1);
+            assert_eq!(unused[0].1.value.as_ref().unwrap(), "unused_function");
+            drop(hir_lock);
+        }
 
         // Diagnostics should be published (we can't directly test this without mocking the client)
         backend.diagnostics(uri, None).await;

@@ -86,7 +86,8 @@ impl Hir {
                     SymbolKind::Call => {
                         // Check if the call symbol directly matches the function name
                         if symbol.value.as_ref() == Some(func_name)
-                            && symbol.source.source_id == Some(source_id) {
+                            && symbol.source.source_id == Some(source_id)
+                        {
                             return true;
                         }
                         // Also check if they have argument symbols that match our function name
@@ -97,7 +98,7 @@ impl Hir {
                                 && arg_symbol.source.source_id == Some(source_id)
                         })
                     }
-                    SymbolKind::Ref => {
+                    SymbolKind::Ref | SymbolKind::Argument => {
                         symbol.value.as_ref() == Some(func_name)
                             && symbol.source.source_id == Some(source_id)
                     }
