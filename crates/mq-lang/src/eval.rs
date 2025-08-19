@@ -263,22 +263,22 @@ impl Evaluator {
         }
     }
 
-    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
+    fn eval_selector_expr(runtime_value: RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
         match runtime_value {
-            RuntimeValue::Markdown(node_value, _) => {
-                if builtin::eval_selector(node_value, ident) {
-                    runtime_value.clone()
+            RuntimeValue::Markdown(node_value, selector) => {
+                if builtin::eval_selector(&node_value, ident) {
+                    RuntimeValue::Markdown(node_value, selector)
                 } else {
                     RuntimeValue::NONE
                 }
             }
             RuntimeValue::Array(values) => {
                 let values = values
-                    .iter()
+                    .into_iter()
                     .map(|value| match value {
-                        RuntimeValue::Markdown(node_value, _) => {
-                            if builtin::eval_selector(node_value, ident) {
-                                value.clone()
+                        RuntimeValue::Markdown(node_value, selector) => {
+                            if builtin::eval_selector(&node_value, ident) {
+                                RuntimeValue::Markdown(node_value, selector)
                             } else {
                                 RuntimeValue::NONE
                             }
@@ -352,7 +352,9 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
-            ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
+            ast::Expr::Selector(ident) => {
+                Ok(Self::eval_selector_expr(runtime_value.clone(), ident))
+            }
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
@@ -493,8 +495,8 @@ impl Evaluator {
 
             while cond_value.is_truthy() {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
-                    Ok(mut new_runtime_value) => {
-                        std::mem::swap(&mut runtime_value, &mut new_runtime_value);
+                    Ok(new_runtime_value) => {
+                        runtime_value = new_runtime_value;
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
@@ -543,7 +545,12 @@ impl Evaluator {
                         runtime_value = new_runtime_value;
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-                        values.push(runtime_value.clone());
+                        if cond_value.is_truthy() {
+                            values.push(runtime_value.clone());
+                        } else {
+                            values.push(runtime_value);
+                            break;
+                        }
                     }
                     Err(EvalError::Break(_)) => break,
                     Err(EvalError::Continue(_)) => continue,
