@@ -356,7 +356,7 @@ impl Evaluator {
             ast::Expr::Call(ident, args, optional) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
             }
-            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
+            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.to_owned()),
             ast::Expr::Break => self.eval_break(node),
             ast::Expr::Continue => self.eval_continue(node),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
@@ -376,7 +376,7 @@ impl Evaluator {
             ast::Expr::Let(ident, node) => {
                 let let_ = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
                 env.borrow_mut().define(ident, let_);
-                Ok(runtime_value.clone())
+                Ok(runtime_value.to_owned())
             }
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
@@ -386,7 +386,7 @@ impl Evaluator {
             }
             ast::Expr::Include(module_id) => {
                 self.eval_include(module_id.to_owned())?;
-                Ok(runtime_value.clone())
+                Ok(runtime_value.to_owned())
             }
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, Rc::clone(expr), env),
         }
@@ -481,7 +481,7 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Until(cond, body) = &*node.expr {
-            let mut runtime_value = runtime_value.clone();
+            let mut runtime_value = runtime_value.to_owned();
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
@@ -492,7 +492,7 @@ impl Evaluator {
             let mut first = true;
 
             while cond_value.is_truthy() {
-                match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
+                match self.eval_program(body, runtime_value.to_owned(), Rc::clone(&env)) {
                     Ok(mut new_runtime_value) => {
                         std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                         cond_value =
@@ -527,7 +527,7 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::While(cond, body) = &*node.expr {
-            let mut runtime_value = runtime_value.clone();
+            let mut runtime_value = runtime_value.to_owned();
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
             let mut cond_value =
                 self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
@@ -543,7 +543,7 @@ impl Evaluator {
                         runtime_value = new_runtime_value;
                         cond_value =
                             self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
-                        values.push(runtime_value.clone());
+                        values.push(runtime_value.to_owned());
                     }
                     Err(EvalError::Break(_)) => break,
                     Err(EvalError::Continue(_)) => continue,
@@ -610,7 +610,7 @@ impl Evaluator {
                             expr: Rc::new(ast::Expr::Self_),
                         }),
                     );
-                    new_args.extend(args.clone());
+                    new_args.extend(args.iter().cloned());
                     new_args
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
@@ -620,7 +620,7 @@ impl Evaluator {
                         args.len() as u8,
                     ));
                 } else {
-                    args.clone()
+                    args.iter().cloned().collect()
                 };
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
@@ -643,7 +643,7 @@ impl Evaluator {
                         }
                     })?;
 
-                let result = self.eval_program(program, runtime_value.clone(), new_env);
+                let result = self.eval_program(program, runtime_value.to_owned(), new_env);
 
                 self.exit_scope();
                 result

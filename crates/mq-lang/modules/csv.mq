@@ -23,14 +23,13 @@ end
 def _parse_unquoted_field(input, delimiter, pos):
   let end_pos = pos
   | let current_input = input[end_pos]
-  | let result = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
+  | let end_pos = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
         let end_pos = end_pos + 1
         | let current_input = input[end_pos]
         | end_pos
       end
-  | let result = if (is_none(result)): end_pos else: result
-  | let field_content = join(input[pos:result], "")
-  | [field_content, result]
+  | let end_pos = if (is_none(end_pos)): pos else: end_pos
+  | [join(input[pos:end_pos], ""), end_pos]
 end
 
 def _parse_csv_field(input, delimiter, pos):
