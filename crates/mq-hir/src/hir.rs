@@ -60,6 +60,59 @@ impl Hir {
         symbol.source.source_id == Some(self.builtin.source_id)
     }
 
+    /// Returns a list of unused user-defined functions for a given source
+    pub fn unused_functions(&self, source_id: SourceId) -> Vec<(SymbolId, &Symbol)> {
+        let mut unused = Vec::new();
+        let user_functions: Vec<_> = self
+            .symbols
+            .iter()
+            .filter(|(_, symbol)| {
+                symbol.is_function()
+                    && symbol.source.source_id == Some(source_id)
+                    && !self.is_builtin_symbol(symbol)
+                    && !symbol.is_internal_function()
+            })
+            .collect();
+
+        for (func_id, func_symbol) in user_functions {
+            let func_name = match &func_symbol.value {
+                Some(name) => name,
+                None => continue, // Anonymous functions are not considered unused
+            };
+
+            // Check if this function is referenced anywhere
+            let is_used = self.symbols.iter().any(|(call_id, symbol)| {
+                match &symbol.kind {
+                    SymbolKind::Call => {
+                        // Check if the call symbol directly matches the function name
+                        if symbol.value.as_ref() == Some(func_name)
+                            && symbol.source.source_id == Some(source_id) {
+                            return true;
+                        }
+                        // Also check if they have argument symbols that match our function name
+                        self.symbols.iter().any(|(_, arg_symbol)| {
+                            arg_symbol.parent == Some(call_id)
+                                && arg_symbol.kind == SymbolKind::Argument
+                                && arg_symbol.value.as_ref() == Some(func_name)
+                                && arg_symbol.source.source_id == Some(source_id)
+                        })
+                    }
+                    SymbolKind::Ref => {
+                        symbol.value.as_ref() == Some(func_name)
+                            && symbol.source.source_id == Some(source_id)
+                    }
+                    _ => false,
+                }
+            });
+
+            if !is_used {
+                unused.push((func_id, func_symbol));
+            }
+        }
+
+        unused
+    }
+
     pub fn builtins(&self) -> impl Iterator<Item = &mq_lang::BuiltinFunctionDoc> {
         self.builtin.functions.values()
     }
@@ -1207,5 +1260,41 @@ end"#;
         }
 
         assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_unused_functions() {
+        let mut hir = Hir::new();
+        hir.builtin.disabled = true; // Disable builtins for cleaner test
+
+        let code = "def used_function(): 1; def unused_function(): 2; def another_unused(): 3; | used_function()";
+
+        let (source_id, _) = hir.add_code(None, code);
+        let unused = hir.unused_functions(source_id);
+
+        // Should find 2 unused functions
+        assert_eq!(unused.len(), 2);
+
+        let unused_names: Vec<_> = unused
+            .iter()
+            .map(|(_, symbol)| symbol.value.as_ref().unwrap().as_str())
+            .collect();
+
+        assert!(unused_names.contains(&"unused_function"));
+        assert!(unused_names.contains(&"another_unused"));
+        assert!(!unused_names.contains(&"used_function"));
+    }
+
+    #[test]
+    fn test_unused_functions_empty_when_all_used() {
+        let mut hir = Hir::new();
+        hir.builtin.disabled = true;
+
+        let code = "def func1(): 1; def func2(): 2; | func1() | func2()";
+
+        let (source_id, _) = hir.add_code(None, code);
+        let unused = hir.unused_functions(source_id);
+
+        assert_eq!(unused.len(), 0);
     }
 }

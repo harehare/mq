@@ -7,6 +7,7 @@ use tower_lsp::jsonrpc::{ErrorCode, Result};
 use tower_lsp::lsp_types::CompletionParams;
 use tower_lsp::lsp_types::CompletionResponse;
 use tower_lsp::lsp_types::Diagnostic;
+use tower_lsp::lsp_types::DiagnosticSeverity;
 use tower_lsp::lsp_types::DidChangeTextDocumentParams;
 use tower_lsp::lsp_types::DidCloseTextDocumentParams;
 use tower_lsp::lsp_types::DidOpenTextDocumentParams;
@@ -294,6 +295,32 @@ impl Backend {
                         }
                     }),
             );
+
+            // Add unused function warnings
+            let hir = self.hir.read().unwrap();
+            let unused_functions = hir.unused_functions(*source_id);
+            for (_, symbol) in unused_functions {
+                if let Some(text_range) = &symbol.source.text_range {
+                    let mut diagnostic = Diagnostic::new_simple(
+                        Range::new(
+                            Position {
+                                line: text_range.start.line - 1,
+                                character: (text_range.start.column - 1) as u32,
+                            },
+                            Position {
+                                line: text_range.end.line - 1,
+                                character: (text_range.end.column - 1) as u32,
+                            },
+                        ),
+                        format!(
+                            "Function '{}' is defined but never used",
+                            symbol.value.as_ref().unwrap_or(&"<anonymous>".into())
+                        ),
+                    );
+                    diagnostic.severity = Some(DiagnosticSeverity::WARNING);
+                    diagnostics.push(diagnostic);
+                }
+            }
         }
 
         self.client
@@ -865,6 +892,45 @@ mod tests {
 
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
         // but we can verify the code doesn't panic
+        backend.diagnostics(uri, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_unused_function_warnings() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Code with unused function
+        let code = "def used_function(): 1; def unused_function(): 2; | used_function()";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri.to_string(), source_id);
+        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend
+            .error_map
+            .insert(uri.to_string(), errors.error_ranges(code));
+
+        // Check unused functions are detected
+        let hir_lock = backend.hir.read().unwrap();
+        let unused = hir_lock.unused_functions(source_id);
+        assert_eq!(unused.len(), 1);
+        assert_eq!(unused[0].1.value.as_ref().unwrap(), "unused_function");
+        drop(hir_lock);
+
+        // Diagnostics should be published (we can't directly test this without mocking the client)
         backend.diagnostics(uri, None).await;
     }
 
