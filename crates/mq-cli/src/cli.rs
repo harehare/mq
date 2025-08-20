@@ -120,8 +120,23 @@ struct InputArgs {
     /// Sets file contents that can be referenced at runtime
     #[arg(long="rawfile", value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
-}
 
+    /// Include the built-in JSON module
+    #[arg(long = "json", default_value_t = false)]
+    include_json: bool,
+
+    /// Include the built-in CSV module
+    #[arg(long = "csv", default_value_t = false)]
+    include_csv: bool,
+
+    /// Include the built-in YAML module
+    #[arg(long = "yaml", default_value_t = false)]
+    include_yaml: bool,
+
+    /// Include the built-in test module
+    #[arg(long = "test", default_value_t = false)]
+    include_test: bool,
+}
 #[derive(Clone, Debug, clap::Args, Default)]
 struct OutputArgs {
     /// Set output format
@@ -357,16 +372,32 @@ impl Cli {
     }
 
     fn get_query(&self) -> miette::Result<String> {
-        if let Some(query) = self.query.as_ref() {
-            if self.input.from_file {
-                let path = PathBuf::from_str(query).into_diagnostic()?;
-                fs::read_to_string(path).into_diagnostic()
-            } else {
-                Ok(query.clone())
+        let query = match self.query.as_ref() {
+            Some(q) if self.input.from_file => {
+                let path = PathBuf::from_str(q).into_diagnostic()?;
+                fs::read_to_string(path).into_diagnostic()?
             }
-        } else {
-            Err(miette!("Query is required"))
-        }
+            Some(q) => q.clone(),
+            None => return Err(miette!("Query is required")),
+        };
+
+        let includes = [
+            ("csv", self.input.include_csv),
+            ("json", self.input.include_json),
+            ("yaml", self.input.include_yaml),
+            ("test", self.input.include_test),
+        ]
+        .iter()
+        .filter(|(_, enabled)| *enabled)
+        .map(|(name, _)| format!(r#"include "{}""#, name))
+        .join(" | ");
+
+        Ok(match (includes.is_empty(), query.is_empty()) {
+            (true, false) => query,
+            (false, true) => includes,
+            (false, false) => format!("{} | {}", includes, query),
+            (true, true) => String::new(),
+        })
     }
 
     fn execute(

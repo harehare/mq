@@ -109,6 +109,45 @@ In {year}, the snowfall was above average.
     "# h1\n\nheader\n\n## h2\n\nheader\n\n# h3\n\nheader\n",
     Some("# h1\n## h2\n# h3\n"),
 )]
+#[case::csv_output(
+    vec!["--unbuffered", "-I", "raw", "--csv", "csv_parse(false)"],
+    "type,value\nHeading,title1\nHeading,title2\n",
+    Some(r#"[["type", "value"], ["Heading", "title1"], ["Heading", "title2"]]
+"#)
+)]
+#[case::json_output(
+    vec!["--unbuffered", "-I", "raw", "--json", "json_parse()"],
+    r#"[
+  {
+    "type": "Heading",
+    "value": "title1"
+  },
+  {
+    "type": "Heading",
+    "value": "title2"
+  }
+]"#,
+    Some(r#"[{"type": "Heading", "value": "title1"}, {"type": "Heading", "value": "title2"}]
+"#)
+)]
+#[case::yaml_output(
+    vec!["--unbuffered", "--yaml", "yaml_parse()"],
+    r#"- type: Heading
+  value: title1
+- type: Heading
+  value: title2
+"#,
+    Some(
+        r#"{"type": "Heading", "value": "title1"}
+{"type": "Heading", "value": "title2"}
+"#,
+    )
+)]
+#[case::test_option_success(
+    vec!["--unbuffered", "-I", "text", "--test", "assert(true)"],
+    "ok",
+    Some("ok\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
