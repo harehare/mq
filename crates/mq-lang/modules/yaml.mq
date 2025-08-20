@@ -1,4 +1,4 @@
-# YAML Implementation in mq
+
 # Based on YAML 1.2 specification
 
 def is_digit(char):
@@ -212,10 +212,6 @@ ${trimmed_line}", current_index + 1]
         | let current_index = result[1]
         | result
       end
-  end
-
-  def handle_indent_decrease(current_index):
-    [{}, current_index]
   end
 
   def parse_yaml_lines_with_options(lines, current_index, current_indent, is_multi_line):
