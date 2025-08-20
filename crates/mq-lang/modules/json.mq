@@ -172,46 +172,6 @@ def _parse_json_value(input):
       parse_number(input)
 end
 
-def _format_json_stringify(data):
-  "\"" + data + "\""
-end
-
-def _json_array_stringify(data):
-  "[" + join(map(data, json_stringify), ", ") + "]"
-end
-
-def _json_object_stringify(data):
-  "{" + join(
-      map(entries(data),
-        fn(entry): "\"" + first(entry) + "\": " + json_stringify(last(entry));), ", ") + "}"
-end
-
-def _create_array_markdown_table(data):
-  let headers = keys(first(data))
-  | let header_row = "| " + join(headers, " | ") + " |"
-  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-  | let data_rows = map(data, fn(row):
-          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-        end)
-  | [header_row, separator_row] + data_rows
-  | join("\n")
-end
-
-def _create_dict_markdown_table(data):
-  let headers = ["Key", "Value"]
-  | let header_row = "| " + join(headers, " | ") + " |"
-  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-  | let data_rows = map(keys(data), fn(key):
-          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-        end)
-  | [header_row, separator_row] + data_rows
-  | join("\n")
-end
-
-def _create_simple_markdown_table(data):
-  "| Value |\n| --- |\n| " + to_string(data) + " |"
-end
-
 # Parses a JSON string and returns the corresponding data structure.
 def json_parse(input):
   let data = _parse_json_value(input)
@@ -220,28 +180,68 @@ end
 
 # Serializes a value to a JSON string.
 def json_stringify(data):
-  if (is_string(data)):
-    _format_json_stringify(data)
-  elif (is_number(data)):
-    to_string(data)
-  elif (is_bool(data)):
-    to_string(data)
-  elif (is_none(data)):
-    "null"
-  elif (is_array(data)):
-    _json_array_stringify(data)
-  elif (is_dict(data)):
-    _json_object_stringify(data)
-  else:
-    to_string(data)
+  def _format_json_stringify(data):
+    "\"" + data + "\""
+  end
+
+  def _json_array_stringify(data):
+    "[" + join(map(data, json_stringify), ", ") + "]"
+  end
+
+  def _json_object_stringify(data):
+    "{" + join(
+          map(entries(data),
+            fn(entry): "\"" + first(entry) + "\": " + json_stringify(last(entry));), ", ") + "}"
+  end
+
+  | if (is_string(data)):
+      _format_json_stringify(data)
+    elif (is_number(data)):
+      to_string(data)
+    elif (is_bool(data)):
+      to_string(data)
+    elif (is_none(data)):
+      "null"
+    elif (is_array(data)):
+      _json_array_stringify(data)
+    elif (is_dict(data)):
+      _json_object_stringify(data)
+    else:
+      to_string(data)
 end
 
 # Converts a JSON data structure to a Markdown table.
 def json_to_markdown_table(data):
-  if (is_array(data)):
-    _create_array_markdown_table(data)
-  elif (is_dict(data)):
-    _create_dict_markdown_table(data)
-  else:
-    _create_simple_markdown_table(data)
+  def _create_array_markdown_table(data):
+    let headers = keys(first(data))
+    | let header_row = "| " + join(headers, " | ") + " |"
+    | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+    | let data_rows = map(data, fn(row):
+              "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+            end)
+    | [header_row, separator_row] + data_rows
+    | join("\n")
+  end
+
+  def _create_dict_markdown_table(data):
+    let headers = ["Key", "Value"]
+    | let header_row = "| " + join(headers, " | ") + " |"
+    | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+    | let data_rows = map(keys(data), fn(key):
+              "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+            end)
+    | [header_row, separator_row] + data_rows
+    | join("\n")
+  end
+
+  def _create_simple_markdown_table(data):
+    "| Value |\n| --- |\n| " + to_string(data) + " |"
+  end
+
+  | if (is_array(data)):
+      _create_array_markdown_table(data)
+    elif (is_dict(data)):
+      _create_dict_markdown_table(data)
+    else:
+      _create_simple_markdown_table(data)
 end

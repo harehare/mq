@@ -1,7 +1,7 @@
 # CSV/TSV Implementation in mq
 # Based on RFC 4180 for CSV format
 
-def _parse_quoted_field(input, delimiter, pos):
+def _parse_csv_quoted_field(input, delimiter, pos):
   let pos = pos + 1
   | let field_content = ""
   | let escaped = false
@@ -20,7 +20,7 @@ def _parse_quoted_field(input, delimiter, pos):
   | [field_content, next_pos]
 end
 
-def _parse_unquoted_field(input, delimiter, pos):
+def _parse_csv_unquoted_field(input, delimiter, pos):
   let end_pos = pos
   | let current_input = input[end_pos]
   | let result = until (end_pos < len(input) && current_input != delimiter && current_input != "\n" && current_input != "\r"):
@@ -35,9 +35,9 @@ end
 
 def _parse_csv_field(input, delimiter, pos):
   if (starts_with(input[pos], "\"")):
-    _parse_quoted_field(input, delimiter, pos)
+    _parse_csv_quoted_field(input, delimiter, pos)
   else:
-    _parse_unquoted_field(input, delimiter, pos)
+    _parse_csv_unquoted_field(input, delimiter, pos)
 end
 
 def _parse_csv_line(line, delimiter):
