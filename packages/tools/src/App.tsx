@@ -8,6 +8,7 @@ import type { ViewMode } from "./types";
 import { generateTreeView } from "./utils";
 import { useResizer } from "./hooks/useResizer";
 import { useDarkMode } from "./hooks/useDarkMode";
+import { useLocalStorage } from "./hooks/useLocalStorage";
 import { TREE_VIEW_SETTINGS } from "./constants";
 import { tools } from "./tools";
 
@@ -20,30 +21,39 @@ function ToolPage() {
   ) as React.RefObject<HTMLDivElement>;
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useLocalStorage("inputText", "");
   const [outputText, setOutputText] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("text");
-  const [isTreeViewOpen, setIsTreeViewOpen] = useState(false);
+  const [viewMode, setViewMode] = useLocalStorage<ViewMode>("viewMode", "text");
+  const [isTreeViewOpen, setIsTreeViewOpen] = useLocalStorage("isTreeViewOpen", false);
+  const [isOutputPanelOpen, setIsOutputPanelOpen] = useLocalStorage("isOutputPanelOpen", true);
   const [isTransforming, setIsTransforming] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [selectedToolId, setSelectedToolId] = useLocalStorage("selectedToolId", tools[0].id);
 
   const { isDarkMode, toggleDarkMode } = useDarkMode();
   const { leftPanelWidth, handleMouseDown } = useResizer({ containerRef });
 
-  // Find the current tool based on current path
+  // Find the current tool based on saved tool ID or current path
   const currentPath = window.location.pathname;
-  const selectedTool =
-    tools.find((tool) => tool.path === currentPath) || tools[0];
+  const selectedTool = 
+    tools.find((tool) => tool.id === selectedToolId) ||
+    tools.find((tool) => tool.path === currentPath) || 
+    tools[0];
 
   const handleToolChange = (newToolId: string) => {
     const tool = tools.find((tool) => tool.id === newToolId);
     if (tool) {
+      setSelectedToolId(newToolId);
       navigate(tool.path);
     }
   };
 
   const toggleTreeView = () => {
     setIsTreeViewOpen(!isTreeViewOpen);
+  };
+
+  const toggleOutputPanel = () => {
+    setIsOutputPanelOpen(!isOutputPanelOpen);
   };
 
   const treeViewData = generateTreeView(inputText);
@@ -132,6 +142,22 @@ function ToolPage() {
     return () => clearTimeout(timer);
   }, [inputText, handleTransform]);
 
+  // Update URL when tool changes from localStorage
+  useEffect(() => {
+    const tool = tools.find(t => t.id === selectedToolId);
+    if (tool && window.location.pathname !== tool.path) {
+      navigate(tool.path, { replace: true });
+    }
+  }, [selectedToolId, navigate]);
+
+  // Update selectedToolId when URL changes
+  useEffect(() => {
+    const tool = tools.find(t => t.path === currentPath);
+    if (tool && tool.id !== selectedToolId) {
+      setSelectedToolId(tool.id);
+    }
+  }, [currentPath, selectedToolId, setSelectedToolId]);
+
   return (
     <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
       <header className="app-header">
@@ -179,6 +205,9 @@ function ToolPage() {
           <button onClick={toggleTreeView} className="tree-view-toggle">
             {isTreeViewOpen ? "📖" : "🌲"}
           </button>
+          <button onClick={toggleOutputPanel} className="output-panel-toggle">
+            {isOutputPanelOpen ? "📄" : "📄"}
+          </button>
           <button onClick={toggleDarkMode} className="theme-toggle">
             {isDarkMode ? "☀️" : "🌙"}
           </button>
@@ -190,7 +219,7 @@ function ToolPage() {
           onChange={(e) => handleToolChange(e.target.value)}
           value={selectedTool.id}
         >
-          {Array.from(new Set(tools.map(tool => tool.category)))
+          {Array.from(new Set(tools.map((tool) => tool.category)))
             .sort()
             .map((category) => (
               <optgroup key={category} label={category}>
@@ -241,7 +270,7 @@ function ToolPage() {
         <div className="container" ref={containerRef}>
           <div
             className={`input-area ${isDragOver ? "drag-over" : ""}`}
-            style={{ width: `${leftPanelWidth}%` }}
+            style={{ width: isOutputPanelOpen ? `${leftPanelWidth}%` : "100%" }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -276,69 +305,73 @@ function ToolPage() {
               />
             </div>
           </div>
-          <div className="resizer" onMouseDown={handleMouseDown}></div>
-          <div
-            className="output-area"
-            style={{ width: `${100 - leftPanelWidth}%` }}
-          >
-            <div className="editor-header">
-              <h2>Output</h2>
-              <div className="output-controls">
-                <button
-                  onClick={handleCopyOutput}
-                  className="copy-button"
-                  disabled={!outputText.trim()}
-                  title="Copy output to clipboard"
-                >
-                  📋 Copy
-                </button>
-                <div className="view-mode-toggle">
-                  <button
-                    onClick={() => setViewMode("text")}
-                    className={viewMode === "text" ? "active" : ""}
-                  >
-                    Text
-                  </button>
-                  <button
-                    onClick={() => setViewMode("preview")}
-                    className={viewMode === "preview" ? "active" : ""}
-                  >
-                    Preview
-                  </button>
+          {isOutputPanelOpen && (
+            <>
+              <div className="resizer" onMouseDown={handleMouseDown}></div>
+              <div
+                className="output-area"
+                style={{ width: `${100 - leftPanelWidth}%` }}
+              >
+                <div className="editor-header">
+                  <h2>Output</h2>
+                  <div className="output-controls">
+                    <button
+                      onClick={handleCopyOutput}
+                      className="copy-button"
+                      disabled={!outputText.trim()}
+                      title="Copy output to clipboard"
+                    >
+                      📋 Copy
+                    </button>
+                    <div className="view-mode-toggle">
+                      <button
+                        onClick={() => setViewMode("text")}
+                        className={viewMode === "text" ? "active" : ""}
+                      >
+                        Text
+                      </button>
+                      <button
+                        onClick={() => setViewMode("preview")}
+                        className={viewMode === "preview" ? "active" : ""}
+                      >
+                        Preview
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="editor-content">
+                  {viewMode === "text" ? (
+                    <Editor
+                      height="100%"
+                      defaultLanguage="markdown"
+                      value={isTransforming ? "Processing..." : outputText}
+                      options={{
+                        readOnly: true,
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        fontSize: 14,
+                        automaticLayout: true,
+                        fontFamily:
+                          "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
+                        lineHeight: 1.6,
+                        wordWrap: "on",
+                      }}
+                      theme={isDarkMode ? "vs-dark" : "vs"}
+                    />
+                  ) : (
+                    <div
+                      className="preview"
+                      dangerouslySetInnerHTML={{
+                        __html: isTransforming
+                          ? "<p>Processing...</p>"
+                          : mdParser.render(outputText),
+                      }}
+                    />
+                  )}
                 </div>
               </div>
-            </div>
-            <div className="editor-content">
-              {viewMode === "text" ? (
-                <Editor
-                  height="100%"
-                  defaultLanguage="markdown"
-                  value={isTransforming ? "Processing..." : outputText}
-                  options={{
-                    readOnly: true,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 14,
-                    automaticLayout: true,
-                    fontFamily:
-                      "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
-                    lineHeight: 1.6,
-                    wordWrap: "on",
-                  }}
-                  theme={isDarkMode ? "vs-dark" : "vs"}
-                />
-              ) : (
-                <div
-                  className="preview"
-                  dangerouslySetInnerHTML={{
-                    __html: isTransforming
-                      ? "<p>Processing...</p>"
-                      : mdParser.render(outputText),
-                  }}
-                />
-              )}
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -348,7 +381,7 @@ function ToolPage() {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to={tools[0].path} replace />} />
+      <Route path="/tools" element={<Navigate to={tools[0].path} replace />} />
       {tools.map((tool) => (
         <Route key={tool.id} path={tool.path} element={<ToolPage />} />
       ))}

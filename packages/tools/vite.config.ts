@@ -5,19 +5,20 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ["mq-web"]
+    exclude: ["mq-web"],
   },
   server: {
     fs: {
-      allow: [".."]
-    }
+      allow: [".."],
+    },
   },
   build: {
     rollupOptions: {
-      external: ["mq-web"]
-    }
+      input: "tools.html",
+      external: ["mq-web"],
+    },
   },
   // Allow serving files from node_modules
   publicDir: "public",
-  assetsInclude: ["**/*.wasm"]
+  assetsInclude: ["**/*.wasm"],
 });

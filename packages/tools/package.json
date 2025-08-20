@@ -1,12 +1,13 @@
 {
-    "name": "markdown-tools",
+    "name": "tools",
     "description": "A collection of web-based tools for transforming and processing Markdown documents",
     "private": true,
     "version": "0.1.0",
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc -b && vite build",
+        "build": "tsc -b && vite build && node scripts/generate-sitemap.mjs",
+        "generate-sitemap": "node scripts/generate-sitemap.mjs",
         "lint": "eslint .",
         "preview": "vite preview"
     },

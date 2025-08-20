@@ -1,4 +1,4 @@
-# Markdown Tools
+# Tools
 
 A web-based collection of tools for transforming and processing Markdown documents, powered by `mq-web`.
 

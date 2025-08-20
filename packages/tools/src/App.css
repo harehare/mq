@@ -263,6 +263,7 @@
 }
 
 .app-header .tree-view-toggle,
+.app-header .output-panel-toggle,
 .app-header .theme-toggle {
     width: 28px;
     height: 28px;
@@ -287,6 +288,15 @@
 
 .theme-toggle {
     background: rgba(111, 66, 193, 0.8) !important;
+}
+
+.output-panel-toggle {
+    background: rgba(255, 140, 0, 0.8) !important;
+}
+
+.output-panel-toggle:hover {
+    background: rgba(255, 140, 0, 1) !important;
+    transform: scale(1.05);
 }
 
 .theme-toggle:hover {

@@ -115,4 +115,7 @@ export const tools: Tool[] = [
         { inputFormat: "markdown" }
       ),
   },
-];
+].map((tool) => ({
+  ...tool,
+  path: `/tools${tool.path}`,
+})) as Tool[];
