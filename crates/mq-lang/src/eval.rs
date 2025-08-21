@@ -392,18 +392,21 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_break(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
         Err(EvalError::Break(
             (*self.token_arena.borrow()[node.token_id]).clone(),
         ))
     }
 
+    #[inline(always)]
     fn eval_continue(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
         Err(EvalError::Continue(
             (*self.token_arena.borrow()[node.token_id]).clone(),
         ))
     }
 
+    #[inline(always)]
     fn eval_literal(&self, literal: &ast::Literal) -> RuntimeValue {
         match literal {
             ast::Literal::None => RuntimeValue::None,
