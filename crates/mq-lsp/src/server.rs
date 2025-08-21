@@ -321,6 +321,39 @@ impl Backend {
                     diagnostics.push(diagnostic);
                 }
             }
+
+            // Add HIR warnings (including unreachable code warnings)
+            diagnostics.extend(
+                hir.warning_ranges()
+                    .into_iter()
+                    .filter_map(|(message, item)| {
+                        // Only include warnings if they are related to this file's source
+                        let has_warning_in_this_file = hir.symbols().any(|(_, symbol)| {
+                            symbol.source.source_id == Some(*source_id)
+                                && symbol.source.text_range.as_ref() == Some(&item)
+                        });
+
+                        if has_warning_in_this_file {
+                            let mut diagnostic = Diagnostic::new_simple(
+                                Range::new(
+                                    Position {
+                                        line: item.start.line - 1,
+                                        character: (item.start.column - 1) as u32,
+                                    },
+                                    Position {
+                                        line: item.end.line - 1,
+                                        character: (item.end.column - 1) as u32,
+                                    },
+                                ),
+                                message,
+                            );
+                            diagnostic.severity = Some(DiagnosticSeverity::WARNING);
+                            Some(diagnostic)
+                        } else {
+                            None
+                        }
+                    }),
+            );
         }
 
         self.client
@@ -982,5 +1015,51 @@ mod tests {
             .await;
 
         assert_eq!(result.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_unreachable_code_warnings() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            source_map: RwLock::new(BiMap::new()),
+            error_map: DashMap::new(),
+            cst_nodes_map: DashMap::new(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+
+        // Code with unreachable code after halt()
+        let code = "def test(): halt(1) | let x = 42";
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+
+        backend
+            .source_map
+            .write()
+            .unwrap()
+            .insert(uri.to_string(), source_id);
+        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend
+            .error_map
+            .insert(uri.to_string(), errors.error_ranges(code));
+
+        // Check unreachable code warnings are detected
+        {
+            let hir_lock = backend.hir.read().unwrap();
+            let warnings = hir_lock.warnings();
+            assert_eq!(warnings.len(), 1);
+            
+            match &warnings[0] {
+                mq_hir::HirWarning::UnreachableCode { symbol } => {
+                    assert_eq!(symbol.value.as_deref(), Some("x"));
+                }
+            }
+            drop(hir_lock);
+        }
+
+        // Diagnostics should be published with warning severity
+        backend.diagnostics(uri, None).await;
     }
 }
