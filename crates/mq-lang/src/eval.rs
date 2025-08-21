@@ -80,8 +80,8 @@ impl Evaluator {
                         self.env.borrow_mut().define(
                             ident,
                             RuntimeValue::Function(
-                                params.clone(),
-                                program.clone(),
+                                params.iter().cloned().collect(),
+                                program.iter().cloned().collect(),
                                 Rc::clone(&self.env),
                             ),
                         );
@@ -363,14 +363,20 @@ impl Evaluator {
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
             ast::Expr::Def(ident, params, program) => {
-                let function =
-                    RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
+                let function = RuntimeValue::Function(
+                    params.iter().cloned().collect(),
+                    program.iter().cloned().collect(),
+                    Rc::clone(&env),
+                );
                 env.borrow_mut().define(ident, function.clone());
                 Ok(function)
             }
             ast::Expr::Fn(params, program) => {
-                let function =
-                    RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
+                let function = RuntimeValue::Function(
+                    params.iter().cloned().collect(),
+                    program.iter().cloned().collect(),
+                    Rc::clone(&env),
+                );
                 Ok(function)
             }
             ast::Expr::Let(ident, node) => {
@@ -610,7 +616,7 @@ impl Evaluator {
                             expr: Rc::new(ast::Expr::Self_),
                         }),
                     );
-                    new_args.extend(args.clone());
+                    new_args.extend(args.iter().cloned());
                     new_args
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
