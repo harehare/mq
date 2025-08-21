@@ -22,19 +22,27 @@ function App() {
   const [inputText, setInputText] = useLocalStorage("inputText", "");
   const [outputText, setOutputText] = useState("");
   const [viewMode, setViewMode] = useLocalStorage<ViewMode>("viewMode", "text");
-  const [isTreeViewOpen, setIsTreeViewOpen] = useLocalStorage("isTreeViewOpen", false);
-  const [isOutputPanelOpen, setIsOutputPanelOpen] = useLocalStorage("isOutputPanelOpen", true);
+  const [isTreeViewOpen, setIsTreeViewOpen] = useLocalStorage(
+    "isTreeViewOpen",
+    false
+  );
+  const [isOutputPanelOpen, setIsOutputPanelOpen] = useLocalStorage(
+    "isOutputPanelOpen",
+    true
+  );
   const [isTransforming, setIsTransforming] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [selectedToolId, setSelectedToolId] = useLocalStorage("selectedToolId", tools[0].id);
+  const [selectedToolId, setSelectedToolId] = useLocalStorage(
+    "selectedToolId",
+    tools[0].id
+  );
 
   const { isDarkMode, toggleDarkMode } = useDarkMode();
   const { leftPanelWidth, handleMouseDown } = useResizer({ containerRef });
 
   // Find the current tool based on saved tool ID
-  const selectedTool = 
-    tools.find((tool) => tool.id === selectedToolId) || 
-    tools[0];
+  const selectedTool =
+    tools.find((tool) => tool.id === selectedToolId) || tools[0];
 
   const handleToolChange = (newToolId: string) => {
     setSelectedToolId(newToolId);
@@ -133,7 +141,6 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [inputText, handleTransform]);
-
 
   return (
     <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
@@ -271,11 +278,11 @@ function App() {
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   fontSize: 14,
+                  wordWrap: "off",
                   automaticLayout: true,
                   fontFamily:
                     "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
                   lineHeight: 1.6,
-                  wordWrap: "on",
                   theme: isDarkMode ? "vs-dark" : "vs",
                 }}
                 theme={isDarkMode ? "vs-dark" : "vs"}
@@ -331,7 +338,7 @@ function App() {
                         fontFamily:
                           "'JetBrains Mono', 'Source Code Pro', Menlo, monospace",
                         lineHeight: 1.6,
-                        wordWrap: "on",
+                        wordWrap: "off",
                       }}
                       theme={isDarkMode ? "vs-dark" : "vs"}
                     />
