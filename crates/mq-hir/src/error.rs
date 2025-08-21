@@ -23,6 +23,12 @@ pub enum HirError {
     },
 }
 
+#[derive(Debug, Error)]
+pub enum HirWarning {
+    #[error("Unreachable code after halt() function call")]
+    UnreachableCode { symbol: Symbol },
+}
+
 impl Hir {
     pub fn errors(&self) -> Vec<HirError> {
         self.symbols
@@ -58,6 +64,52 @@ impl Hir {
             .collect::<Vec<_>>()
     }
 
+    pub fn warnings(&self) -> Vec<HirWarning> {
+        let mut warnings = Vec::new();
+
+        // Find all halt() function calls
+        let halt_calls: Vec<_> = self
+            .symbols
+            .iter()
+            .filter(|(_, symbol)| {
+                matches!(symbol.kind, SymbolKind::Call) && symbol.value.as_deref() == Some("halt")
+            })
+            .collect();
+
+        for (halt_symbol_id, halt_symbol) in halt_calls {
+            // Find parent scope that contains this halt call
+            if let Some(parent_id) = halt_symbol.parent {
+                // Find all symbols that come after the halt call in the same parent
+                let unreachable_symbols: Vec<_> = self.symbols
+                    .iter()
+                    .filter(|(_, other_symbol)| {
+                        other_symbol.parent == Some(parent_id) &&
+                        other_symbol.source.text_range.as_ref()
+                            .zip(halt_symbol.source.text_range.as_ref())
+                            .map(|(other_range, halt_range)| {
+                                // Check if other symbol comes after halt call
+                                other_range.start > halt_range.end
+                            })
+                            .unwrap_or(false) &&
+                        // Don't warn about tokens, trivial symbols, or arguments/literals that are part of the halt call
+                        !matches!(other_symbol.kind, SymbolKind::Keyword | SymbolKind::Argument | SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean) &&
+                        other_symbol.value.is_some() &&
+                        other_symbol.parent != Some(halt_symbol_id)
+                    })
+                    .collect();
+
+                // Add warnings for unreachable symbols
+                for (_, unreachable_symbol) in unreachable_symbols {
+                    warnings.push(HirWarning::UnreachableCode {
+                        symbol: unreachable_symbol.clone(),
+                    });
+                }
+            }
+        }
+
+        warnings
+    }
+
     pub fn error_ranges(&self) -> Vec<(String, mq_lang::Range)> {
         self.errors()
             .iter()
@@ -69,6 +121,22 @@ impl Hir {
                             symbol.source.text_range.clone().unwrap_or_default()
                         }
                         HirError::ModuleNotFound { symbol, .. } => {
+                            symbol.source.text_range.clone().unwrap_or_default()
+                        }
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
+    pub fn warning_ranges(&self) -> Vec<(String, mq_lang::Range)> {
+        self.warnings()
+            .iter()
+            .map(|w| {
+                (
+                    w.to_string(),
+                    match w {
+                        HirWarning::UnreachableCode { symbol } => {
                             symbol.source.text_range.clone().unwrap_or_default()
                         }
                     },
@@ -153,5 +221,67 @@ mod tests {
 
         let error_ranges = hir.error_ranges();
         assert_eq!(error_ranges.len(), 1);
+    }
+
+    #[test]
+    fn test_warnings_unreachable_after_halt() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        // Test case: halt() followed by unreachable code
+        let code = "def test(): halt(1) | let x = 42";
+        let _ = hir.add_code(None, code);
+
+        let warnings = hir.warnings();
+        assert_eq!(warnings.len(), 1);
+
+        match &warnings[0] {
+            HirWarning::UnreachableCode { symbol } => {
+                assert_eq!(symbol.value.as_deref(), Some("x"));
+                assert_eq!(symbol.kind, SymbolKind::Variable);
+            }
+        }
+    }
+
+    #[test]
+    fn test_warnings_no_unreachable_without_halt() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        // Test case: no halt() call
+        let code = "def test(): let x = 42 | let y = 24";
+        let _ = hir.add_code(None, code);
+
+        let warnings = hir.warnings();
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_warnings_halt_at_end_no_warning() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        // Test case: halt() at the end, no unreachable code
+        let code = "def test(): let x = 42 | halt(1)";
+        let _ = hir.add_code(None, code);
+
+        let warnings = hir.warnings();
+        assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_warning_ranges() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        // Test case: halt() followed by unreachable code
+        let code = "def test(): halt(1) | let x = 42";
+        let _ = hir.add_code(None, code);
+
+        let warning_ranges = hir.warning_ranges();
+        assert_eq!(warning_ranges.len(), 1);
+
+        let (message, _) = &warning_ranges[0];
+        assert_eq!(message, "Unreachable code after halt() function call");
     }
 }

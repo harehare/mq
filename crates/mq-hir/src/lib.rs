@@ -37,6 +37,8 @@ mod scope;
 mod source;
 mod symbol;
 
+pub use error::HirError;
+pub use error::HirWarning;
 pub use hir::Hir;
 pub use scope::Scope;
 pub use scope::ScopeId;
