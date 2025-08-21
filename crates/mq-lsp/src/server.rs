@@ -1050,7 +1050,7 @@ mod tests {
             let hir_lock = backend.hir.read().unwrap();
             let warnings = hir_lock.warnings();
             assert_eq!(warnings.len(), 1);
-            
+
             match &warnings[0] {
                 mq_hir::HirWarning::UnreachableCode { symbol } => {
                     assert_eq!(symbol.value.as_deref(), Some("x"));

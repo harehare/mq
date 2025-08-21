@@ -66,16 +66,16 @@ impl Hir {
 
     pub fn warnings(&self) -> Vec<HirWarning> {
         let mut warnings = Vec::new();
-        
+
         // Find all halt() function calls
-        let halt_calls: Vec<_> = self.symbols
+        let halt_calls: Vec<_> = self
+            .symbols
             .iter()
             .filter(|(_, symbol)| {
-                matches!(symbol.kind, SymbolKind::Call) 
-                && symbol.value.as_deref() == Some("halt")
+                matches!(symbol.kind, SymbolKind::Call) && symbol.value.as_deref() == Some("halt")
             })
             .collect();
-        
+
         for (halt_symbol_id, halt_symbol) in halt_calls {
             // Find parent scope that contains this halt call
             if let Some(parent_id) = halt_symbol.parent {
@@ -97,7 +97,7 @@ impl Hir {
                         other_symbol.parent != Some(halt_symbol_id)
                     })
                     .collect();
-                
+
                 // Add warnings for unreachable symbols
                 for (_, unreachable_symbol) in unreachable_symbols {
                     warnings.push(HirWarning::UnreachableCode {
@@ -106,7 +106,7 @@ impl Hir {
                 }
             }
         }
-        
+
         warnings
     }
 
@@ -227,14 +227,14 @@ mod tests {
     fn test_warnings_unreachable_after_halt() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        
+
         // Test case: halt() followed by unreachable code
         let code = "def test(): halt(1) | let x = 42";
         let _ = hir.add_code(None, code);
-        
+
         let warnings = hir.warnings();
         assert_eq!(warnings.len(), 1);
-        
+
         match &warnings[0] {
             HirWarning::UnreachableCode { symbol } => {
                 assert_eq!(symbol.value.as_deref(), Some("x"));
@@ -247,11 +247,11 @@ mod tests {
     fn test_warnings_no_unreachable_without_halt() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        
+
         // Test case: no halt() call
         let code = "def test(): let x = 42 | let y = 24";
         let _ = hir.add_code(None, code);
-        
+
         let warnings = hir.warnings();
         assert_eq!(warnings.len(), 0);
     }
@@ -260,11 +260,11 @@ mod tests {
     fn test_warnings_halt_at_end_no_warning() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        
+
         // Test case: halt() at the end, no unreachable code
         let code = "def test(): let x = 42 | halt(1)";
         let _ = hir.add_code(None, code);
-        
+
         let warnings = hir.warnings();
         assert_eq!(warnings.len(), 0);
     }
@@ -273,14 +273,14 @@ mod tests {
     fn test_warning_ranges() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        
+
         // Test case: halt() followed by unreachable code
         let code = "def test(): halt(1) | let x = 42";
         let _ = hir.add_code(None, code);
-        
+
         let warning_ranges = hir.warning_ranges();
         assert_eq!(warning_ranges.len(), 1);
-        
+
         let (message, _) = &warning_ranges[0];
         assert_eq!(message, "Unreachable code after halt() function call");
     }
