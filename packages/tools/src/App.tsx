@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
 import MarkdownIt from "markdown-it";
 import Editor from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
@@ -14,8 +13,7 @@ import { tools } from "./tools";
 
 const mdParser = new MarkdownIt();
 
-function ToolPage() {
-  const navigate = useNavigate();
+function App() {
   const containerRef = useRef<HTMLDivElement>(
     null
   ) as React.RefObject<HTMLDivElement>;
@@ -33,19 +31,13 @@ function ToolPage() {
   const { isDarkMode, toggleDarkMode } = useDarkMode();
   const { leftPanelWidth, handleMouseDown } = useResizer({ containerRef });
 
-  // Find the current tool based on saved tool ID or current path
-  const currentPath = window.location.pathname;
+  // Find the current tool based on saved tool ID
   const selectedTool = 
-    tools.find((tool) => tool.id === selectedToolId) ||
-    tools.find((tool) => tool.path === currentPath) || 
+    tools.find((tool) => tool.id === selectedToolId) || 
     tools[0];
 
   const handleToolChange = (newToolId: string) => {
-    const tool = tools.find((tool) => tool.id === newToolId);
-    if (tool) {
-      setSelectedToolId(newToolId);
-      navigate(tool.path);
-    }
+    setSelectedToolId(newToolId);
   };
 
   const toggleTreeView = () => {
@@ -142,21 +134,6 @@ function ToolPage() {
     return () => clearTimeout(timer);
   }, [inputText, handleTransform]);
 
-  // Update URL when tool changes from localStorage
-  useEffect(() => {
-    const tool = tools.find(t => t.id === selectedToolId);
-    if (tool && window.location.pathname !== tool.path) {
-      navigate(tool.path, { replace: true });
-    }
-  }, [selectedToolId, navigate]);
-
-  // Update selectedToolId when URL changes
-  useEffect(() => {
-    const tool = tools.find(t => t.path === currentPath);
-    if (tool && tool.id !== selectedToolId) {
-      setSelectedToolId(tool.id);
-    }
-  }, [currentPath, selectedToolId, setSelectedToolId]);
 
   return (
     <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
@@ -375,17 +352,6 @@ function ToolPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function App() {
-  return (
-    <Routes>
-      <Route path="/tools" element={<Navigate to={tools[0].path} replace />} />
-      {tools.map((tool) => (
-        <Route key={tool.id} path={tool.path} element={<ToolPage />} />
-      ))}
-    </Routes>
   );
 }
 

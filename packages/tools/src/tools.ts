@@ -44,7 +44,6 @@ export const tools: Tool[] = [
     id: "csv-to-markdown",
     name: "CSV to Markdown Table",
     description: "Convert CSV data to a Markdown table.",
-    path: "/csv-to-markdown",
     category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun(
@@ -57,7 +56,6 @@ export const tools: Tool[] = [
     id: "html-to-markdown",
     name: "HTML to Markdown",
     description: "Convert HTML to Markdown format.",
-    path: "/html-to-markdown",
     category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun("identity()", input, { inputFormat: "html" }),
@@ -66,7 +64,6 @@ export const tools: Tool[] = [
     id: "json-to-markdown",
     name: "JSON to Markdown",
     description: "Convert JSON data to a Markdown table.",
-    path: "/json-to-markdown",
     category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun(
@@ -79,7 +76,6 @@ export const tools: Tool[] = [
     id: "markdown-code-extractor",
     name: "Markdown Code Extractor",
     description: "Extract all code blocks from Markdown.",
-    path: "/code-extractor",
     category: "Extraction",
     transform: async (input: string): Promise<string> =>
       safeRun(".code", input, { inputFormat: "markdown" }),
@@ -88,7 +84,6 @@ export const tools: Tool[] = [
     id: "markdown-link-extractor",
     name: "Markdown Link Extractor",
     description: "Extract all links (URLs) from Markdown.",
-    path: "/link-extractor",
     category: "Extraction",
     transform: async (input: string): Promise<string> =>
       safeRun(".link.url", input, { inputFormat: "markdown" }),
@@ -97,7 +92,6 @@ export const tools: Tool[] = [
     id: "markdown-to-html",
     name: "Markdown to HTML",
     description: "Convert Markdown to HTML format.",
-    path: "/markdown-to-html",
     category: "Conversion",
     transform: async (input: string): Promise<string> =>
       safeRun("to_html()", input, { inputFormat: "markdown" }),
@@ -106,7 +100,6 @@ export const tools: Tool[] = [
     id: "markdown-to-toc",
     name: "Markdown to TOC",
     description: "Generate a Table of Contents from Markdown.",
-    path: "/markdown-to-toc",
     category: "Generation",
     transform: async (input: string): Promise<string> =>
       safeRun(
@@ -115,7 +108,4 @@ export const tools: Tool[] = [
         { inputFormat: "markdown" }
       ),
   },
-].map((tool) => ({
-  ...tool,
-  path: `/tools${tool.path}`,
-})) as Tool[];
+];

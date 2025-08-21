@@ -14,10 +14,9 @@
     "dependencies": {
         "@monaco-editor/react": "^4.7.0",
         "markdown-it": "^14.1.0",
-        "mq-web": "^0.2.17",
+        "mq-web": "^0.2.18",
         "react": "^19.1.0",
-        "react-dom": "^19.1.0",
-        "react-router-dom": "^7.8.0"
+        "react-dom": "^19.1.0"
     },
     "devDependencies": {
         "@eslint/js": "^9.30.1",

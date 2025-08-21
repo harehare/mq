@@ -13,12 +13,11 @@ export default defineConfig({
     },
   },
   build: {
+    outDir: "../../docs",
+    assetsDir: "toolsAssets",
     rollupOptions: {
       input: "tools.html",
-      external: ["mq-web"],
     },
   },
-  // Allow serving files from node_modules
   publicDir: "public",
-  assetsInclude: ["**/*.wasm"],
 });
