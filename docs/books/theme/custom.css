@@ -133,7 +133,7 @@
 }
 
 .sidebar .sidebar-scrollbox {
-    padding-top: 10px;
+    padding-top: 0px;
 }
 
 .chapter-item {
@@ -263,11 +263,16 @@ table tbody tr:nth-child(even) {
     display: block;
     width: 60px;
     height: 60px;
-    margin: 10px auto 20px;
-    background-image: url("../src/images/logo.svg");
+    margin: 5px auto 15px;
+    background-image: url("../images/logo.svg");
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
+    padding: 5px;
+    font-weight: bold;
+    font-size: 18px;
+    color: var(--mq-primary);
+    text-align: center;
 }
 
 /* Responsive adjustments */
@@ -275,7 +280,7 @@ table tbody tr:nth-child(even) {
     .sidebar .sidebar-scrollbox::before {
         width: 40px;
         height: 40px;
-        margin: 10px auto 15px;
+        margin: 5px auto 10px;
     }
 }
 
