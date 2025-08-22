@@ -224,19 +224,24 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_program(
         &mut self,
         program: &Program,
         runtime_value: RuntimeValue,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        program
-            .iter()
-            .try_fold(runtime_value, |runtime_value, expr| {
-                self.eval_expr(&runtime_value, Rc::clone(expr), Rc::clone(&env))
-            })
+        let mut value = runtime_value;
+        for expr in program {
+            match self.eval_expr(&value, Rc::clone(expr), Rc::clone(&env)) {
+                Ok(v) => value = v,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(value)
     }
 
+    #[inline(always)]
     fn eval_ident(
         &self,
         ident: &ast::Ident,
@@ -392,18 +397,21 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_break(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
         Err(EvalError::Break(
             (*self.token_arena.borrow()[node.token_id]).clone(),
         ))
     }
 
+    #[inline(always)]
     fn eval_continue(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
         Err(EvalError::Continue(
             (*self.token_arena.borrow()[node.token_id]).clone(),
         ))
     }
 
+    #[inline(always)]
     fn eval_literal(&self, literal: &ast::Literal) -> RuntimeValue {
         match literal {
             ast::Literal::None => RuntimeValue::None,
@@ -557,6 +565,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_if(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -677,6 +686,7 @@ impl Evaluator {
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
+    #[inline(always)]
     fn enter_scope(&mut self) -> Result<(), EvalError> {
         if self.call_stack_depth >= self.options.max_call_stack_depth {
             return Err(EvalError::RecursionError(self.options.max_call_stack_depth));
@@ -685,6 +695,7 @@ impl Evaluator {
         Ok(())
     }
 
+    #[inline(always)]
     fn exit_scope(&mut self) {
         if self.call_stack_depth > 0 {
             self.call_stack_depth -= 1;

@@ -679,15 +679,31 @@ textarea:focus {
 
 /* Tablet breakpoint - maintains horizontal layout */
 @media (max-width: 1024px) and (min-width: 769px) {
+    .app-header {
+        padding: 6px 12px;
+    }
+
+    .header-subtitle {
+        font-size: 10px;
+        margin-left: 10px;
+    }
+
+    .header-controls button,
+    .header-controls a {
+        width: 26px;
+        height: 26px;
+    }
+
     .toolbar {
         flex-wrap: wrap;
-        gap: 4px;
-        padding: 4px 8px;
+        gap: 6px;
+        padding: 6px 12px;
     }
 
     .toolbar select {
-        min-width: 120px;
+        min-width: 140px;
         font-size: 12px;
+        padding: 6px 28px 6px 10px;
     }
 
     .toolbar button {
@@ -697,10 +713,45 @@ textarea:focus {
 
     .tool-description {
         font-size: 11px;
+        margin: 4px 0;
+        flex: 1 1 100%;
+        order: 1;
     }
 
     .tree-view {
-        width: 250px;
+        width: 220px;
+    }
+
+    .tree-view-content {
+        padding: 12px;
+    }
+
+    .editor-header {
+        padding: 6px 12px;
+        height: 36px;
+    }
+
+    .copy-button {
+        font-size: 0.7rem;
+        padding: 3px 6px;
+        height: 22px;
+    }
+
+    .view-mode-toggle button {
+        font-size: 0.7rem;
+        padding: 3px 10px;
+        height: 22px;
+    }
+}
+
+/* Small tablet/large phone breakpoint */
+@media (max-width: 900px) and (min-width: 769px) {
+    .header-subtitle {
+        display: none;
+    }
+
+    .tree-view {
+        width: 200px;
     }
 }
 
@@ -769,33 +820,17 @@ textarea:focus {
 
 /* Mobile breakpoint - stacks vertically */
 @media (max-width: 768px) {
-    .main-layout {
-        flex-direction: column;
-    }
-
-    .container {
-        flex-direction: column;
-    }
-
-    .input-area,
-    .output-area {
-        width: 100%;
-        height: auto;
-        min-height: 300px;
-    }
-
-    .editor-content {
-        min-height: 200px;
-    }
-
-    .toolbar {
-        flex-direction: column;
+    .app-header {
+        padding: 6px 12px;
+        min-height: 40px;
+        flex-wrap: wrap;
         gap: 8px;
-        padding: 12px;
     }
 
-    .toolbar select {
-        width: 100%;
+    .header-left {
+        flex: 1;
+        min-width: 0;
+        gap: 8px;
     }
 
     .app-header h1 {
@@ -803,20 +838,231 @@ textarea:focus {
     }
 
     .header-subtitle {
-        font-size: 9px;
-        margin-left: 8px;
-        white-space: nowrap;
+        display: none; /* Hide subtitle on mobile to save space */
+    }
+
+    .header-controls {
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .header-controls button,
+    .header-controls a {
+        width: 24px;
+        height: 24px;
+        font-size: 12px;
+    }
+
+    .main-layout {
+        flex-direction: column;
+        height: calc(100vh - 80px); /* Account for header */
     }
 
     .tree-view {
         width: 100%;
         order: -1;
-        max-height: 150px;
+        max-height: 120px;
         border-right: none;
         border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
     }
 
     .tree-view-content {
         padding: 8px;
+    }
+
+    .tree-view-header {
+        padding: 6px 12px;
+        height: 32px;
+    }
+
+    .tree-view-header h3 {
+        font-size: 0.8rem;
+    }
+
+    .container {
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .input-area,
+    .output-area {
+        width: 100% !important;
+        height: auto;
+        min-height: 300px;
+        flex: 1 1 0;
+    }
+
+    .editor-content {
+        min-height: 250px;
+        flex: 1;
+    }
+
+    .editor-header {
+        padding: 6px 12px;
+        height: 32px;
+    }
+
+    .editor-header h2 {
+        font-size: 0.8rem;
+    }
+
+    .toolbar {
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 12px;
+        min-height: auto;
+    }
+
+    .toolbar select {
+        width: 100%;
+        min-width: auto;
+        font-size: 12px;
+        padding: 6px 24px 6px 8px;
+    }
+
+    .tool-description {
+        font-size: 11px;
+        text-align: center;
+        margin: 4px 0 0 0;
+        line-height: 1.3;
+        white-space: normal;
+    }
+
+    .output-controls {
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .copy-button {
+        font-size: 0.7rem;
+        padding: 3px 6px;
+        height: 20px;
+    }
+
+    .view-mode-toggle {
+        padding: 1px;
+    }
+
+    .view-mode-toggle button {
+        font-size: 0.7rem;
+        padding: 3px 8px;
+        height: 20px;
+    }
+
+    .resizer {
+        display: none; /* Hide resizer on mobile */
+    }
+
+    .tree-item {
+        padding: 6px;
+        margin: 1px 0;
+    }
+
+    .heading-text {
+        font-size: 0.85rem;
+    }
+
+    .level-1 {
+        font-size: 14px;
+    }
+
+    .level-2 {
+        font-size: 13px;
+    }
+
+    .level-3,
+    .level-4,
+    .level-5,
+    .level-6 {
+        font-size: 12px;
+    }
+}
+
+/* Extra small mobile breakpoint */
+@media (max-width: 480px) {
+    .app-header {
+        padding: 4px 8px;
+        min-height: 36px;
+    }
+
+    .header-left {
+        gap: 6px;
+    }
+
+    .app-header h1 {
+        font-size: 0.9rem;
+    }
+
+    .header-controls {
+        gap: 4px;
+    }
+
+    .header-controls button,
+    .header-controls a {
+        width: 20px;
+        height: 20px;
+        font-size: 10px;
+    }
+
+    .toolbar {
+        padding: 6px 8px;
+    }
+
+    .toolbar select {
+        font-size: 11px;
+        padding: 4px 20px 4px 6px;
+    }
+
+    .tool-description {
+        font-size: 10px;
+    }
+
+    .tree-view {
+        max-height: 100px;
+    }
+
+    .tree-view-header {
+        padding: 4px 8px;
+        height: 28px;
+    }
+
+    .tree-view-header h3 {
+        font-size: 0.75rem;
+    }
+
+    .tree-view-content {
+        padding: 6px;
+    }
+
+    .editor-header {
+        padding: 4px 8px;
+        height: 28px;
+    }
+
+    .editor-header h2 {
+        font-size: 0.75rem;
+    }
+
+    .copy-button {
+        font-size: 0.65rem;
+        padding: 2px 4px;
+        height: 18px;
+    }
+
+    .view-mode-toggle button {
+        font-size: 0.65rem;
+        padding: 2px 6px;
+        height: 18px;
+    }
+
+    .input-area,
+    .output-area {
+        min-height: 250px;
+    }
+
+    .main-layout {
+        height: calc(100vh - 70px);
     }
 }
