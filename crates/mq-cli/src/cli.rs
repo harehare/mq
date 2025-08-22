@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use compact_str::CompactString;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
@@ -215,10 +216,10 @@ impl Cli {
 
         match &self.commands {
             Some(Commands::Repl) => {
-                mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
+                mq_repl::Repl::new(vec![mq_lang::Value::String("".into())]).run()
             }
             None if self.query.is_none() => {
-                mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
+                mq_repl::Repl::new(vec![mq_lang::Value::String("".into())]).run()
             }
             Some(Commands::Tui { file_path }) => {
                 let mut app = {
@@ -291,16 +292,23 @@ impl Cli {
                                 params.iter().map(|p| format!("`{}`", p)).join(", "),
                                 format!("{}({})", value, params.join(", ")),
                             ]
-                            .join("\t"),
+                            .join("\t")
+                            .into(),
                         )),
                         _ => None,
                     })
                     .collect::<VecDeque<_>>();
 
                 doc_csv.push_front(mq_lang::Value::String(
-                    ["Function Name", "Description", "Parameters", "Example"]
-                        .iter()
-                        .join("\t"),
+                    [
+                        CompactString::new("Function Name"),
+                        CompactString::new("Description"),
+                        CompactString::new("Parameters"),
+                        CompactString::new("Example"),
+                    ]
+                    .iter()
+                    .join("\t")
+                    .into(),
                 ));
 
                 let mut engine = self.create_engine()?;
@@ -461,7 +469,7 @@ impl Cli {
             let separator = engine
                 .eval(
                     separator,
-                    vec![mq_lang::Value::String("".to_string())].into_iter(),
+                    vec![mq_lang::Value::String("".into())].into_iter(),
                 )
                 .map_err(|e| *e)?;
             self.print(separator)?;

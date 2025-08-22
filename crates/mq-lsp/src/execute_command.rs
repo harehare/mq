@@ -76,13 +76,13 @@ fn execute(
     let mut engine = mq_lang::Engine::default();
     let input = match input_format.unwrap_or("markdown") {
         "markdown" => mq_lang::parse_markdown_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.into())]),
         "mdx" => mq_lang::parse_mdx_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.into())]),
         "html" => mq_lang::parse_html_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.into())]),
         "text" => mq_lang::parse_text_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.to_string())]),
+            .unwrap_or_else(|_| vec![mq_lang::Value::String(input.into())]),
         _ => {
             return Err(tower_lsp::jsonrpc::Error {
                 code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,

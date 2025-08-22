@@ -24,6 +24,7 @@ version = "0.2.18"
 
 [dependencies]
 clap = {version = "4.5.45", features = ["derive"]}
+compact_str.workspace = true
 itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter.workspace = true

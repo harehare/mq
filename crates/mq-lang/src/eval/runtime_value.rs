@@ -1,6 +1,7 @@
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeMap, rc::Rc};
 
 use crate::{AstIdent, AstParams, Program, Value, impl_value_formatting, number::Number};
+use compact_str::CompactString;
 use mq_markdown::Node;
 
 use super::env::Env;
@@ -14,12 +15,12 @@ pub enum Selector {
 pub enum RuntimeValue {
     Number(Number),
     Bool(bool),
-    String(String),
+    String(CompactString),
     Array(Vec<RuntimeValue>),
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Rc<RefCell<Env>>),
     NativeFunction(AstIdent),
-    Dict(BTreeMap<String, RuntimeValue>),
+    Dict(BTreeMap<CompactString, RuntimeValue>),
     #[default]
     None,
 }
@@ -36,21 +37,33 @@ impl From<bool> for RuntimeValue {
     }
 }
 
+impl From<CompactString> for RuntimeValue {
+    fn from(s: CompactString) -> Self {
+        RuntimeValue::String(s)
+    }
+}
+
 impl From<String> for RuntimeValue {
     fn from(s: String) -> Self {
-        RuntimeValue::String(s)
+        RuntimeValue::String(s.into())
+    }
+}
+
+impl From<char> for RuntimeValue {
+    fn from(c: char) -> Self {
+        RuntimeValue::String(c.to_string().into())
     }
 }
 
 impl From<&str> for RuntimeValue {
     fn from(s: &str) -> Self {
-        RuntimeValue::String(s.to_string())
+        RuntimeValue::String(s.into())
     }
 }
 
 impl From<&mut str> for RuntimeValue {
     fn from(s: &mut str) -> Self {
-        RuntimeValue::String(s.to_string())
+        RuntimeValue::String(CompactString::new(s))
     }
 }
 
@@ -66,8 +79,8 @@ impl From<Vec<RuntimeValue>> for RuntimeValue {
     }
 }
 
-impl From<BTreeMap<String, RuntimeValue>> for RuntimeValue {
-    fn from(map: BTreeMap<String, RuntimeValue>) -> Self {
+impl From<BTreeMap<CompactString, RuntimeValue>> for RuntimeValue {
+    fn from(map: BTreeMap<CompactString, RuntimeValue>) -> Self {
         RuntimeValue::Dict(map)
     }
 }
@@ -238,7 +251,7 @@ mod tests {
         assert_eq!(RuntimeValue::from(false), RuntimeValue::Bool(false));
         assert_eq!(
             RuntimeValue::from(String::from("test")),
-            RuntimeValue::String(String::from("test"))
+            RuntimeValue::String("test".into())
         );
         assert_eq!(
             RuntimeValue::from(Number::from(42.0)),
@@ -250,16 +263,16 @@ mod tests {
     #[case(RuntimeValue::Number(Number::from(42.0)), "42")]
     #[case(RuntimeValue::Bool(true), "true")]
     #[case(RuntimeValue::Bool(false), "false")]
-    #[case(RuntimeValue::String("hello".to_string()), r#""hello""#)]
+    #[case(RuntimeValue::String("hello".into()), r#""hello""#)]
     #[case(RuntimeValue::None, "")]
     #[case(RuntimeValue::Array(vec![
             RuntimeValue::Number(Number::from(1.0)),
-            RuntimeValue::String("test".to_string())
+            RuntimeValue::String("test".into())
         ]), r#"[1, "test"]"#)]
     #[case(RuntimeValue::Dict({
             let mut map = BTreeMap::new();
-            map.insert("key1".to_string(), RuntimeValue::String("value1".to_string()));
-            map.insert("key2".to_string(), RuntimeValue::Number(Number::from(42.0)));
+            map.insert("key1".into(), RuntimeValue::String("value1".into()));
+            map.insert("key2".into(), RuntimeValue::Number(Number::from(42.0)));
             map
         }), r#"{"key1": "value1", "key2": 42}"#)]
     fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
@@ -273,10 +286,7 @@ mod tests {
             format!("{}", RuntimeValue::Number(Number::from(42.0))),
             "42"
         );
-        assert_eq!(
-            format!("{}", RuntimeValue::String(String::from("test"))),
-            "test"
-        );
+        assert_eq!(format!("{}", RuntimeValue::String("test".into())), "test");
         assert_eq!(format!("{}", RuntimeValue::None), "");
         let map_val = RuntimeValue::Dict(BTreeMap::default());
         assert_eq!(format!("{}", map_val), "{}");
@@ -290,17 +300,15 @@ mod tests {
             "42"
         );
         assert_eq!(
-            format!("{:?}", RuntimeValue::String(String::from("test"))),
+            format!("{:?}", RuntimeValue::String("test".into())),
             "\"test\""
         );
         assert_eq!(format!("{:?}", RuntimeValue::None), "None");
 
         let mut map = BTreeMap::default();
-        map.insert("name".to_string(), RuntimeValue::String("MQ".to_string()));
-        map.insert(
-            "version".to_string(),
-            RuntimeValue::Number(Number::from(1.0)),
-        );
+        map.insert("name".into(), RuntimeValue::String("MQ".into()));
+        map.insert("version".into(), RuntimeValue::Number(Number::from(1.0)));
+
         let map_val = RuntimeValue::Dict(map);
         let debug_str = format!("{:?}", map_val);
         assert!(
@@ -313,7 +321,7 @@ mod tests {
     fn test_runtime_value_name() {
         assert_eq!(RuntimeValue::Bool(true).name(), "bool");
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).name(), "number");
-        assert_eq!(RuntimeValue::String(String::from("test")).name(), "string");
+        assert_eq!(RuntimeValue::String("test".into()).name(), "string");
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
             RuntimeValue::Function(
@@ -348,9 +356,9 @@ mod tests {
         assert!(!RuntimeValue::Bool(false).is_truthy());
         assert!(RuntimeValue::Number(Number::from(42.0)).is_truthy());
         assert!(!RuntimeValue::Number(Number::from(0.0)).is_truthy());
-        assert!(RuntimeValue::String(String::from("test")).is_truthy());
-        assert!(!RuntimeValue::String(String::from("")).is_truthy());
-        assert!(RuntimeValue::Array(vec!["".to_string().into()]).is_truthy());
+        assert!(RuntimeValue::String("test".into()).is_truthy());
+        assert!(!RuntimeValue::String("".into()).is_truthy());
+        assert!(RuntimeValue::Array(vec!["".into()]).is_truthy());
         assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
         assert!(
             RuntimeValue::Markdown(
@@ -389,7 +397,7 @@ mod tests {
     #[test]
     fn test_runtime_value_partial_ord() {
         assert!(RuntimeValue::Number(Number::from(1.0)) < RuntimeValue::Number(Number::from(2.0)));
-        assert!(RuntimeValue::String(String::from("a")) < RuntimeValue::String(String::from("b")));
+        assert!(RuntimeValue::String("a".into()) < RuntimeValue::String("b".into()));
         assert!(
             RuntimeValue::Array(Vec::new()) < RuntimeValue::Array(vec!["a".to_string().into()])
         );
@@ -428,7 +436,7 @@ mod tests {
     #[test]
     fn test_runtime_value_len() {
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).len(), 42);
-        assert_eq!(RuntimeValue::String(String::from("test")).len(), 4);
+        assert_eq!(RuntimeValue::String("test".into()).len(), 4);
         assert_eq!(RuntimeValue::Bool(true).len(), 1);
         assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
         assert_eq!(
@@ -443,8 +451,8 @@ mod tests {
             1
         );
         let mut map = BTreeMap::default();
-        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
-        map.insert("b".to_string(), RuntimeValue::String("beta".to_string()));
+        map.insert("a".into(), RuntimeValue::String("alpha".into()));
+        map.insert("b".into(), RuntimeValue::String("beta".into()));
         assert_eq!(RuntimeValue::Dict(map).len(), 2);
     }
 
@@ -452,7 +460,7 @@ mod tests {
     fn test_runtime_value_debug_output() {
         let array = RuntimeValue::Array(vec![
             RuntimeValue::Number(Number::from(1.0)),
-            RuntimeValue::String("hello".to_string()),
+            RuntimeValue::String("hello".into()),
         ]);
         assert_eq!(format!("{:?}", array), r#"[1, "hello"]"#);
 
@@ -474,7 +482,7 @@ mod tests {
         assert_eq!(format!("{:?}", native_fn), "native_function");
 
         let mut map = BTreeMap::default();
-        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
+        map.insert("a".into(), RuntimeValue::String("alpha".into()));
         let map_val = RuntimeValue::Dict(map);
         assert_eq!(format!("{:?}", map_val), r#"{"a": "alpha"}"#);
     }
@@ -490,10 +498,10 @@ mod tests {
         let bool_value = Value::Bool(true);
         assert_eq!(RuntimeValue::from(bool_value), RuntimeValue::Bool(true));
 
-        let string_value = Value::String("test".to_string());
+        let string_value = Value::String("test".into());
         assert_eq!(
             RuntimeValue::from(string_value),
-            RuntimeValue::String("test".to_string())
+            RuntimeValue::String("test".into())
         );
 
         let array_value = Value::Array(vec![Value::Number(Number::from(1.0)), Value::Bool(false)]);
@@ -524,10 +532,11 @@ mod tests {
         );
 
         let mut value_map = BTreeMap::new();
-        value_map.insert("key".to_string(), Value::String("val".to_string()));
+        value_map.insert("key".into(), Value::String("val".into()));
+
         let map_value = Value::Dict(value_map);
         let mut expected_rt_map = BTreeMap::default();
-        expected_rt_map.insert("key".to_string(), RuntimeValue::String("val".to_string()));
+        expected_rt_map.insert("key".into(), RuntimeValue::String("val".into()));
         assert_eq!(
             RuntimeValue::from(map_value),
             RuntimeValue::Dict(expected_rt_map)
@@ -589,7 +598,7 @@ mod tests {
             RuntimeValue::NONE
         );
         assert_eq!(
-            RuntimeValue::String("hello".to_string()).update_markdown_value("test"),
+            RuntimeValue::String("hello".into()).update_markdown_value("test"),
             RuntimeValue::NONE
         );
         assert_eq!(
@@ -605,18 +614,19 @@ mod tests {
     #[test]
     fn test_runtime_value_map_creation_and_equality() {
         let mut map1_data = BTreeMap::default();
-        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
-        map1_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        map1_data.insert("a".into(), RuntimeValue::Number(Number::from(1.0)));
+        map1_data.insert("b".into(), RuntimeValue::String("hello".into()));
+
         let map1 = RuntimeValue::Dict(map1_data);
 
         let mut map2_data = BTreeMap::default();
-        map2_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
-        map2_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        map2_data.insert("a".into(), RuntimeValue::Number(Number::from(1.0)));
+        map2_data.insert("b".into(), RuntimeValue::String("hello".into()));
         let map2 = RuntimeValue::Dict(map2_data);
 
         let mut map3_data = BTreeMap::default();
-        map3_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
-        map3_data.insert("c".to_string(), RuntimeValue::String("world".to_string()));
+        map3_data.insert("a".into(), RuntimeValue::Number(Number::from(1.0)));
+        map3_data.insert("c".into(), RuntimeValue::String("world".into()));
         let map3 = RuntimeValue::Dict(map3_data);
 
         assert_eq!(map1, map2);
@@ -629,7 +639,7 @@ mod tests {
         assert!(empty_map.is_empty());
 
         let mut map_data = BTreeMap::default();
-        map_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map_data.insert("a".into(), RuntimeValue::Number(Number::from(1.0)));
         let non_empty_map = RuntimeValue::Dict(map_data);
         assert!(!non_empty_map.is_empty());
     }
@@ -637,11 +647,11 @@ mod tests {
     #[test]
     fn test_runtime_value_map_partial_ord() {
         let mut map1_data = BTreeMap::default();
-        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map1_data.insert("a".into(), RuntimeValue::Number(Number::from(1.0)));
         let map1 = RuntimeValue::Dict(map1_data);
 
         let mut map2_data = BTreeMap::default();
-        map2_data.insert("b".to_string(), RuntimeValue::Number(Number::from(2.0)));
+        map2_data.insert("b".into(), RuntimeValue::Number(Number::from(2.0)));
         let map2 = RuntimeValue::Dict(map2_data);
 
         assert_eq!(map1.partial_cmp(&map2), None);

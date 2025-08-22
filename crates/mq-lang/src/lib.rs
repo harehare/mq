@@ -183,17 +183,17 @@ pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
 
 /// Parses a plain text string and returns an iterator over `Value` node.
 pub fn parse_text_input(input: &str) -> miette::Result<Vec<Value>> {
-    Ok(input.lines().map(|line| line.to_string().into()).collect())
+    Ok(input.lines().map(|line| line.into()).collect())
 }
 
 /// Returns a vector containing a single `Value` representing an empty input.
 pub fn null_input() -> Vec<Value> {
-    vec!["".to_string().into()]
+    vec!["".into()]
 }
 
 /// Parses a raw input string and returns a vector containing a single `Value` node.
 pub fn raw_input(input: &str) -> Vec<Value> {
-    vec![input.to_string().into()]
+    vec![input.into()]
 }
 
 #[cfg(test)]

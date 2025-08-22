@@ -57,8 +57,5 @@ fuzz_target!(|context: Context| {
     };
 
     let mut engine = mq_lang::Engine::default();
-    let _ = engine.eval(
-        &script,
-        vec![mq_lang::Value::String("".to_string())].into_iter(),
-    );
+    let _ = engine.eval(&script, vec![mq_lang::Value::String("".into())].into_iter());
 });

@@ -17,8 +17,8 @@ fn engine() -> Engine {
        let test = \"WORLD\" | ltrimstr(s, \"hello\") | upcase() | ltrimstr(test);
     | test_fn(\"helloWorld2025\")
     ",
-      vec![Value::String("helloWorld".to_string())],
-      Ok(vec![Value::String("2025".to_string())].into()))]
+      vec![Value::String("helloWorld".into())],
+      Ok(vec![Value::String("2025".into())].into()))]
 #[case::while_("
     let x = 5 |
     while(gt(x, 0)):
@@ -174,10 +174,10 @@ fn engine() -> Engine {
         vec![Value::Number(2.into())],
         Ok(vec![Value::Number(2.into())].into()))]
 #[case::contains("contains(\"test\")",
-      vec![Value::String("testString".to_string())],
+      vec![Value::String("testString".into())],
       Ok(vec![Value::TRUE].into()))]
 #[case::contains("contains(\"test\")",
-      vec![Value::String("String".to_string())],
+      vec![Value::String("String".into())],
       Ok(vec![Value::FALSE].into()))]
 #[case::is_array("is_array()",
       vec![Value::Array(Vec::new())],
@@ -210,25 +210,25 @@ fn engine() -> Engine {
         vec![Value::Number(1.into())],
         Ok(vec![Value::FALSE].into()))]
 #[case::ltrimstr("ltrimstr(\"test\")",
-      vec![Value::String("testString".to_string())],
-      Ok(vec![Value::String("String".to_string())].into()))]
+      vec![Value::String("testString".into())],
+      Ok(vec![Value::String("String".into())].into()))]
 #[case::rtrimstr("rtrimstr(\"test\")",
-      vec![Value::String("Stringtest".to_string())],
-      Ok(vec![Value::String("String".to_string())].into()))]
+      vec![Value::String("Stringtest".into())],
+      Ok(vec![Value::String("String".into())].into()))]
 #[case::is_empty("is_empty(\"\")",
-      vec![Value::String("String".to_string())],
+      vec![Value::String("String".into())],
       Ok(vec![Value::TRUE].into()))]
 #[case::is_empty("is_empty(\"test\")",
-      vec![Value::String("String".to_string())],
+      vec![Value::String("String".into())],
       Ok(vec![Value::FALSE].into()))]
 #[case::is_empty("is_empty(array(\"test\"))",
-      vec![Value::String("String".to_string())],
+      vec![Value::String("String".into())],
       Ok(vec![Value::FALSE].into()))]
 #[case::test1("test(\"^hello.*\")",
-      vec![Value::String("helloWorld".to_string())],
+      vec![Value::String("helloWorld".into())],
       Ok(vec![Value::TRUE].into()))]
 #[case::test2("test(\"^world.*\")",
-      vec![Value::String("helloWorld".to_string())],
+      vec![Value::String("helloWorld".into())],
       Ok(vec![Value::FALSE].into()))]
 #[case::test3("select(contains(\"hello\"))",
       vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
@@ -246,8 +246,8 @@ fn engine() -> Engine {
       vec![Value::Array(Vec::new())],
       Ok(vec![Value::None].into()))]
 #[case::select("select(contains(\"hello\"))",
-      vec![Value::String("hello world".to_string())],
-      Ok(vec![Value::String("hello world".to_string())].into()))]
+      vec![Value::String("hello world".into())],
+      Ok(vec![Value::String("hello world".into())].into()))]
 #[case::closure("
       def make_adder(x):
         def adder(y):
@@ -314,7 +314,7 @@ fn engine() -> Engine {
       vec![Value::Markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
       Ok(vec![Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
 #[case::matches_url("matches_url(\"https://gitlab.com\")",
-      vec![Value::String("https://gitlab.com".to_string())],
+      vec![Value::String("https://gitlab.com".into())],
       Ok(vec![Value::FALSE].into()))]
 #[case::nest(".link | update(\"test\")",
       vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
@@ -325,7 +325,7 @@ fn engine() -> Engine {
 #[case::selector("nodes | .h",
       vec![
         Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
-        Value::String("test".to_string()),
+        Value::String("test".into()),
       ],
       Ok(vec![
         Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
@@ -334,7 +334,7 @@ fn engine() -> Engine {
 #[case::selector("nodes | .h",
       vec![
         Value::Markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })),
-        Value::String("test".to_string()),
+        Value::String("test".into()),
       ],
       Ok(vec![Value::NONE, Value::NONE].into()))]
 #[case::sort_by("sort_by(get_title)",
@@ -602,7 +602,7 @@ fn engine() -> Engine {
           vec![Value::Number(0.into())],
           Ok(vec![Value::Array(vec![
             Value::Number(1.into()),
-            Value::String("test".to_string()),
+            Value::String("test".into()),
             Value::Array(vec![])
           ])].into()))]
 #[case::array_length("len([])",
@@ -616,7 +616,7 @@ fn engine() -> Engine {
           Ok(vec![Value::new_dict()].into()))]
 #[case::dict_set_get_string("let m = dict() | let m = set(m, \"name\", \"Jules\") | get(m, \"name\")",
           vec![Value::Number(0.into())],
-          Ok(vec![Value::String("Jules".to_string())].into()))]
+          Ok(vec![Value::String("Jules".into())].into()))]
 #[case::dict_set_get_number("let m = set(dict(), \"age\", 30) | get(m, \"age\")",
           vec![Value::Number(0.into())],
           Ok(vec![Value::Number(30.into())].into()))]
@@ -634,7 +634,7 @@ fn engine() -> Engine {
           Ok(vec![Value::None].into()))]
 #[case::dict_set_overwrite("let m = set(dict(), \"name\", \"Jules\") | let m = set(m, \"name\", \"Vincent\") | get(m, \"name\")",
           vec![Value::Number(0.into())],
-          Ok(vec![Value::String("Vincent".to_string())].into()))]
+          Ok(vec![Value::String("Vincent".into())].into()))]
 #[case::dict_nested_set_get("let m1 = dict() | let m2 = set(dict(), \"level\", 2) | let m = set(m1, \"nested\", m2) | get(get(m, \"nested\"), \"level\")",
           vec![Value::Number(0.into())],
           Ok(vec![Value::Number(2.into())].into()))]
@@ -643,13 +643,13 @@ fn engine() -> Engine {
           Ok(vec![Value::Array(vec![])].into()))]
 #[case::dict_keys_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", 2) | keys(m)",
           vec![Value::Number(0.into())],
-          Ok(vec![Value::Array(vec![Value::String("a".to_string()), Value::String("b".to_string())])].into()))]
+          Ok(vec![Value::Array(vec![Value::String("a".into()), Value::String("b".into())])].into()))]
 #[case::dict_values_empty("values(dict())",
           vec![Value::Number(0.into())],
           Ok(vec![Value::Array(vec![])].into()))]
 #[case::dict_values_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", \"hello\") | values(m)",
           vec![Value::Number(0.into())],
-          Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::String("hello".to_string())])].into()))]
+          Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::String("hello".into())])].into()))]
 #[case::dict_len_empty("len(dict())",
           vec![Value::Number(0.into())],
           Ok(vec![Value::Number(0.into())].into()))]
@@ -658,7 +658,7 @@ fn engine() -> Engine {
           Ok(vec![Value::Number(2.into())].into()))]
 #[case::dict_type_is_dict("type(dict())",
           vec![Value::Number(0.into())],
-          Ok(vec![Value::String("dict".to_string())].into()))]
+          Ok(vec![Value::String("dict".into())].into()))]
 #[case::dict_contains_existing_key(r#"let m = set(dict(), "name", "Jules") | contains(m, "name")"#,
           vec![Value::Number(0.into())],
           Ok(vec![Value::Bool(true)].into()))]
@@ -675,8 +675,8 @@ fn engine() -> Engine {
         vec![Value::Number(0.into())],
         Ok(vec![{
           let mut dict = BTreeMap::new();
-          dict.insert("a".to_string(), Value::Number(1.into()));
-          dict.insert("b".to_string(), Value::Number(2.into()));
+          dict.insert("a".into(), Value::Number(1.into()));
+          dict.insert("b".into(), Value::Number(2.into()));
           dict.into()
         }].into()))]
 #[case::dict_map_transform_values("
@@ -688,8 +688,8 @@ fn engine() -> Engine {
           vec![Value::Number(0.into())],
           Ok(vec![{
             let mut dict = BTreeMap::new();
-            dict.insert("x".to_string(), Value::Number(10.into()));
-            dict.insert("y".to_string(), Value::Number(20.into()));
+            dict.insert("x".into(), Value::Number(10.into()));
+            dict.insert("y".into(), Value::Number(20.into()));
             dict.into()
           }].into()))]
 #[case::dict_map_transform_keys(r#"
@@ -701,8 +701,8 @@ fn engine() -> Engine {
             vec![Value::Number(0.into())],
             Ok(vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("prefix_a".to_string(), Value::Number(1.into()));
-              dict.insert("prefix_b".to_string(), Value::Number(2.into()));
+              dict.insert("prefix_a".into(), Value::Number(1.into()));
+              dict.insert("prefix_b".into(), Value::Number(2.into()));
               dict.into()
             }].into()))]
 #[case::dict_map_empty("map(dict(), fn(kv): kv;)",
@@ -719,8 +719,8 @@ fn engine() -> Engine {
             vec![Value::Number(0.into())],
             Ok(vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("num1_transformed".to_string(), Value::Number(101.into()));
-              dict.insert("num2_transformed".to_string(), Value::Number(102.into()));
+              dict.insert("num1_transformed".into(), Value::Number(101.into()));
+              dict.insert("num2_transformed".into(), Value::Number(102.into()));
               dict.into()
             }].into()))]
 #[case::dict_filter_even_values(r#"
@@ -732,8 +732,8 @@ fn engine() -> Engine {
             vec![Value::Number(0.into())],
             Ok(vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("b".to_string(), Value::Number(2.into()));
-              dict.insert("c".to_string(), Value::Number(4.into()));
+              dict.insert("b".into(), Value::Number(2.into()));
+              dict.insert("c".into(), Value::Number(4.into()));
               dict.into()
             }].into()))]
 #[case::dict_filter_empty("filter(dict(), fn(kv): true;)",
@@ -747,9 +747,9 @@ fn engine() -> Engine {
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into()), Value::Number(8.into()), Value::Number(9.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("0".to_string(), Value::Array(vec![Value::Number(3.into()), Value::Number(6.into()), Value::Number(9.into())]));
-                dict.insert("1".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(4.into()), Value::Number(7.into())]));
-                dict.insert("2".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(5.into()), Value::Number(8.into())]));
+                dict.insert("0".into(), Value::Array(vec![Value::Number(3.into()), Value::Number(6.into()), Value::Number(9.into())]));
+                dict.insert("1".into(), Value::Array(vec![Value::Number(1.into()), Value::Number(4.into()), Value::Number(7.into())]));
+                dict.insert("2".into(), Value::Array(vec![Value::Number(2.into()), Value::Number(5.into()), Value::Number(8.into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_strings(r#"
@@ -757,12 +757,12 @@ fn engine() -> Engine {
               len(s);
             | group_by(array("cat", "dog", "bird", "fish", "elephant"), get_length)
             "#,
-              vec![Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string()), Value::String("bird".to_string()), Value::String("fish".to_string()), Value::String("elephant".to_string())])],
+              vec![Value::Array(vec![Value::String("cat".into()), Value::String("dog".into()), Value::String("bird".into()), Value::String("fish".into()), Value::String("elephant".into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("3".to_string(), Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string())]));
-                dict.insert("4".to_string(), Value::Array(vec![Value::String("bird".to_string()), Value::String("fish".to_string())]));
-                dict.insert("8".to_string(), Value::Array(vec![Value::String("elephant".to_string())]));
+                dict.insert("3".into(), Value::Array(vec![Value::String("cat".into()), Value::String("dog".into())]));
+                dict.insert("4".into(), Value::Array(vec![Value::String("bird".into()), Value::String("fish".into())]));
+                dict.insert("8".into(), Value::Array(vec![Value::String("elephant".into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_empty_array("
@@ -780,7 +780,7 @@ fn engine() -> Engine {
               vec![Value::Array(vec![Value::Number(42.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("42".to_string(), Value::Array(vec![Value::Number(42.into())]));
+                dict.insert("42".into(), Value::Array(vec![Value::Number(42.into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_all_same_key(r#"
@@ -791,7 +791,7 @@ fn engine() -> Engine {
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("same".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())]));
+                dict.insert("same".into(), Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_boolean_result("
@@ -802,8 +802,8 @@ fn engine() -> Engine {
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("false".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())]));
-                dict.insert("true".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(4.into()), Value::Number(6.into())]));
+                dict.insert("false".into(), Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())]));
+                dict.insert("true".into(), Value::Array(vec![Value::Number(2.into()), Value::Number(4.into()), Value::Number(6.into())]));
                 dict.into()
               }].into()))]
 #[case::is_h_true("is_h()",
@@ -1260,16 +1260,16 @@ fn engine() -> Engine {
 #[case::any_dict_true(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 2;)"#,
               vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("a".to_string(), Value::Number(1.into()));
-                dict.insert("b".to_string(), Value::Number(2.into()));
+                dict.insert("a".into(), Value::Number(1.into()));
+                dict.insert("b".into(), Value::Number(2.into()));
                 dict.into()
               }],
               Ok(vec![Value::Bool(true)].into()))]
 #[case::any_dict_false(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 3;)"#,
               vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("a".to_string(), Value::Number(1.into()));
-                dict.insert("b".to_string(), Value::Number(2.into()));
+                dict.insert("a".into(), Value::Number(1.into()));
+                dict.insert("b".into(), Value::Number(2.into()));
                 dict.into()
               }],
               Ok(vec![Value::Bool(false)].into()))]
@@ -1288,16 +1288,16 @@ fn engine() -> Engine {
 #[case::all_dict_true(r#"all(dict(["a", 2], ["b", 4]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("a".to_string(), Value::Number(2.into()));
-              dict.insert("b".to_string(), Value::Number(4.into()));
+              dict.insert("a".into(), Value::Number(2.into()));
+              dict.insert("b".into(), Value::Number(4.into()));
               dict.into()
               }],
               Ok(vec![Value::Bool(true)].into()))]
 #[case::all_dict_false(r#"all(dict(["a", 2], ["b", 3]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("a".to_string(), Value::Number(2.into()));
-              dict.insert("b".to_string(), Value::Number(3.into()));
+              dict.insert("a".into(), Value::Number(2.into()));
+              dict.insert("b".into(), Value::Number(3.into()));
               dict.into()
               }],
               Ok(vec![Value::Bool(false)].into()))]
@@ -1322,20 +1322,20 @@ fn engine() -> Engine {
 #[case::to_csv_single_row(
             "to_csv()",
             vec![Value::Array(vec![
-                Value::String("a".to_string()),
-                Value::String("b".to_string()),
-                Value::String("c".to_string()),
+                Value::String("a".into()),
+                Value::String("b".into()),
+                Value::String("c".into()),
             ])],
-            Ok(vec![Value::String("a,b,c".to_string())].into())
+            Ok(vec![Value::String("a,b,c".into())].into())
           )]
 #[case::to_tsv_single_row(
             "to_tsv()",
             vec![Value::Array(vec![
-              Value::String("a".to_string()),
-              Value::String("b".to_string()),
-              Value::String("c".to_string()),
+              Value::String("a".into()),
+              Value::String("b".into()),
+              Value::String("c".into()),
             ])],
-            Ok(vec![Value::String("a\tb\tc".to_string())].into())
+            Ok(vec![Value::String("a\tb\tc".into())].into())
           )]
 #[case::fold_sum("
             def sum(acc, x):
@@ -1374,11 +1374,11 @@ fn engine() -> Engine {
               len(s);
             | unique_by(["cat", "dog", "bird", "fish", "elephant"], get_length)
             "#,
-              vec![Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string()), Value::String("bird".to_string()), Value::String("fish".to_string()), Value::String("elephant".to_string())])],
+              vec![Value::Array(vec![Value::String("cat".into()), Value::String("dog".into()), Value::String("bird".into()), Value::String("fish".into()), Value::String("elephant".into())])],
               Ok(vec![Value::Array(vec![
-              Value::String("cat".to_string()),
-              Value::String("bird".to_string()),
-              Value::String("elephant".to_string()),
+              Value::String("cat".into()),
+              Value::String("bird".into()),
+              Value::String("elephant".into()),
               ])].into()))]
 #[case::unique_by_empty_array("
             def identity(x):
@@ -1401,13 +1401,13 @@ fn engine() -> Engine {
             vec![Value::Number(0.into())],
             Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("a".to_string(), Value::Number(1.into()));
-                dict.insert("b".to_string(), Value::String("two".to_string()));
+                dict.insert("a".into(), Value::Number(1.into()));
+                dict.insert("b".into(), Value::String("two".into()));
                 dict.into()
             }].into()))]
 #[case::dict_literal_access_after_creation(r#"let d = {"name": "Jules", "occupation": "Philosopher"} | get(d, "name")"#,
             vec![Value::Number(0.into())],
-            Ok(vec![Value::String("Jules".to_string())].into()))]
+            Ok(vec![Value::String("Jules".into())].into()))]
 #[case::dict_literal_trailing_comma(r#"let d = {"a":1, "b":2,} | len(d)"#,
             vec![Value::Number(0.into())],
             Ok(vec![Value::Number(2.into())].into()))]

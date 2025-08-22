@@ -105,14 +105,17 @@ impl From<mq_lang::Value> for MQValue {
                 value: arr.into_iter().map(|v| v.into()).collect(),
             },
             mq_lang::Value::Dict(map) => MQValue::Dict {
-                value: map.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                value: map
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.into()))
+                    .collect(),
             },
             mq_lang::Value::Markdown(node) => MQValue::Markdown {
                 value: node.to_string(),
                 markdown_type: node.into(),
             },
             mq_lang::Value::String(s) => MQValue::Markdown {
-                value: s,
+                value: s.to_string(),
                 markdown_type: MarkdownType::Text,
             },
             mq_lang::Value::Number(n) => MQValue::Markdown {

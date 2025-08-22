@@ -72,30 +72,27 @@ impl Evaluator {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        let mut program = program.iter().try_fold(
-            Vec::with_capacity(program.len()),
-            |mut nodes: Vec<Rc<ast::Node>>, node: &Rc<ast::Node>| -> Result<_, InnerError> {
-                match &*node.expr {
-                    ast::Expr::Def(ident, params, program) => {
-                        self.env.borrow_mut().define(
-                            ident,
-                            RuntimeValue::Function(
-                                params.clone(),
-                                program.clone(),
-                                Rc::clone(&self.env),
-                            ),
-                        );
-                    }
-                    ast::Expr::Include(module_id) => {
-                        self.eval_include(module_id.to_owned())?;
-                    }
-                    _ => nodes.push(Rc::clone(node)),
-                };
+        let mut nodes: Vec<Rc<ast::Node>> = Vec::with_capacity(program.len());
+        for node in program.iter() {
+            match &*node.expr {
+                ast::Expr::Def(ident, params, program) => {
+                    self.env.borrow_mut().define(
+                        ident,
+                        RuntimeValue::Function(
+                            params.clone(),
+                            program.clone(),
+                            Rc::clone(&self.env),
+                        ),
+                    );
+                }
+                ast::Expr::Include(module_id) => {
+                    self.eval_include(module_id.to_owned())?;
+                }
+                _ => nodes.push(Rc::clone(node)),
+            }
+        }
 
-                Ok(nodes)
-            },
-        )?;
-
+        let mut program = nodes;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
@@ -136,6 +133,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_markdown_node(
         &mut self,
         program: &Program,
@@ -167,10 +165,9 @@ impl Evaluator {
     }
 
     pub fn define_string_value(&self, name: &str, value: &str) {
-        self.env.borrow_mut().define(
-            &ast::Ident::new(name),
-            RuntimeValue::String(value.to_string()),
-        );
+        self.env
+            .borrow_mut()
+            .define(&ast::Ident::new(name), RuntimeValue::String(value.into()));
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
@@ -416,7 +413,7 @@ impl Evaluator {
         match literal {
             ast::Literal::None => RuntimeValue::None,
             ast::Literal::Bool(b) => RuntimeValue::Bool(*b),
-            ast::Literal::String(s) => RuntimeValue::String(s.clone()),
+            ast::Literal::String(s) => RuntimeValue::String(s.into()),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
         }
     }
@@ -451,13 +448,8 @@ impl Evaluator {
                     let mut results = Vec::with_capacity(s.len());
 
                     for c in s.chars() {
-                        env.borrow_mut()
-                            .define(ident, RuntimeValue::String(c.to_string()));
-                        match self.eval_program(
-                            body,
-                            RuntimeValue::String(c.to_string()),
-                            Rc::clone(&env),
-                        ) {
+                        env.borrow_mut().define(ident, c.into());
+                        match self.eval_program(body, c.into(), Rc::clone(&env)) {
                             Ok(result) => results.push(result),
                             Err(EvalError::Break(_)) => break,
                             Err(EvalError::Continue(_)) => continue,
@@ -634,23 +626,19 @@ impl Evaluator {
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
-                new_args
-                    .iter()
-                    .zip(params.iter())
-                    .try_for_each(|(arg, param)| {
-                        if let ast::Expr::Ident(name) = &*param.expr {
-                            let value =
-                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
+                for (arg, param) in new_args.iter().zip(params.iter()) {
+                    if let ast::Expr::Ident(name) = &*param.expr {
+                        let value =
+                            self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
 
-                            new_env.borrow_mut().define(name, value);
-                            Ok(())
-                        } else {
-                            Err(EvalError::InvalidDefinition(
-                                (*self.token_arena.borrow()[param.token_id]).clone(),
-                                ident.to_string(),
-                            ))
-                        }
-                    })?;
+                        new_env.borrow_mut().define(name, value);
+                    } else {
+                        return Err(EvalError::InvalidDefinition(
+                            (*self.token_arena.borrow()[param.token_id]).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
 
@@ -743,7 +731,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::starts_with(vec![RuntimeValue::String("test".to_string())],
+    #[case::starts_with(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("starts_with", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))])
        ],
@@ -753,7 +741,7 @@ mod tests {
             ast_call("starts_with", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "true".to_string(), position: None}), None)]))]
-    #[case::starts_with(vec![RuntimeValue::String("test".to_string())],
+    #[case::starts_with(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("starts_with", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))])
        ],
@@ -781,7 +769,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "starts_with".to_string(),
                                                     args: vec!["1".into(), "end".to_string().into()]})))]
-    #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
+    #[case::ends_with(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("ends_with", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string())))
@@ -795,7 +783,7 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "true".to_string(), position: None}), None)]))]
-    #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
+    #[case::ends_with(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("ends_with", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
@@ -825,15 +813,15 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "ends_with".to_string(),
                                                     args: vec![1.to_string().into(), "te".into()]})))]
-    #[case::downcase(vec![RuntimeValue::String("TEST".to_string())],
+    #[case::downcase(vec![RuntimeValue::String("TEST".into())],
        vec![ast_call("downcase", SmallVec::new())],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
+       Ok(vec![RuntimeValue::String("test".into())]))]
     #[case::downcase(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "TEST".to_string(), position: None}), None)],
        vec![ast_call("downcase", SmallVec::new())],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
-    #[case::upcase(vec![RuntimeValue::String("test".to_string())],
+    #[case::upcase(vec![RuntimeValue::String("test".into())],
        vec![ast_call("upcase", SmallVec::new())],
-       Ok(vec![RuntimeValue::String("TEST".to_string())]))]
+       Ok(vec![RuntimeValue::String("TEST".into())]))]
     #[case::upcase(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
        vec![ast_call("upcase", SmallVec::new())],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "TEST".to_string(), position: None}), None)]))]
@@ -845,14 +833,14 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "upcase".to_string(),
                                                     args: vec![123.to_string().into()]})))]
-    #[case::replace(vec![RuntimeValue::String("testString".to_string())],
+    #[case::replace(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("replace", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("exam".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::String("examString".to_string())]))]
+       Ok(vec![RuntimeValue::String("examString".into())]))]
     #[case::replace(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
        vec![
             ast_call("replace", smallvec![
@@ -879,14 +867,14 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "replace".to_string(),
                                                     args: vec![123.to_string().into(), "test".to_string().into(), "exam".to_string().into()]})))]
-    #[case::gsub_regex(vec![RuntimeValue::String("test123".to_string())],
+    #[case::gsub_regex(vec![RuntimeValue::String("test123".into())],
        vec![
             ast_call("gsub", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
                 ast_node(ast::Expr::Literal(ast::Literal::String("456".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::String("test456".to_string())]))]
+       Ok(vec![RuntimeValue::String("test456".into())]))]
     #[case::gsub_regex(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
        vec![
             ast_call("gsub", smallvec![
@@ -905,7 +893,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "gsub".to_string(),
                                                     args: vec![123.to_string().into(), "test".to_string().into(), r"\d+".to_string().into()]})))]
-    #[case::len(vec![RuntimeValue::String("testString".to_string())],
+    #[case::len(vec![RuntimeValue::String("testString".into())],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Number(10.into())]))]
     #[case::len(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
@@ -914,23 +902,23 @@ mod tests {
     #[case::len(vec![RuntimeValue::TRUE],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::len(vec![RuntimeValue::String("テスト".to_string())],
+    #[case::len(vec![RuntimeValue::String("テスト".into())],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Number(3.into())]))]
     #[case::len(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "テスト".to_string(), position: None}), None)],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "3".to_string(), position: None}), None)]))]
-    #[case::utf8bytelen(vec![RuntimeValue::String("test".to_string())],
+    #[case::utf8bytelen(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("utf8bytelen", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Number(4.into())]))]
-    #[case::utf8bytelen(vec![RuntimeValue::String("テスト".to_string())],
+    #[case::utf8bytelen(vec![RuntimeValue::String("テスト".into())],
        vec![
             ast_call("utf8bytelen", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Number(9.into())]))]
-    #[case::utf8bytelen(vec![RuntimeValue::String("😊".to_string())],
+    #[case::utf8bytelen(vec![RuntimeValue::String("😊".into())],
        vec![
             ast_call("utf8bytelen", SmallVec::new())
        ],
@@ -950,7 +938,7 @@ mod tests {
             ast_call("utf8bytelen", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "4".to_string(), position: None}), None)]))]
-    #[case::utf8bytelen(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".to_string())])],
+    #[case::utf8bytelen(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".into())])],
        vec![
             ast_call("utf8bytelen", SmallVec::new())
        ],
@@ -960,7 +948,7 @@ mod tests {
             ast_call("utf8bytelen", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::index(vec![RuntimeValue::String("testString".to_string())],
+    #[case::index(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("index", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
@@ -983,21 +971,21 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "index".to_string(),
                                                     args: vec!["1".into(), "test".into()]})))]
-    #[case::array_index(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
+    #[case::array_index(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into()), RuntimeValue::String("test3".into())])],
         vec![
               ast_call("index", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test2".to_string())))
               ])
         ],
         Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::array_index_not_found(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
+    #[case::array_index_not_found(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into()), RuntimeValue::String("test3".into())])],
         vec![
               ast_call("index", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test4".to_string())))
               ])
         ],
         Ok(vec![RuntimeValue::Number((-1).into())]))]
-    #[case::rindex(vec![RuntimeValue::String("testString".to_string())],
+    #[case::rindex(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("rindex", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
@@ -1020,14 +1008,14 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "rindex".to_string(),
                                                     args: vec!["123".into(), "String".into()]})))]
-    #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test1".to_string())])],
+    #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into()), RuntimeValue::String("test1".into())])],
         vec![
               ast_call("rindex", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test1".to_string())))
               ])
         ],
         Ok(vec![RuntimeValue::Number(2.into())]))]
-    #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
+    #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into()), RuntimeValue::String("test3".into())])],
         vec![
               ast_call("rindex", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("test4".to_string())))
@@ -1041,7 +1029,7 @@ mod tests {
               ])
         ],
         Ok(vec![RuntimeValue::Number((-1).into())]))]
-    #[case::eq(vec![RuntimeValue::String("test".to_string())],
+    #[case::eq(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("eq", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
@@ -1049,7 +1037,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::eq(vec![RuntimeValue::String("testString".to_string())],
+    #[case::eq(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("eq", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
@@ -1057,7 +1045,7 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::ne(vec![RuntimeValue::String("test".to_string())],
+    #[case::ne(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("ne", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
@@ -1065,7 +1053,7 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::ne(vec![RuntimeValue::String("test".to_string())],
+    #[case::ne(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("ne", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("eq".to_string()))),
@@ -1089,7 +1077,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::gt(vec![RuntimeValue::String("test".to_string())],
+    #[case::gt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("gt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1097,7 +1085,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::gt(vec![RuntimeValue::String("testString".to_string())],
+    #[case::gt(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("gt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1157,7 +1145,7 @@ mod tests {
             ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::gt(vec![RuntimeValue::String("test".to_string())],
+    #[case::gt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("gt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1165,7 +1153,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::gte(vec![RuntimeValue::String("test".to_string())],
+    #[case::gte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("gte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1173,7 +1161,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::gte(vec![RuntimeValue::String("test".to_string())],
+    #[case::gte(vec![RuntimeValue::String("test".into())],
        vec! [
             ast_call("gte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1181,7 +1169,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::gte(vec![RuntimeValue::String("test".to_string())],
+    #[case::gte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("gte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1205,7 +1193,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::gte(vec![RuntimeValue::String("test".to_string())],
+    #[case::gte(vec![RuntimeValue::String("test".into())],
        vec! [
             ast_call("gte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
@@ -1213,7 +1201,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::gte(vec![RuntimeValue::String("test".to_string())],
+    #[case::gte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("gte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
@@ -1241,7 +1229,7 @@ mod tests {
             ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lt(vec![RuntimeValue::String("test".to_string())],
+    #[case::lt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1249,7 +1237,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lt(vec![RuntimeValue::String("test".to_string())],
+    #[case::lt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1257,7 +1245,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lt(vec![RuntimeValue::String("test".to_string())],
+    #[case::lt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
@@ -1265,7 +1253,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lt(vec![RuntimeValue::String("test".to_string())],
+    #[case::lt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
@@ -1273,7 +1261,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lt(vec![RuntimeValue::String("test".to_string())],
+    #[case::lt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(1.to_string()))),
@@ -1281,7 +1269,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lt(vec![RuntimeValue::String("test".to_string())],
+    #[case::lt(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lt", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
@@ -1329,7 +1317,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lte(vec![RuntimeValue::String("test".to_string())],
+    #[case::lte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1337,7 +1325,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lte(vec![RuntimeValue::String("test".to_string())],
+    #[case::lte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1345,7 +1333,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lte(vec![RuntimeValue::String("testString".to_string())],
+    #[case::lte(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1353,7 +1341,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lte(vec![RuntimeValue::String("testString".to_string())],
+    #[case::lte(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
@@ -1361,7 +1349,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lte(vec![RuntimeValue::String("testString".to_string())],
+    #[case::lte(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.2.into()))),
@@ -1369,7 +1357,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lte(vec![RuntimeValue::String("testString".to_string())],
+    #[case::lte(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.4.into()))),
@@ -1377,7 +1365,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lte(vec![RuntimeValue::String("test".to_string())],
+    #[case::lte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1385,7 +1373,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::lte(vec![RuntimeValue::String("testString".to_string())],
+    #[case::lte(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String(2.to_string()))),
@@ -1393,7 +1381,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lte(vec![RuntimeValue::String("test".to_string())],
+    #[case::lte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1401,7 +1389,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::lte(vec![RuntimeValue::String("test".to_string())],
+    #[case::lte(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("lte", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -1409,7 +1397,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+    #[case::add(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("add", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1417,15 +1405,15 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(2.into())]))]
-    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+    #[case::add(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("add", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
                     ast_node(ast::Expr::Literal(ast::Literal::String("st".to_string()))),
                 ]),
        ],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
-    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+       Ok(vec![RuntimeValue::String("test".into())]))]
+    #[case::add(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("add", smallvec![
                     ast_call("array", smallvec![
@@ -1437,7 +1425,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Array(vec!["te".to_string().into(), "te".to_string().into()])]))]
-    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+    #[case::add(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("add", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -1447,7 +1435,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "add".to_string(),
                                                          args: vec!["te".into(), 1.to_string().into()]})))]
-    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+    #[case::add(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("add", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
@@ -1455,7 +1443,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(2.6.into())]))]
-    #[case::add(vec![RuntimeValue::String("testString".to_string())],
+    #[case::add(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("add", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
@@ -1499,7 +1487,7 @@ mod tests {
             ]),
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{value: "21".to_string(), lang: None, fence: true, meta: None, position: None}), None)]))]
-    #[case::sub(vec![RuntimeValue::String("testString".to_string())],
+    #[case::sub(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("sub", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1507,7 +1495,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(0.into())]))]
-    #[case::sub(vec![RuntimeValue::String("testString".to_string())],
+    #[case::sub(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("sub", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -1515,7 +1503,7 @@ mod tests {
                 ]),
        ],
        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
-    #[case::sub(vec![RuntimeValue::String("testString".to_string())],
+    #[case::sub(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("sub", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
@@ -1523,7 +1511,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::Number(0.10000000000000009.into())]))]
-    #[case::div(vec![RuntimeValue::String("testString".to_string())],
+    #[case::div(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("div", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1531,7 +1519,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::div(vec![RuntimeValue::String("testString".to_string())],
+    #[case::div(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("div", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -1539,7 +1527,7 @@ mod tests {
                 ])
        ],
        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
-    #[case::div(vec![RuntimeValue::String("testString".to_string())],
+    #[case::div(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("div", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1547,7 +1535,7 @@ mod tests {
                 ])
        ],
        Err(InnerError::Eval(EvalError::ZeroDivision(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}))))]
-    #[case::div(vec![RuntimeValue::String("testString".to_string())],
+    #[case::div(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("div", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.3.into()))),
@@ -1555,7 +1543,7 @@ mod tests {
                 ])
        ],
        Ok(vec![RuntimeValue::Number(1.1818181818181817.into())]))]
-    #[case::mul(vec![RuntimeValue::String("testString".to_string())],
+    #[case::mul(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("mul", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1563,7 +1551,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(2.into())]))]
-    #[case::mul(vec![RuntimeValue::String("testString".to_string())],
+    #[case::mul(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("mul", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
@@ -1571,7 +1559,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(2.6.into())]))]
-    #[case::mul(vec![RuntimeValue::String("testString".to_string())],
+    #[case::mul(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("mul", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -1579,7 +1567,7 @@ mod tests {
                 ]),
        ],
        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
-    #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
+    #[case::mod_(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("mod", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1587,7 +1575,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
+    #[case::mod_(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("mod", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.1.into()))),
@@ -1595,7 +1583,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(1.1.into())]))]
-    #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
+    #[case::mod_(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("mod", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -1603,7 +1591,7 @@ mod tests {
                 ]),
        ],
        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
-    #[case::pow(vec![RuntimeValue::String("testString".to_string())],
+    #[case::pow(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("pow", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
@@ -1611,7 +1599,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::Number(8.into())]))]
-    #[case::pow(vec![RuntimeValue::String("testString".to_string())],
+    #[case::pow(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("pow", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -1621,7 +1609,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "pow".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
-    #[case::and(vec![RuntimeValue::String("test".to_string())],
+    #[case::and(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("and", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
@@ -1637,7 +1625,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::and(vec![RuntimeValue::String("test".to_string())],
+    #[case::and(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("and", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -1645,7 +1633,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::and(vec![RuntimeValue::String("test".to_string())],
+    #[case::and(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("and", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -1653,7 +1641,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::or(vec![RuntimeValue::String("test".to_string())],
+    #[case::or(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("or", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
@@ -1661,7 +1649,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::or(vec![RuntimeValue::String("test".to_string())],
+    #[case::or(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("or", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
@@ -1669,7 +1657,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::or(vec![RuntimeValue::String("test".to_string())],
+    #[case::or(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("or", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -1677,7 +1665,7 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::or(vec![RuntimeValue::String("test".to_string())],
+    #[case::or(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("or", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -1685,37 +1673,37 @@ mod tests {
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::not(vec![RuntimeValue::String("test".to_string())],
+    #[case::not(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("not", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                 ]),
        ],
        Ok(vec![RuntimeValue::FALSE]))]
-    #[case::not(vec![RuntimeValue::String("test".to_string())],
+    #[case::not(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("not", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                 ]),
        ],
        Ok(vec![RuntimeValue::TRUE]))]
-    #[case::to_string(vec![RuntimeValue::String("test".to_string())],
+    #[case::to_string(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("to_string", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
+       Ok(vec![RuntimeValue::String("test".into())]))]
     #[case::to_string(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
        vec![
             ast_call("to_string", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
-    #[case::split1(vec![RuntimeValue::String("test1,test2".to_string())],
+    #[case::split1(vec![RuntimeValue::String("test1,test2".into())],
        vec![
             ast_call("split", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))]
                         )
        ],
-       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
+       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into())])]))]
     #[case::split2(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test1,test2".to_string(), position: None}), None)],
        vec![
             ast_call("split", smallvec![
@@ -1731,9 +1719,9 @@ mod tests {
                                                     name: "split".to_string(),
                                                     args: vec![1.to_string().into(), ",".to_string().into()]})))]
     #[case::split_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("value1".to_string()),
-            RuntimeValue::String("separator".to_string()),
-            RuntimeValue::String("value2".to_string()),
+            RuntimeValue::String("value1".into()),
+            RuntimeValue::String("separator".into()),
+            RuntimeValue::String("value2".into()),
         ])],
         vec![
             ast_call("split", smallvec![
@@ -1741,15 +1729,15 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::Array(vec![RuntimeValue::String("value1".to_string())]),
-            RuntimeValue::Array(vec![RuntimeValue::String("value2".to_string())])
+            RuntimeValue::Array(vec![RuntimeValue::String("value1".into())]),
+            RuntimeValue::Array(vec![RuntimeValue::String("value2".into())])
         ])]))]
     #[case::split_array_multiple_separators(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("value1".to_string()),
-            RuntimeValue::String("separator".to_string()),
-            RuntimeValue::String("value2".to_string()),
-            RuntimeValue::String("separator".to_string()),
-            RuntimeValue::String("value3".to_string()),
+            RuntimeValue::String("value1".into()),
+            RuntimeValue::String("separator".into()),
+            RuntimeValue::String("value2".into()),
+            RuntimeValue::String("separator".into()),
+            RuntimeValue::String("value3".into()),
         ])],
         vec![
             ast_call("split", smallvec![
@@ -1757,14 +1745,14 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::Array(vec![RuntimeValue::String("value1".to_string())]),
-            RuntimeValue::Array(vec![RuntimeValue::String("value2".to_string())]),
-            RuntimeValue::Array(vec![RuntimeValue::String("value3".to_string())])
+            RuntimeValue::Array(vec![RuntimeValue::String("value1".into())]),
+            RuntimeValue::Array(vec![RuntimeValue::String("value2".into())]),
+            RuntimeValue::Array(vec![RuntimeValue::String("value3".into())])
         ])]))]
     #[case::split_array_no_separator(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("value1".to_string()),
-            RuntimeValue::String("value2".to_string()),
-            RuntimeValue::String("value3".to_string()),
+            RuntimeValue::String("value1".into()),
+            RuntimeValue::String("value2".into()),
+            RuntimeValue::String("value3".into()),
         ])],
         vec![
             ast_call("split", smallvec![
@@ -1773,9 +1761,9 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Array(vec![
         RuntimeValue::Array(vec![
-            RuntimeValue::String("value1".to_string()),
-            RuntimeValue::String("value2".to_string()),
-            RuntimeValue::String("value3".to_string())
+            RuntimeValue::String("value1".into()),
+            RuntimeValue::String("value2".into()),
+            RuntimeValue::String("value3".into())
         ])
         ])]))]
     #[case::split_array_empty(vec![RuntimeValue::Array(Vec::new())],
@@ -1787,7 +1775,7 @@ mod tests {
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Array(Vec::new())])]))]
     #[case::split_array_mixed_types(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(1.into()),
-            RuntimeValue::String("separator".to_string()),
+            RuntimeValue::String("separator".into()),
             RuntimeValue::Bool(true),
         ])],
         vec![
@@ -1799,7 +1787,7 @@ mod tests {
             RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]),
             RuntimeValue::Array(vec![RuntimeValue::Bool(true)])
         ])]))]
-    #[case::join1(vec![RuntimeValue::String("test1,test2".to_string())],
+    #[case::join1(vec![RuntimeValue::String("test1,test2".into())],
        vec![
             ast_call("join", smallvec![
                 ast_call("split", smallvec![
@@ -1808,7 +1796,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("#".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::String("test1#test2".to_string())]))]
+       Ok(vec![RuntimeValue::String("test1#test2".into())]))]
     #[case::join_error(vec![RuntimeValue::Number(1.into())],
        vec![
             ast_call("join", smallvec![
@@ -1818,28 +1806,28 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "join".to_string(),
                                                     args: vec![1.to_string().into(), "#".to_string().into()]})))]
-    #[case::reverse_string(vec![RuntimeValue::String("test".to_string())],
+    #[case::reverse_string(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("reverse", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("tset".to_string())]))]
-    #[case::reverse_string_empty(vec![RuntimeValue::String("".to_string())],
+       Ok(vec![RuntimeValue::String("tset".into())]))]
+    #[case::reverse_string_empty(vec![RuntimeValue::String("".into())],
        vec![
             ast_call("reverse", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("".to_string())]))]
+       Ok(vec![RuntimeValue::String("".into())]))]
     #[case::reverse_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("c".into()),
         ])],
         vec![
             ast_call("reverse", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("c".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String("c".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("a".into()),
         ])]))]
     #[case::reverse_array_empty(vec![RuntimeValue::Array(Vec::new())],
         vec![
@@ -1853,13 +1841,13 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "reverse".to_string(),
                                                     args: vec![123.to_string().into()]})))]
-    #[case::base64(vec![RuntimeValue::String("test".to_string())],
+    #[case::base64(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("base64", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::String("dGVzdA==".to_string())]))]
+       Ok(vec![RuntimeValue::String("dGVzdA==".into())]))]
     #[case::base64(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value:"test".to_string(), position: None}), None)],
        vec![
             ast_call("base64", SmallVec::new())
@@ -1872,13 +1860,13 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64".to_string(),
                                                     args: vec![1.to_string().into()]})))]
-    #[case::base64d(vec![RuntimeValue::String("dGVzdA==".to_string())],
+    #[case::base64d(vec![RuntimeValue::String("dGVzdA==".into())],
        vec![
             ast_call("base64d", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("dGVzdA==".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
+       Ok(vec![RuntimeValue::String("test".into())]))]
     #[case::base64d(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value:"dGVzdA==".to_string(), position: None}), None)],
        vec![
             ast_call("base64d", smallvec![
@@ -1893,7 +1881,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64d".to_string(),
                                                     args: vec![1.to_string().into()]})))]
-    #[case::def(vec![RuntimeValue::String("test1,test2".to_string())],
+    #[case::def(vec![RuntimeValue::String("test1,test2".into())],
        vec![
             ast_node(ast::Expr::Def(
                 ast::Ident::new("split2"),
@@ -1911,8 +1899,8 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("test1,test2".to_string()))),
             ]),
        ],
-       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])]))]
-    #[case::def2(vec![RuntimeValue::String("Hello".to_string())],
+       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into())])]))]
+    #[case::def2(vec![RuntimeValue::String("Hello".into())],
        vec![
             ast_node(ast::Expr::Def(
                 ast::Ident::new("concat_self"),
@@ -1932,8 +1920,8 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("World".to_string()))),
             ])
        ],
-       Ok(vec![RuntimeValue::String("HelloWorld".to_string())]))]
-    #[case::def3(vec![RuntimeValue::String("Test".to_string())],
+       Ok(vec![RuntimeValue::String("HelloWorld".into())]))]
+    #[case::def3(vec![RuntimeValue::String("Test".into())],
        vec![
             ast_node(ast::Expr::Def(
                 ast::Ident::new("prepend_self"),
@@ -1952,28 +1940,28 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
             ])
        ],
-       Ok(vec![RuntimeValue::String("Testtest".to_string())]))]
-    #[case::type_string(vec![RuntimeValue::String("test".to_string())],
+       Ok(vec![RuntimeValue::String("Testtest".into())]))]
+    #[case::type_string(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("type", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("string".to_string())]))]
+       Ok(vec![RuntimeValue::String("string".into())]))]
     #[case::type_int(vec![RuntimeValue::Number(42.into())],
        vec![
             ast_call("type", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("number".to_string())]))]
+       Ok(vec![RuntimeValue::String("number".into())]))]
     #[case::type_bool(vec![RuntimeValue::TRUE],
        vec![
             ast_call("type", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("bool".to_string())]))]
-    #[case::type_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".to_string())])],
+       Ok(vec![RuntimeValue::String("bool".into())]))]
+    #[case::type_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("test".into())])],
        vec![
             ast_call("type", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("array".to_string())]))]
-    #[case::min(vec![RuntimeValue::String("test".to_string())],
+       Ok(vec![RuntimeValue::String("array".into())]))]
+    #[case::min(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("min", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -1981,7 +1969,7 @@ mod tests {
                 ])
         ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::min(vec![RuntimeValue::String("test".to_string())],
+    #[case::min(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("min", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
@@ -1996,7 +1984,7 @@ mod tests {
             ])
         ],
        Ok(vec![RuntimeValue::Number(1.into())]))]
-    #[case::min(vec![RuntimeValue::String("test".to_string())],
+    #[case::min(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("min", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -2006,7 +1994,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "min".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
-    #[case::max(vec![RuntimeValue::String("test".to_string())],
+    #[case::max(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("max", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
@@ -2014,7 +2002,7 @@ mod tests {
                 ])
             ],
        Ok(vec![RuntimeValue::Number(2.into())]))]
-    #[case::max(vec![RuntimeValue::String("test".to_string())],
+    #[case::max(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("max", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("1".into()))),
@@ -2029,7 +2017,7 @@ mod tests {
                 ])
             ],
        Ok(vec![RuntimeValue::Number(3.into())]))]
-    #[case::max(vec![RuntimeValue::String("test".to_string())],
+    #[case::max(vec![RuntimeValue::String("test".into())],
        vec![
             ast_call("max", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
@@ -2039,11 +2027,11 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "max".to_string(),
                                                     args: vec!["te".to_string().into(), 1.to_string().into()]})))]
-    #[case::trim(vec![RuntimeValue::String("  test  ".to_string())],
+    #[case::trim(vec![RuntimeValue::String("  test  ".into())],
        vec![
             ast_call("trim", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
+       Ok(vec![RuntimeValue::String("test".into())]))]
     #[case::trim(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "  test  ".to_string(), position: None}), None)],
        vec![
             ast_call("trim", SmallVec::new())
@@ -2064,22 +2052,22 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
-    #[case::slice(vec![RuntimeValue::String("testString".to_string())],
+    #[case::slice(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("slice", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
             ])
        ],
-       Ok(vec![RuntimeValue::String("test".to_string())]))]
-    #[case::slice(vec![RuntimeValue::String("testString".to_string())],
+       Ok(vec![RuntimeValue::String("test".into())]))]
+    #[case::slice(vec![RuntimeValue::String("testString".into())],
        vec![
             ast_call("slice", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(10.into()))),
             ])
        ],
-       Ok(vec![RuntimeValue::String("String".to_string())]))]
+       Ok(vec![RuntimeValue::String("String".into())]))]
     #[case::slice(vec![RuntimeValue::NONE],
        vec![
             ast_call("slice", smallvec![
@@ -2089,11 +2077,11 @@ mod tests {
        ],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::slice_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
-            RuntimeValue::String("item4".to_string()),
-            RuntimeValue::String("item5".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
+            RuntimeValue::String("item4".into()),
+            RuntimeValue::String("item5".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -2102,14 +2090,14 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
-            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
+            RuntimeValue::String("item4".into()),
         ])]))]
     #[case::slice_array_from_start(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -2118,13 +2106,13 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
         ])]))]
     #[case::slice_array_to_end(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -2133,13 +2121,13 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
        ])]))]
     #[case::slice_array_out_of_bounds(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -2148,7 +2136,7 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item3".into()),
         ])]))]
     #[case::slice_array_empty(vec![RuntimeValue::Array(Vec::new())],
        vec![
@@ -2159,10 +2147,10 @@ mod tests {
        ],
        Ok(vec![RuntimeValue::Array(Vec::new())]))]
     #[case::slice_array_mixed_types(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
+            RuntimeValue::String("item1".into()),
             RuntimeValue::Number(42.into()),
             RuntimeValue::Bool(true),
-            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item4".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -2184,13 +2172,13 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "slice".to_string(),
                                                     args: vec![123.to_string().into(), 0.to_string().into(), 4.to_string().into()]})))]
-    #[case::match_regex1(vec![RuntimeValue::String("test123".to_string())],
+    #[case::match_regex1(vec![RuntimeValue::String("test123".into())],
        vec![
             ast_call("match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
-       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("123".to_string())])]))]
+       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("123".into())])]))]
     #[case::match_regex2(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
        vec![
             ast_call("match", smallvec![
@@ -2207,7 +2195,7 @@ mod tests {
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "match".to_string(),
                                                     args: vec![123.to_string().into(), r"\d+".to_string().into()]})))]
-    #[case::explode(vec![RuntimeValue::String("ABC".to_string())],
+    #[case::explode(vec![RuntimeValue::String("ABC".into())],
        vec![
             ast_call("explode", SmallVec::new())
        ],
@@ -2231,7 +2219,7 @@ mod tests {
        vec![
             ast_call("implode", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("ABC".to_string())]))]
+       Ok(vec![RuntimeValue::String("ABC".into())]))]
     #[case::implode(vec!["test".to_string().into()],
        vec![
             ast_call("implode", SmallVec::new())
@@ -2244,7 +2232,7 @@ mod tests {
              ast_call("explode", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "[65, 66, 67]".to_string(), position: None}), None)]))]
-    #[case::to_number(vec![RuntimeValue::String("42".to_string())],
+    #[case::to_number(vec![RuntimeValue::String("42".into())],
        vec![
             ast_call("to_number", SmallVec::new())
        ],
@@ -2254,17 +2242,17 @@ mod tests {
             ast_call("to_number", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "42".to_string(), position: None}), None)]))]
-    #[case::to_number(vec![RuntimeValue::String("42.5".to_string())],
+    #[case::to_number(vec![RuntimeValue::String("42.5".into())],
        vec![
             ast_call("to_number", SmallVec::new())
        ],
        Ok(vec![RuntimeValue::Number(42.5.into())]))]
-    #[case::to_number(vec![RuntimeValue::String("not a number".to_string())],
+    #[case::to_number(vec![RuntimeValue::String("not a number".into())],
        vec![
             ast_call("to_number", SmallVec::new())
        ],
        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
-    #[case::to_number_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::String("43".to_string()), RuntimeValue::String("44".to_string())])],
+    #[case::to_number_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".into()), RuntimeValue::String("43".into()), RuntimeValue::String("44".into())])],
         vec![
               ast_call("to_number", SmallVec::new())
         ],
@@ -2274,7 +2262,7 @@ mod tests {
               ast_call("to_number", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into())])]))]
-    #[case::to_number_array_with_invalid(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::String("not a number".to_string()), RuntimeValue::String("44".to_string())])],
+    #[case::to_number_array_with_invalid(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".into()), RuntimeValue::String("not a number".into()), RuntimeValue::String("44".into())])],
         vec![
               ast_call("to_number", SmallVec::new())
         ],
@@ -2284,7 +2272,7 @@ mod tests {
               ast_call("to_number", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(Vec::new())]))]
-    #[case::to_number_array_mixed_types(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::Number(43.into()), RuntimeValue::String("44".to_string())])],
+    #[case::to_number_array_mixed_types(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".into()), RuntimeValue::Number(43.into()), RuntimeValue::String("44".into())])],
         vec![
               ast_call("to_number", SmallVec::new())
         ],
@@ -2326,7 +2314,7 @@ mod tests {
             ast_call("abs", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Number(42.5.into())]))]
-    #[case::abs_invalid_type(vec![RuntimeValue::String("42".to_string())],
+    #[case::abs_invalid_type(vec![RuntimeValue::String("42".into())],
         vec![
             ast_call("abs", SmallVec::new())
         ],
@@ -2384,27 +2372,27 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "floor".to_string(),
                                                      args: vec!["42.9".to_string().into()]})))]
-    #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])],
+    #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into())])],
         vec![
               ast_call("del", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
               ]),
         ],
-        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test2".to_string())])]))]
-    #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test2".into())])]))]
+    #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into()), RuntimeValue::String("test2".into())])],
         vec![
               ast_call("del", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
               ]),
         ],
-        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string())])]))]
-    #[case::del(vec![RuntimeValue::String("test1".to_string())],
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".into())])]))]
+    #[case::del(vec![RuntimeValue::String("test1".into())],
         vec![
               ast_call("del", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
               ]),
         ],
-        Ok(vec![RuntimeValue::String("test".to_string())]))]
+        Ok(vec![RuntimeValue::String("test".into())]))]
     #[case::del(vec![RuntimeValue::Number(123.into())],
         vec![
               ast_call("del", smallvec![
@@ -2414,14 +2402,14 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "del".to_string(),
                                                      args: vec!["123".to_string().into(), "4".to_string().into()]})))]
-    #[case::to_code(vec![RuntimeValue::String("test1".to_string())],
+    #[case::to_code(vec![RuntimeValue::String("test1".into())],
         vec![
               ast_call("to_code", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: Some("elm".to_string()), value: "test1".to_string(), fence: true, meta: None, position: None}), None)]))]
-    #[case::to_code(vec![RuntimeValue::String("test1".to_string())],
+    #[case::to_code(vec![RuntimeValue::String("test1".into())],
         vec![
               ast_call("to_code", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
@@ -2429,28 +2417,28 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code{lang: None, value: "elm".to_string(), fence: true, meta: None, position: None}), None)]))]
-    #[case::md_h1(vec![RuntimeValue::String("Heading 1".to_string())],
+    #[case::md_h1(vec![RuntimeValue::String("Heading 1".into())],
         vec![
               ast_call("to_h", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}), None)]))]
-    #[case::md_h2(vec![RuntimeValue::String("Heading 2".to_string())],
+    #[case::md_h2(vec![RuntimeValue::String("Heading 2".into())],
         vec![
               ast_call("to_h", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading 2".to_string().into()], position: None}), None)]))]
-    #[case::md_h3(vec![RuntimeValue::String("Heading 3".to_string())],
+    #[case::md_h3(vec![RuntimeValue::String("Heading 3".into())],
         vec![
               ast_call("to_h", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::Number(3.into()))),
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 3, values: vec!["Heading 3".to_string().into()], position: None}), None)]))]
-    #[case::md_h3(vec![RuntimeValue::String("Heading 3".to_string())],
+    #[case::md_h3(vec![RuntimeValue::String("Heading 3".into())],
         vec![
               ast_call("to_h", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("3".into()))),
@@ -2464,22 +2452,22 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 2, values: vec!["Heading".to_string().into()], position: None}), None)]))]
-    #[case::to_math(vec![RuntimeValue::String("E=mc^2".to_string())],
+    #[case::to_math(vec![RuntimeValue::String("E=mc^2".into())],
         vec![
               ast_call("to_math", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}), None)]))]
-    #[case::to_math_inline(vec![RuntimeValue::String("E=mc^2".to_string())],
+    #[case::to_math_inline(vec![RuntimeValue::String("E=mc^2".into())],
         vec![
               ast_call("to_math_inline", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".into(), position: None}), None)]))]
-    #[case::to_md_text(vec![RuntimeValue::String("This is a text".to_string())],
+    #[case::to_md_text(vec![RuntimeValue::String("This is a text".into())],
         vec![
               ast_call("to_md_text", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "This is a text".to_string(), position: None}), None)]))]
-    #[case::to_strong(vec![RuntimeValue::String("Bold text".to_string())],
+    #[case::to_strong(vec![RuntimeValue::String("Bold text".into())],
         vec![
               ast_call("to_strong", SmallVec::new()),
         ],
@@ -2489,7 +2477,7 @@ mod tests {
               ast_call("to_strong", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Bold text".to_string(), position: None})], position: None}), None)]))]
-    #[case::to_em(vec![RuntimeValue::String("Italic text".to_string())],
+    #[case::to_em(vec![RuntimeValue::String("Italic text".into())],
         vec![
               ast_call("to_em", SmallVec::new()),
         ],
@@ -2499,7 +2487,7 @@ mod tests {
               ast_call("to_em", SmallVec::new()),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "Italic text".to_string(), position: None})], position: None}), None)]))]
-    #[case::to_image(vec![RuntimeValue::String("Image Alt".to_string())],
+    #[case::to_image(vec![RuntimeValue::String("Image Alt".into())],
         vec![
               ast_call("to_image", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("https://example.com/image.png".to_string()))),
@@ -2513,7 +2501,7 @@ mod tests {
             title: Some("Image Title".to_string()),
             position: None
         }), None)]))]
-    #[case::to_link(vec![RuntimeValue::String("Link Text".to_string())],
+    #[case::to_link(vec![RuntimeValue::String("Link Text".into())],
         vec![
               ast_call("to_link", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("https://example.com".to_string()))),
@@ -2535,7 +2523,7 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::NONE]))]
-    #[case::to_hr(vec![RuntimeValue::String("".to_owned())],
+    #[case::to_hr(vec![RuntimeValue::String("".into())],
         vec![
               ast_call("to_hr", SmallVec::new()),
         ],
@@ -2549,7 +2537,7 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(
             mq_markdown::List{values: vec!["list".to_string().into()], ordered: false, index: 0, level: 1_u8, checked: None, position: None}), None)]))]
-    #[case::to_md_list(vec![RuntimeValue::String("list".to_string())],
+    #[case::to_md_list(vec![RuntimeValue::String("list".into())],
         vec![
               ast_call("to_md_list",
                        smallvec![
@@ -2573,34 +2561,34 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::List(mq_markdown::List{values: vec!["Unchecked Item".to_string().into()], ordered: false, level: 0, index: 0, checked: Some(false), position: None}), None)]))]
     #[case::compact(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
+            RuntimeValue::String("test1".into()),
             RuntimeValue::NONE,
-            RuntimeValue::String("test2".to_string()),
+            RuntimeValue::String("test2".into()),
             RuntimeValue::NONE,
-            RuntimeValue::String("test3".to_string()),
+            RuntimeValue::String("test3".into()),
         ])],
         vec![
             ast_call("compact", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::String("test2".to_string()),
-            RuntimeValue::String("test3".to_string()),
+            RuntimeValue::String("test1".into()),
+            RuntimeValue::String("test2".into()),
+            RuntimeValue::String("test3".into()),
         ])]))]
     #[case::compact(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
+            RuntimeValue::String("test1".into()),
             RuntimeValue::NONE,
-            RuntimeValue::String("test2".to_string()),
+            RuntimeValue::String("test2".into()),
             RuntimeValue::NONE,
-            RuntimeValue::String("test3".to_string()),
+            RuntimeValue::String("test3".into()),
         ])],
         vec![
             ast_call("compact", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::String("test2".to_string()),
-            RuntimeValue::String("test3".to_string()),
+            RuntimeValue::String("test1".into()),
+            RuntimeValue::String("test2".into()),
+            RuntimeValue::String("test3".into()),
         ])]))]
     #[case::compact_empty(vec![RuntimeValue::Array(vec![
             RuntimeValue::NONE,
@@ -2611,15 +2599,15 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Array(Vec::new())]))]
     #[case::compact_no_none(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::String("test2".to_string()),
+            RuntimeValue::String("test1".into()),
+            RuntimeValue::String("test2".into()),
         ])],
         vec![
             ast_call("compact", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test1".to_string()),
-            RuntimeValue::String("test2".to_string()),
+            RuntimeValue::String("test1".into()),
+            RuntimeValue::String("test2".into()),
         ])]))]
     #[case::compact_error(vec!["test".to_string().into()],
         vec![
@@ -2639,9 +2627,9 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment { values: vec!["Heading 1".to_string().into()] }), None)]))]
     #[case::to_md_table_row(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("Cell 1".to_string()),
-            RuntimeValue::String("Cell 2".to_string()),
-            RuntimeValue::String("Cell 3".to_string()),
+            RuntimeValue::String("Cell 1".into()),
+            RuntimeValue::String("Cell 2".into()),
+            RuntimeValue::String("Cell 3".into()),
         ])],
         vec![
             ast_call("to_md_table_row", SmallVec::new())
@@ -2675,7 +2663,7 @@ mod tests {
             ],
             position: None
         }), None)]))]
-    #[case::to_md_table_row(vec![RuntimeValue::String("Cell 4".to_string())],
+    #[case::to_md_table_row(vec![RuntimeValue::String("Cell 4".into())],
         vec![
             ast_call("to_md_table_row", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("Cell 1".to_string()))),
@@ -2723,12 +2711,12 @@ mod tests {
              ast_call("get_title", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
-    #[case::get_string(vec![RuntimeValue::String("test1".to_string())],
+    #[case::get_string(vec![RuntimeValue::String("test1".into())],
         vec![
             ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
         ],
-        Ok(vec![RuntimeValue::String("t".to_string())]))]
-    #[case::get_string(vec![RuntimeValue::String("test1".to_string())],
+        Ok(vec![RuntimeValue::String("t".into())]))]
+    #[case::get_string(vec![RuntimeValue::String("test1".into())],
         vec![
             ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(5.into())))])
         ],
@@ -2751,22 +2739,22 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("%Y-%m-%d".to_string())))
             ])
         ],
-        Ok(vec![RuntimeValue::String("2021-01-01".to_string())]))]
+        Ok(vec![RuntimeValue::String("2021-01-01".into())]))]
     #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
         vec![
             ast_call("to_date", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("%Y/%m/%d %H:%M:%S".to_string())))
             ])
         ],
-        Ok(vec![RuntimeValue::String("2021/01/01 00:00:00".to_string())]))]
+        Ok(vec![RuntimeValue::String("2021/01/01 00:00:00".into())]))]
     #[case::to_date(vec![RuntimeValue::Number(1609488000000_i64.into())],
         vec![
             ast_call("to_date", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("%d %b %Y %H:%M".to_string())))
             ])
         ],
-        Ok(vec![RuntimeValue::String("01 Jan 2021 08:00".to_string())]))]
-    #[case::to_date(vec![RuntimeValue::String("test".to_string())],
+        Ok(vec![RuntimeValue::String("01 Jan 2021 08:00".into())]))]
+    #[case::to_date(vec![RuntimeValue::String("test".into())],
         vec![
             ast_call("to_date", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String("%Y-%m-%d".to_string())))
@@ -2776,7 +2764,7 @@ mod tests {
                                                      name: "to_date".to_string(),
                                                      args: vec!["test".to_string().into(), "%Y-%m-%d".to_string().into()]})))]
     #[case::to_string_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("test".to_string()),
+            RuntimeValue::String("test".into()),
             RuntimeValue::Number(1.into()),
             RuntimeValue::Number(2.into()),
             RuntimeValue::Bool(false),
@@ -2784,13 +2772,13 @@ mod tests {
         vec![
             ast_call("to_string", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::String(r#"["test", 1, 2, false]"#.to_string())]))]
+        Ok(vec![RuntimeValue::String(r#"["test", 1, 2, false]"#.into())]))]
     #[case::to_string_empty_array(vec![RuntimeValue::Array(Vec::new())],
         vec![
             ast_call("to_string", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::String("[]".to_string())]))]
-    #[case::to_text(vec![RuntimeValue::String("test".to_string())],
+        Ok(vec![RuntimeValue::String("[]".into())]))]
+    #[case::to_text(vec![RuntimeValue::String("test".into())],
         vec![
              ast_call("to_text", SmallVec::new())
         ],
@@ -2810,7 +2798,7 @@ mod tests {
              ast_call("to_text", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Heading".to_string(), position: None}), None)]))]
-    #[case::to_text(vec![RuntimeValue::String("Original".to_string())],
+    #[case::to_text(vec![RuntimeValue::String("Original".into())],
         vec![
              ast_call("to_text",
               smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("Override".to_string())))])
@@ -2821,16 +2809,16 @@ mod tests {
              ast_call("to_text", SmallVec::new())
         ],
         Ok(vec!["val1,val2".to_string().into()]))]
-    #[case::url_encode(vec![RuntimeValue::String("test string with spaces".to_string())],
+    #[case::url_encode(vec![RuntimeValue::String("test string with spaces".into())],
         vec![
              ast_call("url_encode", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::String("test%20string%20with%20spaces".to_string())]))]
-    #[case::url_encode(vec![RuntimeValue::String("test!@#$%^&*()".to_string())],
+        Ok(vec![RuntimeValue::String("test%20string%20with%20spaces".into())]))]
+    #[case::url_encode(vec![RuntimeValue::String("test!@#$%^&*()".into())],
         vec![
              ast_call("url_encode", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::String("test%21%40%23%24%25%5E%26%2A%28%29".to_string())]))]
+        Ok(vec![RuntimeValue::String("test%21%40%23%24%25%5E%26%2A%28%29".into())]))]
     #[case::url_encode(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test string".to_string(), position: None}), None)],
         vec![
              ast_call("url_encode", SmallVec::new())
@@ -2840,7 +2828,7 @@ mod tests {
         vec![
              ast_call("url_encode", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::String("1".to_string())]))]
+        Ok(vec![RuntimeValue::String("1".into())]))]
     #[case::update(vec!["".to_string().into()],
         vec![
              ast_call("update", smallvec![
@@ -2848,7 +2836,7 @@ mod tests {
               ast_node(ast::Expr::Literal(ast::Literal::String("updated".to_string()))),
              ])
         ],
-        Ok(vec![RuntimeValue::String("updated".to_string())]))]
+        Ok(vec![RuntimeValue::String("updated".into())]))]
     #[case::update(vec!["".to_string().into()],
         vec![
              ast_call("update", smallvec![
@@ -2872,17 +2860,17 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec![mq_markdown::Node::Text(mq_markdown::Text{value: "text2".to_string(), position: None})], position: None}), None)]))]
     #[case::sort_string_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("c".to_string()),
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("c".into()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
         ])],
         vec![
             ast_call("sort", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("c".into()),
         ])]))]
     #[case::sort_number_array(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(3.into()),
@@ -2910,19 +2898,19 @@ mod tests {
                                                      name: "sort".to_string(),
                                                      args: vec![1.to_string().into()]})))]
     #[case::uniq_string_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("c".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("c".into()),
+            RuntimeValue::String("b".into()),
         ])],
         vec![
             ast_call("uniq", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("c".into()),
         ])]))]
     #[case::uniq_number_array(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(1.into()),
@@ -2976,7 +2964,7 @@ mod tests {
              ast_call("to_html", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "<pre><code class=\"language-rust\">println!(&quot;Hello&quot;);\n</code></pre>".to_string(), position: None}), None)]))]
-    #[case::to_html(vec![RuntimeValue::String("Plain text".to_string())],
+    #[case::to_html(vec![RuntimeValue::String("Plain text".into())],
         vec![
              ast_call("to_html", SmallVec::new())
         ],
@@ -2988,13 +2976,13 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "to_html".to_string(),
                                                      args: vec![1.to_string().into()]})))]
-    #[case::repeat_string(vec![RuntimeValue::String("abc".to_string())],
+    #[case::repeat_string(vec![RuntimeValue::String("abc".into())],
         vec![
             ast_call("repeat", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(3.into())))
             ])
         ],
-        Ok(vec![RuntimeValue::String("abcabcabc".to_string())]))]
+        Ok(vec![RuntimeValue::String("abcabcabc".into())]))]
     #[case::repeat_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "abc".to_string(), position: None}), None)],
         vec![
             ast_call("repeat", smallvec![
@@ -3002,16 +2990,16 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "abcabcabc".to_string(), position: None}), None)]))]
-    #[case::repeat_string_zero(vec![RuntimeValue::String("abc".to_string())],
+    #[case::repeat_string_zero(vec![RuntimeValue::String("abc".into())],
         vec![
             ast_call("repeat", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))
             ])
         ],
-        Ok(vec![RuntimeValue::String("".to_string())]))]
+        Ok(vec![RuntimeValue::String("".into())]))]
     #[case::repeat_array(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
         ])],
         vec![
             ast_call("repeat", smallvec![
@@ -3019,14 +3007,14 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
         ])]))]
     #[case::repeat_array_zero(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
         ])],
         vec![
             ast_call("repeat", smallvec![
@@ -3034,7 +3022,7 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::Array(Vec::new())]))]
-    #[case::repeat_invalid_count(vec![RuntimeValue::String("abc".to_string())],
+    #[case::repeat_invalid_count(vec![RuntimeValue::String("abc".into())],
         vec![
             ast_call("repeat", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into())))
@@ -3050,17 +3038,17 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "repeat".to_string(),
                                                      args: vec![42.to_string().into(), 3.to_string().into()]})))]
-    #[case::debug(vec![RuntimeValue::String("test".to_string())],
+    #[case::debug(vec![RuntimeValue::String("test".into())],
         vec![
             ast_call("stderr", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::String("test".to_string())]))]
-    #[case::from_date(vec![RuntimeValue::String("2025-03-15T20:00:00+09:00".to_string())],
+        Ok(vec![RuntimeValue::String("test".into())]))]
+    #[case::from_date(vec![RuntimeValue::String("2025-03-15T20:00:00+09:00".into())],
         vec![
             ast_call("from_date", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Number(1742036400000_i64.into())]))]
-    #[case::from_date_invalid_format(vec![RuntimeValue::String("2021-01-01".to_string())],
+    #[case::from_date_invalid_format(vec![RuntimeValue::String("2021-01-01".into())],
         vec![
             ast_call("from_date", SmallVec::new())
         ],
@@ -3072,7 +3060,7 @@ mod tests {
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "from_date".to_string(),
                                                      args: vec![1.to_string().into()]})))]
-    #[case::to_code_inline(vec![RuntimeValue::String("test1".to_string())],
+    #[case::to_code_inline(vec![RuntimeValue::String("test1".into())],
         vec![
               ast_call("to_code_inline", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("elm".into()))),
@@ -3179,13 +3167,13 @@ mod tests {
                  ])
             ],
             Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "Simple text".to_string(), position: None}), None)]))]
-    #[case::set_ref_plain_string(vec![RuntimeValue::String("Not a markdown".to_string())],
+    #[case::set_ref_plain_string(vec![RuntimeValue::String("Not a markdown".into())],
             vec![
                  ast_call("set_ref", smallvec![
                      ast_node(ast::Expr::Literal(ast::Literal::String("string-ref".to_string())))
                  ])
             ],
-            Ok(vec![RuntimeValue::String("Not a markdown".to_string())]))]
+            Ok(vec![RuntimeValue::String("Not a markdown".into())]))]
     #[case::set_ref_none(vec![RuntimeValue::NONE],
             vec![
                  ast_call("set_ref", smallvec![
@@ -3220,53 +3208,53 @@ mod tests {
              ast_call("get_url", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Empty, None)]))]
-    #[case::get_url_string(vec![RuntimeValue::String("Not a markdown".to_string())],
+    #[case::get_url_string(vec![RuntimeValue::String("Not a markdown".into())],
         vec![
              ast_call("get_url", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::NONE]))]
     #[case::flatten_array_of_arrays(vec![RuntimeValue::Array(vec![
-                RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]),
-                RuntimeValue::Array(vec![RuntimeValue::String("c".to_string()), RuntimeValue::String("d".to_string())])
+                RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::String("b".into())]),
+                RuntimeValue::Array(vec![RuntimeValue::String("c".into()), RuntimeValue::String("d".into())])
             ])],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("d".to_string())
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("d".into())
             ])]))]
     #[case::flatten_array_with_nested_arrays(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::Array(vec![RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]),
-                RuntimeValue::String("d".to_string())
+                RuntimeValue::String("a".into()),
+                RuntimeValue::Array(vec![RuntimeValue::String("b".into()), RuntimeValue::String("c".into())]),
+                RuntimeValue::String("d".into())
             ])],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("d".to_string())
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("d".into())
             ])]))]
     #[case::flatten_deeply_nested_arrays(vec![RuntimeValue::Array(vec![
                 RuntimeValue::Array(vec![
-                    RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]),
-                    RuntimeValue::String("c".to_string())
+                    RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::String("b".into())]),
+                    RuntimeValue::String("c".into())
                 ]),
-                RuntimeValue::String("d".to_string())
+                RuntimeValue::String("d".into())
             ])],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("d".to_string())
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("d".into())
             ])]))]
     #[case::flatten_empty_array(vec![RuntimeValue::Array(Vec::new())],
             vec![
@@ -3282,45 +3270,45 @@ mod tests {
             ],
             Ok(vec![RuntimeValue::Array(Vec::new())]))]
     #[case::flatten_mixed_type_arrays(vec![RuntimeValue::Array(vec![
-                RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into())]),
-                RuntimeValue::Array(vec![RuntimeValue::Bool(true), RuntimeValue::String("b".to_string())])
+                RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::Number(1.into())]),
+                RuntimeValue::Array(vec![RuntimeValue::Bool(true), RuntimeValue::String("b".into())])
             ])],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("a".into()),
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Bool(true),
-                RuntimeValue::String("b".to_string())
+                RuntimeValue::String("b".into())
             ])]))]
     #[case::flatten_array_with_none_values(vec![RuntimeValue::Array(vec![
-                RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::NONE]),
-                RuntimeValue::Array(vec![RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())])
+                RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::NONE]),
+                RuntimeValue::Array(vec![RuntimeValue::String("b".into()), RuntimeValue::String("c".into())])
             ])],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("a".into()),
                 RuntimeValue::NONE,
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string())
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("c".into())
             ])]))]
-    #[case::flatten_non_array(vec![RuntimeValue::String("test".to_string())],
+    #[case::flatten_non_array(vec![RuntimeValue::String("test".into())],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
-            Ok(vec![RuntimeValue::String("test".to_string())]))]
+            Ok(vec![RuntimeValue::String("test".into())]))]
     #[case::flatten_none(vec![RuntimeValue::NONE],
             vec![
                 ast_call("flatten", SmallVec::new())
             ],
             Ok(vec![RuntimeValue::NONE]))]
     #[case::set_array_valid_index(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3329,14 +3317,14 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("updated".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("updated".into()),
+        RuntimeValue::String("item3".into()),
         ])]))]
     #[case::set_array_first_index(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3345,14 +3333,14 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("first".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("first".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])]))]
     #[case::set_array_last_index(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3361,13 +3349,13 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("last".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("last".into()),
         ])]))]
     #[case::set_array_out_of_bounds_positive(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3376,17 +3364,17 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
         RuntimeValue::NONE,
         RuntimeValue::NONE,
         RuntimeValue::NONE,
-        RuntimeValue::String("new".to_string()),
+        RuntimeValue::String("new".into()),
         ])]))]
     #[case::set_array_negative_index(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3395,9 +3383,9 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("negative".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("negative".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])]))]
     #[case::set_array_empty(vec![RuntimeValue::Array(Vec::new())],
         vec![
@@ -3408,7 +3396,7 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Array(vec!["value".into()])]))]
     #[case::set_array_mixed_types(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("text".to_string()),
+        RuntimeValue::String("text".into()),
         RuntimeValue::Number(42.into()),
         RuntimeValue::Bool(true),
         ])],
@@ -3419,14 +3407,14 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("text".to_string()),
-        RuntimeValue::String("replaced".to_string()),
+        RuntimeValue::String("text".into()),
+        RuntimeValue::String("replaced".into()),
         RuntimeValue::Bool(true),
         ])]))]
     #[case::set_array_with_none(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item1".into()),
         RuntimeValue::NONE,
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item3".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3435,14 +3423,14 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("not_none".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("not_none".into()),
+        RuntimeValue::String("item3".into()),
         ])]))]
     #[case::set_array_replace_with_none(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
+        RuntimeValue::String("item3".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3451,12 +3439,12 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
+        RuntimeValue::String("item1".into()),
         RuntimeValue::NONE,
-        RuntimeValue::String("item3".to_string()),
+        RuntimeValue::String("item3".into()),
         ])]))]
     #[case::set_array_single_element(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("only".to_string()),
+        RuntimeValue::String("only".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3465,9 +3453,9 @@ mod tests {
         ])
         ],
         Ok(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("changed".to_string()),
+        RuntimeValue::String("changed".into()),
         ])]))]
-    #[case::set_non_array(vec![RuntimeValue::String("not_an_array".to_string())],
+    #[case::set_non_array(vec![RuntimeValue::String("not_an_array".into())],
         vec![
         ast_call("set", smallvec![
             ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
@@ -3478,8 +3466,8 @@ mod tests {
                              name: "set".to_string(),
                              args: vec!["not_an_array".to_string().into(), 0.to_string().into(), "value".to_string().into()]})))]
     #[case::set_array_non_number_index(vec![RuntimeValue::Array(vec![
-        RuntimeValue::String("item1".to_string()),
-        RuntimeValue::String("item2".to_string()),
+        RuntimeValue::String("item1".into()),
+        RuntimeValue::String("item2".into()),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3491,9 +3479,9 @@ mod tests {
                              name: "set".to_string(),
                              args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
     #[case::del_dict_valid_key(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
-            ("key3".to_string(), RuntimeValue::String("value3".to_string())),
+            ("key1".into(), RuntimeValue::String("value1".into())),
+            ("key2".into(), RuntimeValue::String("value2".into())),
+            ("key3".into(), RuntimeValue::String("value3".into())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3501,12 +3489,12 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key3".to_string(), RuntimeValue::String("value3".to_string())),
+            ("key1".into(), RuntimeValue::String("value1".into())),
+            ("key3".into(), RuntimeValue::String("value3".into())),
         ].into_iter().collect())]))]
     #[case::del_dict_nonexistent_key(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            ("key1".into(), RuntimeValue::String("value1".into())),
+            ("key2".into(), RuntimeValue::String("value2".into())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3514,8 +3502,8 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            ("key1".into(), RuntimeValue::String("value1".into())),
+            ("key2".into(), RuntimeValue::String("value2".into())),
         ].into_iter().collect())]))]
     #[case::del_dict_empty(vec![RuntimeValue::new_dict()],
         vec![
@@ -3525,7 +3513,7 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::new_dict()]))]
     #[case::del_dict_single_key(vec![RuntimeValue::Dict(vec![
-            ("only_key".to_string(), RuntimeValue::String("only_value".to_string())),
+            ("only_key".into(), RuntimeValue::String("only_value".into())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3534,10 +3522,10 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::new_dict()]))]
     #[case::del_dict_mixed_value_types(vec![RuntimeValue::Dict(vec![
-            ("str_key".to_string(), RuntimeValue::String("string_value".to_string())),
-            ("num_key".to_string(), RuntimeValue::Number(42.into())),
-            ("bool_key".to_string(), RuntimeValue::Bool(true)),
-            ("array_key".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
+            ("str_key".into(), RuntimeValue::String("string_value".into())),
+            ("num_key".into(), RuntimeValue::Number(42.into())),
+            ("bool_key".into(), RuntimeValue::Bool(true)),
+            ("array_key".into(), RuntimeValue::Array(vec![RuntimeValue::String("item".into())])),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3545,13 +3533,13 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("str_key".to_string(), RuntimeValue::String("string_value".to_string())),
-            ("bool_key".to_string(), RuntimeValue::Bool(true)),
-            ("array_key".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
+            ("str_key".into(), RuntimeValue::String("string_value".into())),
+            ("bool_key".into(), RuntimeValue::Bool(true)),
+            ("array_key".into(), RuntimeValue::Array(vec![RuntimeValue::String("item".into())])),
         ].into_iter().collect())]))]
     #[case::del_dict_with_number_key_as_string(vec![RuntimeValue::Dict(vec![
-            ("1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("2".to_string(), RuntimeValue::String("value2".to_string())),
+            ("1".into(), RuntimeValue::String("value1".into())),
+            ("2".into(), RuntimeValue::String("value2".into())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3559,11 +3547,11 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("2".to_string(), RuntimeValue::String("value2".to_string())),
+            ("2".into(), RuntimeValue::String("value2".into())),
         ].into_iter().collect())]))]
     #[case::del_dict_with_number_index_error(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            ("key1".into(), RuntimeValue::String("value1".into())),
+            ("key2".into(), RuntimeValue::String("value2".into())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3676,13 +3664,13 @@ mod tests {
             position: None,
         }), None)]))]
     #[case::set_list_ordered_non_list(
-        vec![RuntimeValue::String("not a list".to_string())],
+        vec![RuntimeValue::String("not a list".into())],
         vec![
             ast_call("set_list_ordered", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
             ])
         ],
-        Ok(vec![RuntimeValue::String("not a list".to_string())]))]
+        Ok(vec![RuntimeValue::String("not a list".into())]))]
     #[case::range_number(vec![RuntimeValue::Number(1.into())],
             vec![
                 ast_call("range", smallvec![
@@ -3711,7 +3699,7 @@ mod tests {
                 RuntimeValue::Number(2.into()),
                 RuntimeValue::Number(1.into()),
             ])]))]
-    #[case::range_string(vec![RuntimeValue::String("a".to_string())],
+    #[case::range_string(vec![RuntimeValue::String("a".into())],
             vec![
                 ast_call("range", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
@@ -3719,13 +3707,13 @@ mod tests {
                 ])
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("d".to_string()),
-                RuntimeValue::String("e".to_string()),
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("d".into()),
+                RuntimeValue::String("e".into()),
             ])]))]
-    #[case::range_string_reverse(vec![RuntimeValue::String("e".to_string())],
+    #[case::range_string_reverse(vec![RuntimeValue::String("e".into())],
             vec![
                 ast_call("range", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("e".to_string()))),
@@ -3733,13 +3721,13 @@ mod tests {
                 ])
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("e".to_string()),
-                RuntimeValue::String("d".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("e".into()),
+                RuntimeValue::String("d".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("a".into()),
             ])]))]
-    #[case::range_string_step_2(vec![RuntimeValue::String("a".to_string())],
+    #[case::range_string_step_2(vec![RuntimeValue::String("a".into())],
             vec![
                 ast_call("range", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
@@ -3748,11 +3736,11 @@ mod tests {
                 ])
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("e".to_string()),
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("e".into()),
             ])]))]
-    #[case::range_string_step_minus_2(vec![RuntimeValue::String("e".to_string())],
+    #[case::range_string_step_minus_2(vec![RuntimeValue::String("e".into())],
             vec![
                 ast_call("range", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("e".to_string()))),
@@ -3761,14 +3749,14 @@ mod tests {
                 ])
             ],
             Ok(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("e".to_string()),
-                RuntimeValue::String("c".to_string()),
-                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("e".into()),
+                RuntimeValue::String("c".into()),
+                RuntimeValue::String("a".into()),
             ])]))]
     #[case::insert_array_middle(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
+                RuntimeValue::String("c".into()),
             ])],
                 vec![
                     ast_call("insert", smallvec![
@@ -3777,14 +3765,14 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Array(vec![
-                    RuntimeValue::String("a".to_string()),
-                    RuntimeValue::String("x".to_string()),
-                    RuntimeValue::String("b".to_string()),
-                    RuntimeValue::String("c".to_string()),
+                    RuntimeValue::String("a".into()),
+                    RuntimeValue::String("x".into()),
+                    RuntimeValue::String("b".into()),
+                    RuntimeValue::String("c".into()),
                 ])]))]
     #[case::insert_array_start(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
             ])],
                 vec![
                     ast_call("insert", smallvec![
@@ -3793,13 +3781,13 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Array(vec![
-                    RuntimeValue::String("z".to_string()),
-                    RuntimeValue::String("a".to_string()),
-                    RuntimeValue::String("b".to_string()),
+                    RuntimeValue::String("z".into()),
+                    RuntimeValue::String("a".into()),
+                    RuntimeValue::String("b".into()),
                 ])]))]
     #[case::insert_array_end(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
             ])],
                 vec![
                     ast_call("insert", smallvec![
@@ -3808,12 +3796,12 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Array(vec![
-                    RuntimeValue::String("a".to_string()),
-                    RuntimeValue::String("b".to_string()),
-                    RuntimeValue::String("c".to_string()),
+                    RuntimeValue::String("a".into()),
+                    RuntimeValue::String("b".into()),
+                    RuntimeValue::String("c".into()),
                 ])]))]
     #[case::insert_array_out_of_bounds(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
+                RuntimeValue::String("a".into()),
             ])],
                 vec![
                     ast_call("insert", smallvec![
@@ -3822,16 +3810,16 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Array(vec![
-                    RuntimeValue::String("a".to_string()),
+                    RuntimeValue::String("a".into()),
                     RuntimeValue::NONE,
                     RuntimeValue::NONE,
                     RuntimeValue::NONE,
                     RuntimeValue::NONE,
-                    RuntimeValue::String("b".to_string()),
+                    RuntimeValue::String("b".into()),
                 ])]))]
     #[case::insert_array_negative_index(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
+                RuntimeValue::String("a".into()),
+                RuntimeValue::String("b".into()),
             ])],
                 vec![
                     ast_call("insert", smallvec![
@@ -3840,9 +3828,9 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Array(vec![
-                    RuntimeValue::String("z".to_string()),
-                    RuntimeValue::String("a".to_string()),
-                    RuntimeValue::String("b".to_string()),
+                    RuntimeValue::String("z".into()),
+                    RuntimeValue::String("a".into()),
+                    RuntimeValue::String("b".into()),
                 ])]))]
     #[case::insert_array_empty(vec![RuntimeValue::Array(Vec::new())],
                 vec![
@@ -3852,7 +3840,7 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Array(vec![
-                    RuntimeValue::String("first".to_string()),
+                    RuntimeValue::String("first".into()),
                 ])]))]
     #[case::insert_non_array(vec![RuntimeValue::Number(1.into())],
                 vec![
@@ -3865,8 +3853,8 @@ mod tests {
                                      name: "insert".to_string(),
                                      args: vec![1.to_string().into(), 0.to_string().into(), "value".to_string().into()]})))]
     #[case::insert_array_non_number_index(vec![RuntimeValue::Array(vec![
-                RuntimeValue::String("item1".to_string()),
-                RuntimeValue::String("item2".to_string()),
+                RuntimeValue::String("item1".into()),
+                RuntimeValue::String("item2".into()),
             ])],
                 vec![
                     ast_call("insert", smallvec![
@@ -3877,51 +3865,51 @@ mod tests {
                 Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "insert".to_string(),
                                      args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
-    #[case::insert_string_middle(vec![RuntimeValue::String("ac".to_string())],
+    #[case::insert_string_middle(vec![RuntimeValue::String("ac".into())],
                 vec![
                     ast_call("insert", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::String("abc".to_string())]))]
-    #[case::insert_string_start(vec![RuntimeValue::String("bc".to_string())],
+                Ok(vec![RuntimeValue::String("abc".into())]))]
+    #[case::insert_string_start(vec![RuntimeValue::String("bc".into())],
                 vec![
                     ast_call("insert", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::String("abc".to_string())]))]
-    #[case::insert_string_end(vec![RuntimeValue::String("ab".to_string())],
+                Ok(vec![RuntimeValue::String("abc".into())]))]
+    #[case::insert_string_end(vec![RuntimeValue::String("ab".into())],
                 vec![
                     ast_call("insert", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("c".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::String("abc".to_string())]))]
-    #[case::insert_string_out_of_bounds(vec![RuntimeValue::String("a".to_string())],
+                Ok(vec![RuntimeValue::String("abc".into())]))]
+    #[case::insert_string_out_of_bounds(vec![RuntimeValue::String("a".into())],
                 vec![
                     ast_call("insert", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number(5.into()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("b".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::String("a    b".to_string())]))]
-    #[case::insert_string_negative_index(vec![RuntimeValue::String("bc".to_string())],
+                Ok(vec![RuntimeValue::String("a    b".into())]))]
+    #[case::insert_string_negative_index(vec![RuntimeValue::String("bc".into())],
                 vec![
                     ast_call("insert", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("a".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::String("abc".to_string())]))]
-    #[case::to_markdown_string_string(vec![RuntimeValue::String("test".to_string())],
+                Ok(vec![RuntimeValue::String("abc".into())]))]
+    #[case::to_markdown_string_string(vec![RuntimeValue::String("test".into())],
                 vec![
                     ast_call("to_markdown_string", SmallVec::new())
                 ],
-                Ok(vec![RuntimeValue::String("test\n".to_string())]))]
+                Ok(vec![RuntimeValue::String("test\n".into())]))]
     #[case::to_markdown_string_markdown_text(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
                 vec![
                     ast_call("to_markdown_string", SmallVec::new())
@@ -3941,7 +3929,7 @@ mod tests {
                 vec![
                     ast_call("to_markdown_string", SmallVec::new())
                 ],
-                Ok(vec![RuntimeValue::String("".to_string())]))]
+                Ok(vec![RuntimeValue::String("".into())]))]
     #[case::increase_header_level_h1(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
                 depth: 1,
                 values: vec!["Heading 1".to_string().into()],
@@ -4088,7 +4076,7 @@ mod tests {
         ])])
     )]
     #[case::foreach_string(
-        vec![RuntimeValue::String("abc".to_string())],
+        vec![RuntimeValue::String("abc".into())],
         vec![
             ast_node(ast::Expr::Foreach(
                 ast::Ident::new("c"),
@@ -4099,16 +4087,16 @@ mod tests {
             )),
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
+            RuntimeValue::String("c".into()),
         ])])
     )]
-    #[case::to_array_string(vec![RuntimeValue::String("test".to_string())],
+    #[case::to_array_string(vec![RuntimeValue::String("test".into())],
         vec![
             ast_call("to_array", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("t".to_string()), RuntimeValue::String("e".to_string()), RuntimeValue::String("s".to_string()), RuntimeValue::String("t".to_string())])]))]
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("t".into()), RuntimeValue::String("e".into()), RuntimeValue::String("s".into()), RuntimeValue::String("t".into())])]))]
     #[case::to_array_number(vec![RuntimeValue::Number(42.into())],
         vec![
             ast_call("to_array", SmallVec::new())
@@ -4119,30 +4107,30 @@ mod tests {
             ast_call("to_array", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Bool(true)])]))]
-    #[case::to_array_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())])],
+    #[case::to_array_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::String("b".into())])],
         vec![
             ast_call("to_array", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())])]))]
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".into()), RuntimeValue::String("b".into())])]))]
     #[case::to_array_empty_array(vec![RuntimeValue::Array(Vec::new())],
         vec![
             ast_call("to_array", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(Vec::new())]))]
     #[case::to_array_dict(vec![RuntimeValue::Dict(vec![
-            ("key".to_string(), RuntimeValue::String("value".to_string())),
+            ("key".into(), RuntimeValue::String("value".into())),
         ].into_iter().collect())],
         vec![
             ast_call("to_array", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Dict(vec![
-            ("key".to_string(), RuntimeValue::String("value".to_string())),
+            ("key".into(), RuntimeValue::String("value".into())),
         ].into_iter().collect())])]))]
     #[case::type_none(vec![RuntimeValue::NONE],
        vec![
             ast_call("type", SmallVec::new())
        ],
-       Ok(vec![RuntimeValue::String("None".to_string())]))]
+       Ok(vec![RuntimeValue::String("None".into())]))]
     #[case::to_text(vec![RuntimeValue::NONE],
             vec![
                  ast_call("to_text", SmallVec::new())
@@ -4212,11 +4200,11 @@ mod tests {
        ],
        Ok(vec![RuntimeValue::NONE]))]
     #[case::slice_array_negative_start_index(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
-            RuntimeValue::String("item4".to_string()),
-            RuntimeValue::String("item5".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
+            RuntimeValue::String("item4".into()),
+            RuntimeValue::String("item5".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -4225,14 +4213,14 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item4".into()),
         ])]))]
     #[case::slice_array_negative_end_index(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
-            RuntimeValue::String("item4".to_string()),
-            RuntimeValue::String("item5".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
+            RuntimeValue::String("item4".into()),
+            RuntimeValue::String("item5".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -4241,16 +4229,16 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
-            RuntimeValue::String("item4".to_string()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
+            RuntimeValue::String("item4".into()),
         ])]))]
     #[case::slice_array_both_negative_indices(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item1".to_string()),
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
-            RuntimeValue::String("item4".to_string()),
-            RuntimeValue::String("item5".to_string()),
+            RuntimeValue::String("item1".into()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
+            RuntimeValue::String("item4".into()),
+            RuntimeValue::String("item5".into()),
         ])],
        vec![
             ast_call("slice", smallvec![
@@ -4259,33 +4247,33 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("item2".to_string()),
-            RuntimeValue::String("item3".to_string()),
+            RuntimeValue::String("item2".into()),
+            RuntimeValue::String("item3".into()),
         ])]))]
-    #[case::slice_string_negative_start_index(vec![RuntimeValue::String("abcdef".to_string())],
+    #[case::slice_string_negative_start_index(vec![RuntimeValue::String("abcdef".into())],
        vec![
             ast_call("slice", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number((-3).into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number(6.into()))),
             ])
        ],
-       Ok(vec![RuntimeValue::String("def".to_string())]))]
-    #[case::slice_string_negative_end_index(vec![RuntimeValue::String("abcdef".to_string())],
+       Ok(vec![RuntimeValue::String("def".into())]))]
+    #[case::slice_string_negative_end_index(vec![RuntimeValue::String("abcdef".into())],
        vec![
             ast_call("slice", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number((-1).into()))),
             ])
        ],
-       Ok(vec![RuntimeValue::String("bcde".to_string())]))]
-    #[case::slice_string_both_negative_indices(vec![RuntimeValue::String("abcdef".to_string())],
+       Ok(vec![RuntimeValue::String("bcde".into())]))]
+    #[case::slice_string_both_negative_indices(vec![RuntimeValue::String("abcdef".into())],
        vec![
             ast_call("slice", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number((-5).into()))),
                 ast_node(ast::Expr::Literal(ast::Literal::Number((-2).into()))),
             ])
        ],
-       Ok(vec![RuntimeValue::String("bcd".to_string())]))]
+       Ok(vec![RuntimeValue::String("bcd".into())]))]
     #[case::to_code(vec![RuntimeValue::NONE],
         vec![
               ast_call("to_code", smallvec![
@@ -4439,17 +4427,15 @@ mod tests {
             }),
         ];
         assert_eq!(
-            Evaluator::new(loader, token_arena()).eval(
-                &program,
-                vec![RuntimeValue::String("".to_string())].into_iter()
-            ),
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".into())].into_iter()),
             Ok(vec![RuntimeValue::Number(42.into())])
         );
     }
 
     #[rstest]
     #[case::simple_interpolated_string(
-        vec![RuntimeValue::String("world".to_string())],
+        vec![RuntimeValue::String("world".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Text("Hello, ".to_string()),
@@ -4457,7 +4443,7 @@ mod tests {
                 ast::StringSegment::Text("!".to_string()),
             ])),
         ],
-        Ok(vec![RuntimeValue::String("Hello, world!".to_string())])
+        Ok(vec![RuntimeValue::String("Hello, world!".into())])
     )]
     #[case::interpolated_string_with_number(
         vec![RuntimeValue::Number(42.into())],
@@ -4468,7 +4454,7 @@ mod tests {
                 ast::StringSegment::Text(".".to_string()),
             ])),
         ],
-        Ok(vec![RuntimeValue::String("The answer is 42.".to_string())])
+        Ok(vec![RuntimeValue::String("The answer is 42.".into())])
     )]
     #[case::interpolated_string_with_bool(
         vec![RuntimeValue::Bool(true)],
@@ -4478,7 +4464,7 @@ mod tests {
                 ast::StringSegment::Self_,
             ])),
         ],
-        Ok(vec![RuntimeValue::String("Value: true".to_string())])
+        Ok(vec![RuntimeValue::String("Value: true".into())])
     )]
     #[case::interpolated_string_with_none(
         vec![RuntimeValue::NONE],
@@ -4488,12 +4474,12 @@ mod tests {
                 ast::StringSegment::Self_,
             ])),
         ],
-        Ok(vec![RuntimeValue::String("None: ".to_string())])
+        Ok(vec![RuntimeValue::String("None: ".into())])
     )]
     #[case::interpolated_string_with_array(
         vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("a".into()),
+            RuntimeValue::String("b".into()),
         ])],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
@@ -4501,26 +4487,26 @@ mod tests {
                 ast::StringSegment::Self_,
             ])),
         ],
-        Ok(vec![RuntimeValue::String(r#"Array: ["a", "b"]"#.to_string())])
+        Ok(vec![RuntimeValue::String(r#"Array: ["a", "b"]"#.into())])
     )]
     #[case::interpolated_string_only_literal(
-        vec![RuntimeValue::String("ignored".to_string())],
+        vec![RuntimeValue::String("ignored".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Text("Just a string".to_string()),
             ])),
         ],
-        Ok(vec![RuntimeValue::String("Just a string".to_string())])
+        Ok(vec![RuntimeValue::String("Just a string".into())])
     )]
     #[case::interpolated_string_empty(
-        vec![RuntimeValue::String("ignored".to_string())],
+        vec![RuntimeValue::String("ignored".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![])),
         ],
-        Ok(vec![RuntimeValue::String("".to_string())])
+        Ok(vec![RuntimeValue::String("".into())])
     )]
     #[case::interpolated_string_with_env_var(
-        vec![RuntimeValue::String("ignored".to_string())],
+        vec![RuntimeValue::String("ignored".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Text("HOME: ".to_string()),
@@ -4529,11 +4515,11 @@ mod tests {
         ],
         {
             unsafe { std::env::set_var("HOME", "/home/testuser") };
-            Ok(vec![RuntimeValue::String("HOME: /home/testuser".to_string())])
+            Ok(vec![RuntimeValue::String("HOME: /home/testuser".into())])
         }
     )]
     #[case::interpolated_string_with_missing_env_var(
-        vec![RuntimeValue::String("ignored".to_string())],
+        vec![RuntimeValue::String("ignored".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Text("MISSING: ".to_string()),
@@ -4553,7 +4539,7 @@ mod tests {
         }
     )]
     #[case::interpolated_string_env_and_self(
-        vec![RuntimeValue::String("value".to_string())],
+        vec![RuntimeValue::String("value".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Env("USER".into()),
@@ -4563,11 +4549,11 @@ mod tests {
         ],
         {
             unsafe { std::env::set_var("USER", "tester") };
-            Ok(vec![RuntimeValue::String("tester:value".to_string())])
+            Ok(vec![RuntimeValue::String("tester:value".into())])
         }
     )]
     #[case::interpolated_string_env_only(
-        vec![RuntimeValue::String("ignored".to_string())],
+        vec![RuntimeValue::String("ignored".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Env("USER".into()),
@@ -4575,11 +4561,11 @@ mod tests {
         ],
         {
             unsafe { std::env::set_var("USER", "tester") };
-            Ok(vec![RuntimeValue::String("tester".to_string())])
+            Ok(vec![RuntimeValue::String("tester".into())])
         }
     )]
     #[case::interpolated_string_env_and_literal(
-        vec![RuntimeValue::String("ignored".to_string())],
+        vec![RuntimeValue::String("ignored".into())],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Text("User: ".to_string()),
@@ -4589,7 +4575,7 @@ mod tests {
         ],
         {
             unsafe { std::env::set_var("USER", "tester") };
-            Ok(vec![RuntimeValue::String("User: tester!".to_string())])
+            Ok(vec![RuntimeValue::String("User: tester!".into())])
         }
     )]
     fn test_interpolated_string_eval(

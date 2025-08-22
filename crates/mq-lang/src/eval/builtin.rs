@@ -344,7 +344,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(std::mem::take(array))),
                     [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
                         s.chars()
-                            .map(|c| RuntimeValue::String(c.to_string()))
+                            .map(|c| RuntimeValue::String(c.to_string().into()))
                             .collect(),
                     )),
                     [RuntimeValue::None] => Ok(RuntimeValue::Array(Vec::new())),
@@ -398,10 +398,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 match args.as_mut_slice() {
                     [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                         .markdown_node()
-                        .map(|md| Ok(md.value().ends_with(&*s).into()))
+                        .map(|md| Ok(md.value().ends_with(s.as_str()).into()))
                         .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
                     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                        Ok(s1.ends_with(&*s2).into())
+                        Ok(s1.ends_with(s2.as_str()).into())
                     }
                     [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
                         .last()
@@ -424,10 +424,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 match args.as_mut_slice() {
                     [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                         .markdown_node()
-                        .map(|md| Ok(md.value().starts_with(&*s).into()))
+                        .map(|md| Ok(md.value().starts_with(s.as_str()).into()))
                         .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
                     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-                        Ok(s1.starts_with(&*s2).into())
+                        Ok(s1.starts_with(s2.as_str()).into())
                     }
                     [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
                         .first()
@@ -520,7 +520,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         RuntimeValue::String(s1),
                         RuntimeValue::String(s2),
                         RuntimeValue::String(s3),
-                    ] => Ok(s1.replace(&*s2, &*s3).into()),
+                    ] => Ok(s1.replace(s2.as_str(), s3.as_str()).into()),
                     [
                         node @ RuntimeValue::Markdown(_, _),
                         RuntimeValue::String(s1),
@@ -528,7 +528,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     ] => node
                         .markdown_node()
                         .map(|md| {
-                            Ok(node.update_markdown_value(md.value().replace(&*s1, &*s2).as_str()))
+                            Ok(node.update_markdown_value(
+                                md.value().replace(s1.as_str(), s2.as_str()).as_str(),
+                            ))
                         })
                         .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
                     [
@@ -825,7 +827,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         .map(|md| {
                             Ok(RuntimeValue::Number(
                                 (md.value()
-                                    .find(&*s)
+                                    .find(s.as_str())
                                     .map(|v| v as isize)
                                     .unwrap_or_else(|| -1) as i64)
                                     .into(),
@@ -875,7 +877,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 match args.as_mut_slice() {
                     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
                         Ok(RuntimeValue::Number(
-                            s1.rfind(&*s2)
+                            s1.rfind(s2.as_str())
                                 .map(|v| v as isize)
                                 .unwrap_or_else(|| -1)
                                 .into(),
@@ -886,7 +888,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         .map(|md| {
                             Ok(RuntimeValue::Number(
                                 md.value()
-                                    .rfind(&*s)
+                                    .rfind(s.as_str())
                                     .map(|v| v as isize)
                                     .unwrap_or_else(|| -1)
                                     .into(),
@@ -1473,7 +1475,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
                         let value = node.attr(attr);
                         match value {
-                            Some(val) => Ok(RuntimeValue::String(val)),
+                            Some(val) => Ok(RuntimeValue::String(val.into())),
                             None => Ok(RuntimeValue::None),
                         }
                     }
@@ -1627,7 +1629,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         title: if title.is_empty() {
                             None
                         } else {
-                            Some(mq_markdown::Title::new((&*title).into()))
+                            Some(mq_markdown::Title::new(title.as_str().into()))
                         },
                         position: None,
                     })
@@ -1840,7 +1842,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             _,
                         ),
                     ] => std::mem::take(title)
-                        .map(|t| Ok(RuntimeValue::String(t.to_value())))
+                        .map(|t| Ok(RuntimeValue::String(t.to_value().into())))
                         .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
                     [
                         RuntimeValue::Markdown(
@@ -1848,7 +1850,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             _,
                         ),
                     ] => std::mem::take(title)
-                        .map(|t| Ok(RuntimeValue::String(t)))
+                        .map(|t| Ok(RuntimeValue::String(t.into())))
                         .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
                     [_] => Ok(RuntimeValue::NONE),
                     _ => unreachable!(),
@@ -1895,7 +1897,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
                         RuntimeValue::String(s),
                     ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
-                        label: Some(s.to_owned()),
+                        label: Some(s.to_string()),
                         ..std::mem::take(def)
                     })
                     .into()),
@@ -1906,7 +1908,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         label: if s == &image_ref.ident {
                             None
                         } else {
-                            Some(s.to_owned())
+                            Some(s.to_string())
                         },
                         ..std::mem::take(image_ref)
                     })
@@ -1918,7 +1920,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         label: if s == &link_ref.ident {
                             None
                         } else {
-                            Some(s.to_owned())
+                            Some(s.to_string())
                         },
                         ..std::mem::take(link_ref)
                     })
@@ -1927,7 +1929,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         RuntimeValue::Markdown(mq_markdown::Node::Footnote(footnote), _),
                         RuntimeValue::String(s),
                     ] => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
-                        ident: s.to_owned(),
+                        ident: s.to_string(),
                         ..std::mem::take(footnote)
                     })
                     .into()),
@@ -1935,7 +1937,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         RuntimeValue::Markdown(mq_markdown::Node::FootnoteRef(footnote_ref), _),
                         RuntimeValue::String(s),
                     ] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
-                        label: Some(s.to_owned()),
+                        label: Some(s.to_string()),
                         ..std::mem::take(footnote_ref)
                     })
                     .into()),
@@ -1957,7 +1959,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         new_code.lang = if lang.is_empty() {
                             None
                         } else {
-                            Some(std::mem::take(lang))
+                            Some(lang.to_string())
                         };
                         Ok(mq_markdown::Node::Code(new_code).into())
                     }
@@ -1990,7 +1992,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                     for entry in entries {
                         if let RuntimeValue::Array(arr) = entry {
                             if arr.len() >= 2 {
-                                dict.insert(arr[0].to_string(), arr[1].clone());
+                                dict.insert(arr[0].to_string().into(), arr[1].clone());
                             } else {
                                 return Err(Error::InvalidTypes("dict".to_string(), arr.clone()));
                             }
@@ -2178,7 +2180,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                             chars.insert(idx + i, c);
                         }
                         let result: String = chars.into_iter().collect();
-                        Ok(RuntimeValue::String(result))
+                        Ok(RuntimeValue::String(result.into()))
                     }
                     // Insert into dict (same as set, but error if key exists)
                     [
@@ -3422,6 +3424,7 @@ fn to_date(ms: Number, format: Option<&str>) -> Result<RuntimeValue, Error> {
             format
                 .map(|f| dt.format(f).to_string())
                 .unwrap_or(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+                .into()
         })
         .map(RuntimeValue::String)
         .ok_or_else(|| Error::InvalidDateTimeFormat(format.unwrap_or("").to_string()))
@@ -3429,7 +3432,7 @@ fn to_date(ms: Number, format: Option<&str>) -> Result<RuntimeValue, Error> {
 
 #[inline(always)]
 fn base64(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
+    Ok(RuntimeValue::String(BASE64_STANDARD.encode(input).into()))
 }
 
 #[inline(always)]
@@ -3437,13 +3440,15 @@ fn base64d(input: &str) -> Result<RuntimeValue, Error> {
     BASE64_STANDARD
         .decode(input)
         .map_err(Error::InvalidBase64String)
-        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
+        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).into()))
 }
 
 #[inline(always)]
 fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(
-        utf8_percent_encode(input, NON_ALPHANUMERIC).to_string(),
+        utf8_percent_encode(input, NON_ALPHANUMERIC)
+            .to_string()
+            .into(),
     ))
 }
 
@@ -3453,14 +3458,14 @@ fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     if let Some(re) = cache.get(pattern) {
         let matches: Vec<RuntimeValue> = re
             .find_iter(input)
-            .map(|m| RuntimeValue::String(m.as_str().to_string()))
+            .map(|m| RuntimeValue::String(m.as_str().into()))
             .collect();
         Ok(RuntimeValue::Array(matches))
     } else if let Ok(re) = RegexBuilder::new(pattern).size_limit(1 << 20).build() {
         cache.insert(pattern.to_string(), re.clone());
         let matches: Vec<RuntimeValue> = re
             .find_iter(input)
-            .map(|m| RuntimeValue::String(m.as_str().to_string()))
+            .map(|m| RuntimeValue::String(m.as_str().into()))
             .collect();
         Ok(RuntimeValue::Array(matches))
     } else {
@@ -3554,14 +3559,14 @@ fn generate_char_range(
     if step > 0 {
         while current <= end {
             if let Some(ch) = char::from_u32(current as u32) {
-                result.push(RuntimeValue::String(ch.to_string()));
+                result.push(RuntimeValue::String(ch.to_string().into()));
             }
             current += step;
         }
     } else {
         while current >= end {
             if let Some(ch) = char::from_u32(current as u32) {
-                result.push(RuntimeValue::String(ch.to_string()));
+                result.push(RuntimeValue::String(ch.to_string().into()));
             }
             current += step;
         }
@@ -3590,7 +3595,7 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
 
     loop {
         if let Ok(s) = String::from_utf8(current.clone()) {
-            result.push(RuntimeValue::String(s));
+            result.push(RuntimeValue::String(s.into()));
         }
 
         if current.as_slice() == end_bytes {
@@ -4181,14 +4186,17 @@ mod tests {
         match result2.unwrap() {
             RuntimeValue::Array(keys_array) => {
                 assert_eq!(keys_array.len(), 2);
-                let keys_str: Vec<String> = keys_array
+                let keys_str: Vec<CompactString> = keys_array
                     .into_iter()
                     .map(|k| match k {
                         RuntimeValue::String(s) => s,
                         _ => panic!("Expected string key"),
                     })
                     .collect();
-                assert_eq!(keys_str, vec!["age".to_string(), "name".to_string()]);
+                assert_eq!(
+                    keys_str,
+                    vec![CompactString::new("age"), CompactString::new("name")]
+                );
             }
             _ => panic!("Expected Array of keys"),
         }

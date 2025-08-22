@@ -2511,6 +2511,7 @@ version = "0.2.18"
 dependencies = [
  "assert_cmd",
  "clap",
+ "compact_str 0.9.0",
  "itertools 0.14.0",
  "miette",
  "mq-formatter",
