@@ -632,19 +632,23 @@ impl Evaluator {
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
-                for (arg, param) in new_args.iter().zip(params.iter()) {
-                    if let ast::Expr::Ident(name) = &*param.expr {
-                        let value =
-                            self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
+                new_args
+                    .iter()
+                    .zip(params.iter())
+                    .try_for_each(|(arg, param)| {
+                        if let ast::Expr::Ident(name) = &*param.expr {
+                            let value =
+                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
 
-                        new_env.borrow_mut().define(name, value);
-                    } else {
-                        return Err(EvalError::InvalidDefinition(
-                            (*self.token_arena.borrow()[param.token_id]).clone(),
-                            ident.to_string(),
-                        ));
-                    }
-                }
+                            new_env.borrow_mut().define(name, value);
+                            Ok(())
+                        } else {
+                            Err(EvalError::InvalidDefinition(
+                                (*self.token_arena.borrow()[param.token_id]).clone(),
+                                ident.to_string(),
+                            ))
+                        }
+                    })?;
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
 
@@ -690,7 +694,7 @@ impl Evaluator {
     }
 
     #[inline(always)]
-    fn exit_scope(&mut self) {
+    const fn exit_scope(&mut self) {
         if self.call_stack_depth > 0 {
             self.call_stack_depth -= 1;
         }
