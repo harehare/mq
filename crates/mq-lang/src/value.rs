@@ -116,6 +116,7 @@ impl Value {
     /// assert!(matches!(dict, Value::Dict(_)));
     /// assert_eq!(dict.len(), 0);
     /// ```
+    #[inline(always)]
     pub fn new_dict() -> Self {
         Value::Dict(BTreeMap::new())
     }
@@ -133,6 +134,7 @@ impl Value {
     /// let text = Value::from("hello");
     /// assert!(!text.is_number());
     /// ```
+    #[inline(always)]
     pub fn is_number(&self) -> bool {
         matches!(self, Value::Number(_))
     }
@@ -150,6 +152,7 @@ impl Value {
     /// let text = Value::from("hello");
     /// assert!(!text.is_none());
     /// ```
+    #[inline(always)]
     pub fn is_none(&self) -> bool {
         matches!(self, Value::None)
     }
@@ -164,6 +167,7 @@ impl Value {
     /// let text = Value::from("hello");
     /// assert!(!text.is_function());
     /// ```
+    #[inline(always)]
     pub fn is_function(&self) -> bool {
         matches!(self, Value::Function(_, _))
     }
@@ -181,6 +185,7 @@ impl Value {
     /// let text = Value::from("hello");
     /// assert!(!text.is_array());
     /// ```
+    #[inline(always)]
     pub fn is_array(&self) -> bool {
         matches!(self, Value::Array(_))
     }
@@ -210,6 +215,7 @@ impl Value {
     /// let arr = Value::Array(vec![Value::from(1), Value::from(2)]);
     /// assert_eq!(arr.len(), 2);
     /// ```
+    #[inline(always)]
     pub fn len(&self) -> usize {
         match self {
             Value::Number(n) => n.value() as usize,
@@ -237,10 +243,12 @@ impl Value {
     /// let text = Value::from("hello");
     /// assert!(!text.is_empty());
     /// ```
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    #[inline(always)]
     pub fn position(&self) -> Option<mq_markdown::Position> {
         match self {
             Value::Markdown(node) => node.position(),
@@ -248,6 +256,7 @@ impl Value {
         }
     }
 
+    #[inline(always)]
     pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
         if let Value::Markdown(node) = self {
             node.set_position(position);

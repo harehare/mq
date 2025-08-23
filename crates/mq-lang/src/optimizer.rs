@@ -34,6 +34,7 @@ impl Optimizer {
         }
     }
 
+    #[inline(always)]
     fn collect_used_identifiers(&mut self, program: &Program) -> FxHashSet<IdentName> {
         let mut used_idents = FxHashSet::default();
         for node in program {

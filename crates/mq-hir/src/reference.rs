@@ -1,6 +1,7 @@
 use crate::{Hir, Symbol, SymbolId};
 
 impl Hir {
+    #[inline(always)]
     pub fn references(&self, symbol_id: SymbolId) -> Vec<(SymbolId, Symbol)> {
         self.references
             .iter()

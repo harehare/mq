@@ -178,3 +178,39 @@ fn eval_foreach() -> mq_lang::Values {
         )
         .unwrap()
 }
+
+#[divan::bench()]
+fn eval_csv_parse() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"include "csv" | csv_parse(true)"#,
+            vec![mq_lang::Value::String("a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_yaml_parse() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"include "yaml" | yaml_parse()"#,
+            vec![mq_lang::Value::String("---\nstring: hello\nnumber: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\nmultiline: |\n  This is a\n  multiline string\nquoted: \"quoted string\"\nsingle_quoted: 'single quoted string'\ndate: 2024-06-01\ntimestamp: 2024-06-01T12:34:56Z\nempty_array: []\nempty_object: {}\nanchors:\n  &anchor_val anchored value\nref: *anchor_val\ncomplex:\n  - foo: bar\n    baz:\n      - qux\n      - quux\n  - corge: grault\nspecial_chars: \"!@#$%^&*()_+-=[]{}|;:',.<>/?\"\nunicode: \"こんにちは世界\"\nbool_list:\n  - true\n  - false\nnull_list:\n  - null\n  - ~".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_json_parse() -> mq_lang::Values {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"include "json" | json_parse()"#,
+            vec![mq_lang::Value::String("{\"users\":[{\"id\":1,\"name\":\"Alice\",\"email\":\"alice@example.com\",\"roles\":[\"admin\",\"user\"]},{\"id\":2,\"name\":\"Bob\",\"email\":\"bob@example.com\",\"roles\":[\"user\"]},{\"id\":3,\"name\":\"Charlie\",\"email\":\"charlie@example.com\",\"roles\":[\"editor\",\"user\"]}],\"meta\":{\"count\":3,\"generated_at\":\"2024-06-01T12:00:00Z\"}}".to_string())].into_iter(),
+        )
+        .unwrap()
+}
