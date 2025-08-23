@@ -28,10 +28,12 @@ impl Hir {
         }
     }
 
+    #[inline(always)]
     pub fn resolve_reference_symbol(&self, ref_symbol_id: SymbolId) -> Option<SymbolId> {
         self.references.get(&ref_symbol_id).copied()
     }
 
+    #[inline(always)]
     fn include_source_ids(&self) -> Vec<SourceId> {
         let mut source_ids = Vec::new();
 
@@ -46,7 +48,8 @@ impl Hir {
         source_ids
     }
 
-    fn get_symbol_priority_for_cross_source(&self, symbol_kind: &SymbolKind) -> u8 {
+    #[inline(always)]
+    const fn get_symbol_priority_for_cross_source(&self, symbol_kind: &SymbolKind) -> u8 {
         match symbol_kind {
             SymbolKind::Function(_) => 0,
             SymbolKind::Variable => 1,
@@ -85,7 +88,8 @@ impl Hir {
             .map(|(_, symbol_id, symbol)| (*symbol_id, symbol.clone()))
     }
 
-    fn get_symbol_priority_for_scope(&self, symbol_kind: &SymbolKind) -> u8 {
+    #[inline(always)]
+    const fn get_symbol_priority_for_scope(&self, symbol_kind: &SymbolKind) -> u8 {
         match symbol_kind {
             SymbolKind::Argument => 0,
             SymbolKind::Parameter => 1,

@@ -107,11 +107,13 @@ impl<'a> Parser<'a> {
         Ok(asts)
     }
 
+    #[inline(always)]
     fn parse_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         self.parse_equality_expr(token)
     }
 
-    fn binary_op_precedence(kind: &TokenKind) -> u8 {
+    #[inline(always)]
+    const fn binary_op_precedence(kind: &TokenKind) -> u8 {
         match kind {
             TokenKind::Or => 1,
             TokenKind::And => 2,
@@ -128,7 +130,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn binary_op_function_name(kind: &TokenKind) -> &'static str {
+    #[inline(always)]
+    const fn binary_op_function_name(kind: &TokenKind) -> &'static str {
         match kind {
             TokenKind::And => "and",
             TokenKind::Asterisk => "mul",
@@ -457,7 +460,7 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn is_binary_op(token_kind: &TokenKind) -> bool {
+    const fn is_binary_op(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
             TokenKind::And
@@ -478,7 +481,7 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
+    const fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
         matches!(
             token_kind,
             Some(TokenKind::And)

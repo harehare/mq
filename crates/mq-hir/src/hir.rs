@@ -114,22 +114,27 @@ impl Hir {
         unused
     }
 
+    #[inline(always)]
     pub fn builtins(&self) -> impl Iterator<Item = &mq_lang::BuiltinFunctionDoc> {
         self.builtin.functions.values()
     }
 
+    #[inline(always)]
     pub fn symbol(&self, symbol_id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(symbol_id)
     }
 
+    #[inline(always)]
     pub fn symbols(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
         self.symbols.iter()
     }
 
+    #[inline(always)]
     pub fn scope(&self, scope_id: ScopeId) -> Option<&Scope> {
         self.scopes.get(scope_id)
     }
 
+    #[inline(always)]
     pub fn scopes(&self) -> impl Iterator<Item = (ScopeId, &Scope)> {
         self.scopes.iter()
     }

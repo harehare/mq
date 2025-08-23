@@ -710,18 +710,22 @@ impl Formatter {
         }
     }
 
+    #[inline(always)]
     fn append_space(&mut self) {
         self.output.push(' ');
     }
 
+    #[inline(always)]
     fn append_newline(&mut self) {
         self.output.push('\n');
     }
 
+    #[inline(always)]
     fn is_prev_pipe(&self) -> bool {
         self.output.ends_with("| ")
     }
 
+    #[inline(always)]
     pub fn current_line_indent(&self) -> usize {
         if let Some(last_line) = self.output.lines().last() {
             last_line.chars().take_while(|c| *c == ' ').count()
@@ -730,6 +734,7 @@ impl Formatter {
         }
     }
 
+    #[inline(always)]
     pub fn is_last_line_pipe(&self) -> bool {
         let output = self.output.trim_end_matches('\n');
         let lines = output.lines();
@@ -741,6 +746,7 @@ impl Formatter {
         }
     }
 
+    #[inline(always)]
     fn is_let_line(&self) -> bool {
         if let Some(last_line) = self.output.lines().last() {
             !last_line.starts_with("let ") && last_line.trim().starts_with("let ")
@@ -749,6 +755,7 @@ impl Formatter {
         }
     }
 
+    #[inline(always)]
     fn is_pipe_and_let_line(&self) -> bool {
         if let Some(last_line) = self.output.lines().last() {
             last_line.trim().replace(" ", "").starts_with("|let")

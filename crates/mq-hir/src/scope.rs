@@ -35,7 +35,7 @@ impl Scope {
         self.children.push(child_id);
     }
 
-    pub fn symbol_id(&self) -> Option<SymbolId> {
+    pub const fn symbol_id(&self) -> Option<SymbolId> {
         match self.kind {
             ScopeKind::Function(symbol_id) => Some(symbol_id),
             ScopeKind::Let(symbol_id) => Some(symbol_id),
