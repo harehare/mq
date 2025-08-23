@@ -183,18 +183,17 @@ impl Evaluator {
 
     pub(crate) fn load_module(&mut self, module: Option<module::Module>) -> Result<(), EvalError> {
         if let Some(module) = module {
-            module.modules.iter().try_for_each(|node| {
+            for node in &module.modules {
                 if let ast::Expr::Include(_) = &*node.expr {
                     self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
-                    Ok(())
                 } else {
-                    Err(EvalError::InternalError(
+                    return Err(EvalError::InternalError(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
-                    ))
+                    ));
                 }
-            })?;
+            }
 
-            module.functions.iter().for_each(|node| {
+            for node in &module.functions {
                 if let ast::Expr::Def(ident, params, program) = &*node.expr {
                     self.env.borrow_mut().define(
                         ident,
@@ -205,23 +204,22 @@ impl Evaluator {
                         ),
                     );
                 }
-            });
+            }
 
-            module.vars.iter().try_for_each(|node| {
+            for node in &module.vars {
                 if let ast::Expr::Let(ident, node) = &*node.expr {
                     let val =
                         self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
                     self.env.borrow_mut().define(ident, val);
-                    Ok(())
                 } else {
-                    Err(EvalError::InternalError(
+                    return Err(EvalError::InternalError(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
-                    ))
+                    ));
                 }
-            })
-        } else {
-            Ok(())
+            }
         }
+
+        Ok(())
     }
 
     #[inline(always)]
@@ -634,23 +632,19 @@ impl Evaluator {
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
-                new_args
-                    .iter()
-                    .zip(params.iter())
-                    .try_for_each(|(arg, param)| {
-                        if let ast::Expr::Ident(name) = &*param.expr {
-                            let value =
-                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
+                for (arg, param) in new_args.iter().zip(params.iter()) {
+                    if let ast::Expr::Ident(name) = &*param.expr {
+                        let value =
+                            self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
 
-                            new_env.borrow_mut().define(name, value);
-                            Ok(())
-                        } else {
-                            Err(EvalError::InvalidDefinition(
-                                (*self.token_arena.borrow()[param.token_id]).clone(),
-                                ident.to_string(),
-                            ))
-                        }
-                    })?;
+                        new_env.borrow_mut().define(name, value);
+                    } else {
+                        return Err(EvalError::InvalidDefinition(
+                            (*self.token_arena.borrow()[param.token_id]).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
 

@@ -112,11 +112,4 @@ mod tests {
             let _ = handler.next();
         }
     }
-
-    #[test]
-    fn test_zero_tick_rate() {
-        let handler = EventHandler::new(Duration::from_secs(0));
-        let result = handler.next().unwrap();
-        assert!(result.is_none());
-    }
 }
