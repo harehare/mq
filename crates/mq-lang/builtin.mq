@@ -75,9 +75,6 @@ def numbers(n): select(n, is_number(n));
 # Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
 def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 
-# Converts input to an array
-def to_array(a): if (is_array(a)): a else: array(a);
-
 # Applies a given function to each element of the provided array and returns a new array with the results.
 def map(v, f):
   let map_dict = fn(v, f):
