@@ -604,16 +604,19 @@ impl Evaluator {
             return Ok(RuntimeValue::NONE);
         }
 
-        if let Ok(fn_value) = env.borrow().resolve(ident) {
+        if let Ok(fn_value) = Rc::clone(&env).borrow().resolve(ident) {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let new_args: ast::Args = if params.len() == args.len() + 1 {
-                    let mut new_args = SmallVec::with_capacity(args.len() + 1);
-                    new_args.push(Rc::new(ast::Node {
-                        token_id: node.token_id,
-                        expr: Rc::new(ast::Expr::Self_),
-                    }));
+                let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
+                let new_args = if params.len() == args.len() + 1 {
+                    new_args.insert(
+                        0,
+                        Rc::new(ast::Node {
+                            token_id: node.token_id,
+                            expr: Rc::new(ast::Expr::Self_),
+                        }),
+                    );
                     new_args.extend(args.clone());
                     new_args
                 } else if args.len() != params.len() {
@@ -647,10 +650,12 @@ impl Evaluator {
                         }
                     })?;
 
+                let result = self.eval_program(program, runtime_value.clone(), new_env);
+
                 self.exit_scope();
-                self.eval_program(program, runtime_value.clone(), new_env)
+                result
             } else if let RuntimeValue::NativeFunction(ident) = fn_value {
-                self.eval_builtin(runtime_value, node, &ident, args, Rc::clone(&env))
+                self.eval_builtin(runtime_value, node, &ident, args, env)
             } else {
                 Err(EvalError::InvalidDefinition(
                     (*self.token_arena.borrow()[node.token_id]).clone(),
