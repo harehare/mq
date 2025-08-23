@@ -456,6 +456,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    #[inline(always)]
     fn is_binary_op(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
@@ -476,6 +477,7 @@ impl<'a> Parser<'a> {
         )
     }
 
+    #[inline(always)]
     fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
         matches!(
             token_kind,
@@ -933,6 +935,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    #[inline(always)]
     fn parse_next_expr(&mut self, token_id: TokenId) -> Result<Rc<Node>, ParseError> {
         let expr_token = match self.tokens.next() {
             Some(token) => Ok(token),
@@ -1028,6 +1031,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    #[inline(always)]
     fn parse_include(&mut self, include_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         match self.tokens.peek() {
             Some(token) => match &***token {
@@ -1160,10 +1164,12 @@ impl<'a> Parser<'a> {
 
     // Helper to parse an argument that is expected to be a general expression.
     // This typically involves a recursive call to `parse_expr`.
+    #[inline(always)]
     fn parse_arg_expr(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         self.parse_expr(Rc::clone(&token))
     }
 
+    #[inline(always)]
     fn parse_head(&mut self, token: Rc<Token>, depth: u8) -> Result<Rc<Node>, ParseError> {
         Ok(Rc::new(Node {
             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
@@ -1397,6 +1403,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(always)]
     fn parse_selector_list_args(&mut self, token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
         if let Ok(i) = self.parse_int_arg(Rc::clone(&token)) {
             Ok(Rc::new(Node {
@@ -1427,6 +1434,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(always)]
     fn parse_int_arg(&mut self, token: Rc<Token>) -> Result<i64, ParseError> {
         let args = self.parse_int_args(Rc::clone(&token))?;
 
@@ -1437,6 +1445,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(always)]
     fn parse_string_arg(&mut self, token: Rc<Token>) -> Result<String, ParseError> {
         let args = self.parse_string_args(Rc::clone(&token))?;
 
@@ -1557,6 +1566,7 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
+    #[inline(always)]
     fn next_token_with_eof(
         &mut self,
         current_token_id: TokenId,
@@ -1565,6 +1575,7 @@ impl<'a> Parser<'a> {
         self._next_token(current_token_id, expected_kinds, true)
     }
 
+    #[inline(always)]
     fn next_token(
         &mut self,
         current_token_id: TokenId,

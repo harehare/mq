@@ -131,10 +131,12 @@ impl RuntimeValue {
     pub const FALSE: RuntimeValue = Self::Bool(false);
     pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
 
+    #[inline(always)]
     pub fn new_dict() -> RuntimeValue {
         RuntimeValue::Dict(BTreeMap::new())
     }
 
+    #[inline(always)]
     pub fn name(&self) -> &str {
         match self {
             RuntimeValue::Number(_) => "number",
@@ -149,18 +151,22 @@ impl RuntimeValue {
         }
     }
 
+    #[inline(always)]
     pub fn is_none(&self) -> bool {
         matches!(self, RuntimeValue::None)
     }
 
+    #[inline(always)]
     pub fn is_function(&self) -> bool {
         matches!(self, RuntimeValue::Function(_, _, _))
     }
 
+    #[inline(always)]
     pub fn is_array(&self) -> bool {
         matches!(self, RuntimeValue::Array(_))
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         match self {
             RuntimeValue::Array(a) => a.is_empty(),
@@ -172,6 +178,7 @@ impl RuntimeValue {
         }
     }
 
+    #[inline(always)]
     pub fn is_truthy(&self) -> bool {
         match self {
             RuntimeValue::Bool(b) => *b,
@@ -189,6 +196,7 @@ impl RuntimeValue {
         }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         match self {
             RuntimeValue::Number(n) => n.value() as usize,
@@ -203,6 +211,7 @@ impl RuntimeValue {
         }
     }
 
+    #[inline(always)]
     pub fn markdown_node(&self) -> Option<Node> {
         match self {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_at_index(*i),
@@ -211,6 +220,7 @@ impl RuntimeValue {
         }
     }
 
+    #[inline(always)]
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
         match self {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {

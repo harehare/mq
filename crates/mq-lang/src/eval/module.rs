@@ -94,6 +94,7 @@ impl ModuleLoader {
         }
     }
 
+    #[inline(always)]
     pub fn module_name(&self, module_id: ModuleId) -> CompactString {
         self.loaded_modules[module_id].to_owned()
     }
