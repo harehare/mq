@@ -345,7 +345,11 @@ def _parse_toml_content(input):
     if (len(_keys) == 1):
       set(table, first(_keys), value)
     else:
-      set(table, first(_keys), _set_nested_value(if (table[first(_keys)]): table[first(_keys)] else: {}, _keys[1:len(_keys)], value))
+      set(table, first(_keys),
+        _set_nested_value(
+          if (table[first(_keys)]):
+            table[first(_keys)]
+          else: {}, _keys[1:len(_keys)], value))
   end
 
   def _parse_key_value_pair(input, pos):
@@ -362,17 +366,12 @@ def _parse_toml_content(input):
   end
 
   def _parse_section_header(input, pos):
-    let current_pos = pos + 1
-    | let is_array_table = input[current_pos] == "["
+    let is_array_table = input[pos:pos + 2] == ["[", "["]
+    | let current_pos = if (is_array_table): pos + 2 else: pos + 1
     | let key_result = _parse_dotted_key(input, current_pos)
     | let keys = key_result[0]
     | let current_pos = key_result[1]
     | [map(keys, fn(x): if (ends_with(x, "]")): x[0:-1] else: x;), is_array_table, current_pos]
-  end
-
-  def _handle_key_value_line(table, current_section, is_array_section, line_chars, pos, i):
-    let result = _parse_key_value_pair(line_chars, pos)
-    | [_set_nested_value(table, current_section + result[0], result[1]), current_section, is_array_section, i + 1]
   end
 
   def _handle_key_value_line_char(table, current_section, is_array_section, input_chars, pos):
@@ -383,11 +382,6 @@ def _parse_toml_content(input):
     | let updated_table = _set_nested_value(table, current_section + keys, value)
     | let end_pos = _skip_to_next_line(input_chars, end_pos)
     | [updated_table, current_section, is_array_section, end_pos]
-  end
-
-  def _handle_section_header(table, line_chars, pos, i):
-    let result = _parse_section_header(line_chars, pos)
-    | [table, result[0], result[1], i + 1]
   end
 
   def _handle_section_header_char(table, input_chars, pos):
@@ -440,6 +434,11 @@ def _escape_string(str):
   )
 end
 
+
+def _add_toml_lines(lines, key, value):
+  if (is_dict(value)): lines + ["[" + key + "]"] + map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);) else: lines + [key + " = " + _toml_stringify_value(value)]
+end
+
 def _toml_stringify_value(value):
   if (is_string(value)):
     "\"" + _escape_string(value) + "\""
@@ -470,10 +469,6 @@ def toml_stringify(data):
         | lines
       end
   | join(final_lines, "\n")
-end
-
-def _add_toml_lines(lines, key, value):
-  if (is_dict(value)): lines + ["[" + key + "]"] + map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);) else: lines + [key + " = " + _toml_stringify_value(value)]
 end
 
 # Converts a data structure to a JSON string representation.
