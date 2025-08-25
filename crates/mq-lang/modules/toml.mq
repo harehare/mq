@@ -122,8 +122,6 @@ def _parse_toml_content(input):
     [key_chars + _handle_escape_char(char), false, current_pos + 1]
   elif (char == "\\"):
     [key_chars, true, current_pos + 1]
-  elif (char == quote_char):
-    [key_chars, escaped, current_pos + 1]
   else:
     [key_chars + [char], escaped, current_pos + 1]
           | let key_chars = result[0]
@@ -133,7 +131,8 @@ def _parse_toml_content(input):
           | result
         end
     | let key = join(result[0], "")
-    | let end_pos = result[2]
+    # Add 1 to end_pos to skip the closing quote character
+    | let end_pos = result[2] + 1
     | [key, end_pos]
   end
 
@@ -341,22 +340,25 @@ def _parse_toml_content(input):
         [None, current_pos]
   end
 
-  def _set_nested_value(table, _keys, value):
-    if (len(_keys) == 1):
-      set(table, first(_keys), value)
-    else:
-      set(table, first(_keys),
-        _set_nested_value(
-          if (table[first(_keys)]):
-            table[first(_keys)]
-          else: {}, _keys[1:len(_keys)], value))
+  def _set_nested_value(table, keys, value):
+    let key = first(keys)
+    | if (len(keys) == 1):
+        if (is_array(table[first(keys)])):
+          set(table, key, table[key] + value)
+        else:
+          set(table, key, value)
+      else:
+        set(table, key,
+          _set_nested_value(
+            if (table[key]):
+              table[key]
+            else: {}, keys[1:len(keys)], value))
   end
 
   def _parse_key_value_pair(input, pos):
     let key_result = _parse_dotted_key(input, pos)
     | let keys = key_result[0]
-    | let current_pos = key_result[1]
-    | let current_pos = _skip_whitespace(input, current_pos)
+    | let current_pos = _skip_whitespace(input, key_result[1])
     | let current_pos = if (current_pos < len(input) && input[current_pos] == "="): current_pos + 1 else: current_pos
     | let current_pos = _skip_whitespace(input, current_pos)
     | let value_result = _parse_value(input, current_pos)
@@ -366,22 +368,38 @@ def _parse_toml_content(input):
   end
 
   def _parse_section_header(input, pos):
-    let is_array_table = input[pos:pos + 2] == ["[", "["]
-    | let current_pos = if (is_array_table): pos + 2 else: pos + 1
+    let is_array_section = input[pos:pos + 2] == ["[", "["]
+    | let current_pos = if (is_array_section): pos + 2 else: pos + 1
     | let key_result = _parse_dotted_key(input, current_pos)
     | let keys = key_result[0]
+    | let last_key = if (is_array_section && ends_with(last(keys), "]]")): last(keys)[0:-2] else: last(keys)
     | let current_pos = key_result[1]
-    | [map(keys, fn(x): if (ends_with(x, "]")): x[0:-1] else: x;), is_array_table, current_pos]
+    | [keys[0:-1] + last_key, is_array_section, current_pos]
   end
 
-  def _handle_key_value_line_char(table, current_section, is_array_section, input_chars, pos):
+  def _handle_key_value_line_char(table, current_section, input_chars, pos):
     let result = _parse_key_value_pair(input_chars, pos)
     | let keys = result[0]
     | let value = result[1]
     | let end_pos = result[2]
     | let updated_table = _set_nested_value(table, current_section + keys, value)
     | let end_pos = _skip_to_next_line(input_chars, end_pos)
-    | [updated_table, current_section, is_array_section, end_pos]
+    | [updated_table, current_section, false, end_pos]
+  end
+
+  def _handle_key_value_array(table, current_section, input_chars, pos):
+    let current_pos = pos
+    | let values = {}
+    | let result = until (current_pos < len(input_chars) && input_chars[current_pos] != "["):
+          let result = _parse_key_value_pair(input_chars, current_pos)
+          | let key = first(result[0])
+          | let value = result[1]
+          | if (is_empty(key)): break
+          | let values = insert(values, key, value)
+          | let current_pos = _skip_to_next_line(input_chars, result[2])
+          | [values, current_pos]
+        end
+    | [_set_nested_value(table, current_section, [result[0]]), [], false, result[1]]
   end
 
   def _handle_section_header_char(table, input_chars, pos):
@@ -405,8 +423,10 @@ def _parse_toml_content(input):
               [table, current_section, is_array_section, pos + 1]
             elif (input_chars[pos] == "["):
               _handle_section_header_char(table, input_chars, pos)
+            elif (is_array_section):
+              _handle_key_value_array(table, current_section, input_chars, pos)
             else:
-              _handle_key_value_line_char(table, current_section, is_array_section, input_chars, pos)
+              _handle_key_value_line_char(table, current_section, input_chars, pos)
         | let table = result[0]
         | let current_section = result[1]
         | let is_array_section = result[2]
@@ -436,7 +456,11 @@ end
 
 
 def _add_toml_lines(lines, key, value):
-  if (is_dict(value)): lines + ["[" + key + "]"] + map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);) else: lines + [key + " = " + _toml_stringify_value(value)]
+  if (is_dict(value)):
+    lines + ["[" + key + "]"] + map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);)
+  elif (is_array(value)):
+    lines + ["[[" + key + "]]"] + map(value, fn(v): _toml_stringify_value(v) + ", ";)
+  else: lines + [key + " = " + _toml_stringify_value(value)]
 end
 
 def _toml_stringify_value(value):
