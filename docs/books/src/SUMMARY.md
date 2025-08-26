@@ -32,4 +32,5 @@
     - [Builtin selectors](reference/builtin_selectors.md)
     - [CSV functions](reference/csv_functions.md)
     - [JSON functions](reference/json_functions.md)
+    - [TOML functions](reference/toml_functions.md)
     - [YAML functions](reference/yaml_functions.md)

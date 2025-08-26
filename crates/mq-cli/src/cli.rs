@@ -133,6 +133,10 @@ struct InputArgs {
     #[arg(long = "yaml", default_value_t = false)]
     include_yaml: bool,
 
+    /// Include the built-in TOML module
+    #[arg(long = "toml", default_value_t = false)]
+    include_toml: bool,
+
     /// Include the built-in test module
     #[arg(long = "test", default_value_t = false)]
     include_test: bool,
@@ -384,6 +388,7 @@ impl Cli {
         let includes = [
             ("csv", self.input.include_csv),
             ("json", self.input.include_json),
+            ("toml", self.input.include_toml),
             ("yaml", self.input.include_yaml),
             ("test", self.input.include_test),
         ]
