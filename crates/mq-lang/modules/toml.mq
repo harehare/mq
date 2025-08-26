@@ -372,7 +372,8 @@ def _parse_toml_content(input):
     | let current_pos = if (is_array_section): pos + 2 else: pos + 1
     | let key_result = _parse_dotted_key(input, current_pos)
     | let keys = key_result[0]
-    | let last_key = if (is_array_section && ends_with(last(keys), "]]")): last(keys)[0:-2] else: last(keys)
+    | let last_key = last(keys)
+    | let last_key = if (is_array_section && ends_with(last_key, "]]")): last_key[0:-2] elif (ends_with(last_key, "]")): last_key[0:-1] else: last_key
     | let current_pos = key_result[1]
     | [keys[0:-1] + last_key, is_array_section, current_pos]
   end
