@@ -1,3 +1,6 @@
+#[cfg(not(debug_assertions))]
+use crate::optimizer::Optimizer;
+
 use crate::{
     Program, Token,
     arena::{Arena, ArenaId},
@@ -115,6 +118,17 @@ impl ModuleLoader {
         let tokens = Lexer::new(lexer::Options::default())
             .tokenize(code, module_id)
             .map_err(ModuleError::LexerError)?;
+
+        #[cfg(not(debug_assertions))]
+        let mut program = Parser::new(
+            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+            token_arena,
+            module_id,
+        )
+        .parse()
+        .map_err(ModuleError::ParseError)?;
+
+        #[cfg(debug_assertions)]
         let program = Parser::new(
             tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
             token_arena,
@@ -122,6 +136,9 @@ impl ModuleLoader {
         )
         .parse()
         .map_err(ModuleError::ParseError)?;
+
+        #[cfg(not(debug_assertions))]
+        Optimizer::new().optimize(&mut program);
 
         let modules = program
             .iter()
