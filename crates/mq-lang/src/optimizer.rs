@@ -189,10 +189,7 @@ impl Optimizer {
     }
 
     fn count_lines_in_program(&self, program: &Program) -> usize {
-        program
-            .iter()
-            .map(Self::count_lines_in_node)
-            .sum()
+        program.iter().map(Self::count_lines_in_node).sum()
     }
 
     fn count_lines_in_node(node: &Rc<ast::Node>) -> usize {
