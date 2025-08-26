@@ -64,7 +64,7 @@ def _parse_toml_content(input):
           let current_pos = current_pos + 1
           | current_pos
         end
-    | if (is_none(result)): len(input) else: result
+    | if (is_none(result)): current_pos else: result
   end
 
   def _skip_comment(input, pos):
@@ -114,7 +114,7 @@ def _parse_toml_content(input):
   def _parse_quoted_key(input, pos):
     let quote_char = input[pos]
     | let current_pos = pos + 1
-    | let key_chars = []
+    | let key_chars = ""
     | let escaped = false
     | let char = input[current_pos]
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
@@ -123,17 +123,15 @@ def _parse_toml_content(input):
   elif (char == "\\"):
     [key_chars, true, current_pos + 1]
   else:
-    [key_chars + [char], escaped, current_pos + 1]
+    [key_chars + char, escaped, current_pos + 1]
           | let key_chars = result[0]
           | let escaped = result[1]
           | let current_pos = result[2]
           | let char = input[current_pos]
           | result
         end
-    | let key = join(result[0], "")
     # Add 1 to end_pos to skip the closing quote character
-    | let end_pos = result[2] + 1
-    | [key, end_pos]
+    | [result[0], result[2] + 1]
   end
 
   def _parse_key(input, pos):
@@ -169,14 +167,14 @@ def _parse_toml_content(input):
   def _parse_multiline_string(input, pos, delimiter):
     let current_pos = pos + 3
     | let char = input[current_pos]
-    | let value_chars = []
+    | let value_chars = ""
     | let result = until (current_pos < len(input) && input[current_pos:current_pos + 3] != delimiter):
           let value_chars = value_chars + char
           | let current_pos = current_pos + 1
           | let char = input[current_pos]
           | [value_chars, current_pos]
         end
-    | let value = if (is_none(result[0])): "" else: join(result[0], "")
+    | let value = if (is_none(result[0])): "" else: result[0]
     | let end_pos = if (is_none(result[1])): pos + 1 else: result[1] + 3
     | [value, end_pos]
   end
@@ -185,11 +183,11 @@ def _parse_toml_content(input):
     let quote_char = input[pos]
     | let current_pos = pos + 1
     | let char = input[current_pos]
-    | let value_chars = []
+    | let value_chars = ""
     | let escaped = false
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
           let result = if (escaped):
-    [value_chars + [_handle_escape_char(char)], false, current_pos + 1]
+    [value_chars + _handle_escape_char(char), false, current_pos + 1]
   elif (char == "\\"):
     [value_chars, true, current_pos + 1]
   else:
@@ -200,7 +198,7 @@ def _parse_toml_content(input):
           | let char = input[current_pos]
           | result
         end
-    | let value = if (is_none(result[0])): "" else: join(result[0], "")
+    | let value = if (is_none(result[0])): "" else: result[0]
     | let end_pos = if (is_none(result[2])): pos + 1 else: result[2] + 1
     | [value, end_pos]
   end
@@ -248,15 +246,6 @@ def _parse_toml_content(input):
           | [has_dot, temp_pos]
         end
     | if (is_none(result)): has_dot else: result[0]
-  end
-
-  def _parse_boolean(input, pos):
-    if (starts_with(join(input[pos:pos + 4], ""), "true")):
-      [true, pos + 4]
-    elif (starts_with(join(input[pos:pos + 5], ""), "false")):
-      [false, pos + 5]
-    else:
-      [None, pos]
   end
 
   def _parse_array(input, pos):
@@ -314,20 +303,27 @@ def _parse_toml_content(input):
 
   def _parse_value(input, pos):
     let current_pos = _skip_whitespace(input, pos)
+    | let current_char = input[current_pos]
+    | let current_char3 = input[current_pos:current_pos + 3]
     | if (current_pos >= len(input)):
         [None, current_pos]
-      elif (input[current_pos:current_pos + 3] == ["\"", "\"", "\""]):
+      elif (current_char3 == ["\"", "\"", "\""]):
         _parse_multiline_string(input, current_pos, ["\"", "\"", "\""])
-      elif (input[current_pos:current_pos + 3] == ["'", "'", "'"]):
+      elif (current_char3 == ["'", "'", "'"]):
         _parse_multiline_string(input, current_pos, ["'", "'", "'"])
-      elif (input[current_pos] == "\"" || input[current_pos] == "'"):
+      elif (current_char == "\"" || current_char == "'"):
         _parse_string(input, current_pos)
-      elif (input[current_pos] == "["):
+      elif (current_char == "["):
         _parse_array(input, current_pos)
-      elif (input[current_pos] == "{"):
+      elif (current_char == "{"):
         _parse_inline_table(input, current_pos)
       elif (_is_boolean_start(input, current_pos)):
-        _parse_boolean(input, current_pos)
+        if (starts_with(join(input[current_pos:current_pos + 4], ""), "true")):
+          [true, current_pos + 4]
+        elif (starts_with(join(input[current_pos:current_pos + 5], ""), "false")):
+          [false, current_pos + 5]
+        else:
+          [None, current_pos]
       elif (_is_infinity(input, current_pos)):
         [INFINITY, current_pos + 3]
       elif (_is_negative_infinity(input, current_pos)):
