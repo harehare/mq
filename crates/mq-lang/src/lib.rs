@@ -136,7 +136,7 @@ pub fn parse(
         .map_err(|e| {
             Box::new(error::Error::from_error(
                 code,
-                InnerError::Lexer(e),
+                e.into(),
                 ModuleLoader::new(None),
             ))
         })?;
@@ -150,7 +150,7 @@ pub fn parse(
     .map_err(|e| {
         Box::new(error::Error::from_error(
             code,
-            InnerError::Parse(e),
+            e.into(),
             ModuleLoader::new(None),
         ))
     })

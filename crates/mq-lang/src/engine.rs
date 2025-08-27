@@ -5,7 +5,7 @@ use crate::MqResult;
 use crate::{
     ModuleLoader, Token, Value,
     arena::Arena,
-    error::{self, InnerError},
+    error::{self},
     eval::Evaluator,
     optimizer::Optimizer,
     parse,
@@ -123,17 +123,13 @@ impl Engine {
             .module_loader
             .load_from_file(module_name, Rc::clone(&self.token_arena))
             .map_err(|e| {
-                error::Error::from_error(
-                    "",
-                    InnerError::Module(e),
-                    self.evaluator.module_loader.clone(),
-                )
+                error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
             })?;
 
         self.evaluator.load_module(module).map_err(|e| {
             Box::new(error::Error::from_error(
                 "",
-                InnerError::Eval(e),
+                e.into(),
                 self.evaluator.module_loader.clone(),
             ))
         })
