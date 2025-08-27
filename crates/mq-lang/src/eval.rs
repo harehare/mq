@@ -107,7 +107,7 @@ impl Evaluator {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
                         .eval_program(&program, runtime_value, Rc::clone(&self.env))
-                        .map_err(InnerError::Eval),
+                        .map_err(InnerError::from),
                 })
                 .collect();
 
@@ -122,7 +122,7 @@ impl Evaluator {
                             vec![value]
                         }
                     })
-                    .map_err(InnerError::Eval)
+                    .map_err(InnerError::from)
             }
         } else {
             input
@@ -130,7 +130,7 @@ impl Evaluator {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
                         .eval_program(&program, runtime_value, Rc::clone(&self.env))
-                        .map_err(InnerError::Eval),
+                        .map_err(InnerError::from),
                 })
                 .collect()
         }
@@ -142,13 +142,11 @@ impl Evaluator {
         node: &mq_markdown::Node,
     ) -> Result<RuntimeValue, InnerError> {
         node.map_values(&mut |child_node| {
-            let value = self
-                .eval_program(
-                    program,
-                    RuntimeValue::Markdown(child_node.clone(), None),
-                    Rc::clone(&self.env),
-                )
-                .map_err(InnerError::Eval)?;
+            let value = self.eval_program(
+                program,
+                RuntimeValue::Markdown(child_node.clone(), None),
+                Rc::clone(&self.env),
+            )?;
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
@@ -176,8 +174,7 @@ impl Evaluator {
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
         let module = self
             .module_loader
-            .load_builtin(Rc::clone(&self.token_arena))
-            .map_err(EvalError::ModuleLoadError)?;
+            .load_builtin(Rc::clone(&self.token_arena))?;
         self.load_module(module)
     }
 
@@ -256,8 +253,7 @@ impl Evaluator {
             ast::Literal::String(module_name) => {
                 let module = self
                     .module_loader
-                    .load_from_file(&module_name, Rc::clone(&self.token_arena))
-                    .map_err(EvalError::ModuleLoadError)?;
+                    .load_from_file(&module_name, Rc::clone(&self.token_arena))?;
                 self.load_module(module)
             }
             _ => Err(EvalError::ModuleLoadError(
@@ -371,15 +367,16 @@ impl Evaluator {
                 env.borrow_mut().define(ident, function.clone());
                 Ok(function)
             }
-            ast::Expr::Fn(params, program) => {
-                let function =
-                    RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
-                Ok(function)
-            }
+            ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
+                params.clone(),
+                program.clone(),
+                Rc::clone(&env),
+            )),
             ast::Expr::Let(ident, node) => {
                 let let_ = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
                 env.borrow_mut().define(ident, let_);
-                Ok(runtime_value.clone())
+                // Ok(runtime_value.clone())
+                Ok(RuntimeValue::NONE)
             }
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
@@ -610,13 +607,10 @@ impl Evaluator {
 
                 let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
                 let new_args = if params.len() == args.len() + 1 {
-                    new_args.insert(
-                        0,
-                        Rc::new(ast::Node {
-                            token_id: node.token_id,
-                            expr: Rc::new(ast::Expr::Self_),
-                        }),
-                    );
+                    new_args.push(Rc::new(ast::Node {
+                        token_id: node.token_id,
+                        expr: Rc::new(ast::Expr::Self_),
+                    }));
                     new_args.extend(args.clone());
                     new_args
                 } else if args.len() != params.len() {
@@ -632,23 +626,19 @@ impl Evaluator {
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
-                new_args
-                    .iter()
-                    .zip(params.iter())
-                    .try_for_each(|(arg, param)| {
-                        if let ast::Expr::Ident(name) = &*param.expr {
-                            let value =
-                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
+                for (arg, param) in new_args.iter().zip(params.iter()) {
+                    if let ast::Expr::Ident(name) = &*param.expr {
+                        let value =
+                            self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
 
-                            new_env.borrow_mut().define(name, value);
-                            Ok(())
-                        } else {
-                            Err(EvalError::InvalidDefinition(
-                                (*self.token_arena.borrow()[param.token_id]).clone(),
-                                ident.to_string(),
-                            ))
-                        }
-                    })?;
+                        new_env.borrow_mut().define(name, value);
+                    } else {
+                        return Err(EvalError::InvalidDefinition(
+                            (*self.token_arena.borrow()[param.token_id]).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
 

@@ -134,8 +134,8 @@ def run_tests(tests):
           error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
       end
   | let final_test_count = len(test_results)
-  | let final_failed_count = len(filter(test_results, fn(r): get(r, "status") == "failed";))
-  | let passed_count = sub(final_test_count, final_failed_count)
+  | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
+  | let passed_count = final_test_count - final_failed_count
 
   # Print test results
   | let results = ["\x1b[1m\x1b[36m=== mq Test Suite Results ===\x1b[0m"]

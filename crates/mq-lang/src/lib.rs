@@ -55,7 +55,6 @@ mod range;
 mod value;
 mod value_macros;
 
-use error::InnerError;
 use lexer::Lexer;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -115,7 +114,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     .map_err(|e| {
         Box::new(error::Error::from_error(
             code,
-            InnerError::Lexer(e),
+            e.into(),
             ModuleLoader::new(None),
         ))
     })
@@ -136,7 +135,7 @@ pub fn parse(
         .map_err(|e| {
             Box::new(error::Error::from_error(
                 code,
-                InnerError::Lexer(e),
+                e.into(),
                 ModuleLoader::new(None),
             ))
         })?;
@@ -150,7 +149,7 @@ pub fn parse(
     .map_err(|e| {
         Box::new(error::Error::from_error(
             code,
-            InnerError::Parse(e),
+            e.into(),
             ModuleLoader::new(None),
         ))
     })

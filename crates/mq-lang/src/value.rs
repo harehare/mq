@@ -677,7 +677,7 @@ mod tests {
         map.insert("version".to_string(), Value::Number(1.into()));
         let value_map = Value::Dict(map);
 
-        // The order of items in a HashMap is not guaranteed, so we need to check for both possible orderings
+        // The order of items in a BTreeMap is not guaranteed, so we need to check for both possible orderings
         let option1 = r#"{"name": "MQ", "version": 1}"#;
         let option2 = r#"{"version": 1, "name": "MQ"}"#;
 
