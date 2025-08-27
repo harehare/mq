@@ -129,7 +129,6 @@
 | `take` |  Takes the first n elements of an array | `arr`, `n` | take(arr, n) |
 | `take_while` |  Takes elements from the beginning of an array while the provided function returns true | `arr`, `f` | take_while(arr, f) |
 | `test` |  Tests if string matches a pattern | `s`, `pattern` | test(s, pattern) |
-| `to_array` |  Converts input to an array | `a` | to_array(a) |
 | `to_array` | Converts the given value to an array. | `value` | to_array(value) |
 | `to_code` | Creates a markdown code block with the given value and language. | `value`, `language` | to_code(value, language) |
 | `to_code_inline` | Creates an inline markdown code node with the given value. | `value` | to_code_inline(value) |

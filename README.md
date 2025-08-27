@@ -144,8 +144,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -f, --from-file
@@ -160,6 +160,16 @@ Options:
           Sets string that can be referenced at runtime
       --rawfile <NAME> <FILE>
           Sets file contents that can be referenced at runtime
+      --json
+          Include the built-in JSON module
+      --csv
+          Include the built-in CSV module
+      --yaml
+          Include the built-in YAML module
+      --toml
+          Include the built-in TOML module
+      --test
+          Include the built-in test module
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json]
   -U, --update
