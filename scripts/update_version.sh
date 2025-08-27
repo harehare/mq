@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export MQ_VERSION="0.2.18"
+export MQ_VERSION="0.2.19"
 export README="../README.md"
 
 # Update Cargo.toml files
