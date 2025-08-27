@@ -3,6 +3,7 @@ use crate::{
     arena::{Arena, ArenaId},
     ast::{error::ParseError, node as ast, parser::Parser},
     lexer::{self, Lexer, error::LexerError},
+    optimizer::Optimizer,
 };
 use compact_str::CompactString;
 use rustc_hash::FxHashMap;
@@ -102,6 +103,42 @@ impl ModuleLoader {
         self.loaded_modules[module_id].to_owned()
     }
 
+    #[cfg(not(debug_assertions))]
+    fn parse_program(
+        code: &str,
+        module_id: ModuleId,
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+    ) -> Result<Program, ModuleError> {
+        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
+        let mut program = Parser::new(
+            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+            token_arena,
+            module_id,
+        )
+        .parse()?;
+
+        Optimizer::new().optimize(&mut program);
+        Ok(program)
+    }
+
+    #[cfg(debug_assertions)]
+    fn parse_program(
+        code: &str,
+        module_id: ModuleId,
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+    ) -> Result<Program, ModuleError> {
+        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
+        let mut program = Parser::new(
+            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+            token_arena,
+            module_id,
+        )
+        .parse()?;
+
+        Optimizer::new().optimize(&mut program);
+        Ok(program)
+    }
+
     pub fn load(
         &mut self,
         module_name: &str,
@@ -114,14 +151,7 @@ impl ModuleLoader {
 
         let module_id = self.loaded_modules.len().into();
         self.loaded_modules.alloc(module_name.into());
-
-        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
-        let program = Parser::new(
-            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
-            token_arena,
-            module_id,
-        )
-        .parse()?;
+        let program = Self::parse_program(code, module_id, token_arena)?;
 
         let modules = program
             .iter()
