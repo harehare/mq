@@ -31,6 +31,7 @@ pub enum ModuleError {
 }
 
 pub type ModuleId = ArenaId<ModuleName>;
+
 type ModuleName = CompactString;
 type StandardModules = FxHashMap<CompactString, fn() -> &'static str>;
 
@@ -114,16 +115,13 @@ impl ModuleLoader {
         let module_id = self.loaded_modules.len().into();
         self.loaded_modules.alloc(module_name.into());
 
-        let tokens = Lexer::new(lexer::Options::default())
-            .tokenize(code, module_id)
-            .map_err(ModuleError::LexerError)?;
+        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
         let program = Parser::new(
             tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
             token_arena,
             module_id,
         )
-        .parse()
-        .map_err(ModuleError::ParseError)?;
+        .parse()?;
 
         let modules = program
             .iter()
