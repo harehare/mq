@@ -3,7 +3,6 @@ use crate::{
     arena::{Arena, ArenaId},
     ast::{error::ParseError, node as ast, parser::Parser},
     lexer::{self, Lexer, error::LexerError},
-    optimizer::Optimizer,
 };
 use compact_str::CompactString;
 use rustc_hash::FxHashMap;
@@ -85,6 +84,12 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     map
 });
 
+impl Default for ModuleLoader {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
 impl ModuleLoader {
     pub const BUILTIN_FILE: &str = include_str!("../../builtin.mq");
 
@@ -101,42 +106,6 @@ impl ModuleLoader {
     #[inline(always)]
     pub fn module_name(&self, module_id: ModuleId) -> CompactString {
         self.loaded_modules[module_id].to_owned()
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn parse_program(
-        code: &str,
-        module_id: ModuleId,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-    ) -> Result<Program, ModuleError> {
-        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
-        let mut program = Parser::new(
-            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
-            token_arena,
-            module_id,
-        )
-        .parse()?;
-
-        Optimizer::new().optimize(&mut program);
-        Ok(program)
-    }
-
-    #[cfg(debug_assertions)]
-    fn parse_program(
-        code: &str,
-        module_id: ModuleId,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-    ) -> Result<Program, ModuleError> {
-        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
-        let mut program = Parser::new(
-            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
-            token_arena,
-            module_id,
-        )
-        .parse()?;
-
-        Optimizer::new().optimize(&mut program);
-        Ok(program)
     }
 
     pub fn load(
@@ -254,6 +223,22 @@ impl ModuleLoader {
     fn module_id(name: &str) -> String {
         format!("{}.mq", name)
     }
+
+    fn parse_program(
+        code: &str,
+        module_id: ModuleId,
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+    ) -> Result<Program, ModuleError> {
+        let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
+        let program = Parser::new(
+            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+            token_arena,
+            module_id,
+        )
+        .parse()?;
+
+        Ok(program)
+    }
 }
 
 #[cfg(test)]
@@ -350,7 +335,7 @@ mod tests {
         #[case] expected: Result<Option<Module>, ModuleError>,
     ) {
         assert_eq!(
-            ModuleLoader::new(None).load("test", &program, token_arena),
+            ModuleLoader::default().load("test", &program, token_arena),
             expected
         );
     }
@@ -367,7 +352,7 @@ mod tests {
         #[case] module_name: &str,
         #[case] expected: Result<Option<Module>, ModuleError>,
     ) {
-        let mut loader = ModuleLoader::new(None);
+        let mut loader = ModuleLoader::default();
         let result = loader.load_from_file(module_name, token_arena.clone());
         // Only check that loading does not return NotFound error and returns Some(Module)
         match expected {
