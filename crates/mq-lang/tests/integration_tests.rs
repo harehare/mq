@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use mq_lang::{Engine, MqResult, Value};
 use rstest::{fixture, rstest};
@@ -674,7 +674,7 @@ fn engine() -> Engine {
 #[case::dict_map_identity(r#"let m = dict(["a", 1], ["b", 2]) | map(m, fn(kv): kv;)"#,
         vec![Value::Number(0.into())],
         Ok(vec![{
-          let mut dict = HashMap::new();
+          let mut dict = BTreeMap::new();
           dict.insert("a".to_string(), Value::Number(1.into()));
           dict.insert("b".to_string(), Value::Number(2.into()));
           dict.into()
@@ -687,7 +687,7 @@ fn engine() -> Engine {
         ",
           vec![Value::Number(0.into())],
           Ok(vec![{
-            let mut dict = HashMap::new();
+            let mut dict = BTreeMap::new();
             dict.insert("x".to_string(), Value::Number(10.into()));
             dict.insert("y".to_string(), Value::Number(20.into()));
             dict.into()
@@ -700,7 +700,7 @@ fn engine() -> Engine {
           "#,
             vec![Value::Number(0.into())],
             Ok(vec![{
-              let mut dict = HashMap::new();
+              let mut dict = BTreeMap::new();
               dict.insert("prefix_a".to_string(), Value::Number(1.into()));
               dict.insert("prefix_b".to_string(), Value::Number(2.into()));
               dict.into()
@@ -718,7 +718,7 @@ fn engine() -> Engine {
           "#,
             vec![Value::Number(0.into())],
             Ok(vec![{
-              let mut dict = HashMap::new();
+              let mut dict = BTreeMap::new();
               dict.insert("num1_transformed".to_string(), Value::Number(101.into()));
               dict.insert("num2_transformed".to_string(), Value::Number(102.into()));
               dict.into()
@@ -731,7 +731,7 @@ fn engine() -> Engine {
             "#,
             vec![Value::Number(0.into())],
             Ok(vec![{
-              let mut dict = HashMap::new();
+              let mut dict = BTreeMap::new();
               dict.insert("b".to_string(), Value::Number(2.into()));
               dict.insert("c".to_string(), Value::Number(4.into()));
               dict.into()
@@ -746,7 +746,7 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into()), Value::Number(7.into()), Value::Number(8.into()), Value::Number(9.into())])],
               Ok(vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("0".to_string(), Value::Array(vec![Value::Number(3.into()), Value::Number(6.into()), Value::Number(9.into())]));
                 dict.insert("1".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(4.into()), Value::Number(7.into())]));
                 dict.insert("2".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(5.into()), Value::Number(8.into())]));
@@ -759,7 +759,7 @@ fn engine() -> Engine {
             "#,
               vec![Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string()), Value::String("bird".to_string()), Value::String("fish".to_string()), Value::String("elephant".to_string())])],
               Ok(vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("3".to_string(), Value::Array(vec![Value::String("cat".to_string()), Value::String("dog".to_string())]));
                 dict.insert("4".to_string(), Value::Array(vec![Value::String("bird".to_string()), Value::String("fish".to_string())]));
                 dict.insert("8".to_string(), Value::Array(vec![Value::String("elephant".to_string())]));
@@ -779,7 +779,7 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(42.into())])],
               Ok(vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("42".to_string(), Value::Array(vec![Value::Number(42.into())]));
                 dict.into()
               }].into()))]
@@ -790,7 +790,7 @@ fn engine() -> Engine {
             "#,
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])],
               Ok(vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("same".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())]));
                 dict.into()
               }].into()))]
@@ -801,7 +801,7 @@ fn engine() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("false".to_string(), Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())]));
                 dict.insert("true".to_string(), Value::Array(vec![Value::Number(2.into()), Value::Number(4.into()), Value::Number(6.into())]));
                 dict.into()
@@ -1259,7 +1259,7 @@ fn engine() -> Engine {
               Ok(vec![Value::Bool(false)].into()))]
 #[case::any_dict_true(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 2;)"#,
               vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("a".to_string(), Value::Number(1.into()));
                 dict.insert("b".to_string(), Value::Number(2.into()));
                 dict.into()
@@ -1267,7 +1267,7 @@ fn engine() -> Engine {
               Ok(vec![Value::Bool(true)].into()))]
 #[case::any_dict_false(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 3;)"#,
               vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("a".to_string(), Value::Number(1.into()));
                 dict.insert("b".to_string(), Value::Number(2.into()));
                 dict.into()
@@ -1287,7 +1287,7 @@ fn engine() -> Engine {
               Ok(vec![Value::Bool(true)].into()))]
 #[case::all_dict_true(r#"all(dict(["a", 2], ["b", 4]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
-              let mut dict = HashMap::new();
+              let mut dict = BTreeMap::new();
               dict.insert("a".to_string(), Value::Number(2.into()));
               dict.insert("b".to_string(), Value::Number(4.into()));
               dict.into()
@@ -1295,7 +1295,7 @@ fn engine() -> Engine {
               Ok(vec![Value::Bool(true)].into()))]
 #[case::all_dict_false(r#"all(dict(["a", 2], ["b", 3]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
-              let mut dict = HashMap::new();
+              let mut dict = BTreeMap::new();
               dict.insert("a".to_string(), Value::Number(2.into()));
               dict.insert("b".to_string(), Value::Number(3.into()));
               dict.into()
@@ -1400,7 +1400,7 @@ fn engine() -> Engine {
 #[case::dict_literal_simple(r#"let d = {"a": 1, "b": "two"} | d"#, // Mixing string and ident keys
             vec![Value::Number(0.into())],
             Ok(vec![{
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 dict.insert("a".to_string(), Value::Number(1.into()));
                 dict.insert("b".to_string(), Value::String("two".to_string()));
                 dict.into()

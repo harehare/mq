@@ -9,7 +9,7 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::process::exit;
 
 use std::rc::Rc;
@@ -1973,7 +1973,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                 if args.is_empty() {
                     Ok(RuntimeValue::new_dict())
                 } else {
-                    let mut dict = HashMap::default();
+                    let mut dict = BTreeMap::default();
 
                     let entries = match args.as_slice() {
                         [RuntimeValue::Array(entries)] => match entries.as_slice() {
@@ -3678,7 +3678,7 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     use mq_markdown::Node;
     use rstest::rstest;
@@ -3990,7 +3990,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            Ok(RuntimeValue::Dict(HashMap::from([(
+            Ok(RuntimeValue::Dict(BTreeMap::from([(
                 "key".into(),
                 RuntimeValue::String("value".into())
             )])))
@@ -4058,7 +4058,7 @@ mod tests {
             _ => panic!("Expected Dict, got {:?}", map_val3),
         }
 
-        let mut nested_map_data = HashMap::default();
+        let mut nested_map_data = BTreeMap::default();
         nested_map_data.insert("level".into(), RuntimeValue::Number(2.into()));
         let nested_map: RuntimeValue = nested_map_data.into();
         let args4 = vec![
@@ -4119,7 +4119,7 @@ mod tests {
             name: CompactString::new("get"),
             token: None,
         };
-        let mut map_data = HashMap::default();
+        let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
@@ -4171,7 +4171,7 @@ mod tests {
         let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1);
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
-        let mut map_data = HashMap::default();
+        let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
@@ -4223,7 +4223,7 @@ mod tests {
         let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1);
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
-        let mut map_data = HashMap::default();
+        let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
