@@ -1,5 +1,5 @@
 use super::ast::node as ast;
-use crate::{Program, ast::IdentName};
+use crate::{Program, ast::IdentName, eval::builtin::BUILTIN_FUNCTIONS};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::rc::Rc;
 
@@ -17,39 +17,39 @@ pub enum OptimizationLevel {
     Full,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Optimizer {
-    constant_table: FxHashMap<ast::Ident, Rc<ast::Expr>>,
-    function_table: FxHashMap<ast::Ident, (ast::Params, Program, LineCount)>,
+    constant_table: FxHashMap<IdentName, Rc<ast::Expr>>,
+    function_table: FxHashMap<IdentName, (ast::Params, Program, LineCount)>,
     inline_threshold: LineCount,
     optimization_level: OptimizationLevel,
 }
 
-impl Optimizer {
-    pub fn new() -> Self {
+impl Default for Optimizer {
+    fn default() -> Self {
         Self {
-            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            function_table: FxHashMap::with_capacity_and_hasher(50, FxBuildHasher),
+            constant_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
+            function_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
             inline_threshold: 10,
             optimization_level: OptimizationLevel::default(),
         }
     }
+}
 
+impl Optimizer {
     /// Creates a new optimizer with a custom optimization level
     #[allow(dead_code)]
     pub fn with_level(level: OptimizationLevel) -> Self {
         Self {
-            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            function_table: FxHashMap::with_capacity_and_hasher(50, FxBuildHasher),
-            inline_threshold: 10,
             optimization_level: level,
+            ..Default::default()
         }
     }
 
     /// Creates a new optimizer with a custom inline threshold
     #[allow(dead_code)]
     pub fn with_inline_threshold(threshold: usize) -> Self {
-        let mut optimizer = Self::new();
+        let mut optimizer = Self::default();
         optimizer.inline_threshold = threshold;
         optimizer
     }
@@ -58,10 +58,9 @@ impl Optimizer {
     #[allow(dead_code)]
     pub fn with_level_and_threshold(level: OptimizationLevel, threshold: usize) -> Self {
         Self {
-            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            function_table: FxHashMap::with_capacity_and_hasher(50, FxBuildHasher),
             inline_threshold: threshold,
             optimization_level: level,
+            ..Default::default()
         }
     }
 
@@ -84,7 +83,7 @@ impl Optimizer {
                 program.retain_mut(|node| {
                     if let ast::Expr::Let(ident, _) = &*node.expr {
                         if !used_identifiers.contains(&ident.name) {
-                            self.constant_table.remove(ident);
+                            self.constant_table.remove(&ident.name);
                             return false;
                         }
                     }
@@ -176,31 +175,20 @@ impl Optimizer {
     fn collect_functions_for_inlining(&mut self, program: &Program) {
         for node in program {
             if let ast::Expr::Def(func_ident, params, body) = &*node.expr {
-                let line_count = self.estimate_line_count(body);
+                let line_count = program.len();
 
-                // Check if function is eligible for inlining:
-                // 1. Not used in if/elif/else conditions
-                // 2. Below line count threshold
-                // 3. Not recursive
                 if line_count < self.inline_threshold
                     && !Self::is_used_in_conditionals(func_ident, program)
                     && !Self::is_recursive_function(func_ident, body)
+                    && !Self::is_builtin_functions(func_ident)
                 {
                     self.function_table.insert(
-                        func_ident.clone(),
+                        func_ident.name.to_owned(),
                         (params.clone(), body.clone(), line_count),
                     );
                 }
             }
         }
-    }
-
-    /// Estimates the number of lines a function body would take
-    #[inline(always)]
-    fn estimate_line_count(&self, program: &Program) -> usize {
-        // Simple heuristic: each node represents approximately one line
-        // This could be improved with actual range information
-        program.len()
     }
 
     /// Checks if a function is used within if/elif/else conditions
@@ -262,7 +250,8 @@ impl Optimizer {
     fn contains_function_call(func_name: &ast::Ident, node: &Rc<ast::Node>) -> bool {
         match &*node.expr {
             ast::Expr::Call(call_ident, args, _) => {
-                if call_ident == func_name {
+                dbg!("Checking call:", call_ident.name.as_str()); // --- IGNORE ---
+                if call_ident.name == func_name.name {
                     return true;
                 }
                 for arg in args {
@@ -277,13 +266,26 @@ impl Optimizer {
             ast::Expr::Let(_, value_node) => {
                 return Self::contains_function_call(func_name, value_node);
             }
+            ast::Expr::Def(ident, params, program) => {
+                for param in params {
+                    if Self::contains_function_call(func_name, param) {
+                        return true;
+                    }
+                }
+
+                for body_node in program {
+                    if Self::contains_function_call(ident, body_node) {
+                        return true;
+                    }
+                }
+                return false;
+            }
             // Add other recursive cases as needed
             _ => {}
         }
         false
     }
 
-    #[inline(always)]
     fn is_recursive_function(func_name: &ast::Ident, body: &Program) -> bool {
         for node in body {
             if Self::contains_function_call(func_name, node) {
@@ -293,32 +295,42 @@ impl Optimizer {
         false
     }
 
+    fn is_builtin_functions(func_name: &ast::Ident) -> bool {
+        BUILTIN_FUNCTIONS.contains_key(func_name.name.as_str())
+    }
+
     /// Applies function inlining to the program
     /// Efficiently applies function inlining to the program.
+    #[inline(always)]
     fn inline_functions(&mut self, program: &mut Program) {
         let mut new_program = Vec::with_capacity(program.len());
         for node in program.drain(..) {
             let processed_node = self.inline_functions_in_node(node);
-            if let ast::Expr::Call(func_ident, args, _) = &*processed_node.expr {
-                if let Some((params, body, _)) = self.function_table.get(func_ident) {
-                    // Create parameter bindings
-                    let mut param_bindings = FxHashMap::default();
-                    for (param, arg) in params.iter().zip(args.iter()) {
-                        if let ast::Expr::Ident(param_ident) = &*param.expr {
-                            param_bindings.insert(param_ident.clone(), arg.clone());
-                        }
-                    }
-                    // Inline the function body with parameter substitution
-                    for body_node in body {
-                        let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
-                        new_program.push(inlined_node);
-                    }
-                    continue;
-                }
-            }
-            new_program.push(processed_node);
+            self.inline_top_level_calls(&mut new_program, processed_node);
         }
         *program = new_program;
+    }
+
+    /// Handles inlining of top-level function calls
+    fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Rc<ast::Node>) {
+        if let ast::Expr::Call(func_ident, args, _) = &*node.expr {
+            if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
+                // Create parameter bindings
+                let mut param_bindings = FxHashMap::default();
+                for (param, arg) in params.iter().zip(args.iter()) {
+                    if let ast::Expr::Ident(param_ident) = &*param.expr {
+                        param_bindings.insert(param_ident.clone(), arg.clone());
+                    }
+                }
+                // Inline the function body with parameter substitution
+                for body_node in body {
+                    let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
+                    new_program.push(inlined_node);
+                }
+                return;
+            }
+        }
+        new_program.push(node);
     }
 
     /// Recursively applies function inlining within a node
@@ -365,11 +377,32 @@ impl Optimizer {
                     .collect();
                 Rc::new(ast::Expr::If(new_conditions))
             }
-            ast::Expr::Call(func_ident, args, optional) => {
-                let new_args = args
+            ast::Expr::Call(func_ident, args, optional)
+                if !Self::is_builtin_functions(func_ident) =>
+            {
+                let new_args: ast::Args = args
                     .iter()
                     .map(|arg| self.inline_functions_in_node(Rc::clone(arg)))
                     .collect();
+
+                // Check if this function call can be inlined
+                if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
+                    // Create parameter bindings
+                    let mut param_bindings = FxHashMap::default();
+                    for (param, arg) in params.iter().zip(new_args.iter()) {
+                        if let ast::Expr::Ident(param_ident) = &*param.expr {
+                            param_bindings.insert(param_ident.clone(), arg.clone());
+                        }
+                    }
+                    // For single-expression functions, return the substituted expression directly
+                    if body.len() == 1 {
+                        return Self::substitute_parameters(&body[0], &param_bindings);
+                    }
+                    // For multi-expression functions, we need to create a compound expression
+                    // This is a limitation - we can only inline single-expression functions in nested contexts
+                    // Multi-expression functions can only be inlined at the top level
+                }
+
                 Rc::new(ast::Expr::Call(func_ident.clone(), new_args, *optional))
             }
             ast::Expr::Let(ident, value) => {
@@ -503,7 +536,7 @@ impl Optimizer {
                 }
             }
             ast::Expr::Ident(ident) => {
-                if let Some(expr) = self.constant_table.get(ident) {
+                if let Some(expr) = self.constant_table.get(&ident.name) {
                     mut_node.expr = Rc::clone(expr);
                 }
             }
@@ -525,7 +558,7 @@ impl Optimizer {
                 self.optimize_node(value);
                 if let ast::Expr::Literal(_) = &*value.expr {
                     self.constant_table
-                        .insert(ident.clone(), Rc::clone(&value.expr));
+                        .insert(ident.name.to_owned(), Rc::clone(&value.expr));
                 }
             }
             ast::Expr::Def(_, _, program)
@@ -542,7 +575,7 @@ impl Optimizer {
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments.iter_mut() {
                     if let ast::StringSegment::Ident(ident) = segment {
-                        if let Some(expr) = self.constant_table.get(ident) {
+                        if let Some(expr) = self.constant_table.get(&ident.name) {
                             if let ast::Expr::Literal(lit) = &**expr {
                                 *segment = ast::StringSegment::Text(lit.to_string());
                             }
@@ -1425,7 +1458,7 @@ mod tests {
         ]
     )]
     fn test(#[case] input: Program, #[case] expected: Program) {
-        let mut optimizer = Optimizer::new();
+        let mut optimizer = Optimizer::default();
         let mut optimized_program = input.clone();
         optimizer.optimize(&mut optimized_program);
         assert_eq!(optimized_program, expected);
@@ -1436,7 +1469,7 @@ mod tests {
             if let AstExpr::Let(ident, _) = &*input[0].expr {
                 if ident.name.as_str() == "const_unused" {
                     assert!(
-                        !optimizer.constant_table.contains_key(ident),
+                        !optimizer.constant_table.contains_key(&ident.name),
                         "const_unused should be removed from constant_table"
                     );
                 }
