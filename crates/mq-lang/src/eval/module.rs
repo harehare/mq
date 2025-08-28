@@ -3,6 +3,7 @@ use crate::{
     arena::{Arena, ArenaId},
     ast::{error::ParseError, node as ast, parser::Parser},
     lexer::{self, Lexer, error::LexerError},
+    optimizer::{OptimizationLevel, Optimizer},
 };
 use compact_str::CompactString;
 use rustc_hash::FxHashMap;
@@ -120,7 +121,9 @@ impl ModuleLoader {
 
         let module_id = self.loaded_modules.len().into();
         self.loaded_modules.alloc(module_name.into());
-        let program = Self::parse_program(code, module_id, token_arena)?;
+        let mut program = Self::parse_program(code, module_id, token_arena)?;
+
+        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(&mut program);
 
         let modules = program
             .iter()

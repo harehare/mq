@@ -5,11 +5,24 @@ use std::rc::Rc;
 
 type LineCount = usize;
 
+/// Optimization levels
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OptimizationLevel {
+    /// No optimization
+    None,
+    /// Only function inlining
+    InlineOnly,
+    /// Full optimization (inlining + constant folding + other optimizations)
+    #[default]
+    Full,
+}
+
 #[derive(Debug, Default)]
 pub struct Optimizer {
     constant_table: FxHashMap<ast::Ident, Rc<ast::Expr>>,
     function_table: FxHashMap<ast::Ident, (ast::Params, Program, LineCount)>,
     inline_threshold: LineCount,
+    optimization_level: OptimizationLevel,
 }
 
 impl Optimizer {
@@ -17,7 +30,19 @@ impl Optimizer {
         Self {
             constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
             function_table: FxHashMap::with_capacity_and_hasher(50, FxBuildHasher),
-            inline_threshold: 5,
+            inline_threshold: 10,
+            optimization_level: OptimizationLevel::default(),
+        }
+    }
+
+    /// Creates a new optimizer with a custom optimization level
+    #[allow(dead_code)]
+    pub fn with_level(level: OptimizationLevel) -> Self {
+        Self {
+            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            function_table: FxHashMap::with_capacity_and_hasher(50, FxBuildHasher),
+            inline_threshold: 10,
+            optimization_level: level,
         }
     }
 
@@ -29,26 +54,49 @@ impl Optimizer {
         optimizer
     }
 
+    /// Creates a new optimizer with both custom level and inline threshold
+    #[allow(dead_code)]
+    pub fn with_level_and_threshold(level: OptimizationLevel, threshold: usize) -> Self {
+        Self {
+            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            function_table: FxHashMap::with_capacity_and_hasher(50, FxBuildHasher),
+            inline_threshold: threshold,
+            optimization_level: level,
+        }
+    }
+
     pub fn optimize(&mut self, program: &mut Program) {
-        // First pass: collect function definitions for inlining
-        self.collect_functions_for_inlining(program);
+        match self.optimization_level {
+            OptimizationLevel::None => {
+                // No optimization
+            }
+            OptimizationLevel::InlineOnly => {
+                // Only do function inlining
+                self.collect_functions_for_inlining(program);
+                self.inline_functions(program);
+            }
+            OptimizationLevel::Full => {
+                // Full optimization: inlining + constant folding + dead code elimination
+                self.collect_functions_for_inlining(program);
 
-        let used_identifiers = self.collect_used_identifiers(program);
+                let used_identifiers = self.collect_used_identifiers(program);
 
-        program.retain_mut(|node| {
-            if let ast::Expr::Let(ident, _) = &*node.expr {
-                if !used_identifiers.contains(&ident.name) {
-                    self.constant_table.remove(ident);
-                    return false;
+                program.retain_mut(|node| {
+                    if let ast::Expr::Let(ident, _) = &*node.expr {
+                        if !used_identifiers.contains(&ident.name) {
+                            self.constant_table.remove(ident);
+                            return false;
+                        }
+                    }
+                    true
+                });
+
+                self.inline_functions(program);
+
+                for node in program {
+                    self.optimize_node(node);
                 }
             }
-            true
-        });
-
-        self.inline_functions(program);
-
-        for node in program {
-            self.optimize_node(node);
         }
     }
 
@@ -1429,5 +1477,297 @@ mod tests {
 
         // Function should not be inlined because it exceeds the threshold
         assert_eq!(optimized_program, input);
+    }
+
+    #[test]
+    fn test_optimization_level_none() {
+        let mut optimizer = Optimizer::with_level(OptimizationLevel::None);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("x"),
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // No optimization should be applied
+        assert_eq!(optimized_program, input);
+    }
+
+    #[test]
+    fn test_optimization_level_inline_only() {
+        let mut optimizer = Optimizer::with_level(OptimizationLevel::InlineOnly);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("mul"),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                    })],
+                    false,
+                )),
+            }),
+            // This should not be constant-folded in InlineOnly mode
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // Function should be inlined, but constant folding should not happen
+        let expected = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("mul"),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })],
+                )),
+            }),
+            // Inlined function body
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("mul"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+            // This add operation should NOT be constant-folded in InlineOnly mode
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+        ];
+
+        assert_eq!(optimized_program, expected);
+    }
+
+    #[test]
+    fn test_optimization_level_full() {
+        let mut optimizer = Optimizer::with_level(OptimizationLevel::Full);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("mul"),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                }),
+                            ],
+                            false,
+                        )),
+                    })],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                    })],
+                    false,
+                )),
+            }),
+            // This should be constant-folded in Full mode
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    ],
+                    false,
+                )),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // Both inlining and constant folding should happen
+        let expected = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![
+                        // The function body remains unchanged, but inlined calls are optimized
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(
+                                            2.0.into()
+                                        ))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            // Inlined and optimized function result: mul(3, 2) = 6
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))),
+            }),
+            // Constant-folded add operation
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+            }),
+        ];
+
+        assert_eq!(optimized_program, expected);
     }
 }

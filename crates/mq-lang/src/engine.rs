@@ -1,6 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use crate::MqResult;
+use crate::optimizer::OptimizationLevel;
 
 use crate::{
     ModuleLoader, Token, Value,
@@ -12,17 +13,11 @@ use crate::{
 };
 
 /// Configuration options for the mq engine.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Options {
     /// Whether to enable code optimization during evaluation.
     /// When enabled, performs constant folding and dead code elimination.
-    pub optimize: bool,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self { optimize: true }
-    }
+    pub optimization_level: OptimizationLevel,
 }
 
 /// The main execution engine for the mq.
@@ -76,8 +71,8 @@ impl Engine {
     ///
     /// When optimization is enabled, the engine performs constant folding
     /// and dead code elimination to improve execution performance.
-    pub fn set_optimize(&mut self, optimize: bool) {
-        self.options.optimize = optimize;
+    pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
+        self.options.optimization_level = level;
     }
 
     /// Set the maximum call stack depth for function calls.
@@ -155,9 +150,8 @@ impl Engine {
     ///
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let mut program = parse(code, Rc::clone(&self.token_arena))?;
-        if self.options.optimize {
-            Optimizer::new().optimize(&mut program);
-        }
+        Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
+
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
             .map(|values| {
@@ -208,9 +202,7 @@ impl Engine {
         mut program: crate::ast::Program,
         input: I,
     ) -> MqResult {
-        if self.options.optimize {
-            Optimizer::new().optimize(&mut program)
-        }
+        Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
 
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
@@ -236,22 +228,8 @@ impl Engine {
 }
 #[cfg(test)]
 mod tests {
-    use mq_test::defer;
-
     use super::*;
-
-    #[test]
-    fn test_engine_default() {
-        let engine = Engine::default();
-        assert!(engine.options.optimize);
-    }
-
-    #[test]
-    fn test_set_optimize() {
-        let mut engine = Engine::default();
-        engine.set_optimize(false);
-        assert!(!engine.options.optimize);
-    }
+    use mq_test::defer;
 
     #[test]
     fn test_set_paths() {

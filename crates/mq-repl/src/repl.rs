@@ -140,7 +140,7 @@ impl Repl {
     pub fn new(input: Vec<mq_lang::Value>) -> Self {
         let mut engine = mq_lang::Engine::default();
 
-        engine.set_optimize(false);
+        engine.set_optimization_level(mq_lang::OptimizationLevel::None);
         engine.load_builtin_module();
 
         Self {
