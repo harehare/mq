@@ -375,8 +375,7 @@ impl Evaluator {
             ast::Expr::Let(ident, node) => {
                 let let_ = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
                 env.borrow_mut().define(ident, let_);
-                // Ok(runtime_value.clone())
-                Ok(RuntimeValue::NONE)
+                Ok(runtime_value.clone())
             }
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
