@@ -49,9 +49,10 @@ impl Optimizer {
     /// Creates a new optimizer with a custom inline threshold
     #[allow(dead_code)]
     pub fn with_inline_threshold(threshold: usize) -> Self {
-        let mut optimizer = Self::default();
-        optimizer.inline_threshold = threshold;
-        optimizer
+        Self {
+            inline_threshold: threshold,
+            ..Default::default()
+        }
     }
 
     /// Creates a new optimizer with both custom level and inline threshold
@@ -1837,18 +1838,14 @@ mod tests {
     #[test]
     fn test_contains_function_call_in_if_conditions() {
         let func_name = &Ident::new("test_func");
-        
+
         // Test function call in if condition
         let if_node = Rc::new(Node {
             token_id: 0.into(),
             expr: Rc::new(AstExpr::If(smallvec![(
                 Some(Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false,)),
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
@@ -1856,9 +1853,9 @@ mod tests {
                 })
             )])),
         });
-        
+
         assert!(Optimizer::contains_function_call(func_name, &if_node));
-        
+
         // Test function call in if body
         let if_body_node = Rc::new(Node {
             token_id: 0.into(),
@@ -1869,43 +1866,35 @@ mod tests {
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false,)),
                 })
             )])),
         });
-        
+
         assert!(Optimizer::contains_function_call(func_name, &if_body_node));
     }
 
     #[test]
     fn test_contains_function_call_in_while_conditions() {
         let func_name = &Ident::new("test_func");
-        
+
         // Test function call in while condition
         let while_node = Rc::new(Node {
             token_id: 0.into(),
             expr: Rc::new(AstExpr::While(
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
                     expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
-                })]
+                })],
             )),
         });
-        
+
         assert!(Optimizer::contains_function_call(func_name, &while_node));
-        
+
         // Test function call in while body
         let while_body_node = Rc::new(Node {
             token_id: 0.into(),
@@ -1916,43 +1905,38 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
-                })]
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                })],
             )),
         });
-        
-        assert!(Optimizer::contains_function_call(func_name, &while_body_node));
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &while_body_node
+        ));
     }
 
     #[test]
     fn test_contains_function_call_in_until_conditions() {
         let func_name = &Ident::new("test_func");
-        
+
         // Test function call in until condition
         let until_node = Rc::new(Node {
             token_id: 0.into(),
             expr: Rc::new(AstExpr::Until(
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
                     expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
-                })]
+                })],
             )),
         });
-        
+
         assert!(Optimizer::contains_function_call(func_name, &until_node));
-        
+
         // Test function call in until body
         let until_body_node = Rc::new(Node {
             token_id: 0.into(),
@@ -1963,22 +1947,21 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
-                })]
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                })],
             )),
         });
-        
-        assert!(Optimizer::contains_function_call(func_name, &until_body_node));
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &until_body_node
+        ));
     }
 
     #[test]
     fn test_contains_function_call_in_foreach_conditions() {
         let func_name = &Ident::new("test_func");
-        
+
         // Test function call in foreach collection
         let foreach_collection_node = Rc::new(Node {
             token_id: 0.into(),
@@ -1986,21 +1969,20 @@ mod tests {
                 Ident::new("item"),
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
                     expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
-                })]
+                })],
             )),
         });
-        
-        assert!(Optimizer::contains_function_call(func_name, &foreach_collection_node));
-        
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &foreach_collection_node
+        ));
+
         // Test function call in foreach body
         let foreach_body_node = Rc::new(Node {
             token_id: 0.into(),
@@ -2012,22 +1994,21 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        Ident::new("test_func"),
-                        smallvec![],
-                        false,
-                    )),
-                })]
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                })],
             )),
         });
-        
-        assert!(Optimizer::contains_function_call(func_name, &foreach_body_node));
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &foreach_body_node
+        ));
     }
 
     #[test]
     fn test_contains_function_call_nested_control_structures() {
         let func_name = &Ident::new("test_func");
-        
+
         // Test nested if inside while with function call
         let nested_node = Rc::new(Node {
             token_id: 0.into(),
@@ -2052,10 +2033,10 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         })
                     )])),
-                })]
+                })],
             )),
         });
-        
+
         assert!(Optimizer::contains_function_call(func_name, &nested_node));
     }
 
@@ -2063,18 +2044,14 @@ mod tests {
     fn test_contains_function_call_no_match() {
         let func_name = &Ident::new("test_func");
         let different_func = &Ident::new("other_func");
-        
+
         // Test that it returns false when function name doesn't match
         let if_node = Rc::new(Node {
             token_id: 0.into(),
             expr: Rc::new(AstExpr::If(smallvec![(
                 Some(Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(
-                        different_func.clone(),
-                        smallvec![],
-                        false,
-                    )),
+                    expr: Rc::new(AstExpr::Call(different_func.clone(), smallvec![], false,)),
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
@@ -2082,7 +2059,7 @@ mod tests {
                 })
             )])),
         });
-        
+
         assert!(!Optimizer::contains_function_call(func_name, &if_node));
     }
 }
