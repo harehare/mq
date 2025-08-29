@@ -30,7 +30,7 @@ impl Default for Optimizer {
         Self {
             constant_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
             function_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            inline_threshold: 5,
+            inline_threshold: 10,
             optimization_level: OptimizationLevel::default(),
         }
     }
