@@ -7,6 +7,7 @@ use rstest::{fixture, rstest};
 fn engine() -> Engine {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
+    engine.set_optimization_level(mq_lang::OptimizationLevel::None);
     engine
 }
 
