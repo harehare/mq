@@ -174,6 +174,8 @@ impl Optimizer {
 
     /// Collects function definitions that are candidates for inlining
     fn collect_functions_for_inlining(&mut self, program: &Program) {
+        let mut exist_function_names: FxHashSet<IdentName> = FxHashSet::default();
+
         for node in program {
             if let ast::Expr::Def(func_ident, params, body) = &*node.expr {
                 let line_count = program.len();
@@ -183,10 +185,15 @@ impl Optimizer {
                     && !Self::is_recursive_function(func_ident, body)
                     && !Self::is_builtin_functions(func_ident)
                 {
-                    self.function_table.insert(
-                        func_ident.name.to_owned(),
-                        (params.clone(), body.clone(), line_count),
-                    );
+                    let name = func_ident.name.to_owned();
+
+                    if exist_function_names.contains(&name) {
+                        self.function_table.remove(&name);
+                    } else {
+                        exist_function_names.insert(name.clone());
+                        self.function_table
+                            .insert(name, (params.clone(), body.clone(), line_count));
+                    }
                 }
             }
         }
@@ -346,18 +353,19 @@ impl Optimizer {
     fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Rc<ast::Node>) {
         if let ast::Expr::Call(func_ident, args, _) = &*node.expr {
             if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
-                // Create parameter bindings
                 let mut param_bindings = FxHashMap::default();
                 for (param, arg) in params.iter().zip(args.iter()) {
                     if let ast::Expr::Ident(param_ident) = &*param.expr {
                         param_bindings.insert(param_ident.clone(), arg.clone());
                     }
                 }
+
                 // Inline the function body with parameter substitution
                 for body_node in body {
                     let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
                     new_program.push(inlined_node);
                 }
+
                 return;
             }
         }
@@ -408,9 +416,7 @@ impl Optimizer {
                     .collect();
                 Rc::new(ast::Expr::If(new_conditions))
             }
-            ast::Expr::Call(func_ident, args, optional)
-                if !Self::is_builtin_functions(func_ident) =>
-            {
+            ast::Expr::Call(func_ident, args, optional) => {
                 let new_args: ast::Args = args
                     .iter()
                     .map(|arg| self.inline_functions_in_node(Rc::clone(arg)))
