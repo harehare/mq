@@ -1,5 +1,5 @@
 use super::ast::node as ast;
-use crate::{Program, ast::IdentName, eval::builtin::BUILTIN_FUNCTIONS};
+use crate::{Program, ast::IdentName, eval::builtin};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::rc::Rc;
 
@@ -29,8 +29,8 @@ impl Default for Optimizer {
     fn default() -> Self {
         Self {
             constant_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
-            function_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
-            inline_threshold: 10,
+            function_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            inline_threshold: 5,
             optimization_level: OptimizationLevel::default(),
         }
     }
@@ -334,7 +334,7 @@ impl Optimizer {
     }
 
     fn is_builtin_functions(func_name: &ast::Ident) -> bool {
-        BUILTIN_FUNCTIONS.contains_key(func_name.name.as_str())
+        builtin::BUILTIN_FUNCTIONS.contains_key(func_name.name.as_str())
     }
 
     /// Applies function inlining to the program
@@ -356,11 +356,10 @@ impl Optimizer {
                 let mut param_bindings = FxHashMap::default();
                 for (param, arg) in params.iter().zip(args.iter()) {
                     if let ast::Expr::Ident(param_ident) = &*param.expr {
-                        param_bindings.insert(param_ident.clone(), arg.clone());
+                        param_bindings.insert(param_ident.name.clone(), arg.clone());
                     }
                 }
 
-                // Inline the function body with parameter substitution
                 for body_node in body {
                     let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
                     new_program.push(inlined_node);
@@ -428,7 +427,7 @@ impl Optimizer {
                     let mut param_bindings = FxHashMap::default();
                     for (param, arg) in params.iter().zip(new_args.iter()) {
                         if let ast::Expr::Ident(param_ident) = &*param.expr {
-                            param_bindings.insert(param_ident.clone(), arg.clone());
+                            param_bindings.insert(param_ident.name.clone(), arg.clone());
                         }
                     }
                     // For single-expression functions, return the substituted expression directly
@@ -461,11 +460,11 @@ impl Optimizer {
 
     fn substitute_parameters(
         node: &Rc<ast::Node>,
-        param_bindings: &FxHashMap<ast::Ident, Rc<ast::Node>>,
+        param_bindings: &FxHashMap<IdentName, Rc<ast::Node>>,
     ) -> Rc<ast::Node> {
         let new_expr = match &*node.expr {
             ast::Expr::Ident(ident) => {
-                if let Some(arg_node) = param_bindings.get(ident) {
+                if let Some(arg_node) = param_bindings.get(&ident.name) {
                     return arg_node.clone();
                 }
                 node.expr.clone()
@@ -598,10 +597,7 @@ impl Optimizer {
                         .insert(ident.name.to_owned(), Rc::clone(&value.expr));
                 }
             }
-            ast::Expr::Def(_, _, program)
-            | ast::Expr::Fn(_, program)
-            | ast::Expr::While(_, program)
-            | ast::Expr::Until(_, program) => {
+            ast::Expr::Def(_, _, program) | ast::Expr::Fn(_, program) => {
                 for node in program {
                     self.optimize_node(node);
                 }
@@ -1491,6 +1487,149 @@ mod tests {
                     ],
                     false,
                 )),
+            }),
+        ]
+    )]
+    #[case::function_inlining_multi_line(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("multi_step"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Let(
+                                Ident::new("temp"),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Call(
+                                        Ident::new("add"),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                            }),
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                            }),
+                                        ],
+                                        false,
+                                    )),
+                                }),
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("temp"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("multi_step"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        })
+                    ],
+                    false,
+                )),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("multi_step"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Let(
+                                Ident::new("temp"),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Call(
+                                        Ident::new("add"),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                            }),
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                            }),
+                                        ],
+                                        false,
+                                    )),
+                                }),
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("temp"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    }),
+                                ],
+                                false,
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            // Multi-line function inlined - first statement
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("temp"),
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))), // add(5, 1) = 6
+                    }),
+                )),
+            }),
+            // Multi-line function inlined - second statement
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(12.0.into()))), // mul(6, 2) = 12
             }),
         ]
     )]
