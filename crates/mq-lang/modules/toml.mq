@@ -170,7 +170,7 @@ def _parse_toml_content(input):
     | let escaped = false
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
           let result = if (escaped):
-    [value_chars + _handle_escape_char(char), false, current_pos + 1]
+    [value_chars + char, false, current_pos + 1]
   elif (char == "\\"):
     [value_chars, true, current_pos + 1]
   else:
