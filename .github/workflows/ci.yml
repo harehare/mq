@@ -25,10 +25,13 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install cargo-readme
         run: cargo install cargo-readme
+      - uses: taiki-e/install-action@nextest
       - name: Build
         run: just build
       - name: Run tests
         run: just test
+        env:
+          NEXTEST_RETRIES: 3
       - name: Check docs
         run: just docs
       - name: Check for diffs in docs
