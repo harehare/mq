@@ -49,7 +49,7 @@ impl Hir {
     }
 
     #[inline(always)]
-    const fn get_symbol_priority_for_cross_source(&self, symbol_kind: &SymbolKind) -> u8 {
+    fn get_symbol_priority_for_cross_source(&self, symbol_kind: &SymbolKind) -> u8 {
         match symbol_kind {
             SymbolKind::Function(_) => 0,
             SymbolKind::Variable => 1,
@@ -89,7 +89,7 @@ impl Hir {
     }
 
     #[inline(always)]
-    const fn get_symbol_priority_for_scope(&self, symbol_kind: &SymbolKind) -> u8 {
+    fn get_symbol_priority_for_scope(&self, symbol_kind: &SymbolKind) -> u8 {
         match symbol_kind {
             SymbolKind::Argument => 0,
             SymbolKind::Parameter => 1,

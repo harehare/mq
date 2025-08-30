@@ -206,13 +206,9 @@ impl Evaluator {
 
             for node in &module.vars {
                 if let ast::Expr::Let(ident, node) = &*node.expr {
-                    if let Some(val) =
-                        self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?
-                    {
-                        self.env.borrow_mut().define(ident, val);
-                    } else {
-                        self.env.borrow_mut().define(ident, RuntimeValue::NONE);
-                    }
+                    let val =
+                        self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
+                    self.env.borrow_mut().define(ident, val);
                 } else {
                     return Err(EvalError::InternalError(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -234,8 +230,7 @@ impl Evaluator {
         let mut value = runtime_value;
         for expr in program {
             match self.eval_expr(&value, Rc::clone(expr), Rc::clone(&env)) {
-                Ok(Some(v)) => value = v,
-                Ok(None) => {}
+                Ok(v) => value = v,
                 Err(e) => return Err(e),
             }
         }
@@ -248,10 +243,9 @@ impl Evaluator {
         ident: &ast::Ident,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         env.borrow()
             .resolve(ident)
-            .map(Some)
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
@@ -307,7 +301,7 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::InterpolatedString(segments) = &*node.expr {
             // Calculate estimated capacity based on segment content
             let estimated_capacity = segments
@@ -330,7 +324,7 @@ impl Evaluator {
                             ast::StringSegment::Ident(ident) => {
                                 let value =
                                     self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env))?;
-                                acc.push_str(&value.unwrap_or_default().to_string());
+                                acc.push_str(&value.to_string());
                             }
                             ast::StringSegment::Env(env) => {
                                 acc.push_str(&std::env::var(env).map_err(|_| {
@@ -348,7 +342,7 @@ impl Evaluator {
                         Ok(acc)
                     },
                 )
-                .map(|acc| Some(acc.into()))
+                .map(|acc| acc.into())
         } else {
             unreachable!()
         }
@@ -359,39 +353,33 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
-            ast::Expr::Selector(ident) => Ok(Some(Self::eval_selector_expr(runtime_value, ident))),
+            ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, env)
             }
-            ast::Expr::Self_ => Ok(Some(runtime_value.clone())),
-            ast::Expr::Nodes => Ok(None),
+            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
             ast::Expr::Break => Err(self.eval_break(node)),
             ast::Expr::Continue => Err(self.eval_continue(node)),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
-            ast::Expr::Literal(literal) => Ok(Some(self.eval_literal(literal))),
+            ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
             ast::Expr::Def(ident, params, program) => {
                 let function =
                     RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
-                env.borrow_mut().define(ident, function);
-                Ok(None)
+                env.borrow_mut().define(ident, function.clone());
+                Ok(function)
             }
-            ast::Expr::Fn(params, program) => Ok(Some(RuntimeValue::Function(
+            ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
                 params.clone(),
                 program.clone(),
                 Rc::clone(&env),
-            ))),
+            )),
             ast::Expr::Let(ident, node) => {
-                if let Some(let_) =
-                    self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?
-                {
-                    env.borrow_mut().define(ident, let_);
-                } else {
-                    env.borrow_mut().define(ident, RuntimeValue::NONE);
-                }
-                Ok(None)
+                let val = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
+                env.borrow_mut().define(ident, val);
+                Ok(runtime_value.clone())
             }
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
             ast::Expr::Until(_, _) => self.eval_until(runtime_value, node, env),
@@ -401,7 +389,7 @@ impl Evaluator {
             }
             ast::Expr::Include(module_id) => {
                 self.eval_include(module_id.to_owned())?;
-                Ok(None)
+                Ok(runtime_value.clone())
             }
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, Rc::clone(expr), env),
         }
@@ -432,11 +420,9 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Foreach(ident, values, body) = &*node.expr {
-            let values = self
-                .eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?
-                .unwrap_or_else(|| runtime_value.clone());
+            let values = self.eval_expr(runtime_value, Rc::clone(values), Rc::clone(&env))?;
             let values = match values {
                 RuntimeValue::Array(values) => {
                     let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
@@ -484,7 +470,7 @@ impl Evaluator {
                 }
             };
 
-            Ok(Some(RuntimeValue::Array(values)))
+            Ok(RuntimeValue::Array(values))
         } else {
             unreachable!()
         }
@@ -495,16 +481,15 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::Until(cond, body) = &*node.expr {
             let mut runtime_value = runtime_value.clone();
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
-            let mut cond_value = self
-                .eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?
-                .unwrap_or(RuntimeValue::NONE);
+            let mut cond_value =
+                self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
 
             if !cond_value.is_truthy() {
-                return Ok(Some(RuntimeValue::NONE));
+                return Ok(RuntimeValue::NONE);
             }
             let mut first = true;
 
@@ -512,9 +497,8 @@ impl Evaluator {
                 match self.eval_program(body, runtime_value.clone(), Rc::clone(&env)) {
                     Ok(mut new_runtime_value) => {
                         std::mem::swap(&mut runtime_value, &mut new_runtime_value);
-                        cond_value = self
-                            .eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?
-                            .unwrap_or(RuntimeValue::NONE);
+                        cond_value =
+                            self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                     }
                     Err(EvalError::Break(_)) if first => {
                         runtime_value = RuntimeValue::NONE;
@@ -532,7 +516,7 @@ impl Evaluator {
                 first = false;
             }
 
-            Ok(Some(runtime_value))
+            Ok(runtime_value)
         } else {
             unreachable!()
         }
@@ -543,26 +527,24 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::While(cond, body) = &*node.expr {
             let mut runtime_value = runtime_value.clone();
             let env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(&env))));
-            let mut cond_value = self
-                .eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?
-                .unwrap_or(RuntimeValue::NONE);
+            let mut cond_value =
+                self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
             let mut values = Vec::new();
 
             if !cond_value.is_truthy() {
-                return Ok(Some(RuntimeValue::NONE));
+                return Ok(RuntimeValue::NONE);
             }
 
             while cond_value.is_truthy() {
                 match self.eval_program(body, std::mem::take(&mut runtime_value), Rc::clone(&env)) {
                     Ok(new_runtime_value) => {
                         runtime_value = new_runtime_value;
-                        cond_value = self
-                            .eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?
-                            .unwrap_or(RuntimeValue::NONE);
+                        cond_value =
+                            self.eval_expr(&runtime_value, Rc::clone(cond), Rc::clone(&env))?;
                         values.push(runtime_value.clone());
                     }
                     Err(EvalError::Break(_)) => break,
@@ -571,7 +553,7 @@ impl Evaluator {
                 }
             }
 
-            Ok(Some(RuntimeValue::Array(values)))
+            Ok(RuntimeValue::Array(values))
         } else {
             unreachable!()
         }
@@ -582,14 +564,13 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         if let ast::Expr::If(conditions) = &*node.expr {
             for (cond_node, body) in conditions {
                 match cond_node {
                     Some(cond_node) => {
-                        let cond = self
-                            .eval_expr(runtime_value, Rc::clone(cond_node), Rc::clone(&env))?
-                            .unwrap_or(RuntimeValue::NONE);
+                        let cond =
+                            self.eval_expr(runtime_value, Rc::clone(cond_node), Rc::clone(&env))?;
 
                         if cond.is_truthy() {
                             return self.eval_expr(runtime_value, Rc::clone(body), env);
@@ -599,7 +580,7 @@ impl Evaluator {
                 }
             }
 
-            Ok(Some(RuntimeValue::NONE))
+            Ok(RuntimeValue::NONE)
         } else {
             unreachable!()
         }
@@ -612,7 +593,7 @@ impl Evaluator {
         ident: &ast::Ident,
         args: &ast::Args,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         if let Ok(fn_value) = Rc::clone(&env).borrow().resolve(ident) {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
@@ -640,11 +621,9 @@ impl Evaluator {
 
                 for (arg, param) in new_args.into_iter().zip(params.iter()) {
                     if let ast::Expr::Ident(name) = &*param.expr {
-                        new_env.borrow_mut().define(
-                            name,
-                            self.eval_expr(runtime_value, arg, Rc::clone(&env))?
-                                .unwrap_or_default(),
-                        );
+                        new_env
+                            .borrow_mut()
+                            .define(name, self.eval_expr(runtime_value, arg, Rc::clone(&env))?);
                     } else {
                         return Err(EvalError::InvalidDefinition(
                             (*self.token_arena.borrow()[param.token_id]).clone(),
@@ -655,7 +634,7 @@ impl Evaluator {
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
                 self.exit_scope();
 
-                result.map(Some)
+                result
             } else if let RuntimeValue::NativeFunction(ident) = fn_value {
                 self.eval_builtin(runtime_value, node, &ident, args, env)
             } else {
@@ -676,16 +655,12 @@ impl Evaluator {
         ident: &ast::Ident,
         args: &ast::Args,
         env: Rc<RefCell<Env>>,
-    ) -> Result<Option<RuntimeValue>, EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         let args: Result<builtin::Args, EvalError> = args
             .iter()
-            .map(|arg| {
-                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))
-                    .map(|opt| opt.unwrap_or(RuntimeValue::NONE))
-            })
+            .map(|arg| self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env)))
             .collect();
         builtin::eval_builtin(runtime_value, ident, args?)
-            .map(Some)
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 

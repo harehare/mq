@@ -48,22 +48,27 @@ pub enum SymbolKind {
 }
 
 impl Symbol {
-    pub const fn is_function(&self) -> bool {
+    #[inline(always)]
+    pub fn is_function(&self) -> bool {
         matches!(self.kind, SymbolKind::Function(_))
     }
 
-    pub const fn is_variable(&self) -> bool {
+    #[inline(always)]
+    pub fn is_variable(&self) -> bool {
         matches!(self.kind, SymbolKind::Variable)
     }
 
-    pub const fn is_parameter(&self) -> bool {
+    #[inline(always)]
+    pub fn is_parameter(&self) -> bool {
         matches!(self.kind, SymbolKind::Parameter)
     }
 
-    pub const fn is_argument(&self) -> bool {
+    #[inline(always)]
+    pub fn is_argument(&self) -> bool {
         matches!(self.kind, SymbolKind::Argument)
     }
 
+    #[inline(always)]
     pub fn is_internal_function(&self) -> bool {
         if matches!(self.kind, SymbolKind::Function(_)) {
             self.value
