@@ -13,163 +13,164 @@ end
 
 def _parse_json_value(input):
   let input = trim(input)
+
   | def handle_string_char(char, escaped, pos):
       if (char == "\"" && !escaped):
         [true, pos]
       elif (char == "\""):
-        [false, not(escaped)]
+        [false, !escaped]
       else:
         [false, false]
     end
 
-  | def parse_string(input):
-      let escaped = false
-      | let pos = 1
-      | let end_pos = None
-      | let pos2 = until (is_none(end_pos) && pos < len(input)):
-            let char = input[pos]
-            | let tokens = handle_string_char(char, escaped, pos)
-            | let should_end = tokens[0]
-            | let new_escaped = tokens[1]
-            | let end_pos = if (should_end): pos else: None
-            | let escaped = if (not(should_end)): new_escaped else: false
-            | let pos = pos + 1
-            | pos
-          end
-      | _split_string(input, pos2 - 1)
-    end
+  def _parse_string(input):
+    let escaped = false
+    | let pos = 1
+    | let end_pos = None
+    | let pos = until (is_none(end_pos) && pos < len(input)):
+          let char = input[pos]
+          | let tokens = handle_string_char(char, escaped, pos)
+          | let should_end = tokens[0]
+          | let new_escaped = tokens[1]
+          | let end_pos = if (should_end): pos else: None
+          | let escaped = if (!should_end): new_escaped else: false
+          | let pos = pos + 1
+          | pos
+        end
+    | _split_string(input, pos - 1)
+  end
 
-  | def parse_number(input):
-      let input = trim(input)
-      | let number_pattern = "^(-?[0-9]+(?:\\.[0-9]+)?)"
-      | let match_result = match(input, number_pattern)
-      | if (is_empty(match_result)):
-          [None, input]
-        else:
-          _split_number(input, first(match_result))
-    end
+  def _parse_number(input):
+    let input = trim(input)
+    | let number_pattern = "^(-?[0-9]+(?:\\.[0-9]+)?)"
+    | let match_result = match(input, number_pattern)
+    | if (is_empty(match_result)):
+        [None, input]
+      else:
+        _split_number(input, first(match_result))
+  end
 
-  | def parse_boolean(input):
-      let input = trim(input)
-      | if (starts_with(input, "true")):
-          [true, input[4:len(input)]]
-        elif (starts_with(input, "false")):
-          [false, input[5:len(input)]]
-        else:
-          [None, input]
-    end
+  def _parse_boolean(input):
+    let input = trim(input)
+    | if (starts_with(input, "true")):
+        [true, input[4:len(input)]]
+      elif (starts_with(input, "false")):
+        [false, input[5:len(input)]]
+      else:
+        [None, input]
+  end
 
-  | def parse_null(input):
-      let input = trim(input)
-      | if (starts_with(input, "null")):
-          [None, input[4:len(input)]]
-        else:
-          [None, input]
-    end
+  def _parse_null(input):
+    let input = trim(input)
+    | if (starts_with(input, "null")):
+        [None, input[4:len(input)]]
+      else:
+        [None, input]
+  end
 
-  | def _parse_array(input):
-      let input = input[1:len(input)]
-      | let input = trim(input)
-      | let elements = []
-      | let finish = false
-      | if (starts_with(input, "]")):
-          [elements, input[1:len(input)]]
+  def _parse_array_value(input):
+    let input = input[1:len(input)]
+    | let input = trim(input)
+    | let elements = []
+    | let finish = false
+    | if (starts_with(input, "]")):
+        [elements, input[1:len(input)]]
+      else:
+        until (!finish):
+          let tokens = _parse_json_value(input)
+          | let value = tokens[0]
+          | let rest = tokens[1]
+          | let elements = elements + [value]
+          | let input = trim(rest)
+          | if (is_none(value)): error("Invalid JSON array element")
+          | let finish = starts_with(input, "]")
+          | let input = if (starts_with(input, ",")):
+                trim(input[1:len(input)])
+              elif (starts_with(input, "]")):
+                trim(input[1:len(input)])
+              else:
+                error("Expected ',' or ']' in array")
+          | [elements, input];
+  end
+
+  def _parse_array(input):
+    let input = trim(input)
+    | if (not(starts_with(input, "["))):
+        [None, input]
+      else:
+        _parse_array_value(input)
+  end
+
+  def _parse_object_value(obj, key, input):
+    let input = trim(input[1:len(input)])
+    | let tokens = _parse_json_value(input)
+    | let value = tokens[0]
+    | let rest = tokens[1]
+    | let obj = set(obj, key, value)
+    | let input = trim(rest)
+    | if (starts_with(input, ",")):
+        [obj, trim(input[1:len(input)])]
+      elif (starts_with(input, "}")):
+        [obj, input]
+      elif (is_empty(input)):
+        [obj, trim(input)]
+      else:
+        error("Expected ',' or '}' in object")
+  end
+
+  def _parse_object(input):
+    let input = input[1:len(input)]
+    | let input = trim(input)
+    | let obj = {}
+    | let result = if (starts_with(input, "}")):
+          [obj, input[1:len(input)]]
         else:
-          until (!finish):
-            let tokens = _parse_json_value(input)
-            | let value = tokens[0]
-            | let rest = tokens[1]
-            | let elements = elements + [value]
-            | let input = trim(rest)
-            | if (is_none(value)): error("Invalid JSON array element")
-            | let finish = starts_with(input, "]")
-            | let input = if (starts_with(input, ",")):
-                  trim(input[1:len(input)])
-                elif (starts_with(input, "]")):
-                  trim(input[1:len(input)])
+          until (!starts_with(input, "}") && !is_empty(input)):
+            let tokens = _parse_string(input)
+            | let key = tokens[0]
+            | let input = trim(tokens[1])
+            | if (is_none(key)): error("Invalid JSON object key")
+            | if (!starts_with(input, ":")): error("Expected ':' after object key")
+            | let result = _parse_object_value(obj, key, input)
+            | let obj = result[0]
+            | let input = trim(result[1])
+            | let result = if (starts_with(input, ",")):
+                  [obj, input[1:len(input)]]
                 else:
-                  error("Expected ',' or ']' in array")
-            | [elements, input];
-    end
+                  [obj, input]
+            | let obj = result[0]
+            | let input = trim(result[1])
+            | [obj, input]
+          end
+    | let obj = result[0]
+    | let input = result[1]
+    | if (starts_with(input, "}")):
+        [obj, trim(input[1:len(input)])]
+      else:
+        [obj, input]
 
-  | def parse_array(input):
-      let input = trim(input)
-      | if (not(starts_with(input, "["))):
-          [None, input]
-        else:
-          _parse_array(input)
-    end
+  end
 
-  | def _parse_object_value(obj, key, input):
-      let input = trim(input[1:len(input)])
-      | let tokens = _parse_json_value(input)
-      | let value = tokens[0]
-      | let rest = tokens[1]
-      | let obj = set(obj, key, value)
-      | let input = trim(rest)
-      | if (starts_with(input, ",")):
-          [obj, trim(input[1:len(input)])]
-        elif (starts_with(input, "}")):
-          [obj, input]
-        elif (is_empty(input)):
-          [obj, trim(input)]
-        else:
-          error("Expected ',' or '}' in object")
-    end
-
-  | def _parse_object(input):
-      let input = input[1:len(input)]
-      | let input = trim(input)
-      | let obj = {}
-      | let result = if (starts_with(input, "}")):
-            [obj, input[1:len(input)]]
-          else:
-            until (!starts_with(input, "}") && !is_empty(input)):
-              let tokens = parse_string(input)
-              | let key = tokens[0]
-              | let input = trim(tokens[1])
-              | if (is_none(key)): error("Invalid JSON object key")
-              | if (!starts_with(input, ":")): error("Expected ':' after object key")
-              | let result = _parse_object_value(obj, key, input)
-              | let obj = result[0]
-              | let input = trim(result[1])
-              | let result = if (starts_with(input, ",")):
-                    [obj, input[1:len(input)]]
-                  else:
-                    [obj, input]
-              | let obj = result[0]
-              | let input = trim(result[1])
-              | [obj, input]
-            end
-      | let obj = result[0]
-      | let input = result[1]
-      | if (starts_with(input, "}")):
-          [obj, trim(input[1:len(input)])]
-        else:
-          [obj, input]
-
-    end
-
-  | def parse_object(input):
-      let input = trim(input)
-      | if (!starts_with(input, "{")):
-          [None, input]
-        else:
-          _parse_object(input)
-    end
+  def parse_object(input):
+    let input = trim(input)
+    | if (!starts_with(input, "{")):
+        [None, input]
+      else:
+        _parse_object(input)
+  end
 
   | if (starts_with(input, "{")):
-      parse_object(input)
+      _parse_object(input)
     elif (starts_with(input, "[")):
-      parse_array(input)
+      _parse_array(input)
     elif (starts_with(input, "\"")):
-      parse_string(input)
+      _parse_string(input)
     elif (starts_with(input, "t") || starts_with(input, "f")):
-      parse_boolean(input)
+      _parse_boolean(input)
     elif (starts_with(input, "n")):
-      parse_null(input)
+      _parse_null(input)
     else:
-      parse_number(input)
+      _parse_number(input)
 end
 
 # Parses a JSON string and returns the corresponding data structure.

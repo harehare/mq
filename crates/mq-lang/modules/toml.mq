@@ -81,22 +81,12 @@ def _parse_toml_content(input):
           | current_pos
         end
     | let final_pos = if (is_none(result)): pos else: result
-    | if (final_pos < len(input) && input[final_pos] == "\r"):
-        if (final_pos + 1 < len(input) && input[final_pos + 1] == "\n"): final_pos + 2 else: final_pos + 1
-      elif (final_pos < len(input) && input[final_pos] == "\n"):
+    | if (input[final_pos] == "\r"):
+        if (input[final_pos + 1] == "\n"): final_pos + 2 else: final_pos + 1
+      elif (input[final_pos] == "\n"):
         final_pos + 1
       else:
         final_pos
-  end
-
-  def _handle_escape_char(char):
-    if (char == "n"): "\n"
-    elif (char == "t"): "\t"
-    elif (char == "r"): "\r"
-    elif (char == "\\"): "\\"
-    elif (char == "\""): "\""
-    elif (char == "'"): "'"
-    else: char
   end
 
   def _parse_bare_key(input, pos):
@@ -119,7 +109,7 @@ def _parse_toml_content(input):
     | let char = input[current_pos]
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
           let result = if (escaped):
-    [key_chars + _handle_escape_char(char), false, current_pos + 1]
+    [key_chars + char, false, current_pos + 1]
   elif (char == "\\"):
     [key_chars, true, current_pos + 1]
   else:
@@ -135,31 +125,24 @@ def _parse_toml_content(input):
   end
 
   def _parse_key(input, pos):
-    if (pos < len(input) && (input[pos] == "\"" || input[pos] == "'")):
+    if (input[pos] == "\"" || input[pos] == "'"):
       _parse_quoted_key(input, pos)
     else:
       _parse_bare_key(input, pos)
   end
 
   def _parse_dotted_key(input, pos):
-    let _keys = []
+    let keys = []
     | let current_pos = pos
     | let is_done = false
-    | let result = until (current_pos < len(input) && !is_done):
+    | let result = until (!is_done):
           let current_pos = _skip_whitespace(input, current_pos)
           | let key_result = _parse_key(input, current_pos)
-          | let key = key_result[0]
-          | let current_pos = key_result[1]
-          | let _keys = _keys + key
-          | let current_pos = _skip_whitespace(input, current_pos)
-          | let result = if (current_pos < len(input) && input[current_pos] == "."):
-                [_keys, current_pos + 1, false]
-              else:
-                [_keys, current_pos, true]
-          | let _keys = result[0]
-          | let current_pos = result[1]
-          | let is_done = result[2]
-          | [_keys, current_pos]
+          | let current_pos = _skip_whitespace(input, key_result[1])
+          | let keys = keys + key_result[0]
+          | let is_done = current_pos + 1 >= len(input) || input[current_pos] != "."
+          | let current_pos = if (!is_done): current_pos + 1 else: current_pos
+          | [keys, current_pos]
         end
     | [result[0], result[1]]
   end
@@ -187,7 +170,7 @@ def _parse_toml_content(input):
     | let escaped = false
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
           let result = if (escaped):
-    [value_chars + _handle_escape_char(char), false, current_pos + 1]
+    [value_chars + char, false, current_pos + 1]
   elif (char == "\\"):
     [value_chars, true, current_pos + 1]
   else:
@@ -256,15 +239,13 @@ def _parse_toml_content(input):
           let value_result = _parse_value(input, current_pos)
           | let value = value_result[0]
           | let current_pos = value_result[1]
-          | let _values = _values + if (is_none(value)): [] else: value
+          | let _values = if (is_none(value)): _values else: _values + value
           | let current_pos = _skip_whitespace_and_new_line(input, current_pos)
-          | let result = if (current_pos < len(input) && input[current_pos] == ","):
-                [_values, _skip_whitespace_and_new_line(input, current_pos + 1)]
+          | let current_pos = if (current_pos < len(input) && input[current_pos] == ","):
+                _skip_whitespace_and_new_line(input, current_pos + 1)
               else:
-                [_values, current_pos]
-          | let _values = result[0]
-          | let current_pos = result[1]
-          | result
+                current_pos
+          | [_values, current_pos]
         end
     | let _values = if (is_none(result)): _values else: result[0]
     | let current_pos = result[1]

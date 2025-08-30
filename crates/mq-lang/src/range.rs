@@ -20,7 +20,7 @@ impl Default for Position {
 }
 
 impl Position {
-    pub const fn new(line: u32, column: usize) -> Self {
+    pub fn new(line: u32, column: usize) -> Self {
         Position { line, column }
     }
 }

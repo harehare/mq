@@ -603,16 +603,6 @@ impl<'a> Parser<'a> {
             Some(token) if matches!(token.kind, TokenKind::LParen) => {
                 let mut args = self.parse_args()?;
                 children.append(&mut args);
-
-                if let Some(token) = self.tokens.peek() {
-                    if matches!(token.kind, TokenKind::Question) {
-                        children.push(self.next_node(
-                            |token_kind| matches!(token_kind, TokenKind::Question),
-                            NodeKind::Token,
-                        )?);
-                    }
-                }
-
                 node.kind = NodeKind::Call;
                 node.children = children;
 

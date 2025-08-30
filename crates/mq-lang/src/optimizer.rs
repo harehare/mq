@@ -1,36 +1,102 @@
 use super::ast::node as ast;
-use crate::{Program, ast::IdentName};
+use crate::{Program, ast::IdentName, eval::builtin};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::rc::Rc;
 
-#[derive(Debug, Default)]
+type LineCount = usize;
+
+/// Optimization levels
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OptimizationLevel {
+    /// No optimization
+    None,
+    /// Only function inlining
+    InlineOnly,
+    /// Full optimization (inlining + constant folding + other optimizations)
+    #[default]
+    Full,
+}
+
+#[derive(Debug)]
 pub struct Optimizer {
-    constant_table: FxHashMap<ast::Ident, Rc<ast::Expr>>,
-    // No need to store used_identifiers here if it's collected and used per optimize call.
+    constant_table: FxHashMap<IdentName, Rc<ast::Expr>>,
+    function_table: FxHashMap<IdentName, (ast::Params, Program, LineCount)>,
+    inline_threshold: LineCount,
+    optimization_level: OptimizationLevel,
+}
+
+impl Default for Optimizer {
+    fn default() -> Self {
+        Self {
+            constant_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
+            function_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            inline_threshold: 5,
+            optimization_level: OptimizationLevel::default(),
+        }
+    }
 }
 
 impl Optimizer {
-    pub fn new() -> Self {
+    /// Creates a new optimizer with a custom optimization level
+    #[allow(dead_code)]
+    pub fn with_level(level: OptimizationLevel) -> Self {
         Self {
-            constant_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            optimization_level: level,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new optimizer with a custom inline threshold
+    #[allow(dead_code)]
+    pub fn with_inline_threshold(threshold: usize) -> Self {
+        Self {
+            inline_threshold: threshold,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new optimizer with both custom level and inline threshold
+    #[allow(dead_code)]
+    pub fn with_level_and_threshold(level: OptimizationLevel, threshold: usize) -> Self {
+        Self {
+            inline_threshold: threshold,
+            optimization_level: level,
+            ..Default::default()
         }
     }
 
     pub fn optimize(&mut self, program: &mut Program) {
-        let used_identifiers = self.collect_used_identifiers(program);
+        match self.optimization_level {
+            OptimizationLevel::None => {
+                // No optimization
+            }
+            OptimizationLevel::InlineOnly => {
+                // Only do function inlining
+                self.collect_functions_for_inlining(program);
+                self.inline_functions(program);
+            }
+            OptimizationLevel::Full => {
+                // Full optimization: inlining + constant folding + dead code elimination
+                self.collect_functions_for_inlining(program);
 
-        program.retain_mut(|node| {
-            if let ast::Expr::Let(ident, _) = &*node.expr {
-                if !used_identifiers.contains(&ident.name) {
-                    self.constant_table.remove(ident);
-                    return false;
+                let used_identifiers = self.collect_used_identifiers(program);
+
+                program.retain_mut(|node| {
+                    if let ast::Expr::Let(ident, _) = &*node.expr {
+                        if !used_identifiers.contains(&ident.name) {
+                            self.constant_table.remove(&ident.name);
+                            return false;
+                        }
+                    }
+                    true
+                });
+
+                self.inline_functions(program);
+
+                for node in program {
+                    self.optimize_node(node);
                 }
             }
-            true
-        });
-
-        for node in program {
-            self.optimize_node(node);
         }
     }
 
@@ -51,7 +117,7 @@ impl Optimizer {
             ast::Expr::Ident(ident) => {
                 used_idents.insert(ident.name.clone());
             }
-            ast::Expr::Call(func_ident, args, _) => {
+            ast::Expr::Call(func_ident, args) => {
                 used_idents.insert(func_ident.name.clone());
                 for arg in args {
                     Self::collect_used_identifiers_in_node(arg, used_idents);
@@ -106,12 +172,333 @@ impl Optimizer {
         }
     }
 
+    /// Collects function definitions that are candidates for inlining
+    fn collect_functions_for_inlining(&mut self, program: &Program) {
+        let mut exist_function_names: FxHashSet<IdentName> = FxHashSet::default();
+
+        for node in program {
+            if let ast::Expr::Def(func_ident, params, body) = &*node.expr {
+                let line_count = program.len();
+
+                if line_count < self.inline_threshold
+                    && !Self::is_used_in_conditionals(func_ident, program)
+                    && !Self::is_recursive_function(func_ident, body)
+                    && !Self::is_builtin_functions(func_ident)
+                {
+                    let name = func_ident.name.to_owned();
+
+                    if exist_function_names.contains(&name) {
+                        self.function_table.remove(&name);
+                    } else {
+                        exist_function_names.insert(name.clone());
+                        self.function_table
+                            .insert(name, (params.clone(), body.clone(), line_count));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Checks if a function is used within if/elif/else conditions
+    #[inline(always)]
+    fn is_used_in_conditionals(func_name: &ast::Ident, program: &Program) -> bool {
+        for node in program {
+            if Self::check_conditional_usage_in_node(func_name, node) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Recursively checks if a function is used in conditional contexts within a node
+    fn check_conditional_usage_in_node(func_name: &ast::Ident, node: &Rc<ast::Node>) -> bool {
+        match &*node.expr {
+            ast::Expr::If(conditions) => {
+                for (cond_node_opt, _) in conditions {
+                    if let Some(cond_node) = cond_node_opt {
+                        if Self::contains_function_call(func_name, cond_node) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            ast::Expr::While(cond_node, body) | ast::Expr::Until(cond_node, body) => {
+                if Self::contains_function_call(func_name, cond_node) {
+                    return true;
+                }
+                for stmt in body {
+                    if Self::check_conditional_usage_in_node(func_name, stmt) {
+                        return true;
+                    }
+                }
+            }
+            ast::Expr::Def(_, _, body) | ast::Expr::Fn(_, body) => {
+                for stmt in body {
+                    if Self::check_conditional_usage_in_node(func_name, stmt) {
+                        return true;
+                    }
+                }
+            }
+            ast::Expr::Foreach(_, collection_node, body) => {
+                if Self::contains_function_call(func_name, collection_node) {
+                    return true;
+                }
+                for stmt in body {
+                    if Self::check_conditional_usage_in_node(func_name, stmt) {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Checks if a function call exists within a node tree
+    fn contains_function_call(func_name: &ast::Ident, node: &Rc<ast::Node>) -> bool {
+        match &*node.expr {
+            ast::Expr::Call(call_ident, args) => {
+                if call_ident.name == func_name.name {
+                    return true;
+                }
+                for arg in args {
+                    if Self::contains_function_call(func_name, arg) {
+                        return true;
+                    }
+                }
+            }
+            ast::Expr::Paren(inner_node) => {
+                return Self::contains_function_call(func_name, inner_node);
+            }
+            ast::Expr::Let(_, value_node) => {
+                return Self::contains_function_call(func_name, value_node);
+            }
+            ast::Expr::Def(ident, params, program) => {
+                for param in params {
+                    if Self::contains_function_call(func_name, param) {
+                        return true;
+                    }
+                }
+
+                for body_node in program {
+                    if Self::contains_function_call(ident, body_node) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            ast::Expr::If(conditions) => {
+                for (cond_node_opt, body_node) in conditions {
+                    if let Some(cond_node) = cond_node_opt {
+                        if Self::contains_function_call(func_name, cond_node) {
+                            return true;
+                        }
+                    }
+                    if Self::contains_function_call(func_name, body_node) {
+                        return true;
+                    }
+                }
+            }
+            ast::Expr::While(cond_node, body_nodes) | ast::Expr::Until(cond_node, body_nodes) => {
+                if Self::contains_function_call(func_name, cond_node) {
+                    return true;
+                }
+                for body_node in body_nodes {
+                    if Self::contains_function_call(func_name, body_node) {
+                        return true;
+                    }
+                }
+            }
+            ast::Expr::Foreach(_, collection_node, body_nodes) => {
+                if Self::contains_function_call(func_name, collection_node) {
+                    return true;
+                }
+                for body_node in body_nodes {
+                    if Self::contains_function_call(func_name, body_node) {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn is_recursive_function(func_name: &ast::Ident, body: &Program) -> bool {
+        for node in body {
+            if Self::contains_function_call(func_name, node) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_builtin_functions(func_name: &ast::Ident) -> bool {
+        builtin::BUILTIN_FUNCTIONS.contains_key(func_name.name.as_str())
+    }
+
+    /// Applies function inlining to the program
+    /// Efficiently applies function inlining to the program.
+    #[inline(always)]
+    fn inline_functions(&mut self, program: &mut Program) {
+        let mut new_program = Vec::with_capacity(program.len());
+        for node in program.drain(..) {
+            let processed_node = self.inline_functions_in_node(node);
+            self.inline_top_level_calls(&mut new_program, processed_node);
+        }
+        *program = new_program;
+    }
+
+    /// Handles inlining of top-level function calls
+    fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Rc<ast::Node>) {
+        if let ast::Expr::Call(func_ident, args) = &*node.expr {
+            if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
+                let mut param_bindings = FxHashMap::default();
+                for (param, arg) in params.iter().zip(args.iter()) {
+                    if let ast::Expr::Ident(param_ident) = &*param.expr {
+                        param_bindings.insert(param_ident.name.clone(), arg.clone());
+                    }
+                }
+
+                for body_node in body {
+                    let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
+                    new_program.push(inlined_node);
+                }
+
+                return;
+            }
+        }
+        new_program.push(node);
+    }
+
+    /// Recursively applies function inlining within a node
+    fn inline_functions_in_node(&mut self, node: Rc<ast::Node>) -> Rc<ast::Node> {
+        let new_expr = match &*node.expr {
+            ast::Expr::Def(ident, params, body) => {
+                let mut new_body = body.clone();
+                self.inline_functions(&mut new_body);
+                Rc::new(ast::Expr::Def(ident.clone(), params.clone(), new_body))
+            }
+            ast::Expr::Fn(params, body) => {
+                let mut new_body = body.clone();
+                self.inline_functions(&mut new_body);
+                Rc::new(ast::Expr::Fn(params.clone(), new_body))
+            }
+            ast::Expr::While(cond, body) => {
+                let new_cond = self.inline_functions_in_node(cond.clone());
+                let mut new_body = body.clone();
+                self.inline_functions(&mut new_body);
+                Rc::new(ast::Expr::While(new_cond, new_body))
+            }
+            ast::Expr::Until(cond, body) => {
+                let new_cond = self.inline_functions_in_node(cond.clone());
+                let mut new_body = body.clone();
+                self.inline_functions(&mut new_body);
+                Rc::new(ast::Expr::Until(new_cond, new_body))
+            }
+            ast::Expr::Foreach(ident, collection, body) => {
+                let new_collection = self.inline_functions_in_node(Rc::clone(collection));
+                let mut new_body = body.clone();
+                self.inline_functions(&mut new_body);
+                Rc::new(ast::Expr::Foreach(ident.clone(), new_collection, new_body))
+            }
+            ast::Expr::If(conditions) => {
+                let new_conditions = conditions
+                    .iter()
+                    .map(|(cond_opt, body)| {
+                        let new_cond = cond_opt
+                            .as_ref()
+                            .map(|cond| self.inline_functions_in_node(Rc::clone(cond)));
+                        let new_body = self.inline_functions_in_node(Rc::clone(body));
+                        (new_cond, new_body)
+                    })
+                    .collect();
+                Rc::new(ast::Expr::If(new_conditions))
+            }
+            ast::Expr::Call(func_ident, args) => {
+                let new_args: ast::Args = args
+                    .iter()
+                    .map(|arg| self.inline_functions_in_node(Rc::clone(arg)))
+                    .collect();
+
+                // Check if this function call can be inlined
+                if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
+                    // Create parameter bindings
+                    let mut param_bindings = FxHashMap::default();
+                    for (param, arg) in params.iter().zip(new_args.iter()) {
+                        if let ast::Expr::Ident(param_ident) = &*param.expr {
+                            param_bindings.insert(param_ident.name.clone(), arg.clone());
+                        }
+                    }
+                    // For single-expression functions, return the substituted expression directly
+                    if body.len() == 1 {
+                        return Self::substitute_parameters(&body[0], &param_bindings);
+                    }
+                    // For multi-expression functions, we need to create a compound expression
+                    // This is a limitation - we can only inline single-expression functions in nested contexts
+                    // Multi-expression functions can only be inlined at the top level
+                }
+
+                Rc::new(ast::Expr::Call(func_ident.clone(), new_args))
+            }
+            ast::Expr::Let(ident, value) => {
+                let new_value = self.inline_functions_in_node(Rc::clone(value));
+                Rc::new(ast::Expr::Let(ident.clone(), new_value))
+            }
+            ast::Expr::Paren(inner) => {
+                let new_inner = self.inline_functions_in_node(Rc::clone(inner));
+                Rc::new(ast::Expr::Paren(new_inner))
+            }
+            _ => Rc::clone(&node.expr),
+        };
+
+        Rc::new(ast::Node {
+            token_id: node.token_id,
+            expr: new_expr,
+        })
+    }
+
+    fn substitute_parameters(
+        node: &Rc<ast::Node>,
+        param_bindings: &FxHashMap<IdentName, Rc<ast::Node>>,
+    ) -> Rc<ast::Node> {
+        let new_expr = match &*node.expr {
+            ast::Expr::Ident(ident) => {
+                if let Some(arg_node) = param_bindings.get(&ident.name) {
+                    return arg_node.clone();
+                }
+                node.expr.clone()
+            }
+            ast::Expr::Call(func_ident, args) => {
+                let substituted_args = args
+                    .iter()
+                    .map(|arg| Self::substitute_parameters(arg, param_bindings))
+                    .collect();
+                Rc::new(ast::Expr::Call(func_ident.clone(), substituted_args))
+            }
+            ast::Expr::Let(ident, value) => {
+                let substituted_value = Self::substitute_parameters(value, param_bindings);
+                Rc::new(ast::Expr::Let(ident.clone(), substituted_value))
+            }
+            ast::Expr::Paren(inner) => {
+                let substituted_inner = Self::substitute_parameters(inner, param_bindings);
+                Rc::new(ast::Expr::Paren(substituted_inner))
+            }
+            _ => node.expr.clone(),
+        };
+
+        Rc::new(ast::Node {
+            token_id: node.token_id,
+            expr: new_expr,
+        })
+    }
+
     fn optimize_node(&mut self, node: &mut Rc<ast::Node>) {
         let mut_node = Rc::make_mut(node);
         let mut_expr = Rc::make_mut(&mut mut_node.expr);
 
         match mut_expr {
-            ast::Expr::Call(ident, args, _optional) => {
+            ast::Expr::Call(ident, args) => {
                 for arg in args.iter_mut() {
                     self.optimize_node(arg);
                 }
@@ -181,7 +568,7 @@ impl Optimizer {
                 }
             }
             ast::Expr::Ident(ident) => {
-                if let Some(expr) = self.constant_table.get(ident) {
+                if let Some(expr) = self.constant_table.get(&ident.name) {
                     mut_node.expr = Rc::clone(expr);
                 }
             }
@@ -203,13 +590,10 @@ impl Optimizer {
                 self.optimize_node(value);
                 if let ast::Expr::Literal(_) = &*value.expr {
                     self.constant_table
-                        .insert(ident.clone(), Rc::clone(&value.expr));
+                        .insert(ident.name.to_owned(), Rc::clone(&value.expr));
                 }
             }
-            ast::Expr::Def(_, _, program)
-            | ast::Expr::Fn(_, program)
-            | ast::Expr::While(_, program)
-            | ast::Expr::Until(_, program) => {
+            ast::Expr::Def(_, _, program) | ast::Expr::Fn(_, program) => {
                 for node in program {
                     self.optimize_node(node);
                 }
@@ -220,7 +604,7 @@ impl Optimizer {
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments.iter_mut() {
                     if let ast::StringSegment::Ident(ident) = segment {
-                        if let Some(expr) = self.constant_table.get(ident) {
+                        if let Some(expr) = self.constant_table.get(&ident.name) {
                             if let ast::Expr::Literal(lit) = &**expr {
                                 *segment = ast::StringSegment::Text(lit.to_string());
                             }
@@ -257,7 +641,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -283,7 +666,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::String("world".to_string()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -309,7 +691,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -335,7 +716,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -361,7 +741,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -387,7 +766,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -629,7 +1007,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ],
@@ -652,7 +1029,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::String("abc".to_string()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ],
@@ -780,7 +1156,6 @@ mod tests {
                         expr: Rc::new(AstExpr::Call(
                             Ident::new("some_func"),
                             smallvec![],
-                            false,
                         )),
                     }),
                 )),
@@ -803,7 +1178,6 @@ mod tests {
                         expr: Rc::new(AstExpr::Call(
                             Ident::new("some_func"),
                             smallvec![],
-                            false,
                         )),
                     }),
                 )),
@@ -817,8 +1191,419 @@ mod tests {
             }),
         ]
     )]
+    #[case::function_inlining_simple(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("add_one"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("add"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add_one"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        })
+                    ],
+                )),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("add_one"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("add"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            // Inlined function call
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))),
+            }),
+        ]
+    )]
+    #[case::function_inlining_not_recursive(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("square"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("square"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        })
+                    ],
+                )),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("square"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            // Inlined and optimized function call: 3 * 3 = 9
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(9.0.into()))),
+            }),
+        ]
+    )]
+    #[case::function_not_inlined_recursive(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("factorial"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("factorial"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Call(
+                                            Ident::new("sub"),
+                                            smallvec![
+                                                Rc::new(Node {
+                                                    token_id: 0.into(),
+                                                    expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                                }),
+                                                Rc::new(Node {
+                                                    token_id: 0.into(),
+                                                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                                }),
+                                            ],
+                                        )),
+                                    })
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("factorial"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        })
+                    ],
+                )),
+            }),
+        ],
+        // Should not be inlined because it's recursive
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("factorial"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("factorial"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Call(
+                                            Ident::new("sub"),
+                                            smallvec![
+                                                Rc::new(Node {
+                                                    token_id: 0.into(),
+                                                    expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                                }),
+                                                Rc::new(Node {
+                                                    token_id: 0.into(),
+                                                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                                }),
+                                            ],
+                                        )),
+                                    })
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("factorial"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        })
+                    ],
+                )),
+            }),
+        ]
+    )]
+    #[case::function_inlining_multi_line(
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("multi_step"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Let(
+                                Ident::new("temp"),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Call(
+                                        Ident::new("add"),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                            }),
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                            }),
+                                        ],
+                                    )),
+                                }),
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("temp"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("multi_step"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        })
+                    ],
+                )),
+            }),
+        ],
+        vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("multi_step"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        })
+                    ],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Let(
+                                Ident::new("temp"),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Call(
+                                        Ident::new("add"),
+                                        smallvec![
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                            }),
+                                            Rc::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                            }),
+                                        ],
+                                    )),
+                                }),
+                            )),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("temp"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            // Multi-line function inlined - first statement
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("temp"),
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))), // add(5, 1) = 6
+                    }),
+                )),
+            }),
+            // Multi-line function inlined - second statement
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(12.0.into()))), // mul(6, 2) = 12
+            }),
+        ]
+    )]
     fn test(#[case] input: Program, #[case] expected: Program) {
-        let mut optimizer = Optimizer::new();
+        let mut optimizer = Optimizer::default();
         let mut optimized_program = input.clone();
         optimizer.optimize(&mut optimized_program);
         assert_eq!(optimized_program, expected);
@@ -829,11 +1614,551 @@ mod tests {
             if let AstExpr::Let(ident, _) = &*input[0].expr {
                 if ident.name.as_str() == "const_unused" {
                     assert!(
-                        !optimizer.constant_table.contains_key(ident),
+                        !optimizer.constant_table.contains_key(&ident.name),
                         "const_unused should be removed from constant_table"
                     );
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_inlining_with_custom_threshold() {
+        let mut optimizer = Optimizer::with_inline_threshold(1);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("long_func"),
+                    smallvec![],
+                    vec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                        }),
+                    ],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(Ident::new("long_func"), smallvec![])),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // Function should not be inlined because it exceeds the threshold
+        assert_eq!(optimized_program, input);
+    }
+
+    #[test]
+    fn test_optimization_level_none() {
+        let mut optimizer = Optimizer::with_level(OptimizationLevel::None);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Let(
+                    Ident::new("x"),
+                    Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                    }),
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        }),
+                    ],
+                )),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // No optimization should be applied
+        assert_eq!(optimized_program, input);
+    }
+
+    #[test]
+    fn test_optimization_level_inline_only() {
+        let mut optimizer = Optimizer::with_level(OptimizationLevel::InlineOnly);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("mul"),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                }),
+                            ],
+                        )),
+                    })],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                    })],
+                )),
+            }),
+            // This should not be constant-folded in InlineOnly mode
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    ],
+                )),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // Function should be inlined, but constant folding should not happen
+        let expected = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("mul"),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                }),
+                            ],
+                        )),
+                    })],
+                )),
+            }),
+            // Inlined function body
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("mul"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                        }),
+                    ],
+                )),
+            }),
+            // This add operation should NOT be constant-folded in InlineOnly mode
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    ],
+                )),
+            }),
+        ];
+
+        assert_eq!(optimized_program, expected);
+    }
+
+    #[test]
+    fn test_optimization_level_full() {
+        let mut optimizer = Optimizer::with_level(OptimizationLevel::Full);
+
+        let input = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Call(
+                            Ident::new("mul"),
+                            smallvec![
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                }),
+                                Rc::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                }),
+                            ],
+                        )),
+                    })],
+                )),
+            }),
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                    })],
+                )),
+            }),
+            // This should be constant-folded in Full mode
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Call(
+                    Ident::new("add"),
+                    smallvec![
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    ],
+                )),
+            }),
+        ];
+
+        let mut optimized_program = input.clone();
+        optimizer.optimize(&mut optimized_program);
+
+        // Both inlining and constant folding should happen
+        let expected = vec![
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Def(
+                    Ident::new("double"),
+                    smallvec![Rc::new(Node {
+                        token_id: 0.into(),
+                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                    })],
+                    vec![
+                        // The function body remains unchanged, but inlined calls are optimized
+                        Rc::new(Node {
+                            token_id: 0.into(),
+                            expr: Rc::new(AstExpr::Call(
+                                Ident::new("mul"),
+                                smallvec![
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    }),
+                                    Rc::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Rc::new(AstExpr::Literal(Literal::Number(
+                                            2.0.into()
+                                        ))),
+                                    }),
+                                ],
+                            )),
+                        }),
+                    ],
+                )),
+            }),
+            // Inlined and optimized function result: mul(3, 2) = 6
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))),
+            }),
+            // Constant-folded add operation
+            Rc::new(Node {
+                token_id: 0.into(),
+                expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+            }),
+        ];
+
+        assert_eq!(optimized_program, expected);
+    }
+
+    #[test]
+    fn test_contains_function_call_in_if_conditions() {
+        let func_name = &Ident::new("test_func");
+
+        // Test function call in if condition
+        let if_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::If(smallvec![(
+                Some(Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                })),
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                })
+            )])),
+        });
+
+        assert!(Optimizer::contains_function_call(func_name, &if_node));
+
+        // Test function call in if body
+        let if_body_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::If(smallvec![(
+                Some(Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Bool(true))),
+                })),
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                })
+            )])),
+        });
+
+        assert!(Optimizer::contains_function_call(func_name, &if_body_node));
+    }
+
+    #[test]
+    fn test_contains_function_call_in_while_conditions() {
+        let func_name = &Ident::new("test_func");
+
+        // Test function call in while condition
+        let while_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::While(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(func_name, &while_node));
+
+        // Test function call in while body
+        let while_body_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::While(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Bool(true))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &while_body_node
+        ));
+    }
+
+    #[test]
+    fn test_contains_function_call_in_until_conditions() {
+        let func_name = &Ident::new("test_func");
+
+        // Test function call in until condition
+        let until_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::Until(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(func_name, &until_node));
+
+        // Test function call in until body
+        let until_body_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::Until(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Bool(false))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &until_body_node
+        ));
+    }
+
+    #[test]
+    fn test_contains_function_call_in_foreach_conditions() {
+        let func_name = &Ident::new("test_func");
+
+        // Test function call in foreach collection
+        let foreach_collection_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::Foreach(
+                Ident::new("item"),
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &foreach_collection_node
+        ));
+
+        // Test function call in foreach body
+        let foreach_body_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::Foreach(
+                Ident::new("item"),
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Ident(Ident::new("items"))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(
+            func_name,
+            &foreach_body_node
+        ));
+    }
+
+    #[test]
+    fn test_contains_function_call_nested_control_structures() {
+        let func_name = &Ident::new("test_func");
+
+        // Test nested if inside while with function call
+        let nested_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::While(
+                Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Bool(true))),
+                }),
+                vec![Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::If(smallvec![(
+                        Some(Rc::new(Node {
+                            token_id: 3.into(),
+                            expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![],)),
+                        })),
+                        Rc::new(Node {
+                            token_id: 4.into(),
+                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        })
+                    )])),
+                })],
+            )),
+        });
+
+        assert!(Optimizer::contains_function_call(func_name, &nested_node));
+    }
+
+    #[test]
+    fn test_contains_function_call_no_match() {
+        let func_name = &Ident::new("test_func");
+        let different_func = &Ident::new("other_func");
+
+        // Test that it returns false when function name doesn't match
+        let if_node = Rc::new(Node {
+            token_id: 0.into(),
+            expr: Rc::new(AstExpr::If(smallvec![(
+                Some(Rc::new(Node {
+                    token_id: 1.into(),
+                    expr: Rc::new(AstExpr::Call(different_func.clone(), smallvec![])),
+                })),
+                Rc::new(Node {
+                    token_id: 2.into(),
+                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                })
+            )])),
+        });
+
+        assert!(!Optimizer::contains_function_call(func_name, &if_node));
     }
 }

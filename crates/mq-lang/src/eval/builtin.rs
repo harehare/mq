@@ -2014,13 +2014,10 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         .get_mut(key)
                         .map(std::mem::take)
                         .unwrap_or(RuntimeValue::NONE)),
-                    [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
-                        let index = index.value() as usize;
-                        Ok(array
-                            .get_mut(index)
-                            .map(std::mem::take)
-                            .unwrap_or(RuntimeValue::NONE))
-                    }
+                    [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(array
+                        .get_mut(index.value() as usize)
+                        .map(std::mem::take)
+                        .unwrap_or(RuntimeValue::NONE)),
                     [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
                         match s.chars().nth(n.value() as usize) {
                             Some(o) => Ok(o.to_string().into()),

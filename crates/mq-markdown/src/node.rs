@@ -1235,11 +1235,11 @@ impl Node {
         }
     }
 
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
 
-    pub const fn is_fragment(&self) -> bool {
+    pub fn is_fragment(&self) -> bool {
         matches!(self, Self::Fragment(_))
     }
 
@@ -1263,115 +1263,115 @@ impl Node {
         }
     }
 
-    pub const fn is_inline_code(&self) -> bool {
+    pub fn is_inline_code(&self) -> bool {
         matches!(self, Self::CodeInline(_))
     }
 
-    pub const fn is_inline_math(&self) -> bool {
+    pub fn is_inline_math(&self) -> bool {
         matches!(self, Self::MathInline(_))
     }
 
-    pub const fn is_strong(&self) -> bool {
+    pub fn is_strong(&self) -> bool {
         matches!(self, Self::Strong(_))
     }
 
-    pub const fn is_list(&self) -> bool {
+    pub fn is_list(&self) -> bool {
         matches!(self, Self::List(_))
     }
 
-    pub const fn is_table_cell(&self) -> bool {
+    pub fn is_table_cell(&self) -> bool {
         matches!(self, Self::TableCell(_))
     }
 
-    pub const fn is_table_row(&self) -> bool {
+    pub fn is_table_row(&self) -> bool {
         matches!(self, Self::TableRow(_))
     }
 
-    pub const fn is_emphasis(&self) -> bool {
+    pub fn is_emphasis(&self) -> bool {
         matches!(self, Self::Emphasis(_))
     }
 
-    pub const fn is_delete(&self) -> bool {
+    pub fn is_delete(&self) -> bool {
         matches!(self, Self::Delete(_))
     }
 
-    pub const fn is_link(&self) -> bool {
+    pub fn is_link(&self) -> bool {
         matches!(self, Self::Link(_))
     }
 
-    pub const fn is_link_ref(&self) -> bool {
+    pub fn is_link_ref(&self) -> bool {
         matches!(self, Self::LinkRef(_))
     }
 
-    pub const fn is_text(&self) -> bool {
+    pub fn is_text(&self) -> bool {
         matches!(self, Self::Text(_))
     }
 
-    pub const fn is_image(&self) -> bool {
+    pub fn is_image(&self) -> bool {
         matches!(self, Self::Image(_))
     }
 
-    pub const fn is_horizontal_rule(&self) -> bool {
+    pub fn is_horizontal_rule(&self) -> bool {
         matches!(self, Self::HorizontalRule { .. })
     }
 
-    pub const fn is_blockquote(&self) -> bool {
+    pub fn is_blockquote(&self) -> bool {
         matches!(self, Self::Blockquote(_))
     }
 
-    pub const fn is_html(&self) -> bool {
+    pub fn is_html(&self) -> bool {
         matches!(self, Self::Html { .. })
     }
 
-    pub const fn is_footnote(&self) -> bool {
+    pub fn is_footnote(&self) -> bool {
         matches!(self, Self::Footnote(_))
     }
 
-    pub const fn is_mdx_jsx_flow_element(&self) -> bool {
+    pub fn is_mdx_jsx_flow_element(&self) -> bool {
         matches!(self, Self::MdxJsxFlowElement(MdxJsxFlowElement { .. }))
     }
 
-    pub const fn is_msx_js_esm(&self) -> bool {
+    pub fn is_msx_js_esm(&self) -> bool {
         matches!(self, Self::MdxJsEsm(MdxJsEsm { .. }))
     }
 
-    pub const fn is_toml(&self) -> bool {
+    pub fn is_toml(&self) -> bool {
         matches!(self, Self::Toml { .. })
     }
 
-    pub const fn is_yaml(&self) -> bool {
+    pub fn is_yaml(&self) -> bool {
         matches!(self, Self::Yaml { .. })
     }
 
-    pub const fn is_break(&self) -> bool {
+    pub fn is_break(&self) -> bool {
         matches!(self, Self::Break { .. })
     }
 
-    pub const fn is_mdx_text_expression(&self) -> bool {
+    pub fn is_mdx_text_expression(&self) -> bool {
         matches!(self, Self::MdxTextExpression(MdxTextExpression { .. }))
     }
 
-    pub const fn is_footnote_ref(&self) -> bool {
+    pub fn is_footnote_ref(&self) -> bool {
         matches!(self, Self::FootnoteRef { .. })
     }
 
-    pub const fn is_image_ref(&self) -> bool {
+    pub fn is_image_ref(&self) -> bool {
         matches!(self, Self::ImageRef(_))
     }
 
-    pub const fn is_mdx_jsx_text_element(&self) -> bool {
+    pub fn is_mdx_jsx_text_element(&self) -> bool {
         matches!(self, Self::MdxJsxTextElement(MdxJsxTextElement { .. }))
     }
 
-    pub const fn is_math(&self) -> bool {
+    pub fn is_math(&self) -> bool {
         matches!(self, Self::Math(_))
     }
 
-    pub const fn is_mdx_flow_expression(&self) -> bool {
+    pub fn is_mdx_flow_expression(&self) -> bool {
         matches!(self, Self::MdxFlowExpression(MdxFlowExpression { .. }))
     }
 
-    pub const fn is_definition(&self) -> bool {
+    pub fn is_definition(&self) -> bool {
         matches!(self, Self::Definition(_))
     }
 

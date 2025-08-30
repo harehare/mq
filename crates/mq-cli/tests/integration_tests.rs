@@ -8,7 +8,7 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 
     let assert = cmd
         .arg("--unbuffered")
-        .arg(r#".h | select(contains("title")?)"#)
+        .arg(r#".h | select(contains("title"))"#)
         .write_stdin("# **title**\n\n- test1\n- test2")
         .assert();
     assert.success().code(0).stdout("# **title**\n");
@@ -43,12 +43,12 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     None
 )]
 #[case::update_file(
-    vec!["--unbuffered", "--update", r#".h | select(contains("title")?) | ltrimstr("titl")"#],
+    vec!["--unbuffered", "--update", r#".h | select(contains("title")) | ltrimstr("titl")"#],
     "# **title**\n\n- test1\n- test2",
     Some("# **e**\n\n- test1\n- test2\n")
 )]
 #[case::update_nested(
-    vec!["--unbuffered", "--update", r#".strong | select(contains("title")?) | ltrimstr("titl")"#],
+    vec!["--unbuffered", "--update", r#".strong | select(contains("title")) | ltrimstr("titl")"#],
     "# [**title**](url)\n\n- test1\n- test2",
     Some("# [**e**](url)\n\n- test1\n- test2\n")
 )]
@@ -214,7 +214,7 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("mq")?;
     let assert = cmd
         .arg("--unbuffered")
-        .arg(r#".h | select(contains("title")?)"#)
+        .arg(r#".h | select(contains("title"))"#)
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -226,7 +226,7 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
 fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>> {
     let (_, temp_file_path) = mq_test::create_file(
         "test_cli_run_with_query_from_file.mq",
-        r#".h | select(contains("title")?)"#,
+        r#".h | select(contains("title"))"#,
     );
     let temp_file_path_clone = temp_file_path.clone();
 

@@ -136,6 +136,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_markdown_node(
         &mut self,
         program: &Program,
@@ -248,6 +249,7 @@ impl Evaluator {
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
+    #[inline(always)]
     fn eval_include(&mut self, module: ast::Literal) -> Result<(), EvalError> {
         match module {
             ast::Literal::String(module_name) => {
@@ -262,6 +264,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
@@ -292,6 +295,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_interpolated_string(
         &self,
         runtime_value: &RuntimeValue,
@@ -352,12 +356,12 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
-            ast::Expr::Call(ident, args, optional) => {
-                self.eval_fn(runtime_value, Rc::clone(&node), ident, args, *optional, env)
+            ast::Expr::Call(ident, args) => {
+                self.eval_fn(runtime_value, Rc::clone(&node), ident, args, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
-            ast::Expr::Break => self.eval_break(node),
-            ast::Expr::Continue => self.eval_continue(node),
+            ast::Expr::Break => Err(self.eval_break(node)),
+            ast::Expr::Continue => Err(self.eval_continue(node)),
             ast::Expr::If(_) => self.eval_if(runtime_value, node, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident, Rc::clone(&node), Rc::clone(&env)),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
@@ -373,8 +377,8 @@ impl Evaluator {
                 Rc::clone(&env),
             )),
             ast::Expr::Let(ident, node) => {
-                let let_ = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
-                env.borrow_mut().define(ident, let_);
+                let val = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
+                env.borrow_mut().define(ident, val);
                 Ok(runtime_value.clone())
             }
             ast::Expr::While(_, _) => self.eval_while(runtime_value, node, env),
@@ -392,17 +396,13 @@ impl Evaluator {
     }
 
     #[inline(always)]
-    fn eval_break(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
-        Err(EvalError::Break(
-            (*self.token_arena.borrow()[node.token_id]).clone(),
-        ))
+    fn eval_break(&self, node: Rc<ast::Node>) -> EvalError {
+        EvalError::Break((*self.token_arena.borrow()[node.token_id]).clone())
     }
 
     #[inline(always)]
-    fn eval_continue(&self, node: Rc<ast::Node>) -> Result<RuntimeValue, EvalError> {
-        Err(EvalError::Continue(
-            (*self.token_arena.borrow()[node.token_id]).clone(),
-        ))
+    fn eval_continue(&self, node: Rc<ast::Node>) -> EvalError {
+        EvalError::Continue((*self.token_arena.borrow()[node.token_id]).clone())
     }
 
     #[inline(always)]
@@ -559,7 +559,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_if(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -593,19 +592,14 @@ impl Evaluator {
         node: Rc<ast::Node>,
         ident: &ast::Ident,
         args: &ast::Args,
-        optional: bool,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        if runtime_value.is_none() && optional {
-            return Ok(RuntimeValue::NONE);
-        }
-
         if let Ok(fn_value) = Rc::clone(&env).borrow().resolve(ident) {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
                 let new_args = if params.len() == args.len() + 1 {
+                    let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
                     new_args.push(Rc::new(ast::Node {
                         token_id: node.token_id,
                         expr: Rc::new(ast::Expr::Self_),
@@ -625,12 +619,11 @@ impl Evaluator {
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
 
-                for (arg, param) in new_args.iter().zip(params.iter()) {
+                for (arg, param) in new_args.into_iter().zip(params.iter()) {
                     if let ast::Expr::Ident(name) = &*param.expr {
-                        let value =
-                            self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?;
-
-                        new_env.borrow_mut().define(name, value);
+                        new_env
+                            .borrow_mut()
+                            .define(name, self.eval_expr(runtime_value, arg, Rc::clone(&env))?);
                     } else {
                         return Err(EvalError::InvalidDefinition(
                             (*self.token_arena.borrow()[param.token_id]).clone(),
@@ -638,10 +631,9 @@ impl Evaluator {
                         ));
                     }
                 }
-
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
-
                 self.exit_scope();
+
                 result
             } else if let RuntimeValue::NativeFunction(ident) = fn_value {
                 self.eval_builtin(runtime_value, node, &ident, args, env)
@@ -656,7 +648,6 @@ impl Evaluator {
         }
     }
 
-    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -683,7 +674,7 @@ impl Evaluator {
     }
 
     #[inline(always)]
-    const fn exit_scope(&mut self) {
+    fn exit_scope(&mut self) {
         if self.call_stack_depth > 0 {
             self.call_stack_depth -= 1;
         }
@@ -725,7 +716,7 @@ mod tests {
     fn ast_call(name: &str, args: Args) -> Rc<AstNode> {
         Rc::new(AstNode {
             token_id: 0.into(),
-            expr: Rc::new(ast::Expr::Call(ast::Ident::new(name), args, false)),
+            expr: Rc::new(ast::Expr::Call(ast::Ident::new(name), args)),
         })
     }
 
@@ -4022,7 +4013,6 @@ mod tests {
                                         ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
                                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                                     ],
-                                    false,
                                 ))),
                                 ast_node(ast::Expr::Break),
                             ),
@@ -4057,7 +4047,6 @@ mod tests {
                                     ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
                                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                                 ],
-                                false,
                             ))),
                             ast_node(ast::Expr::Continue),
                         ),
@@ -4418,11 +4407,7 @@ mod tests {
             }),
             Rc::new(ast::Node {
                 token_id: 0.into(),
-                expr: Rc::new(ast::Expr::Call(
-                    ast::Ident::new("func1"),
-                    SmallVec::new(),
-                    false,
-                )),
+                expr: Rc::new(ast::Expr::Call(ast::Ident::new("func1"), SmallVec::new())),
             }),
         ];
         assert_eq!(
