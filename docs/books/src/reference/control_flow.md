@@ -25,10 +25,11 @@ The conditions must evaluate to boolean values.
 
 The while loop repeatedly executes code while a condition is true:
 
-```python
+```ruby
 let i = 0 |
 while (lt(i, 3)):
-  let i = add(i, 1) | i;
+  let i = add(i, 1) | i
+end
 # => [1, 2, 3]
 ```
 
@@ -45,10 +46,11 @@ Key points:
 
 The until loop repeatedly executes code until a condition becomes true:
 
-```python
+```ruby
 let x = 5 |
 until(gt(x, 0)):
-  let x = sub(x, 1) | x;
+  let x = sub(x, 1) | x
+end
 # => 0
 ```
 
@@ -60,10 +62,11 @@ instead of while the condition remains true.
 
 The foreach loop iterates over elements in an array:
 
-```js
+```ruby
 let items = array(1, 2, 3) |
 foreach (x, items):
-   sub(x, 1);
+   sub(x, 1)
+end
 # => array(0, 1, 2)
 ```
 

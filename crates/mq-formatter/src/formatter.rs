@@ -830,7 +830,7 @@ else:
   | test2
   | test3"
     )]
-    #[case("test()?|test2()", "test()? | test2()")]
+    #[case("test()|test2()", "test() | test2()")]
     #[case(
         "if(test):
         test

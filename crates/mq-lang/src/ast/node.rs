@@ -14,7 +14,6 @@ use std::{
 
 type Depth = u8;
 type Index = usize;
-type Optional = bool;
 type Lang = CompactString;
 pub type Params = SmallVec<[Rc<Node>; 4]>;
 pub type Args = SmallVec<[Rc<Node>; 4]>;
@@ -65,7 +64,7 @@ impl Node {
                     .unwrap_or_default();
                 Range { start, end }
             }
-            Expr::Call(_, args, _) => {
+            Expr::Call(_, args) => {
                 let start = args
                     .first()
                     .map(|node| node.range(Rc::clone(&arena)).start)
@@ -235,7 +234,7 @@ impl Display for Literal {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
-    Call(Ident, Args, Optional),
+    Call(Ident, Args),
     Def(Ident, Params, Program),
     Fn(Params, Program),
     Let(Ident, Rc<Node>),
@@ -511,11 +510,7 @@ mod tests {
         }));
         let call_node = Node {
             token_id: call_token_id,
-            expr: Rc::new(Expr::Call(
-                Ident::new("test_func"),
-                smallvec![arg1, arg2],
-                false,
-            )),
+            expr: Rc::new(Expr::Call(Ident::new("test_func"), smallvec![arg1, arg2])),
         };
 
         assert_eq!(

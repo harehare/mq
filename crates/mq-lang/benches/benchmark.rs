@@ -11,10 +11,8 @@ fn eval_fibonacci() -> mq_lang::Values {
         .eval(
             "
      def fibonacci(x):
-      if (x == 0):
-        0
-      elif (x == 1):
-          1
+      if (x < 2):
+        x
       else:
         fibonacci(x - 1) + fibonacci(x - 2); | fibonacci(20)",
             vec![mq_lang::Value::Number(20.into())].into_iter(),

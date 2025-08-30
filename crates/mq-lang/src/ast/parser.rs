@@ -205,7 +205,6 @@ impl<'a> Parser<'a> {
                         Some(Rc::clone(operator_token)),
                     ),
                     smallvec![lhs, rhs],
-                    false,
                 )),
             });
         }
@@ -288,7 +287,7 @@ impl<'a> Parser<'a> {
 
         Ok(Rc::new(Node {
             token_id,
-            expr: Rc::new(Expr::Call(not_ident, args, false)),
+            expr: Rc::new(Expr::Call(not_ident, args)),
         }))
     }
 
@@ -351,7 +350,6 @@ impl<'a> Parser<'a> {
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("array", Some(Rc::clone(key_token))),
                     smallvec![key_node, value_node],
-                    false,
                 )),
             }));
 
@@ -383,7 +381,6 @@ impl<'a> Parser<'a> {
             expr: Rc::new(Expr::Call(
                 Ident::new_with_token("dict", Some(Rc::clone(&lbrace_token))),
                 pairs,
-                false,
             )),
         }))
     }
@@ -447,7 +444,6 @@ impl<'a> Parser<'a> {
             expr: Rc::new(Expr::Call(
                 Ident::new_with_token("array", Some(token)),
                 elements,
-                false,
             )),
         }))
     }
@@ -561,23 +557,11 @@ impl<'a> Parser<'a> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::LParen) => {
                 let args = self.parse_args()?;
-
-                let optional = if let Some(token) = &self.tokens.peek() {
-                    matches!(&token.kind, TokenKind::Question)
-                } else {
-                    false
-                };
-
-                if optional {
-                    let _ = self.tokens.next();
-                }
-
                 let call_node = Rc::new(Node {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&ident_token)),
                     expr: Rc::new(Expr::Call(
                         Ident::new_with_token(ident, Some(Rc::clone(&ident_token))),
                         args,
-                        optional,
                     )),
                 });
 
@@ -679,7 +663,6 @@ impl<'a> Parser<'a> {
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("slice", Some(Rc::clone(&original_token))),
                     smallvec![target_node, first_node, second_node],
-                    false,
                 )),
             })
         } else {
@@ -713,7 +696,6 @@ impl<'a> Parser<'a> {
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("get", Some(Rc::clone(&original_token))),
                     smallvec![target_node, first_node],
-                    false,
                 )),
             })
         };
@@ -1212,7 +1194,6 @@ impl<'a> Parser<'a> {
                 expr: Rc::new(Expr::Call(
                     Ident::new_with_token("attr", Some(Rc::clone(&token))),
                     smallvec![base_node, attr_literal],
-                    false,
                 )),
             }))
         } else {
@@ -1677,7 +1658,6 @@ mod tests {
                                     token_id: 0.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("test".to_owned())))
                                 })],
-                                false,
                             ))
                         }),
                         Rc::new(Node {
@@ -1688,11 +1668,9 @@ mod tests {
                                     token_id: 2.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("test2".to_owned())))
                                 })],
-                                false
                             ))
                         })
                     ],
-                    false,
                 ))
             })
         ]))]
@@ -1726,7 +1704,6 @@ mod tests {
                             expr: Rc::new(Expr::Selector(Selector::Table(Some(2), None))),
                         }),
                     ],
-                    false
                 ))
             })
         ]))]
@@ -1776,7 +1753,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::String("arg2".to_owned()))),
                                 }),
                             ],
-                            false,
                         )),
                     })],
                 )),
@@ -1807,7 +1783,6 @@ mod tests {
                             expr: Rc::new(Expr::Self_),
                         }),
                     ],
-                    false
                 ))
             })
         ]))]
@@ -2460,7 +2435,6 @@ mod tests {
                                 Some(Rc::new(token(TokenKind::Ident(CompactString::new("item"))))),
                             ))),
                         })],
-                        false,
                     )),
                 })],
             )),
@@ -2718,7 +2692,6 @@ mod tests {
                                         expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ],
@@ -2827,7 +2800,6 @@ mod tests {
                             )),
                         })
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -2843,7 +2815,6 @@ mod tests {
                         expr: Rc::new(Expr::Call(
                             Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
                             SmallVec::new(),
-                            false,
                         )),
                     })
                 ]))]
@@ -2871,7 +2842,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Number(42.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -2905,7 +2875,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::None)),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -2938,7 +2907,6 @@ mod tests {
                                                 expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
                                             }),
                                         ],
-                                        false,
                                     )),
                                 }),
                                 Rc::new(Node {
@@ -2951,11 +2919,9 @@ mod tests {
                                                 expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                             }),
                                         ],
-                                        false,
                                     )),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -2978,7 +2944,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -3030,7 +2995,6 @@ mod tests {
                                         expr: Rc::new(Expr::Ident(Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3056,7 +3020,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::String("world".to_owned()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3082,7 +3045,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(42.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3108,7 +3070,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Bool(false))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3134,7 +3095,6 @@ mod tests {
                                         expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3164,7 +3124,6 @@ mod tests {
                                                     expr: Rc::new(Expr::Literal(Literal::String("arg".to_owned()))),
                                                 }),
                                             ],
-                                            false,
                                         )),
                                     }),
                                     Rc::new(Node {
@@ -3172,7 +3131,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::String("result".to_owned()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3198,7 +3156,6 @@ mod tests {
                                         expr: Rc::new(Expr::Selector(Selector::Text)),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3224,7 +3181,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::None)),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3266,7 +3222,6 @@ mod tests {
                                                     expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
                                                 }),
                                             ],
-                                            false,
                                         )),
                                     })),
                                     Rc::new(Node {
@@ -3299,7 +3254,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::String("world".to_owned()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3325,7 +3279,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(24.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3351,7 +3304,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Bool(false))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3377,7 +3329,6 @@ mod tests {
                                         expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3407,7 +3358,6 @@ mod tests {
                                                     expr: Rc::new(Expr::Literal(Literal::String("arg".to_owned()))),
                                                 }),
                                             ],
-                                            false,
                                         )),
                                     }),
                                     Rc::new(Node {
@@ -3415,7 +3365,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::String("result".to_owned()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3441,7 +3390,6 @@ mod tests {
                                         expr: Rc::new(Expr::Selector(Selector::Text)),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3467,7 +3415,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::String("something".to_owned()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3509,7 +3456,6 @@ mod tests {
                                                     expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
                                                 }),
                                             ],
-                                            false,
                                         )),
                                     })),
                                     Rc::new(Node {
@@ -3542,7 +3488,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3568,7 +3513,6 @@ mod tests {
                                         expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3601,7 +3545,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3627,7 +3570,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3653,7 +3595,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3679,7 +3620,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         })
                     ]))]
@@ -3695,7 +3635,6 @@ mod tests {
                                 expr: Rc::new(Expr::Call(
                                     Ident::new_with_token("dict", Some(Rc::new(token(TokenKind::LBrace)))),
                                     SmallVec::new(),
-                                    false,
                                 )),
                             })
                         ]))]
@@ -3728,11 +3667,9 @@ mod tests {
                                                         expr: Rc::new(Expr::Literal(Literal::String("value".to_owned()))),
                                                     }),
                                                 ],
-                                                false,
                                             )),
                                         }),
                                     ],
-                                    false,
                                 )),
                             })
                         ]))]
@@ -3769,7 +3706,6 @@ mod tests {
                                                         expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
                                                     }),
                                                 ],
-                                                false,
                                             )),
                                         }),
                                         Rc::new(Node {
@@ -3786,11 +3722,9 @@ mod tests {
                                                         expr: Rc::new(Expr::Literal(Literal::Bool(true))),
                                                     }),
                                                 ],
-                                                false,
                                             )),
                                         }),
                                     ],
-                                    false,
                                 )),
                             })
                         ]))]
@@ -3824,11 +3758,9 @@ mod tests {
                                                         expr: Rc::new(Expr::Literal(Literal::Number(10.into()))),
                                                     }),
                                                 ],
-                                                false,
                                             )),
                                         }),
                                     ],
-                                    false,
                                 )),
                             })
                         ]))]
@@ -3879,7 +3811,6 @@ mod tests {
                         }),
 
                     ],
-                    false,
                 ))})]))]
     #[case::attr(
         vec![
@@ -3900,7 +3831,6 @@ mod tests {
                         }),
 
                     ],
-                    false,
                 ))})]))]
     #[case::paren(
         vec![
@@ -3928,7 +3858,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 )),
@@ -3956,7 +3885,6 @@ mod tests {
                             expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
                         }),
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -3982,7 +3910,6 @@ mod tests {
                             expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
                         }),
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -4008,7 +3935,6 @@ mod tests {
                             expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                         }),
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -4034,7 +3960,6 @@ mod tests {
                                 expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4060,7 +3985,6 @@ mod tests {
                                 expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4093,7 +4017,6 @@ mod tests {
                                 expr: Rc::new(Expr::Literal(Literal::Number(4.into()))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4119,7 +4042,6 @@ mod tests {
                                 expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4159,7 +4081,6 @@ mod tests {
                                             expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                         }),
                                     ],
-                                    false,
                                 )),
                             }),
                             Rc::new(Node {
@@ -4167,7 +4088,6 @@ mod tests {
                                 expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4200,7 +4120,6 @@ mod tests {
                                             expr: Rc::new(Expr::Literal(Literal::Number(2.into()))),
                                         }),
                                     ],
-                                    false,
                                 )),
                             }),
                             Rc::new(Node {
@@ -4208,7 +4127,6 @@ mod tests {
                                 expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4241,7 +4159,6 @@ mod tests {
                                             expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
                                         }),
                                     ],
-                                    false,
                                 )),
                             }),
                             Rc::new(Node {
@@ -4249,7 +4166,6 @@ mod tests {
                                 expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(CompactString::new("c")))))))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4282,7 +4198,6 @@ mod tests {
                                             expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
                                         }),
                                     ],
-                                    false,
                                 )),
                             }),
                             Rc::new(Node {
@@ -4290,7 +4205,6 @@ mod tests {
                                 expr: Rc::new(Expr::Ident(Ident::new_with_token("z", Some(Rc::new(token(TokenKind::Ident(CompactString::new("z")))))))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4323,7 +4237,6 @@ mod tests {
                                             expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
                                         }),
                                     ],
-                                    false,
                                 )),
                             }),
                             Rc::new(Node {
@@ -4331,7 +4244,6 @@ mod tests {
                                 expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(CompactString::new("c")))))))),
                             }),
                         ],
-                        false,
                     )),
                 })
             ]))]
@@ -4357,7 +4269,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4383,7 +4294,6 @@ mod tests {
                                     expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(CompactString::new("end")))))))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4470,7 +4380,6 @@ mod tests {
                                                 expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
                                             }),
                                         ],
-                                        false,
                                     )),
                                 }),
                                 Rc::new(Node {
@@ -4487,11 +4396,9 @@ mod tests {
                                                 expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
                                             }),
                                         ],
-                                        false,
                                     )),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4512,7 +4419,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Bool(false))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4533,7 +4439,6 @@ mod tests {
                                     expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4560,7 +4465,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4587,7 +4491,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4628,7 +4531,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Number(3.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4661,7 +4563,6 @@ mod tests {
                                     expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(CompactString::new("end")))))))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4845,7 +4746,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::Number(5.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4872,7 +4772,6 @@ mod tests {
                                     expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
                                 }),
                             ],
-                            false,
                         )),
                     })
                 ]))]
@@ -4898,7 +4797,6 @@ mod tests {
                             expr: Rc::new(Expr::Call(
                                 Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
                                 SmallVec::new(),
-                                false,
                             )),
                         }),
                         Rc::new(Node {
@@ -4906,7 +4804,6 @@ mod tests {
                             expr: Rc::new(Expr::Literal(Literal::Number(0.into()))),
                         }),
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -4938,7 +4835,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::String("arg".to_owned()))),
                                     })
                                 ],
-                                false,
                             )),
                         }),
                         Rc::new(Node {
@@ -4946,7 +4842,6 @@ mod tests {
                             expr: Rc::new(Expr::Literal(Literal::String("key".to_owned()))),
                         }),
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -4980,7 +4875,6 @@ mod tests {
                                         expr: Rc::new(Expr::Call(
                                             Ident::new_with_token("baz", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
                                             SmallVec::new(),
-                                            false,
                                         )),
                                     }),
                                     Rc::new(Node {
@@ -4988,7 +4882,6 @@ mod tests {
                                         expr: Rc::new(Expr::Literal(Literal::Number(0.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                         Rc::new(Node {
@@ -4996,7 +4889,6 @@ mod tests {
                             expr: Rc::new(Expr::Literal(Literal::Number(1.into()))),
                         }),
                     ],
-                    false,
                 )),
             })
         ]))]
@@ -5362,7 +5254,7 @@ mod tests {
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Call(ident, args, _) = &*program[0].expr {
+                if let Expr::Call(ident, args) = &*program[0].expr {
                     assert_eq!(ident.name, "function");
                     assert_eq!(args.len(), 1);
                     if let Expr::Literal(Literal::String(value)) = &*args[0].expr {
@@ -5417,7 +5309,7 @@ mod tests {
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Call(ident, args, _) = &*program[0].expr {
+                if let Expr::Call(ident, args) = &*program[0].expr {
                     // Should be transformed to attr(base_selector, "attribute")
                     assert_eq!(ident.name, "attr");
                     assert_eq!(args.len(), 2);

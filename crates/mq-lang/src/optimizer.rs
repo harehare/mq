@@ -30,7 +30,7 @@ impl Default for Optimizer {
         Self {
             constant_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
             function_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            inline_threshold: 10,
+            inline_threshold: 5,
             optimization_level: OptimizationLevel::default(),
         }
     }
@@ -117,7 +117,7 @@ impl Optimizer {
             ast::Expr::Ident(ident) => {
                 used_idents.insert(ident.name.clone());
             }
-            ast::Expr::Call(func_ident, args, _) => {
+            ast::Expr::Call(func_ident, args) => {
                 used_idents.insert(func_ident.name.clone());
                 for arg in args {
                     Self::collect_used_identifiers_in_node(arg, used_idents);
@@ -257,7 +257,7 @@ impl Optimizer {
     /// Checks if a function call exists within a node tree
     fn contains_function_call(func_name: &ast::Ident, node: &Rc<ast::Node>) -> bool {
         match &*node.expr {
-            ast::Expr::Call(call_ident, args, _) => {
+            ast::Expr::Call(call_ident, args) => {
                 if call_ident.name == func_name.name {
                     return true;
                 }
@@ -351,7 +351,7 @@ impl Optimizer {
 
     /// Handles inlining of top-level function calls
     fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Rc<ast::Node>) {
-        if let ast::Expr::Call(func_ident, args, _) = &*node.expr {
+        if let ast::Expr::Call(func_ident, args) = &*node.expr {
             if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
                 let mut param_bindings = FxHashMap::default();
                 for (param, arg) in params.iter().zip(args.iter()) {
@@ -415,7 +415,7 @@ impl Optimizer {
                     .collect();
                 Rc::new(ast::Expr::If(new_conditions))
             }
-            ast::Expr::Call(func_ident, args, optional) => {
+            ast::Expr::Call(func_ident, args) => {
                 let new_args: ast::Args = args
                     .iter()
                     .map(|arg| self.inline_functions_in_node(Rc::clone(arg)))
@@ -439,7 +439,7 @@ impl Optimizer {
                     // Multi-expression functions can only be inlined at the top level
                 }
 
-                Rc::new(ast::Expr::Call(func_ident.clone(), new_args, *optional))
+                Rc::new(ast::Expr::Call(func_ident.clone(), new_args))
             }
             ast::Expr::Let(ident, value) => {
                 let new_value = self.inline_functions_in_node(Rc::clone(value));
@@ -469,16 +469,12 @@ impl Optimizer {
                 }
                 node.expr.clone()
             }
-            ast::Expr::Call(func_ident, args, optional) => {
+            ast::Expr::Call(func_ident, args) => {
                 let substituted_args = args
                     .iter()
                     .map(|arg| Self::substitute_parameters(arg, param_bindings))
                     .collect();
-                Rc::new(ast::Expr::Call(
-                    func_ident.clone(),
-                    substituted_args,
-                    *optional,
-                ))
+                Rc::new(ast::Expr::Call(func_ident.clone(), substituted_args))
             }
             ast::Expr::Let(ident, value) => {
                 let substituted_value = Self::substitute_parameters(value, param_bindings);
@@ -502,7 +498,7 @@ impl Optimizer {
         let mut_expr = Rc::make_mut(&mut mut_node.expr);
 
         match mut_expr {
-            ast::Expr::Call(ident, args, _optional) => {
+            ast::Expr::Call(ident, args) => {
                 for arg in args.iter_mut() {
                     self.optimize_node(arg);
                 }
@@ -645,7 +641,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -671,7 +666,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::String("world".to_string()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -697,7 +691,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -723,7 +716,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -749,7 +741,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -775,7 +766,6 @@ mod tests {
                                 expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
-                        false
                     )),
                 })
             ],
@@ -1017,7 +1007,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ],
@@ -1040,7 +1029,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::String("abc".to_string()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ],
@@ -1168,7 +1156,6 @@ mod tests {
                         expr: Rc::new(AstExpr::Call(
                             Ident::new("some_func"),
                             smallvec![],
-                            false,
                         )),
                     }),
                 )),
@@ -1191,7 +1178,6 @@ mod tests {
                         expr: Rc::new(AstExpr::Call(
                             Ident::new("some_func"),
                             smallvec![],
-                            false,
                         )),
                     }),
                 )),
@@ -1232,7 +1218,6 @@ mod tests {
                                         expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1248,7 +1233,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
-                    false,
                 )),
             }),
         ],
@@ -1278,7 +1262,6 @@ mod tests {
                                         expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1318,7 +1301,6 @@ mod tests {
                                         expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1334,7 +1316,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         })
                     ],
-                    false,
                 )),
             }),
         ],
@@ -1364,7 +1345,6 @@ mod tests {
                                         expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1409,11 +1389,9 @@ mod tests {
                                                     expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                                 }),
                                             ],
-                                            false,
                                         )),
                                     })
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1429,7 +1407,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
-                    false,
                 )),
             }),
         ],
@@ -1465,11 +1442,9 @@ mod tests {
                                                     expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                                 }),
                                             ],
-                                            false,
                                         )),
                                     })
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1485,7 +1460,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
-                    false,
                 )),
             }),
         ]
@@ -1521,7 +1495,6 @@ mod tests {
                                                 expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                             }),
                                         ],
-                                        false,
                                     )),
                                 }),
                             )),
@@ -1540,7 +1513,6 @@ mod tests {
                                         expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1556,7 +1528,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
-                    false,
                 )),
             }),
         ],
@@ -1590,7 +1561,6 @@ mod tests {
                                                 expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                             }),
                                         ],
-                                        false,
                                     )),
                                 }),
                             )),
@@ -1609,7 +1579,6 @@ mod tests {
                                         expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1677,7 +1646,7 @@ mod tests {
             }),
             Rc::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(Ident::new("long_func"), smallvec![], false)),
+                expr: Rc::new(AstExpr::Call(Ident::new("long_func"), smallvec![])),
             }),
         ];
 
@@ -1717,7 +1686,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ];
@@ -1756,7 +1724,6 @@ mod tests {
                                     expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })],
                 )),
@@ -1769,7 +1736,6 @@ mod tests {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                     })],
-                    false,
                 )),
             }),
             // This should not be constant-folded in InlineOnly mode
@@ -1787,7 +1753,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ];
@@ -1819,7 +1784,6 @@ mod tests {
                                     expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })],
                 )),
@@ -1839,7 +1803,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
             // This add operation should NOT be constant-folded in InlineOnly mode
@@ -1857,7 +1820,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ];
@@ -1892,7 +1854,6 @@ mod tests {
                                     expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                 }),
                             ],
-                            false,
                         )),
                     })],
                 )),
@@ -1905,7 +1866,6 @@ mod tests {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                     })],
-                    false,
                 )),
             }),
             // This should be constant-folded in Full mode
@@ -1923,7 +1883,6 @@ mod tests {
                             expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
                     ],
-                    false,
                 )),
             }),
         ];
@@ -1959,7 +1918,6 @@ mod tests {
                                         ))),
                                     }),
                                 ],
-                                false,
                             )),
                         }),
                     ],
@@ -1990,7 +1948,7 @@ mod tests {
             expr: Rc::new(AstExpr::If(smallvec![(
                 Some(Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false,)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
@@ -2011,7 +1969,7 @@ mod tests {
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false,)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 })
             )])),
         });
@@ -2029,7 +1987,7 @@ mod tests {
             expr: Rc::new(AstExpr::While(
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
@@ -2050,7 +2008,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2071,7 +2029,7 @@ mod tests {
             expr: Rc::new(AstExpr::Until(
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
@@ -2092,7 +2050,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2114,7 +2072,7 @@ mod tests {
                 Ident::new("item"),
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
@@ -2139,7 +2097,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![], false)),
+                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2167,11 +2125,7 @@ mod tests {
                     expr: Rc::new(AstExpr::If(smallvec![(
                         Some(Rc::new(Node {
                             token_id: 3.into(),
-                            expr: Rc::new(AstExpr::Call(
-                                Ident::new("test_func"),
-                                smallvec![],
-                                false,
-                            )),
+                            expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![],)),
                         })),
                         Rc::new(Node {
                             token_id: 4.into(),
@@ -2196,7 +2150,7 @@ mod tests {
             expr: Rc::new(AstExpr::If(smallvec![(
                 Some(Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(different_func.clone(), smallvec![], false,)),
+                    expr: Rc::new(AstExpr::Call(different_func.clone(), smallvec![])),
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),

@@ -233,7 +233,6 @@ define_keyword_parser!(none, "None", TokenKind::None);
 define_token_parser!(plus, "+", TokenKind::Plus);
 define_token_parser!(pipe, "|", TokenKind::Pipe);
 define_token_parser!(percent, "%", TokenKind::Percent);
-define_token_parser!(question, "?", TokenKind::Question);
 define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
@@ -253,7 +252,7 @@ define_token_parser!(not, "!", TokenKind::Not);
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
         and, or, l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket,
-        r_bracket, pipe, question,
+        r_bracket, pipe,
     ))
     .parse(input)
 }

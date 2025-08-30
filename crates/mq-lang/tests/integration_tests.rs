@@ -259,9 +259,8 @@ fn engine_with_opt() -> Engine {
       Ok(vec![Value::String("hello world".to_string())].into()))]
 #[case::closure("
       def make_adder(x):
-        def adder(y):
-            add(x, y);
-      ;
+        fn(y): add(x, y);
+      end
       let add_five = make_adder(5)
       | add_five(10)
       ",
@@ -269,10 +268,9 @@ fn engine_with_opt() -> Engine {
         Ok(vec![Value::Number(15.into())].into()))]
 #[case::closure("
       def make_adder(x):
-        def adder(y):
-            add(x, y);
-      ;
-      let add_five = def adder(x): add(x, 5);
+        fn(y): add(x, y);
+      end
+      let add_five = fn(x): add(x, 5);
       | add_five(10)
       ",
         vec![Value::Number(10.into())],
@@ -280,13 +278,6 @@ fn engine_with_opt() -> Engine {
 #[case::map("def test(x): add(x, 1); | map(array(1, 2, 3), test)",
             vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into())])],
             Ok(vec![Value::Array(vec![Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into())])].into()))]
-#[case::optional_operator("
-            def test_optional(x):
-              None
-            | test_optional(10)? | test_optional(10)?
-            ",
-              vec![Value::None],
-              Ok(vec![Value::None].into()))]
 #[case::filter("
             def is_even(x):
               eq(mod(x, 2), 0);
@@ -301,8 +292,8 @@ fn engine_with_opt() -> Engine {
             ",
               vec![Value::Array(vec![Value::Number(1.into()), Value::Number(2.into()), Value::Number(3.into()), Value::Number(4.into()), Value::Number(5.into()), Value::Number(6.into())])],
               Ok(vec![Value::Array(vec![Value::Number(1.into()), Value::Number(3.into()), Value::Number(5.into())])].into()))]
-#[case::func("let func1 = def _(): 1;
-      | let func2 = def _(): 2;
+#[case::func("let func1 = fn(): 1;
+      | let func2 = fn(): 2;
       | add(func1(), func2())",
         vec![Value::Number(0.into())],
               Ok(vec![Value::Number(3.into())].into()))]
@@ -1536,7 +1527,6 @@ mod ast_json {
                 token_id: default_token_id(),
                 expr: Rc::new(AstExpr::Literal(AstLiteral::Number(1.into()))),
             })],
-            false,
         )),
     }),
     Some(vec!["Call", "my_func", "Literal", "Number", "1.0"]),

@@ -327,7 +327,6 @@ mod tests {
                                 ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
                             )})
                     ],
-                    false
                 ))})]
             ))})],
         vars: Vec::new()
