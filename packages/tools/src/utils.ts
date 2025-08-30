@@ -1,21 +1,21 @@
-import type { Heading } from './types';
-import { TREE_VIEW_SETTINGS } from './constants';
+import type { Heading } from "./types";
+import { TREE_VIEW_SETTINGS } from "./constants";
 
 export const generateTreeView = (markdown: string): Heading[] => {
-  const lines = markdown.split('\n');
+  const lines = markdown.split("\n");
   const headings: Heading[] = [];
-  
+
   lines.forEach((line, index) => {
     const match = line.match(TREE_VIEW_SETTINGS.HEADING_REGEX);
     if (match) {
       headings.push({
         level: match[1].length,
         text: match[2],
-        line: index + 1
+        line: index + 1,
       });
     }
   });
-  
+
   return headings;
 };
 
@@ -36,6 +36,6 @@ export const setStoredValue = <T>(key: string, value: T): void => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {
-    console.warn('Failed to save to localStorage:', error);
+    console.warn("Failed to save to localStorage:", error);
   }
 };

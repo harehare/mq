@@ -11,6 +11,9 @@
     --select-fg: light-dark(#333, #d4d4d4);
     --select-bg: light-dark(#f5f5f5, #2d2d30);
     --border: light-dark(#ccc, #3e3e42);
+    --success-color: light-dark(#28a745, #28a745);
+    --danger-color: light-dark(#dc3545, #dc3545);
+    --warning-color: light-dark(#ffc107, #ffc107);
 }
 
 .App {
@@ -188,7 +191,7 @@
     background-color: var(--secondary-color);
     color: var(--light-color);
     padding: 8px 16px;
-    min-height: 40px;
+    min-height: 48px;
     flex-wrap: wrap;
 }
 
@@ -208,6 +211,7 @@
     border: 1px solid rgba(0, 0, 0, 0.1);
     color: #333;
     min-width: 180px;
+    height: 36px;
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 8px center;
     background-repeat: no-repeat;
@@ -249,12 +253,16 @@
     background-color: transparent;
     color: #3182ce;
     border: none;
-    padding: 6px 12px;
     font-size: 0.875rem;
     cursor: pointer;
     transition: background-color 0.2s;
     font-weight: 600;
-    border-radius: 4px;
+    border-radius: 6px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
 }
 
 .toolbar button:hover {
@@ -264,7 +272,8 @@
 
 .app-header .tree-view-toggle,
 .app-header .output-panel-toggle,
-.app-header .theme-toggle {
+.app-header .theme-toggle,
+.app-header .manage-tools-toggle {
     width: 28px;
     height: 28px;
     padding: 0;
@@ -304,6 +313,15 @@
     transform: scale(1.05);
 }
 
+.manage-tools-toggle {
+    background: rgba(52, 152, 219, 0.8) !important;
+}
+
+.manage-tools-toggle:hover {
+    background: rgba(52, 152, 219, 1) !important;
+    transform: scale(1.05);
+}
+
 .App.dark-mode .app-header {
     background-color: var(--secondary-color);
     color: white;
@@ -317,8 +335,9 @@
 .tool-description {
     color: #b0b0b0;
     font-size: 13px;
-    margin: 0 8px;
     flex: 1;
+    display: flex;
+    align-items: center;
 }
 
 .App.dark-mode .tool-description {
@@ -838,7 +857,8 @@ textarea:focus {
     }
 
     .header-subtitle {
-        display: none; /* Hide subtitle on mobile to save space */
+        display: none;
+        /* Hide subtitle on mobile to save space */
     }
 
     .header-controls {
@@ -855,7 +875,8 @@ textarea:focus {
 
     .main-layout {
         flex-direction: column;
-        height: calc(100vh - 80px); /* Account for header */
+        height: calc(100vh - 80px);
+        /* Account for header */
     }
 
     .tree-view {
@@ -952,7 +973,8 @@ textarea:focus {
     }
 
     .resizer {
-        display: none; /* Hide resizer on mobile */
+        display: none;
+        /* Hide resizer on mobile */
     }
 
     .tree-item {
@@ -1064,5 +1086,410 @@ textarea:focus {
 
     .main-layout {
         height: calc(100vh - 70px);
+    }
+}
+
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.App.dark-mode .modal-overlay {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Custom Tool Manager Styles */
+.custom-tool-manager {
+    padding: 30px;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    max-width: 1000px;
+    width: 90%;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    position: relative;
+    margin: auto;
+}
+
+.App.dark-mode .custom-tool-manager {
+    background-color: #2d3748;
+    color: #e2e8f0;
+}
+
+.manager-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.App.dark-mode .manager-header {
+    border-bottom-color: #4a5568;
+}
+
+.manager-header h2 {
+    margin: 0;
+    color: var(--text-color);
+    font-size: 1.5rem;
+}
+
+.manager-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 8px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 38px;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    height: 32px;
+    min-width: 80px;
+}
+
+.tools-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    max-height: calc(60vh - 200px);
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.tool-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    transition: all 0.2s ease;
+}
+
+.App.dark-mode .tool-item {
+    border-color: #4a5568;
+    background-color: #1a202c;
+}
+
+.tool-item:hover {
+    border-color: var(--accent-blue);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tool-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+.tool-info {
+    flex: 1;
+}
+
+.tool-name {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.tool-description {
+    color: #6c757d;
+    line-height: 1.4;
+    font-size: 14px;
+}
+
+.App.dark-mode .tool-description {
+    color: #a0aec0;
+}
+
+.tool-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.tool-query {
+    background-color: var(--code-bg);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Source Code Pro', Menlo, monospace;
+    font-size: 13px;
+    border: 1px solid #e2e8f0;
+    color: var(--text-color);
+    word-break: break-all;
+    max-width: 100%;
+    display: block;
+}
+
+.App.dark-mode .tool-query {
+    border-color: #4a5568;
+}
+
+.tool-dates {
+    font-size: 12px;
+    color: #6c757d;
+    margin-top: 4px;
+}
+
+.App.dark-mode .tool-dates {
+    color: #a0aec0;
+}
+
+.tool-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+    min-width: 120px;
+    justify-content: flex-start;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.App.dark-mode .loading {
+    color: #a0aec0;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+.App.dark-mode .empty-state {
+    color: #a0aec0;
+}
+
+.empty-state p {
+    margin: 8px 0;
+}
+
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.App.dark-mode .error-message {
+    background-color: #2d1b1b;
+    color: #f56565;
+    border-color: #4a2121;
+}
+
+.error-message p {
+    margin: 0;
+}
+
+/* Custom Tool Form Styles */
+.custom-tool-form {
+    max-width: 800px;
+    width: 100%;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    min-width: 500px;
+    padding: 12px 15px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: white;
+    color: var(--text-color);
+    box-sizing: border-box;
+}
+
+.App.dark-mode .form-group input,
+.App.dark-mode .form-group textarea {
+    background-color: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+    font-family: 'JetBrains Mono', 'Source Code Pro', Menlo, monospace;
+}
+
+.form-help {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #6c757d;
+    line-height: 1.4;
+}
+
+.App.dark-mode .form-help {
+    color: #a0aec0;
+}
+
+.form-help code {
+    background-color: var(--code-bg);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', 'Source Code Pro', Menlo, monospace;
+    font-size: 11px;
+}
+
+.help-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.help-link:hover {
+    color: var(--accent-blue);
+    text-decoration: underline;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+    margin-top: 20px;
+}
+
+.App.dark-mode .form-actions {
+    border-top-color: #4a5568;
+}
+
+
+@media (max-width: 768px) {
+    .modal-overlay {
+        padding: 10px;
+        align-items: flex-start;
+        padding-top: 20px;
+    }
+
+    .custom-tool-manager {
+        padding: 20px;
+        width: calc(100% - 20px);
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
+        margin: 0;
+    }
+
+    .tools-list {
+        max-height: calc(70vh - 150px);
+    }
+
+    .manager-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    .manager-actions {
+        justify-content: space-between;
+    }
+
+    .tool-item {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .tool-actions {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        min-width: auto;
+    }
+
+    .custom-tool-form {
+        max-width: none;
+        width: 100%;
+    }
+
+    .form-group input,
+    .form-group textarea {
+        min-width: auto;
+        width: 100%;
+    }
+
+    .form-actions {
+        flex-direction: column;
     }
 }
