@@ -4,10 +4,18 @@ use mq_lang::{Engine, MqResult, Value};
 use rstest::{fixture, rstest};
 
 #[fixture]
-fn engine() -> Engine {
+fn engine_no_opt() -> Engine {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
     engine.set_optimization_level(mq_lang::OptimizationLevel::None);
+    engine
+}
+
+#[fixture]
+fn engine_with_opt() -> Engine {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine.set_optimization_level(mq_lang::OptimizationLevel::Full);
     engine
 }
 
@@ -1421,12 +1429,46 @@ fn engine() -> Engine {
               position: None,
             }))].into()))]
 fn test_eval(
-    mut engine: Engine,
+    mut engine_no_opt: Engine,
     #[case] program: &str,
     #[case] input: Vec<Value>,
     #[case] expected: MqResult,
 ) {
-    assert_eq!(engine.eval(program, input.into_iter()), expected);
+    assert_eq!(engine_no_opt.eval(program, input.into_iter()), expected);
+}
+
+#[rstest]
+#[case::inline_functions("
+  # comments
+  def test_fn(s):
+     let test = \"WORLD\" | ltrimstr(s, \"hello\") | upcase() | ltrimstr(test);
+  | test_fn(\"helloWorld2025\") + test_fn(\"helloWorld2026\")
+  ",
+    vec![Value::String("helloWorld".to_string())],
+    Ok(vec![Value::String("20252026".to_string())].into()))]
+#[case::constant_folding("
+  # comments
+  let i = 100
+  | def v(): i + 10;
+  | v() + 20
+  ",
+    vec![Value::Number(100.into())],
+    Ok(vec![Value::Number(130.into())].into()))]
+#[case::constant_folding("
+  # comments
+  let i = 100
+  | def v(): let i = 10 | i + 10;
+  | v() + 20
+  ",
+    vec![Value::Number(100.into())],
+    Ok(vec![Value::Number(40.into())].into()))]
+fn test_eval_with_opt(
+    mut engine_with_opt: Engine,
+    #[case] program: &str,
+    #[case] input: Vec<Value>,
+    #[case] expected: MqResult,
+) {
+    assert_eq!(engine_with_opt.eval(program, input.into_iter()), expected);
 }
 
 #[rstest]
@@ -1445,8 +1487,8 @@ fn test_eval(
 #[case::dict_set_wrong_key_type("let m = new_dict() | set(m, false, \"value\")", vec![Value::Number(0.into())],)]
 #[case::dict_get_wrong_arg_count("let m = new_dict() | get(m)", vec![Value::Number(0.into())],)]
 #[case::dict_set_wrong_arg_count("let m = new_dict() | set(m, \"key\")", vec![Value::Number(0.into())],)]
-fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
-    assert!(engine.eval(program, input.into_iter()).is_err());
+fn test_eval_error(mut engine_no_opt: Engine, #[case] program: &str, #[case] input: Vec<Value>) {
+    assert!(engine_no_opt.eval(program, input.into_iter()).is_err());
 }
 
 #[cfg(feature = "ast-json")]
