@@ -1089,15 +1089,39 @@ textarea:focus {
     }
 }
 
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.App.dark-mode .modal-overlay {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
 /* Custom Tool Manager Styles */
 .custom-tool-manager {
-    padding: 20px;
+    padding: 30px;
     background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    margin: 20px;
-    max-width: 800px;
-    margin: 20px auto;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    max-width: 1000px;
+    width: 90%;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    position: relative;
+    margin: auto;
 }
 
 .App.dark-mode .custom-tool-manager {
@@ -1180,6 +1204,9 @@ textarea:focus {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    max-height: calc(60vh - 200px);
+    overflow-y: auto;
+    padding-right: 10px;
 }
 
 .tool-item {
@@ -1318,7 +1345,8 @@ textarea:focus {
 
 /* Custom Tool Form Styles */
 .custom-tool-form {
-    max-width: 600px;
+    max-width: 800px;
+    width: 100%;
 }
 
 .form-group {
@@ -1335,7 +1363,8 @@ textarea:focus {
 .form-group input,
 .form-group textarea {
     width: 100%;
-    padding: 10px 12px;
+    min-width: 500px;
+    padding: 12px 15px;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     font-size: 14px;
@@ -1409,9 +1438,22 @@ textarea:focus {
 
 
 @media (max-width: 768px) {
+    .modal-overlay {
+        padding: 10px;
+        align-items: flex-start;
+        padding-top: 20px;
+    }
+
     .custom-tool-manager {
-        margin: 10px;
-        padding: 15px;
+        padding: 20px;
+        width: calc(100% - 20px);
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
+        margin: 0;
+    }
+
+    .tools-list {
+        max-height: calc(70vh - 150px);
     }
 
     .manager-header {
@@ -1438,6 +1480,13 @@ textarea:focus {
 
     .custom-tool-form {
         max-width: none;
+        width: 100%;
+    }
+
+    .form-group input,
+    .form-group textarea {
+        min-width: auto;
+        width: 100%;
     }
 
     .form-actions {

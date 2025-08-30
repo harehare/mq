@@ -153,19 +153,42 @@ function App() {
     refreshCustomTools();
   };
 
-  if (showCustomToolManager) {
-    return (
-      <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
-        <CustomToolManager
-          onClose={() => setShowCustomToolManager(false)}
-          onToolsChanged={handleCustomToolsChange}
-        />
-      </div>
-    );
-  }
+  const handleModalClose = () => {
+    setShowCustomToolManager(false);
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      handleModalClose();
+    }
+  };
+
+  // ESC key handler
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showCustomToolManager) {
+        handleModalClose();
+      }
+    };
+
+    if (showCustomToolManager) {
+      document.addEventListener("keydown", handleEscapeKey);
+      return () => {
+        document.removeEventListener("keydown", handleEscapeKey);
+      };
+    }
+  }, [showCustomToolManager]);
 
   return (
     <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
+      {showCustomToolManager && (
+        <div className="modal-overlay" onClick={handleOverlayClick}>
+          <CustomToolManager
+            onClose={handleModalClose}
+            onToolsChanged={handleCustomToolsChange}
+          />
+        </div>
+      )}
       <header className="app-header">
         <div className="header-left">
           <a
