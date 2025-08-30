@@ -1,7 +1,7 @@
 use miette::miette;
 use rmcp::{
     ErrorData, ServerHandler, ServiceExt,
-    handler::server::tool::{Parameters, ToolRouter},
+    handler::server::{tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content, ProtocolVersion, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router,
 };
@@ -289,13 +289,10 @@ mod tests {
                 assert!(!result.is_error.unwrap_or_default());
                 let actual = result
                     .content
-                    .map(|c| {
-                        c.iter()
-                            .map(|c| c.as_text().map(|t| t.text.clone()).unwrap_or_default())
-                            .collect::<Vec<_>>()
-                            .join("\n\n")
-                    })
-                    .unwrap_or_default();
+                    .into_iter()
+                    .map(|c| c.as_text().map(|t| t.text.clone()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
 
                 assert_eq!(actual, expected_text);
             }
@@ -358,13 +355,10 @@ mod tests {
                 assert!(!result.is_error.unwrap_or_default());
                 let actual = result
                     .content
-                    .map(|c| {
-                        c.iter()
-                            .map(|c| c.raw.as_text().map(|t| t.text.clone()).unwrap_or_default())
-                            .collect::<Vec<_>>()
-                            .join("\n\n")
-                    })
-                    .unwrap_or_default();
+                    .into_iter()
+                    .map(|c| c.as_text().map(|c| c.text.clone()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
                 assert_eq!(actual, expected_text);
             }
             Err(expected_err) => {
@@ -383,7 +377,7 @@ mod tests {
         let server = Server::new().expect("Failed to create server");
         let result = server.available_functions().unwrap();
         assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.map(|c| c.len()).unwrap_or_default(), 1);
+        assert_eq!(result.content.into_iter().len(), 1);
     }
 
     #[test]
@@ -391,7 +385,7 @@ mod tests {
         let server = Server::new().expect("Failed to create server");
         let result = server.available_selectors().unwrap();
         assert!(!result.is_error.unwrap_or_default());
-        assert_eq!(result.content.map(|c| c.len()).unwrap_or_default(), 1);
+        assert_eq!(result.content.into_iter().len(), 1);
     }
 
     #[test]
