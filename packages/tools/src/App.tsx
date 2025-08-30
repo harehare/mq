@@ -8,8 +8,10 @@ import { generateTreeView } from "./utils";
 import { useResizer } from "./hooks/useResizer";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { useLocalStorage } from "./hooks/useLocalStorage";
+import { useCustomTools } from "./hooks/useCustomTools";
 import { TREE_VIEW_SETTINGS } from "./constants";
 import { tools } from "./tools";
+import { CustomToolManager } from "./components/CustomToolManager";
 
 const mdParser = new MarkdownIt();
 
@@ -36,13 +38,18 @@ function App() {
     "selectedToolId",
     tools[0].id
   );
+  const [showCustomToolManager, setShowCustomToolManager] = useState(false);
 
   const { isDarkMode, toggleDarkMode } = useDarkMode();
   const { leftPanelWidth, handleMouseDown } = useResizer({ containerRef });
+  const { toolsFromCustom, refreshCustomTools } = useCustomTools();
+
+  // Combine predefined and custom tools
+  const allTools = [...tools, ...toolsFromCustom];
 
   // Find the current tool based on saved tool ID
   const selectedTool =
-    tools.find((tool) => tool.id === selectedToolId) || tools[0];
+    allTools.find((tool) => tool.id === selectedToolId) || allTools[0];
 
   const handleToolChange = (newToolId: string) => {
     setSelectedToolId(newToolId);
@@ -142,6 +149,21 @@ function App() {
     return () => clearTimeout(timer);
   }, [inputText, handleTransform]);
 
+  const handleCustomToolsChange = () => {
+    refreshCustomTools();
+  };
+
+  if (showCustomToolManager) {
+    return (
+      <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
+        <CustomToolManager
+          onClose={() => setShowCustomToolManager(false)}
+          onToolsChanged={handleCustomToolsChange}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={`App ${isDarkMode ? "dark-mode" : ""}`}>
       <header className="app-header">
@@ -162,6 +184,13 @@ function App() {
           </p>
         </div>
         <div className="header-controls">
+          <button
+            onClick={() => setShowCustomToolManager(true)}
+            className="manage-tools-toggle"
+            title="Manage custom tools"
+          >
+            ⚙️
+          </button>
           <a
             href="https://github.com/harehare/mq"
             target="_blank"
@@ -203,11 +232,11 @@ function App() {
           onChange={(e) => handleToolChange(e.target.value)}
           value={selectedTool.id}
         >
-          {Array.from(new Set(tools.map((tool) => tool.category)))
+          {Array.from(new Set(allTools.map((tool) => tool.category)))
             .sort()
             .map((category) => (
               <optgroup key={category} label={category}>
-                {tools
+                {allTools
                   .filter((tool) => tool.category === category)
                   .map((tool) => (
                     <option key={tool.id} value={tool.id}>
