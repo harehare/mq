@@ -35,7 +35,9 @@ export const useCustomTools = () => {
       const tools = await customToolsDB.getAllTools();
       setCustomTools(tools);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load custom tools");
+      setError(
+        err instanceof Error ? err.message : "Failed to load custom tools"
+      );
       console.error("Failed to load custom tools:", err);
     } finally {
       setIsLoading(false);

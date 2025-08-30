@@ -26,9 +26,13 @@ export const CustomToolManager: React.FC<CustomToolManagerProps> = ({
       setIsLoading(true);
       setError(null);
       const tools = await customToolsDB.getAllTools();
-      setCustomTools(tools.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()));
+      setCustomTools(
+        tools.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load custom tools");
+      setError(
+        err instanceof Error ? err.message : "Failed to load custom tools"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -85,10 +89,7 @@ export const CustomToolManager: React.FC<CustomToolManagerProps> = ({
       <div className="manager-header">
         <h2>Custom Tools Manager</h2>
         <div className="manager-actions">
-          <button
-            onClick={() => setShowForm(true)}
-            className="btn btn-primary"
-          >
+          <button onClick={() => setShowForm(true)} className="btn btn-primary">
             ➕ Add Tool
           </button>
           <button onClick={onClose} className="btn btn-secondary">

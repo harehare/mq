@@ -45,7 +45,7 @@ export const CustomToolForm: React.FC<CustomToolFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
@@ -123,14 +123,15 @@ export const CustomToolForm: React.FC<CustomToolFormProps> = ({
           required
         />
         <p className="form-help">
-          Enter an mq query that will be applied to the input markdown. 
+          Enter an mq query that will be applied to the input markdown.
           <br />
-          Examples: <code>.h | to_text()</code>, <code>.link.url</code>, <code>.code</code>
+          Examples: <code>.h | to_text()</code>, <code>.link.url</code>,{" "}
+          <code>.code</code>
           <br />
           📖 Need help? Check out the{" "}
-          <a 
-            href="https://mqlang.org/book/" 
-            target="_blank" 
+          <a
+            href="https://mqlang.org/book/"
+            target="_blank"
             rel="noopener noreferrer"
             className="help-link"
           >
@@ -145,10 +146,13 @@ export const CustomToolForm: React.FC<CustomToolFormProps> = ({
           disabled={isSubmitting}
           className="btn btn-primary"
         >
-          {isSubmitting 
-            ? (tool ? "Updating..." : "Creating...") 
-            : (tool ? "Update Tool" : "Create Tool")
-          }
+          {isSubmitting
+            ? tool
+              ? "Updating..."
+              : "Creating..."
+            : tool
+            ? "Update Tool"
+            : "Create Tool"}
         </button>
         <button
           type="button"

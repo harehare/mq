@@ -22,7 +22,7 @@ class CustomToolsDB {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        
+
         if (!db.objectStoreNames.contains(this.storeName)) {
           const store = db.createObjectStore(this.storeName, { keyPath: "id" });
           store.createIndex("name", "name", { unique: false });
@@ -34,7 +34,7 @@ class CustomToolsDB {
 
   async getAllTools(): Promise<CustomTool[]> {
     const db = await this.openDB();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([this.storeName], "readonly");
       const store = transaction.objectStore(this.storeName);
@@ -42,7 +42,7 @@ class CustomToolsDB {
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        const tools = request.result.map((tool: any) => ({
+        const tools = request.result.map((tool: CustomTool) => ({
           ...tool,
           createdAt: new Date(tool.createdAt),
           updatedAt: new Date(tool.updatedAt),
@@ -54,7 +54,7 @@ class CustomToolsDB {
 
   async getTool(id: string): Promise<CustomTool | null> {
     const db = await this.openDB();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([this.storeName], "readonly");
       const store = transaction.objectStore(this.storeName);
@@ -76,7 +76,9 @@ class CustomToolsDB {
     });
   }
 
-  async addTool(toolData: Omit<CustomTool, "id" | "category" | "createdAt" | "updatedAt">): Promise<CustomTool> {
+  async addTool(
+    toolData: Omit<CustomTool, "id" | "category" | "createdAt" | "updatedAt">
+  ): Promise<CustomTool> {
     const db = await this.openDB();
     const now = new Date();
     const tool: CustomTool = {
@@ -97,10 +99,13 @@ class CustomToolsDB {
     });
   }
 
-  async updateTool(id: string, updates: Partial<Pick<CustomTool, "name" | "description" | "query">>): Promise<CustomTool> {
+  async updateTool(
+    id: string,
+    updates: Partial<Pick<CustomTool, "name" | "description" | "query">>
+  ): Promise<CustomTool> {
     const db = await this.openDB();
     const existingTool = await this.getTool(id);
-    
+
     if (!existingTool) {
       throw new Error(`Tool with id ${id} not found`);
     }
@@ -135,7 +140,7 @@ class CustomToolsDB {
   }
 
   private generateId(): string {
-    return `custom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   }
 }
 

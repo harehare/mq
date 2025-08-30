@@ -1,4 +1,8 @@
-export type ToolCategory = "Conversion" | "Extraction" | "Generation" | "Custom";
+export type ToolCategory =
+  | "Conversion"
+  | "Extraction"
+  | "Generation"
+  | "Custom";
 
 export interface Tool {
   id: string;

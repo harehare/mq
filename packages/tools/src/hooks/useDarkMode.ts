@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
-import { getStoredValue, setStoredValue } from '../utils';
-import { STORAGE_KEYS } from '../constants';
+import { useState, useEffect } from "react";
+import { getStoredValue, setStoredValue } from "../utils";
+import { STORAGE_KEYS } from "../constants";
 
 export const useDarkMode = () => {
   const getSystemPreference = () => {
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return (
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    );
   };
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -29,6 +32,6 @@ export const useDarkMode = () => {
 
   return {
     isDarkMode,
-    toggleDarkMode
+    toggleDarkMode,
   };
 };
