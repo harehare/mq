@@ -16,7 +16,6 @@ pub mod runtime_value;
 use env::Env;
 use error::EvalError;
 use runtime_value::RuntimeValue;
-use smallvec::SmallVec;
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -224,7 +223,6 @@ impl Evaluator {
         Ok(())
     }
 
-    #[inline(always)]
     fn eval_program(
         &mut self,
         program: &Program,
@@ -602,14 +600,32 @@ impl Evaluator {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
 
-                let new_args = if params.len() == args.len() + 1 {
-                    let mut new_args: ast::Args = SmallVec::with_capacity(args.len());
-                    new_args.push(Rc::new(ast::Node {
-                        token_id: node.token_id,
-                        expr: Rc::new(ast::Expr::Self_),
-                    }));
-                    new_args.extend(args.clone());
-                    new_args
+                let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
+                let mut new_env_mut = new_env.borrow_mut();
+
+                if params.len() == args.len() + 1 {
+                    if let ast::Expr::Ident(name) = &*params.first().unwrap().expr {
+                        new_env_mut.define(name, runtime_value.clone());
+                    } else {
+                        return Err(EvalError::InvalidDefinition(
+                            (*self.token_arena.borrow()[params.first().unwrap().token_id]).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+
+                    for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
+                        if let ast::Expr::Ident(name) = &*param.expr {
+                            new_env_mut.define(
+                                name,
+                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?,
+                            );
+                        } else {
+                            return Err(EvalError::InvalidDefinition(
+                                (*self.token_arena.borrow()[param.token_id]).clone(),
+                                ident.to_string(),
+                            ));
+                        }
+                    }
                 } else if args.len() != params.len() {
                     return Err(EvalError::InvalidNumberOfArguments(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -618,24 +634,20 @@ impl Evaluator {
                         args.len() as u8,
                     ));
                 } else {
-                    args.clone()
-                };
-
-                let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
-                let mut new_env_mut = new_env.borrow_mut();
-
-                for (arg, param) in new_args.into_iter().zip(params.iter()) {
-                    if let ast::Expr::Ident(name) = &*param.expr {
-                        new_env_mut
-                            .define(name, self.eval_expr(runtime_value, arg, Rc::clone(&env))?);
-                    } else {
-                        return Err(EvalError::InvalidDefinition(
-                            (*self.token_arena.borrow()[param.token_id]).clone(),
-                            ident.to_string(),
-                        ));
+                    for (arg, param) in args.into_iter().zip(params.iter()) {
+                        if let ast::Expr::Ident(name) = &*param.expr {
+                            new_env_mut.define(
+                                name,
+                                self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?,
+                            );
+                        } else {
+                            return Err(EvalError::InvalidDefinition(
+                                (*self.token_arena.borrow()[param.token_id]).clone(),
+                                ident.to_string(),
+                            ));
+                        }
                     }
-                }
-
+                };
                 std::mem::drop(new_env_mut);
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);

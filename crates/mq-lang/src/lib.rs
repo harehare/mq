@@ -116,7 +116,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
         Box::new(error::Error::from_error(
             code,
             e.into(),
-            ModuleLoader::new(None),
+            ModuleLoader::default(),
         ))
     })
     .unwrap();
@@ -137,7 +137,7 @@ pub fn parse(
             Box::new(error::Error::from_error(
                 code,
                 e.into(),
-                ModuleLoader::new(None),
+                ModuleLoader::default(),
             ))
         })?;
 
@@ -151,7 +151,7 @@ pub fn parse(
         Box::new(error::Error::from_error(
             code,
             e.into(),
-            ModuleLoader::new(None),
+            ModuleLoader::default(),
         ))
     })
 }

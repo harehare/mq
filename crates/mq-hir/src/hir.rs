@@ -50,7 +50,7 @@ impl Hir {
             symbols: SlotMap::default(),
             sources,
             scopes,
-            module_loader: mq_lang::ModuleLoader::new(None),
+            module_loader: mq_lang::ModuleLoader::default(),
             source_scopes,
             references: FxHashMap::default(),
         }
