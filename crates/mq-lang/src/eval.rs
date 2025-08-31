@@ -191,9 +191,11 @@ impl Evaluator {
                 }
             }
 
+            let mut mut_env = self.env.borrow_mut();
+
             for node in &module.functions {
                 if let ast::Expr::Def(ident, params, program) = &*node.expr {
-                    self.env.borrow_mut().define(
+                    mut_env.define(
                         ident,
                         RuntimeValue::Function(
                             params.clone(),
@@ -203,6 +205,8 @@ impl Evaluator {
                     );
                 }
             }
+
+            std::mem::drop(mut_env);
 
             for node in &module.vars {
                 if let ast::Expr::Let(ident, node) = &*node.expr {
@@ -618,11 +622,11 @@ impl Evaluator {
                 };
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
+                let mut new_env_mut = new_env.borrow_mut();
 
                 for (arg, param) in new_args.into_iter().zip(params.iter()) {
                     if let ast::Expr::Ident(name) = &*param.expr {
-                        new_env
-                            .borrow_mut()
+                        new_env_mut
                             .define(name, self.eval_expr(runtime_value, arg, Rc::clone(&env))?);
                     } else {
                         return Err(EvalError::InvalidDefinition(
@@ -631,6 +635,9 @@ impl Evaluator {
                         ));
                     }
                 }
+
+                std::mem::drop(new_env_mut);
+
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
                 self.exit_scope();
 

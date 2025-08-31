@@ -1453,6 +1453,11 @@ fn test_eval(
   ",
     vec![Value::Number(100.into())],
     Ok(vec![Value::Number(40.into())].into()))]
+#[case::markdown_toc(r##".h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (!is_none(level)): to_md_list(link, to_number(level))"##,
+    vec![Value::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec![
+      mq_markdown::Node::Text(mq_markdown::Text{value: "# test".to_string(), position: None})
+    ], position: None}))],
+    Ok(vec![Value::Number(40.into())].into()))]
 fn test_eval_with_opt(
     mut engine_with_opt: Engine,
     #[case] program: &str,
