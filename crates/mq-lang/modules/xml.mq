@@ -276,8 +276,9 @@ def xml_to_markdown_table(data):
               | let tag_value = child["tag"]
               | let attributes_value = if (is_empty(keys(child["attributes"]))):
                     ""
-                  else:
+                  elif (!is_none(child["attributes"])):
                     join(map(entries(child["attributes"]), fn(entry): first(entry) + "=" + last(entry);), ", ")
+                  else: ""
               | let text_value = if (is_none(child["text"])):
                     ""
                   else:
