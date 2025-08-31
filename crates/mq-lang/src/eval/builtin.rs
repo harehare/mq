@@ -1332,6 +1332,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         s1.push_str(s2);
                         Ok(std::mem::take(s1).into())
                     }
+                    [RuntimeValue::String(s), RuntimeValue::Number(n)]
+                    | [RuntimeValue::Number(n), RuntimeValue::String(s)] => {
+                        s.push_str(n.to_string().as_str());
+                        Ok(std::mem::take(s).into())
+                    }
                     [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                         .markdown_node()
                         .map(|md| {
