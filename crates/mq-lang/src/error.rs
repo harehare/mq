@@ -410,13 +410,13 @@ mod test {
 
     #[fixture]
     fn module_loader() -> ModuleLoader {
-        ModuleLoader::new(None)
+        ModuleLoader::default()
     }
 
     #[test]
     fn test_from_error_with_eof_error() {
         let cause = InnerError::Parse(ParseError::UnexpectedEOFDetected(ArenaId::new(0)));
-        let module_loader = ModuleLoader::new(None);
+        let module_loader = ModuleLoader::default();
         let error = Error::from_error("line 1\nline 2", cause, module_loader);
 
         assert_eq!(error.source_code, "line 1\nline 2");
@@ -631,7 +631,7 @@ mod test {
     #[test]
     fn test_from_error_with_builtin_module() {
         let token_arena = Rc::new(RefCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::new(None);
+        let mut loader = ModuleLoader::default();
         loader.load_builtin(token_arena).unwrap();
         let token = Token {
             range: Range::default(),

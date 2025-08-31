@@ -59,7 +59,7 @@ impl Default for Engine {
     fn default() -> Self {
         let token_arena = create_default_token_arena();
         Self {
-            evaluator: Evaluator::new(ModuleLoader::new(None), Rc::clone(&token_arena)),
+            evaluator: Evaluator::new(ModuleLoader::default(), Rc::clone(&token_arena)),
             options: Options::default(),
             token_arena,
         }
