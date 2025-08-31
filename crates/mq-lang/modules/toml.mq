@@ -206,7 +206,8 @@ def _parse_toml_content(input):
     | let current_pos = pos
     | let has_sign = input[current_pos] == "+" || input[current_pos] == "-"
     | let current_pos = if (has_sign): current_pos + 1 else: current_pos
-    | let result = until (current_pos < len(input) && (_is_digit(input[current_pos]) || input[current_pos] == ".")):
+    | let input_len = len(input)
+    | let result = until (current_pos < input_len && (_is_digit(input[current_pos]) || input[current_pos] == ".")):
           let current_pos = current_pos + 1
           | current_pos
         end
@@ -223,7 +224,8 @@ def _parse_toml_content(input):
   def _detect_number_type(input, pos):
     let temp_pos = pos
     | let has_dot = false
-    | let result = until (temp_pos < len(input) && (_is_digit(input[temp_pos]) || input[temp_pos] == "." || input[temp_pos] == "+" && input[temp_pos] == "-")):
+    | let input_len = len(input)
+    | let result = until (temp_pos < input_len && (_is_digit(input[temp_pos]) || input[temp_pos] == "." || input[temp_pos] == "+" && input[temp_pos] == "-")):
           let has_dot = has_dot || input[temp_pos] == "."
           | let temp_pos = temp_pos + 1
           | [has_dot, temp_pos]
@@ -257,11 +259,12 @@ def _parse_toml_content(input):
     let current_pos = pos + 1
     | let table = {}
     | let current_pos = _skip_whitespace(input, current_pos)
-    | let result = until (current_pos < len(input) && input[current_pos] != "}"):
+    | let input_len = len(input)
+    | let result = until (current_pos < input_len && input[current_pos] != "}"):
           let key_result = _parse_key(input, current_pos)
           | let key = key_result[0]
           | let current_pos = _skip_whitespace(input, key_result[1])
-          | let current_pos = if (current_pos < len(input) && input[current_pos] == "="): current_pos + 1 else: current_pos
+          | let current_pos = if (current_pos < input_len && input[current_pos] == "="): current_pos + 1 else: current_pos
           | let current_pos = _skip_whitespace(input, current_pos)
           | let value_result = _parse_value(input, current_pos)
           | let value = value_result[0]
@@ -394,10 +397,11 @@ def _parse_toml_content(input):
   | let current_section = []
   | let is_array_section = false
   | let pos = 0
-  | let result = until (pos < len(input_chars)):
+  | let input_len = len(input_chars)
+  | let result = until (pos < input_len):
         let pos = _skip_whitespace(input_chars, pos)
         | let pos = _skip_comment(input_chars, pos)
-        | let result = if (pos >= len(input_chars) || _is_newline(input_chars[pos])):
+        | let result = if (pos >= input_len || _is_newline(input_chars[pos])):
               [table, current_section, is_array_section, pos + 1]
             elif (input_chars[pos] == "["):
               _handle_section_header_char(table, input_chars, pos)

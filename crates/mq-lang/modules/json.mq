@@ -27,7 +27,8 @@ def _parse_json_value(input):
     let escaped = false
     | let pos = 1
     | let end_pos = None
-    | let pos = until (is_none(end_pos) && pos < len(input)):
+    | let input_len = len(input)
+    | let pos = until (is_none(end_pos) && pos < input_len):
           let char = input[pos]
           | let tokens = handle_string_char(char, escaped, pos)
           | let should_end = tokens[0]
