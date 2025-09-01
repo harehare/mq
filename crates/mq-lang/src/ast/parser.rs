@@ -8,6 +8,7 @@ use crate::lexer::token::{Token, TokenKind};
 use compact_str::CompactString;
 use smallvec::{SmallVec, smallvec};
 
+use super::constants;
 use super::error::ParseError;
 use super::node::{Args, Branches, Expr, Ident, Literal, Node, Selector};
 use super::{Program, TokenId};
@@ -133,20 +134,20 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     fn binary_op_function_name(kind: &TokenKind) -> &'static str {
         match kind {
-            TokenKind::And => "and",
-            TokenKind::Asterisk => "mul",
-            TokenKind::EqEq => "eq",
-            TokenKind::Gte => "gte",
-            TokenKind::Gt => "gt",
-            TokenKind::Lte => "lte",
-            TokenKind::Lt => "lt",
-            TokenKind::Minus => "sub",
-            TokenKind::NeEq => "ne",
-            TokenKind::Or => "or",
-            TokenKind::Percent => "mod",
-            TokenKind::Plus => "add",
-            TokenKind::RangeOp => "range",
-            TokenKind::Slash => "div",
+            TokenKind::And => constants::AND,
+            TokenKind::Asterisk => constants::MUL,
+            TokenKind::EqEq => constants::EQ,
+            TokenKind::Gte => constants::GTE,
+            TokenKind::Gt => constants::GT,
+            TokenKind::Lte => constants::LTE,
+            TokenKind::Lt => constants::LT,
+            TokenKind::Minus => constants::SUB,
+            TokenKind::NeEq => constants::NE,
+            TokenKind::Or => constants::OR,
+            TokenKind::Percent => constants::MOD,
+            TokenKind::Plus => constants::ADD,
+            TokenKind::RangeOp => constants::RANGE,
+            TokenKind::Slash => constants::DIV,
             _ => unreachable!(),
         }
     }
@@ -282,7 +283,7 @@ impl<'a> Parser<'a> {
         let expr_node = self.parse_primary_expr(Rc::clone(expr_token))?;
 
         // Convert ! to not() function call
-        let not_ident = Ident::new_with_token("not", Some(Rc::clone(&not_token)));
+        let not_ident = Ident::new_with_token(constants::NOT, Some(Rc::clone(&not_token)));
         let args = smallvec![expr_node];
 
         Ok(Rc::new(Node {
@@ -348,7 +349,7 @@ impl<'a> Parser<'a> {
             pairs.push(Rc::new(Node {
                 token_id,
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("array", Some(Rc::clone(key_token))),
+                    Ident::new_with_token(constants::ARRAY, Some(Rc::clone(key_token))),
                     smallvec![key_node, value_node],
                 )),
             }));
@@ -379,7 +380,7 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id,
             expr: Rc::new(Expr::Call(
-                Ident::new_with_token("dict", Some(Rc::clone(&lbrace_token))),
+                Ident::new_with_token(constants::DICT, Some(Rc::clone(&lbrace_token))),
                 pairs,
             )),
         }))
@@ -442,7 +443,7 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id,
             expr: Rc::new(Expr::Call(
-                Ident::new_with_token("array", Some(token)),
+                Ident::new_with_token(constants::ARRAY, Some(token)),
                 elements,
             )),
         }))
@@ -661,7 +662,7 @@ impl<'a> Parser<'a> {
                     .borrow_mut()
                     .alloc(Rc::clone(&original_token)),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("slice", Some(Rc::clone(&original_token))),
+                    Ident::new_with_token(constants::SLICE, Some(Rc::clone(&original_token))),
                     smallvec![target_node, first_node, second_node],
                 )),
             })
@@ -694,7 +695,7 @@ impl<'a> Parser<'a> {
                     .borrow_mut()
                     .alloc(Rc::clone(&original_token)),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("get", Some(Rc::clone(&original_token))),
+                    Ident::new_with_token(constants::GET, Some(Rc::clone(&original_token))),
                     smallvec![target_node, first_node],
                 )),
             })
@@ -1192,7 +1193,7 @@ impl<'a> Parser<'a> {
             Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("attr", Some(Rc::clone(&token))),
+                    Ident::new_with_token(constants::ATTR, Some(Rc::clone(&token))),
                     smallvec![base_node, attr_literal],
                 )),
             }))
@@ -1648,7 +1649,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 4.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
@@ -1693,7 +1694,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 8.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1772,7 +1773,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -2813,7 +2814,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                             SmallVec::new(),
                         )),
                     })
@@ -2831,7 +2832,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -2860,7 +2861,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -2895,12 +2896,12 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
                                     expr: Rc::new(Expr::Call(
-                                        Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                                        Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                                         smallvec![
                                             Rc::new(Node {
                                                 token_id: 2.into(),
@@ -2912,7 +2913,7 @@ mod tests {
                                 Rc::new(Node {
                                     token_id: 3.into(),
                                     expr: Rc::new(Expr::Call(
-                                        Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                                        Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                                         smallvec![
                                             Rc::new(Node {
                                                 token_id: 4.into(),
@@ -2937,7 +2938,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                            Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -2984,7 +2985,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("array", Some(Rc::new(token(TokenKind::LBracket)))),
+                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::LBracket)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 1.into(),
@@ -3009,7 +3010,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3034,7 +3035,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3059,7 +3060,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3084,7 +3085,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3112,7 +3113,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 1.into(),
@@ -3145,7 +3146,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3170,7 +3171,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3211,7 +3212,7 @@ mod tests {
                                     Some(Rc::new(Node {
                                         token_id: 2.into(),
                                         expr: Rc::new(Expr::Call(
-                                            Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                                            Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 1.into(),
@@ -3243,7 +3244,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3268,7 +3269,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3293,7 +3294,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3318,7 +3319,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3346,7 +3347,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 1.into(),
@@ -3379,7 +3380,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3404,7 +3405,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3445,7 +3446,7 @@ mod tests {
                                     Some(Rc::new(Node {
                                         token_id: 2.into(),
                                         expr: Rc::new(Expr::Call(
-                                            Ident::new_with_token("ne", Some(Rc::new(token(TokenKind::NeEq)))),
+                                            Ident::new_with_token(constants::NE, Some(Rc::new(token(TokenKind::NeEq)))),
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 1.into(),
@@ -3477,7 +3478,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                                Ident::new_with_token(constants::ADD, Some(Rc::new(token(TokenKind::Plus)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3502,7 +3503,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                                Ident::new_with_token(constants::ADD, Some(Rc::new(token(TokenKind::Plus)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3534,7 +3535,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("lt", Some(Rc::new(token(TokenKind::Lt)))),
+                                Ident::new_with_token(constants::LT, Some(Rc::new(token(TokenKind::Lt)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3559,7 +3560,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("lte", Some(Rc::new(token(TokenKind::Lte)))),
+                                Ident::new_with_token(constants::LTE, Some(Rc::new(token(TokenKind::Lte)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3584,7 +3585,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("gt", Some(Rc::new(token(TokenKind::Gt)))),
+                                Ident::new_with_token(constants::GT, Some(Rc::new(token(TokenKind::Gt)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3609,7 +3610,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("gte", Some(Rc::new(token(TokenKind::Gte)))),
+                                Ident::new_with_token(constants::GTE, Some(Rc::new(token(TokenKind::Gte)))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -3633,7 +3634,7 @@ mod tests {
                             Rc::new(Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("dict", Some(Rc::new(token(TokenKind::LBrace)))),
+                                    Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::LBrace)))),
                                     SmallVec::new(),
                                 )),
                             })
@@ -3651,12 +3652,12 @@ mod tests {
                             Rc::new(Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("dict", Some(Rc::new(token(TokenKind::LBrace)))),
+                                    Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::LBrace)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token("array", Some(Rc::new(token(TokenKind::Ident(CompactString::new("key")))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(CompactString::new("key")))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 1.into(),
@@ -3690,12 +3691,12 @@ mod tests {
                             Rc::new(Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("dict", Some(Rc::new(token(TokenKind::LBrace)))),
+                                    Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::LBrace)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token("array", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 1.into(),
@@ -3711,7 +3712,7 @@ mod tests {
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token("array", Some(Rc::new(token(TokenKind::StringLiteral("b".to_owned()))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::StringLiteral("b".to_owned()))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 3.into(),
@@ -3742,12 +3743,12 @@ mod tests {
                             Rc::new(Node {
                                 token_id: 0.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("dict", Some(Rc::new(token(TokenKind::LBrace)))),
+                                    Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::LBrace)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token("array", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 1.into(),
@@ -3799,7 +3800,7 @@ mod tests {
         Ok(vec![
             Rc::new(Node {
                 token_id: 3.into(),
-                expr: Rc::new(Expr::Call(Ident::new_with_token("attr", Some(Rc::new(token(TokenKind::Selector(".h.text".into()))))),
+                expr: Rc::new(Expr::Call(Ident::new_with_token(constants::ATTR, Some(Rc::new(token(TokenKind::Selector(".h.text".into()))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
@@ -3819,7 +3820,7 @@ mod tests {
         Ok(vec![
             Rc::new(Node {
                 token_id: 3.into(),
-                expr: Rc::new(Expr::Call(Ident::new_with_token("attr", Some(Rc::new(token(TokenKind::Selector(".list.checked".into()))))),
+                expr: Rc::new(Expr::Call(Ident::new_with_token(constants::ATTR, Some(Rc::new(token(TokenKind::Selector(".list.checked".into()))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
@@ -3847,7 +3848,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                            Ident::new_with_token(constants::ADD, Some(Rc::new(token(TokenKind::Plus)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -3874,7 +3875,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 1.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("sub", Some(Rc::new(token(TokenKind::Minus)))),
+                    Ident::new_with_token(constants::SUB, Some(Rc::new(token(TokenKind::Minus)))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -3899,7 +3900,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 1.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("sub", Some(Rc::new(token(TokenKind::Minus)))),
+                    Ident::new_with_token(constants::SUB, Some(Rc::new(token(TokenKind::Minus)))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -3924,7 +3925,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 1.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("div", Some(Rc::new(token(TokenKind::Slash)))),
+                    Ident::new_with_token(constants::DIV, Some(Rc::new(token(TokenKind::Slash)))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -3949,7 +3950,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 1.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("mod", Some(Rc::new(token(TokenKind::Percent)))),
+                        Ident::new_with_token(constants::MOD, Some(Rc::new(token(TokenKind::Percent)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 0.into(),
@@ -3974,7 +3975,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 1.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("mod", Some(Rc::new(token(TokenKind::Percent)))),
+                        Ident::new_with_token(constants::MOD, Some(Rc::new(token(TokenKind::Percent)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 0.into(),
@@ -4006,7 +4007,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 1.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                        Ident::new_with_token(constants::MUL, Some(Rc::new(token(TokenKind::Asterisk)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 0.into(),
@@ -4031,7 +4032,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 1.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                        Ident::new_with_token(constants::MUL, Some(Rc::new(token(TokenKind::Asterisk)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 0.into(),
@@ -4065,12 +4066,12 @@ mod tests {
                 Rc::new(Node {
                     token_id: 3.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                        Ident::new_with_token(constants::MUL, Some(Rc::new(token(TokenKind::Asterisk)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 1.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("mul", Some(Rc::new(token(TokenKind::Asterisk)))),
+                                    Ident::new_with_token(constants::MUL, Some(Rc::new(token(TokenKind::Asterisk)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
@@ -4104,12 +4105,12 @@ mod tests {
                 Rc::new(Node {
                     token_id: 3.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("eq", Some(Rc::new(token(TokenKind::EqEq)))),
+                        Ident::new_with_token(constants::EQ, Some(Rc::new(token(TokenKind::EqEq)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 1.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("add", Some(Rc::new(token(TokenKind::Plus)))),
+                                    Ident::new_with_token(constants::ADD, Some(Rc::new(token(TokenKind::Plus)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
@@ -4143,12 +4144,12 @@ mod tests {
                 Rc::new(Node {
                     token_id: 3.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("and", Some(Rc::new(token(TokenKind::And)))),
+                        Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::And)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 1.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::And)))),
+                                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::And)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
@@ -4182,12 +4183,12 @@ mod tests {
                 Rc::new(Node {
                     token_id: 3.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                        Ident::new_with_token(constants::OR, Some(Rc::new(token(TokenKind::Or)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 1.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                                    Ident::new_with_token(constants::OR, Some(Rc::new(token(TokenKind::Or)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
@@ -4221,12 +4222,12 @@ mod tests {
                 Rc::new(Node {
                     token_id: 3.into(),
                     expr: Rc::new(Expr::Call(
-                        Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                        Ident::new_with_token(constants::OR, Some(Rc::new(token(TokenKind::Or)))),
                         smallvec![
                             Rc::new(Node {
                                 token_id: 1.into(),
                                 expr: Rc::new(Expr::Call(
-                                    Ident::new_with_token("and", Some(Rc::new(token(TokenKind::And)))),
+                                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::And)))),
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
@@ -4258,7 +4259,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("range", Some(Rc::new(token(TokenKind::RangeOp)))),
+                            Ident::new_with_token(constants::RANGE, Some(Rc::new(token(TokenKind::RangeOp)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4283,7 +4284,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("range", Some(Rc::new(token(TokenKind::RangeOp)))),
+                            Ident::new_with_token(constants::RANGE, Some(Rc::new(token(TokenKind::RangeOp)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4364,12 +4365,12 @@ mod tests {
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("or", Some(Rc::new(token(TokenKind::Or)))),
+                            Ident::new_with_token(constants::OR, Some(Rc::new(token(TokenKind::Or)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
                                     expr: Rc::new(Expr::Call(
-                                        Ident::new_with_token("gt", Some(Rc::new(token(TokenKind::Gt)))),
+                                        Ident::new_with_token(constants::GT, Some(Rc::new(token(TokenKind::Gt)))),
                                         smallvec![
                                             Rc::new(Node {
                                                 token_id: 0.into(),
@@ -4385,7 +4386,7 @@ mod tests {
                                 Rc::new(Node {
                                     token_id: 5.into(),
                                     expr: Rc::new(Expr::Call(
-                                        Ident::new_with_token("gt", Some(Rc::new(token(TokenKind::Gt)))),
+                                        Ident::new_with_token(constants::GT, Some(Rc::new(token(TokenKind::Gt)))),
                                         smallvec![
                                             Rc::new(Node {
                                                 token_id: 4.into(),
@@ -4412,7 +4413,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Not)))),
+                            Ident::new_with_token(constants::NOT, Some(Rc::new(token(TokenKind::Not)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -4432,7 +4433,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("not", Some(Rc::new(token(TokenKind::Not)))),
+                            Ident::new_with_token(constants::NOT, Some(Rc::new(token(TokenKind::Not)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -4454,7 +4455,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
+                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4480,11 +4481,11 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("dict")))))),
+                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("dict")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("dict", Some(Rc::new(token(TokenKind::Ident(CompactString::new("dict")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::Ident(CompactString::new("dict")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -4516,7 +4517,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 5.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("slice", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
+                            Ident::new_with_token(constants::SLICE, Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4548,7 +4549,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 5.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("slice", Some(Rc::new(token(TokenKind::Ident(CompactString::new("items")))))),
+                            Ident::new_with_token(constants::SLICE, Some(Rc::new(token(TokenKind::Ident(CompactString::new("items")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4735,7 +4736,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Self_)))),
+                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Self_)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4761,7 +4762,7 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Self_)))),
+                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Self_)))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -4790,7 +4791,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -4823,7 +4824,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 1.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))),
+                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
@@ -4863,12 +4864,12 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("get", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                                Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
