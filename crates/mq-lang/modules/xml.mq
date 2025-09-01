@@ -1,19 +1,5 @@
 # XML Implementation in mq
 
-def _is_whitespace_and_new_line(char):
-  char == " " || char == "\t" || char == "\n" || char == "\r"
-end
-
-def _skip_whitespace_and_new_line(input):
-  let pos = 0
-  | let result = until (pos < len(input) && _is_whitespace_and_new_line(input[pos])):
-        let pos = pos + 1
-        | pos
-      end
-  | let pos = if (is_none(result)): pos else: result
-  | input[pos:len(input)]
-end
-
 def _parse_attribute_value(input, quote_char):
   let pos = 0
   | let start_pos = pos
@@ -27,7 +13,7 @@ def _parse_attribute_value(input, quote_char):
 end
 
 def _parse_attributes(input):
-  let input = _skip_whitespace_and_new_line(input)
+  let input = trim(input)
   | let attributes = {}
   | let result = until (!is_empty(input) && !starts_with(input, ">") && !starts_with(input, "/>")):
         let name_match = match(input, "([a-zA-Z_][a-zA-Z0-9_-]*)")
@@ -35,11 +21,11 @@ def _parse_attributes(input):
             error("Invalid attribute name")
         | let attr_name = first(name_match)
         | let input = input[len(attr_name):len(input)]
-        | let input = _skip_whitespace_and_new_line(input)
+        | let input = trim(input)
         | if (!starts_with(input, "=")):
             error("Expected '=' after attribute name")
         | let input = input[1:len(input)]
-        | let input = _skip_whitespace_and_new_line(input)
+        | let input = trim(input)
         | let quote_char = if (starts_with(input, "\"")):
               "\""
             elif (starts_with(input, "'")):
@@ -51,7 +37,7 @@ def _parse_attributes(input):
         | let attr_value = value_result[0]
         | let input = value_result[1]
         | let attributes = set(attributes, attr_name, attr_value)
-        | let input = _skip_whitespace_and_new_line(input)
+        | let input = trim(input)
         | [attributes, input]
       end
   | if (is_none(result)): [{}, input] else: result
@@ -99,12 +85,12 @@ def _parse_xml_declaration(input):
   | if (end_pos == -1):
       error("Unclosed XML declaration")
     else:
-      _skip_whitespace_and_new_line(input[end_pos + 2:len(input)])
+      trim(input[end_pos + 2:len(input)])
 end
 
 
 def _parse_xml_element(input):
-  let input = _skip_whitespace_and_new_line(trim(input))
+  let input = trim(input)
   | let input = if (starts_with(input, "<?xml")):
         _parse_xml_declaration(input)
       else:
@@ -150,7 +136,7 @@ def _create_self_closing_element(tag_name, attributes, remaining):
 end
 
 def _parse_xml_content(input):
-  let input = _skip_whitespace_and_new_line(input)
+  let input = trim(input)
   | let children = []
   | let text_parts = []
   | let result = until (!is_empty(input)):
@@ -193,7 +179,7 @@ def _parse_text_content(input, text_parts):
 end
 
 def _parse_xml_element_recursive(input):
-  let input = _skip_whitespace_and_new_line(input)
+  let input = trim(input)
   | if (!starts_with(input, "<")):
       [None, input]
     else:
