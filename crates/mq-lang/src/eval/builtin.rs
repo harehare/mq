@@ -1,6 +1,6 @@
 use crate::Token;
 use crate::arena::Arena;
-use crate::ast::node as ast;
+use crate::ast::{constants, node as ast};
 use crate::number::Number;
 use base64::prelude::*;
 use compact_str::CompactString;
@@ -143,7 +143,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("array"),
+            CompactString::new(constants::ARRAY),
             BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
                 Ok(RuntimeValue::Array(args.to_vec()))
             }),
@@ -691,7 +691,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("slice"),
+            CompactString::new(constants::SLICE),
             BuiltinFunction::new(ParamNum::Fixed(3), |ident, _, mut args| {
                 match args.as_mut_slice() {
                     [
@@ -913,7 +913,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("range"),
+            CompactString::new(constants::RANGE),
             BuiltinFunction::new(ParamNum::Range(1, 3), |ident, _, mut args| {
                 match args.as_mut_slice() {
                     // Numeric range: range(end)
@@ -1259,21 +1259,21 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("eq"),
+            CompactString::new(constants::EQ),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [a, b] => Ok((a == b).into()),
                 _ => unreachable!(),
             }),
         );
         map.insert(
-            CompactString::new("ne"),
+            CompactString::new(constants::NE),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [a, b] => Ok((a != b).into()),
                 _ => unreachable!(),
             }),
         );
         map.insert(
-            CompactString::new("gt"),
+            CompactString::new(constants::GT),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
@@ -1286,7 +1286,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("gte"),
+            CompactString::new(constants::GTE),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
@@ -1299,7 +1299,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("lt"),
+            CompactString::new(constants::LT),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
@@ -1312,7 +1312,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("lte"),
+            CompactString::new(constants::LTE),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
                 [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
                 [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
@@ -1325,7 +1325,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("add"),
+            CompactString::new(constants::ADD),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
@@ -1380,7 +1380,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("sub"),
+            CompactString::new(constants::SUB),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
@@ -1395,7 +1395,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("div"),
+            CompactString::new(constants::DIV),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
@@ -1416,7 +1416,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("mul"),
+            CompactString::new(constants::MUL),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
@@ -1431,7 +1431,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("mod"),
+            CompactString::new(constants::MOD),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
@@ -1446,19 +1446,19 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("and"),
+            CompactString::new(constants::AND),
             BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
                 Ok(args.iter().all(|arg| arg.is_truthy()).into())
             }),
         );
         map.insert(
-            CompactString::new("or"),
+            CompactString::new(constants::OR),
             BuiltinFunction::new(ParamNum::Range(2, u8::MAX), |_, _, args| {
                 Ok(args.iter().any(|arg| arg.is_truthy()).into())
             }),
         );
         map.insert(
-            CompactString::new("not"),
+            CompactString::new(constants::NOT),
             BuiltinFunction::new(ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
                 [a] => Ok((!a.is_truthy()).into()),
                 _ => unreachable!(),
@@ -1467,7 +1467,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
 
         // markdown
         map.insert(
-            CompactString::new("attr"),
+            CompactString::new(constants::ATTR),
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
@@ -1968,7 +1968,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
         );
 
         map.insert(
-            CompactString::new("dict"),
+            CompactString::new(constants::DICT),
             BuiltinFunction::new(ParamNum::Range(0, u8::MAX), |_, _, args| {
                 if args.is_empty() {
                     Ok(RuntimeValue::new_dict())
@@ -2007,7 +2007,7 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             }),
         );
         map.insert(
-            CompactString::new("get"),
+            CompactString::new(constants::GET),
             BuiltinFunction::new(ParamNum::Fixed(2), |ident, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map
@@ -2584,7 +2584,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("array"),
+            CompactString::new(constants::ARRAY),
             BuiltinFunctionDoc {
                 description: "Creates an array from the given values.",
                 params: &["values"],
@@ -2773,7 +2773,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("slice"),
+            CompactString::new(constants::SLICE),
             BuiltinFunctionDoc {
                 description: "Extracts a substring from the given string.",
                 params: &["string", "start", "end"],
@@ -2858,28 +2858,28 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("eq"),
+            CompactString::new(constants::EQ),
             BuiltinFunctionDoc {
                 description: "Checks if two values are equal.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("ne"),
+            CompactString::new(constants::NE),
             BuiltinFunctionDoc {
                 description: "Checks if two values are not equal.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("gt"),
+            CompactString::new(constants::GT),
             BuiltinFunctionDoc {
                 description: "Checks if the first value is greater than the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("gte"),
+            CompactString::new(constants::GTE),
             BuiltinFunctionDoc {
                 description:
                     "Checks if the first value is greater than or equal to the second value.",
@@ -2887,70 +2887,70 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("lt"),
+            CompactString::new(constants::LT),
             BuiltinFunctionDoc {
                 description: "Checks if the first value is less than the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("lte"),
+            CompactString::new(constants::LTE),
             BuiltinFunctionDoc {
                 description: "Checks if the first value is less than or equal to the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("add"),
+            CompactString::new(constants::ADD),
             BuiltinFunctionDoc {
                 description: "Adds two values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("sub"),
+            CompactString::new(constants::SUB),
             BuiltinFunctionDoc {
                 description: "Subtracts the second value from the first value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("div"),
+            CompactString::new(constants::DIV),
             BuiltinFunctionDoc {
                 description: "Divides the first value by the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("mul"),
+            CompactString::new(constants::MUL),
             BuiltinFunctionDoc {
                 description: "Multiplies two values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("mod"),
+            CompactString::new(constants::MOD),
             BuiltinFunctionDoc {
                 description: "Calculates the remainder of the division of the first value by the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("and"),
+            CompactString::new(constants::AND),
             BuiltinFunctionDoc {
                 description: "Performs a logical AND operation on two boolean values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("or"),
+            CompactString::new(constants::OR),
             BuiltinFunctionDoc {
                 description: "Performs a logical OR operation on two boolean values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("not"),
+            CompactString::new(constants::NOT),
             BuiltinFunctionDoc {
                 description: "Performs a logical NOT operation on a boolean value.",
                 params: &["value"],
@@ -3001,7 +3001,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("attr"),
+            CompactString::new(constants::ATTR),
             BuiltinFunctionDoc {
                 description: "Retrieves the value of the specified attribute from a markdown node.",
                 params: &["markdown", "attribute"],
@@ -3155,27 +3155,25 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
                 params: &["code_block", "language"],
             },
         );
-
-        // Dict function docs
         map.insert(
-            CompactString::new("dict"),
+            CompactString::new(constants::DICT),
             BuiltinFunctionDoc {
                 description: "Creates a new, empty dict.",
                 params: &[],
             },
         );
         map.insert(
-            CompactString::new("get"),
+            CompactString::new(constants::GET),
             BuiltinFunctionDoc {
                 description: "Retrieves a value from a dict by its key. Returns None if the key is not found.",
-                params: &["dict", "key"],
+                params: &["obj", "key"],
             },
         );
         map.insert(
             CompactString::new("set"),
             BuiltinFunctionDoc {
                 description: "Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.",
-                params: &["dict", "key", "value"],
+                params: &["obj", "key", "value"],
             },
         );
         map.insert(
@@ -3200,7 +3198,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("range"),
+            CompactString::new(constants::RANGE),
             BuiltinFunctionDoc {
                 description: "Creates an array from start to end with an optional step.",
                 params: &["start", "end", "step"],
