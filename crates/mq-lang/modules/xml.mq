@@ -166,7 +166,26 @@ def _parse_child_element(input, children):
   | [children, [], remaining]
 end
 
-def _parse_text_content(input, text_parts):
+def _parse_cdata(input):
+  if (!starts_with(input, "<![CDATA[")):
+    error("Invalid CDATA section")
+  | let end_pos = index(input, "]]>")
+  | if (end_pos == -1):
+      error("Unclosed CDATA section")
+  | let content = input[0:end_pos + 3]
+  | let remaining = input[end_pos + 3:len(input)]
+  | [content, remaining]
+end
+
+def _parse_cdata_content(input, text_parts):
+  let cdata_result = _parse_cdata(input)
+  | let cdata_content = cdata_result[0]
+  | let remaining = cdata_result[1]
+  | let text_parts = text_parts + cdata_content
+  | [None, text_parts, remaining]
+end
+
+def _parse_regular_text_content(input, text_parts):
   let pos = 0
   | let start_pos = pos
   | let pos = until (pos < len(input) && input[pos] != "<"):
@@ -174,21 +193,31 @@ def _parse_text_content(input, text_parts):
         | pos
       end
   | let text = input[start_pos:pos]
-  | let text_parts = text_parts + [text]
-  | [[], text_parts, input[pos:len(input)]]
+  | let text_parts = text_parts + text
+  | [None, text_parts, input[pos:len(input)]]
+end
+
+def _parse_text_content(input, text_parts):
+  if (starts_with(input, "<![CDATA[")):
+    _parse_cdata_content(input, text_parts)
+  else:
+    _parse_regular_text_content(input, text_parts)
 end
 
 def _parse_xml_element_recursive(input):
   let input = trim(input)
   | if (!starts_with(input, "<")):
       [None, input]
+    elif (starts_with(input, "<![CDATA[")):
+      _parse_cdata_content(input, [])
     else:
       _parse_xml_tag(input)
 end
 
 # Parses an XML string and returns the corresponding data structure.
 def xml_parse(input):
-  let result = _parse_xml_element(input)
+  let input = gsub(input, "(?s)<!--.*?-->", "")
+  | let result = _parse_xml_element(input)
   | result[0]
 end
 
