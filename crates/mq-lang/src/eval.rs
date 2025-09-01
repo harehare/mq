@@ -1418,13 +1418,13 @@ mod tests {
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("add", smallvec![
-                    ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ]),
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "add".to_string(),
-                                                         args: vec!["te".into(), 1.to_string().into()]})))]
+                                                         args: vec![true.to_string().into(), 1.to_string().into()]})))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("add", smallvec![

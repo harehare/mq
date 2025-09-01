@@ -3717,8 +3717,8 @@ mod tests {
     #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
     #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
     #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
-    #[case("add", vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
-        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
+    #[case("add", vec![RuntimeValue::Bool(true), RuntimeValue::Number(1.0.into())],
+        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Bool(true), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(
         #[case] func_name: &str,
         #[case] args: Args,
