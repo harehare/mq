@@ -254,8 +254,7 @@ def xml_stringify(data):
       to_string(data)
 end
 
-# Converts an XML data structure to a Markdown table.
-def xml_to_markdown_table(data):
+def _xml_to_markdown_table(data, depth):
   def _create_element_markdown_table(element):
     let headers = ["Tag", "Attributes", "Text", "Children"]
     | let header_row = "| " + join(headers, " | ") + " |"
@@ -275,7 +274,7 @@ def xml_to_markdown_table(data):
     | join("\n")
   end
 
-  def _create_children_markdown_table(children):
+  def _create_children_markdown_table(children, depth):
     let headers = ["Index", "Tag", "Attributes", "Text"]
     | let header_row = "| " + join(headers, " | ") + " |"
     | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
@@ -294,8 +293,14 @@ def xml_to_markdown_table(data):
                     replace(child["text"], "\n", "\\n")
               | "| " + to_string(i) + " | " + tag_value + " | " + attributes_value + " | " + text_value + " |"
             end)
-    | [header_row, separator_row] + data_rows
-    | join("\n")
+    | let main_table = join([header_row, separator_row] + data_rows, "\n")
+    | let child_tables = map(children, fn(child):
+              if (!is_empty(child["tag"])):
+                "\n\n" + repeat("#", depth + 1) + " Children of " + child["tag"] + ":\n\n" + _xml_to_markdown_table(child, depth + 1)
+              else:
+                ""
+            end)
+    | main_table + join(child_tables, "")
   end
 
   def _create_simple_markdown_table(data):
@@ -306,7 +311,12 @@ def xml_to_markdown_table(data):
       if (is_empty(data["children"])):
         _create_element_markdown_table(data)
       else:
-        _create_children_markdown_table(data["children"])
+        _create_children_markdown_table(data["children"], depth)
     else:
       _create_simple_markdown_table(data)
+end
+
+# Converts an XML data structure to a Markdown table.
+def xml_to_markdown_table(data):
+  _xml_to_markdown_table(data, 1)
 end
