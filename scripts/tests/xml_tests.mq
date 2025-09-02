@@ -1,0 +1,29 @@
+include "xml"
+| include "test"
+
+| let input = "<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>"
+
+| def test_xml_parse():
+    let result = xml_parse(input)
+    | assert_eq(len(result["children"]), 3)
+  end
+
+| def test_xml_stringify():
+    let result = xml_stringify(xml_parse(input))
+    | assert_eq(result, "<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>")
+  end
+
+| def test_xml_to_markdown_table():
+    let result = xml_parse(input)
+    | let result = xml_to_markdown_table(result)
+    | debug(result)
+    | assert_eq(result, "| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | user | id=1 |  |\n| 1 | user | id=2 |  |\n| 2 | user | id=3 |  |")
+  end
+
+|
+
+run_tests([
+  test_case("XML Parse", test_xml_parse),
+  test_case("XML Stringify", test_xml_stringify),
+  test_case("XML to Markdown Table", test_xml_to_markdown_table)
+])

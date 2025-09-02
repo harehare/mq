@@ -279,7 +279,8 @@ def xml_to_markdown_table(data):
     let headers = ["Index", "Tag", "Attributes", "Text"]
     | let header_row = "| " + join(headers, " | ") + " |"
     | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-    | let data_rows = map(range(0, len(children)), fn(i):
+    | let children_len = len(children) - 1
+    | let data_rows = map(range(0, children_len), fn(i):
               let child = children[i]
               | let tag_value = child["tag"]
               | let attributes_value = if (is_empty(keys(child["attributes"]))):
