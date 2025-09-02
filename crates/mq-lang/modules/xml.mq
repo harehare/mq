@@ -172,7 +172,7 @@ def _parse_cdata(input):
   | let end_pos = index(input, "]]>")
   | if (end_pos == -1):
       error("Unclosed CDATA section")
-  | let content = input[0:end_pos + 3]
+  | let content = input[9:end_pos]
   | let remaining = input[end_pos + 3:len(input)]
   | [content, remaining]
 end
@@ -185,7 +185,7 @@ def _parse_cdata_content(input, text_parts):
   | [None, text_parts, remaining]
 end
 
-def _parse_regular_text_content(input, text_parts):
+def _parse_text_content(input, text_parts):
   let pos = 0
   | let start_pos = pos
   | let pos = until (pos < len(input) && input[pos] != "<"):
@@ -195,13 +195,6 @@ def _parse_regular_text_content(input, text_parts):
   | let text = input[start_pos:pos]
   | let text_parts = text_parts + text
   | [None, text_parts, input[pos:len(input)]]
-end
-
-def _parse_text_content(input, text_parts):
-  if (starts_with(input, "<![CDATA[")):
-    _parse_cdata_content(input, text_parts)
-  else:
-    _parse_regular_text_content(input, text_parts)
 end
 
 def _parse_xml_element_recursive(input):
