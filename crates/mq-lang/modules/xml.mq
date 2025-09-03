@@ -53,17 +53,18 @@ def _find_closing_tag(input, tag_name):
   | let input_len = len(input)
   | let has_close_tag = false
   | let result = until (pos < input_len && !has_close_tag):
-        let result = if (pos + open_tag_start_len <= input_len && input[pos:pos + open_tag_start_len] == open_tag_start):
-    if (pos + open_tag_start_len < input_len && (input[next_char_pos] == " " || input[next_char_pos] == ">" || input[next_char_pos] == "/")):
-      [depth + 1, pos + open_tag_start_len]
-    else:
-      [depth, pos + 1]
-  elif (pos + closing_tag_len <= input_len && input[pos:pos + closing_tag_len] == closing_tag && depth == 0):
-    [depth, pos, true]
-  elif (pos + closing_tag_len <= input_len && input[pos:pos + closing_tag_len] == closing_tag):
-    [depth - 1, pos + closing_tag_len, true]
-  else:
-    [depth, pos + 1]
+        let next_char_pos = pos + open_tag_start_len
+        | let result = if (pos + open_tag_start_len <= input_len && input[pos:pos + open_tag_start_len] == open_tag_start):
+              if (pos + open_tag_start_len < input_len && (input[next_char_pos] == " " || input[next_char_pos] == ">" || input[next_char_pos] == "/")):
+                [depth + 1, pos + open_tag_start_len, false]
+              else:
+                [depth, pos + 1, false]
+            elif (pos + closing_tag_len <= input_len && input[pos:pos + closing_tag_len] == closing_tag && depth == 0):
+              [depth, pos, true]
+            elif (pos + closing_tag_len <= input_len && input[pos:pos + closing_tag_len] == closing_tag):
+              [depth - 1, pos + closing_tag_len, true]
+            else:
+              [depth, pos + 1, false]
         | let depth = result[0]
         | let pos = result[1]
         | let has_close_tag = result[2]
@@ -270,8 +271,7 @@ def _xml_to_markdown_table(data, depth):
           replace(element["text"], "\n", "\\n")
     | let children_count = to_string(len(element["children"]))
     | let data_row = "| " + tag_value + " | " + attributes_value + " | " + text_value + " | " + children_count + " |"
-    | [header_row, separator_row, data_row]
-    | join("\n")
+    | join([header_row, separator_row, data_row], "\n")
   end
 
   def _create_children_markdown_table(children, depth):
