@@ -159,13 +159,17 @@ impl Formatter {
 
     fn format_array(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
-        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
-
         let len = node.children.len();
 
         if len == 0 {
             return;
         }
+
+        let indent_adjustment = if self.is_let_line() {
+            self.current_line_indent()
+        } else {
+            0
+        };
 
         let is_multiline = node.children[1].has_new_line();
 
@@ -194,7 +198,11 @@ impl Formatter {
 
     fn format_dict(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
-        let indent_adjustment = if self.is_let_line() { 1 } else { 0 };
+        let indent_adjustment = if self.is_let_line() {
+            self.current_line_indent()
+        } else {
+            0
+        };
 
         let len = node.children.len();
         if len == 0 {
@@ -333,9 +341,7 @@ impl Formatter {
     ) {
         let is_prev_pipe = self.is_prev_pipe();
         let indent_adjustment = if self.is_let_line() {
-            1
-        } else if self.is_pipe_and_let_line() {
-            2
+            self.current_line_indent()
         } else {
             0
         };
@@ -458,9 +464,7 @@ impl Formatter {
         };
 
         let indent_adjustment = if self.is_let_line() {
-            1
-        } else if self.is_pipe_and_let_line() {
-            2
+            self.current_line_indent()
         } else {
             0
         };
@@ -728,7 +732,7 @@ impl Formatter {
     #[inline(always)]
     pub fn current_line_indent(&self) -> usize {
         if let Some(last_line) = self.output.lines().last() {
-            last_line.chars().take_while(|c| *c == ' ').count()
+            last_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
         } else {
             0
         }
@@ -749,16 +753,8 @@ impl Formatter {
     #[inline(always)]
     fn is_let_line(&self) -> bool {
         if let Some(last_line) = self.output.lines().last() {
-            !last_line.starts_with("let ") && last_line.trim().starts_with("let ")
-        } else {
-            false
-        }
-    }
-
-    #[inline(always)]
-    fn is_pipe_and_let_line(&self) -> bool {
-        if let Some(last_line) = self.output.lines().last() {
-            last_line.trim().replace(" ", "").starts_with("|let")
+            (!last_line.starts_with("let ") && last_line.trim().starts_with("let "))
+                || last_line.trim().replace(" ", "").starts_with("|let")
         } else {
             false
         }
@@ -1164,9 +1160,9 @@ test2
         r#"while (condition()):
   let x = 1
   | let y = if (test):
-        test
-      else:
-        test2
+      test
+    else:
+      test2
 "#
     )]
     #[case::let_with_until_multiline(
@@ -1175,13 +1171,13 @@ process();"#,
         r#"let x = until (condition()):
   process();"#
     )]
-    #[case::let_with_until_multiline(
+    #[case::let_with_until_multiline2(
         r#""test"
 | let x = until(condition()):
 process();"#,
         r#""test"
 | let x = until (condition()):
-      process();"#
+  process();"#
     )]
     #[case::let_with_while_multiline(
         r#"let x = while(condition()):
@@ -1189,13 +1185,13 @@ process();"#,
         r#"let x = while (condition()):
   process();"#
     )]
-    #[case::let_with_while_multiline(
+    #[case::let_with_while_multiline2(
         r#""test"
 | let x = while(condition()):
 process();"#,
         r#""test"
 | let x = while (condition()):
-      process();"#
+  process();"#
     )]
     #[case::array_index_access("let arr = [1, 2, 3]\n|arr[1]", "let arr = [1, 2, 3]\n| arr[1]")]
     #[case::array_index_access_inline("arr[0]", "arr[0]")]
