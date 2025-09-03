@@ -75,9 +75,9 @@ end
 def _get_indent_level(line):
   let i = 0
   | let count = until (i < len(line) && line[i] == " "):
-        let i = i + 1
-        | i
-      end
+      let i = i + 1
+      | i
+    end
   | let count = if (is_none(count)): i else: count
   | count / 2
   | floor()
@@ -156,15 +156,15 @@ def parse_yaml_content(input):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
         | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
-              _handle_object_empty_or_comment(obj, current_index)
-            elif (_get_indent_level(line) < target_indent):
-              _handle_object_indent_break(obj, current_index)
-            elif (_get_indent_level(line) == target_indent && _is_yaml_key_value(line)):
-              _handle_object_key_value(obj, lines, current_index, target_indent)
-            elif (line == "---"):
-              [obj, current_index + 1]
-            else:
-              _handle_object_indent_break(obj, current_index)
+                  _handle_object_empty_or_comment(obj, current_index)
+                elif (_get_indent_level(line) < target_indent):
+                  _handle_object_indent_break(obj, current_index)
+                elif (_get_indent_level(line) == target_indent && _is_yaml_key_value(line)):
+                  _handle_object_key_value(obj, lines, current_index, target_indent)
+                elif (line == "---"):
+                  [obj, current_index + 1]
+                else:
+                  _handle_object_indent_break(obj, current_index)
 
         | let obj = result[0]
         | let current_index = result[1]
@@ -179,15 +179,15 @@ def parse_yaml_content(input):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
         | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
-              _handle_array_empty_or_comment(arr, current_index)
-            elif (_get_indent_level(line) < target_indent):
-              _handle_array_indent_break(arr, current_index)
-            elif (_get_indent_level(line) == target_indent && _is_yaml_array_item(line)):
-              _handle_array_item(arr, lines, current_index, target_indent)
-            elif (line == "---"):
-              [arr + line, current_index + 1]
-            else:
-              _handle_array_indent_break(arr, current_index)
+                  _handle_array_empty_or_comment(arr, current_index)
+                elif (_get_indent_level(line) < target_indent):
+                  _handle_array_indent_break(arr, current_index)
+                elif (_get_indent_level(line) == target_indent && _is_yaml_array_item(line)):
+                  _handle_array_item(arr, lines, current_index, target_indent)
+                elif (line == "---"):
+                  [arr + line, current_index + 1]
+                else:
+                  _handle_array_indent_break(arr, current_index)
 
         | let arr = result[0]
         | let current_index = result[1]
@@ -202,11 +202,11 @@ def parse_yaml_content(input):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
         | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
-              [multi_line, current_index + 1]
-            elif (_get_indent_level(line) < target_indent):
-              break
-            else:
-              [if (is_empty(multi_line)): trimmed_line else: s"${multi_line}
+                  [multi_line, current_index + 1]
+                elif (_get_indent_level(line) < target_indent):
+                  break
+                else:
+                  [if (is_empty(multi_line)): trimmed_line else: s"${multi_line}
 ${trimmed_line}", current_index + 1]
         | let multi_line = result[0]
         | let current_index = result[1]
@@ -293,8 +293,8 @@ def _create_array_markdown_table(data):
   | let header_row = "| " + join(headers, " | ") + " |"
   | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
   | let data_rows = map(data, fn(row):
-          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-        end)
+      "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+    end)
   | [header_row, separator_row] + data_rows
   | join("\n")
 end
@@ -304,8 +304,8 @@ def _create_dict_markdown_table(data):
   | let header_row = "| " + join(headers, " | ") + " |"
   | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
   | let data_rows = map(keys(data), fn(key):
-          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-        end)
+      "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+    end)
   | [header_row, separator_row] + data_rows
   | join("\n")
 end

@@ -128,11 +128,11 @@ def run_tests(tests):
   let test_count = 0
   | let failed_count = 0
   | let test_results = foreach (test, tests):
-        if (is_dict(test) && contains(test, "name") && contains(test, "func")):
-          _run_test(get(test, "name"), get(test, "func"))
-        else:
-          error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
-      end
+      if (is_dict(test) && contains(test, "name") && contains(test, "func")):
+        _run_test(get(test, "name"), get(test, "func"))
+      else:
+        error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
+    end
   | let final_test_count = len(test_results)
   | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
   | let passed_count = final_test_count - final_failed_count
@@ -140,14 +140,14 @@ def run_tests(tests):
   # Print test results
   | let results = ["\x1b[1m\x1b[36m=== mq Test Suite Results ===\x1b[0m"]
   | let results = results + foreach (result, test_results):
-        let name = result["name"]
-        | let status = result["status"]
-        | let duration = result["duration"]
-        | if (status == "passed"):
-            [_succeed("✅ " + name + " (" + to_string(duration) + "ms)")]
-          else:
-            [_failed("❌ " + name + " (" + to_string(duration) + "ms)"), "    └─ " + _failed(result["error"])]
-      end
+      let name = result["name"]
+      | let status = result["status"]
+      | let duration = result["duration"]
+      | if (status == "passed"):
+          [_succeed("✅ " + name + " (" + to_string(duration) + "ms)")]
+        else:
+          [_failed("❌ " + name + " (" + to_string(duration) + "ms)"), "    └─ " + _failed(result["error"])]
+    end
   | let results = results + ["\x1b[1m\x1b[36m=== Summary ===\x1b[0m"]
   | let results = results + ["Tests run: " + to_string(final_test_count)]
   | let results = results + ["Passed: " + to_string(passed_count)]
