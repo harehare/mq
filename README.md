@@ -52,7 +52,7 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 ### Cargo
 
 ```sh
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.20
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.21
 # Latest Development Version
 $ cargo install --git https://github.com/harehare/mq.git mq-cli
 ```
@@ -88,7 +88,7 @@ $ brew install harehare/tap/mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.2.20
+$ docker run --rm ghcr.io/harehare/mq:0.2.21
 ```
 
 ### Visual Studio Code Extension
