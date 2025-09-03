@@ -35,7 +35,7 @@
 | `floor` | Rounds the given number down to the nearest integer. | `number` | floor(number) |
 | `fold` |  Reduces an array to a single value by applying a function, starting from an initial value. | `arr`, `init`, `f` | fold(arr, init, f) |
 | `from_date` | Converts a date string to a timestamp. | `date_str` | from_date(date_str) |
-| `get` | Retrieves a value from a dict by its key. Returns None if the key is not found. | `dict`, `key` | get(dict, key) |
+| `get` | Retrieves a value from a dict by its key. Returns None if the key is not found. | `obj`, `key` | get(obj, key) |
 | `get_title` | Returns the title of a markdown node. | `node` | get_title(node) |
 | `get_url` | Returns the url of a markdown node. | `node` | get_url(node) |
 | `group_by` |  Groups elements of an array by the result of applying a function to each element | `arr`, `f` | group_by(arr, f) |
@@ -111,7 +111,7 @@
 | `second` |  Returns the second element of an array | `arr` | second(arr) |
 | `sections` |  Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level. | `md_nodes`, `level` | sections(md_nodes, level) |
 | `select` |  Returns value if condition is true, None otherwise | `v`, `f` | select(v, f) |
-| `set` | Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map. | `dict`, `key`, `value` | set(dict, key, value) |
+| `set` | Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map. | `obj`, `key`, `value` | set(obj, key, value) |
 | `set_attr` | Sets the value of the specified attribute on a markdown node. | `markdown`, `attribute`, `value` | set_attr(markdown, attribute, value) |
 | `set_check` | Creates a markdown list node with the given checked state. | `list`, `checked` | set_check(list, checked) |
 | `set_code_block_lang` | Sets the language of a markdown code block node. | `code_block`, `language` | set_code_block_lang(code_block, language) |
