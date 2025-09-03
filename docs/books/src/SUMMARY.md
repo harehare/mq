@@ -34,3 +34,4 @@
     - [JSON functions](reference/json_functions.md)
     - [TOML functions](reference/toml_functions.md)
     - [YAML functions](reference/yaml_functions.md)
+    - [XML functions](reference/xml_functions.md)
