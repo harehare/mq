@@ -1332,6 +1332,11 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
                         s1.push_str(s2);
                         Ok(std::mem::take(s1).into())
                     }
+                    [RuntimeValue::String(s), RuntimeValue::Number(n)]
+                    | [RuntimeValue::Number(n), RuntimeValue::String(s)] => {
+                        s.push_str(n.to_string().as_str());
+                        Ok(std::mem::take(s).into())
+                    }
                     [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
                         .markdown_node()
                         .map(|md| {
@@ -3710,8 +3715,8 @@ mod tests {
     #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
     #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
     #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
-    #[case("add", vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())],
-        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::String("test".into()), RuntimeValue::Number(1.0.into())]))]
+    #[case("add", vec![RuntimeValue::Bool(true), RuntimeValue::Number(1.0.into())],
+        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Bool(true), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(
         #[case] func_name: &str,
         #[case] args: Args,

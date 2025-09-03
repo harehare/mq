@@ -50,6 +50,8 @@ end
 def is_empty(s):
   if (or(is_string(s), is_array(s), is_dict(s))):
     len(s) == 0
+  elif (is_none(s)):
+    true
   else:
     false
 end
