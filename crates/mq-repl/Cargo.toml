@@ -19,6 +19,7 @@ miette.workspace = true
 mq-hir.workspace = true
 mq-lang.workspace = true
 mq-markdown.workspace = true
+regex-lite = "0.1"
 rustyline = "17.0.1"
 strum = {version = "0.27.2", features = ["derive"]}
 

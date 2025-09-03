@@ -5,13 +5,66 @@ use rustyline::{
     Modifiers, Movement, Word,
     completion::{Completer, FilenameCompleter, Pair},
     error::ReadlineError,
-    highlight::{CmdKind, Highlighter, MatchingBracketHighlighter},
+    highlight::{CmdKind, Highlighter},
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
 use std::{borrow::Cow, cell::RefCell, fs, rc::Rc};
 
 use crate::command_context::{Command, CommandContext, CommandOutput};
+
+/// Highlight mq syntax with keywords and commands
+fn highlight_mq_syntax(line: &str) -> Cow<str> {
+    let mut result = line.to_string();
+
+    let commands_pattern = r"^(/copy|/env|/help|/quit|/load|/vars|/version)\b";
+    if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_green().to_string()
+            })
+            .to_string();
+    }
+
+    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None)\b";
+    if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_blue().to_string()
+            })
+            .to_string();
+    }
+
+    // Highlight strings
+    if let Ok(re) = regex_lite::Regex::new(r#""([^"\\]|\\.)*""#) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_green().to_string()
+            })
+            .to_string();
+    }
+
+    // Highlight numbers
+    if let Ok(re) = regex_lite::Regex::new(r"\b\d+\b") {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_magenta().to_string()
+            })
+            .to_string();
+    }
+
+    // Highlight operators (after other highlighting to avoid conflicts)
+    let operators_pattern = r"(->|<=|>=|==|!=|&&|[=|:;?!+\-*/%<>])";
+    if let Ok(re) = regex_lite::Regex::new(operators_pattern) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_yellow().to_string()
+            })
+            .to_string();
+    }
+
+    Cow::Owned(result)
+}
 
 /// Get the appropriate prompt symbol based on character availability
 fn get_prompt() -> &'static str {
@@ -51,7 +104,6 @@ fn is_char_available() -> bool {
 pub struct MqLineHelper {
     command_context: Rc<RefCell<CommandContext>>,
     file_completer: FilenameCompleter,
-    matching_bracket_highlighter: MatchingBracketHighlighter,
 }
 
 impl MqLineHelper {
@@ -59,7 +111,6 @@ impl MqLineHelper {
         Self {
             command_context,
             file_completer: FilenameCompleter::new(),
-            matching_bracket_highlighter: MatchingBracketHighlighter::default(),
         }
     }
 }
@@ -77,9 +128,12 @@ impl Highlighter for MqLineHelper {
         prompt.cyan().to_string().into()
     }
 
-    fn highlight_char(&self, line: &str, pos: usize, kind: CmdKind) -> bool {
-        self.matching_bracket_highlighter
-            .highlight_char(line, pos, kind)
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        true
+    }
+
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        highlight_mq_syntax(line)
     }
 }
 
@@ -274,6 +328,30 @@ mod tests {
         if let Some(dir) = config_dir {
             assert!(dir.ends_with("mq"));
         }
+    }
+
+    #[test]
+    fn test_highlight_mq_syntax() {
+        // Test keyword highlighting
+        let result = highlight_mq_syntax("let x = 42");
+        assert!(result.contains("let"));
+
+        // Test command highlighting
+        let result = highlight_mq_syntax("/help");
+        assert!(result.contains("/help"));
+
+        // Test operator highlighting
+        let result = highlight_mq_syntax("x = 1 + 2");
+        assert!(result.contains("="));
+        assert!(result.contains("+"));
+
+        // Test string highlighting
+        let result = highlight_mq_syntax(r#""hello world""#);
+        assert!(result.contains("hello world"));
+
+        // Test number highlighting
+        let result = highlight_mq_syntax("42");
+        assert!(result.contains("42"));
     }
 
     #[test]

@@ -2695,6 +2695,7 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "mq-test",
+ "regex-lite",
  "rstest",
  "rustyline",
  "strum 0.27.2",
