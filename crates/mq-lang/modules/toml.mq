@@ -109,11 +109,11 @@ def _parse_toml_content(input):
     | let char = input[current_pos]
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
           let result = if (escaped):
-    [key_chars + char, false, current_pos + 1]
-  elif (char == "\\"):
-    [key_chars, true, current_pos + 1]
-  else:
-    [key_chars + char, escaped, current_pos + 1]
+            [key_chars + char, false, current_pos + 1]
+          elif (char == "\\"):
+            [key_chars, true, current_pos + 1]
+          else:
+            [key_chars + char, escaped, current_pos + 1]
           | let key_chars = result[0]
           | let escaped = result[1]
           | let current_pos = result[2]
@@ -170,11 +170,11 @@ def _parse_toml_content(input):
     | let escaped = false
     | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
           let result = if (escaped):
-    [value_chars + char, false, current_pos + 1]
-  elif (char == "\\"):
-    [value_chars, true, current_pos + 1]
-  else:
-    [value_chars + char, escaped, current_pos + 1]
+            [value_chars + char, false, current_pos + 1]
+          elif (char == "\\"):
+            [value_chars, true, current_pos + 1]
+          else:
+            [value_chars + char, escaped, current_pos + 1]
           | let value_chars = result[0]
           | let escaped = result[1]
           | let current_pos = result[2]
@@ -242,9 +242,9 @@ def _parse_toml_content(input):
           | let _values = if (is_none(value)): _values else: _values + value
           | let current_pos = _skip_whitespace_and_new_line(input, current_pos)
           | let current_pos = if (current_pos < len(input) && input[current_pos] == ","):
-                _skip_whitespace_and_new_line(input, current_pos + 1)
-              else:
-                current_pos
+                      _skip_whitespace_and_new_line(input, current_pos + 1)
+                    else:
+                      current_pos
           | [_values, current_pos]
         end
     | let _values = if (is_none(result)): _values else: result[0]
@@ -269,9 +269,9 @@ def _parse_toml_content(input):
           | let table = set(table, key, value)
           | let current_pos = _skip_whitespace(input, current_pos)
           | let result = if (current_pos < len(input) && input[current_pos] == ","):
-                [table, _skip_whitespace(input, current_pos + 1)]
-              else:
-                [table, current_pos]
+                      [table, _skip_whitespace(input, current_pos + 1)]
+                    else:
+                      [table, current_pos]
           | let table = result[0]
           | let current_pos = result[1]
           | result
@@ -395,9 +395,9 @@ def _parse_toml_content(input):
   | let is_array_section = false
   | let pos = 0
   | let result = until (pos < len(input_chars)):
-        let pos = _skip_whitespace(input_chars, pos)
-        | let pos = _skip_comment(input_chars, pos)
-        | let result = if (pos >= len(input_chars) || _is_newline(input_chars[pos])):
+      let pos = _skip_whitespace(input_chars, pos)
+      | let pos = _skip_comment(input_chars, pos)
+      | let result = if (pos >= len(input_chars) || _is_newline(input_chars[pos])):
               [table, current_section, is_array_section, pos + 1]
             elif (input_chars[pos] == "["):
               _handle_section_header_char(table, input_chars, pos)
@@ -405,12 +405,12 @@ def _parse_toml_content(input):
               _handle_key_value_array(table, current_section, input_chars, pos)
             else:
               _handle_key_value_line_char(table, current_section, input_chars, pos)
-        | let table = result[0]
-        | let current_section = result[1]
-        | let is_array_section = result[2]
-        | let pos = result[3]
-        | result
-      end
+      | let table = result[0]
+      | let current_section = result[1]
+      | let is_array_section = result[2]
+      | let pos = result[3]
+      | result
+    end
   | result[0]
 end
 
@@ -464,12 +464,12 @@ def toml_stringify(data):
   | let result = keys(data)
   | let i = 0
   | let final_lines = until (i < len(result)):
-        let key = result[i]
-        | let value = data[key]
-        | let lines = _add_toml_lines(lines, key, value)
-        | let i = i + 1
-        | lines
-      end
+      let key = result[i]
+      | let value = data[key]
+      | let lines = _add_toml_lines(lines, key, value)
+      | let i = i + 1
+      | lines
+    end
   | join(final_lines, "\n")
 end
 
@@ -496,8 +496,8 @@ def _create_array_markdown_table(data):
   | let header_row = "| " + join(headers, " | ") + " |"
   | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
   | let data_rows = map(data, fn(row):
-          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-        end)
+      "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+    end)
   | [header_row, separator_row] + data_rows
   | join("\n")
 end
@@ -507,8 +507,8 @@ def _create_dict_markdown_table(data):
   | let header_row = "| " + join(headers, " | ") + " |"
   | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
   | let data_rows = map(keys(data), fn(key):
-          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-        end)
+      "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+    end)
   | [header_row, separator_row] + data_rows
   | join("\n")
 end
