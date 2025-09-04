@@ -1,0 +1,30 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run VSCode Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--disable-extensions",
+        "--extensionDevelopmentPath=${workspaceFolder}/editors/vscode"
+      ],
+      "outFiles": ["${workspaceFolder}/editors/vscode/dist/**/*.js"],
+      "env": {
+        "_MQ_DEBUG_BIN": "mq"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Rust Debug Launch",
+      "program": "${workspaceRoot}/target/debug/${workspaceRootFolderName}",
+      "args": [".h", "${workspaceRoot}/README.md"],
+      "cwd": "${workspaceRoot}/target/debug/",
+      "sourceLanguages": ["rust"]
+    }
+  ]
+}
