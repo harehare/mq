@@ -5,6 +5,7 @@ use miette::miette;
 use mq_lang::Engine;
 use rayon::prelude::*;
 use std::collections::VecDeque;
+use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
 use std::str::FromStr;
@@ -121,7 +122,10 @@ struct InputArgs {
     #[arg(long="rawfile", value_names = ["NAME", "FILE"])]
     raw_file: Option<Vec<String>>,
 
-    /// Include the built-in JSON module
+    /// Enable streaming mode for processing large files line by line
+    #[arg(long, default_value_t = false)]
+    stream: bool,
+
     #[arg(long = "json", default_value_t = false)]
     include_json: bool,
 
@@ -141,6 +145,7 @@ struct InputArgs {
     #[arg(long = "test", default_value_t = false)]
     include_test: bool,
 }
+
 #[derive(Clone, Debug, clap::Args, Default)]
 struct OutputArgs {
     /// Set output format
@@ -319,22 +324,11 @@ impl Cli {
                 Ok(())
             }
             None => {
-                let query = self.get_query()?;
-                let files = self.read_contents()?;
-
-                if files.len() > self.parallel_threshold {
-                    files.par_iter().try_for_each(|(file, content)| {
-                        let mut engine = self.create_engine()?;
-                        self.execute(&mut engine, &query, file, content)
-                    })?;
+                if self.input.stream {
+                    self.process_streaming()
                 } else {
-                    let mut engine = self.create_engine()?;
-                    files.iter().try_for_each(|(file, content)| {
-                        self.execute(&mut engine, &query, file, content)
-                    })?;
+                    self.process_batch()
                 }
-
-                Ok(())
             }
         }
     }
@@ -473,6 +467,58 @@ impl Cli {
         }
 
         self.print(runtime_values)
+    }
+
+    fn process_batch(&self) -> Result<(), miette::Error> {
+        let query = self.get_query()?;
+        let files = self.read_contents()?;
+
+        if files.len() > self.parallel_threshold {
+            files.par_iter().try_for_each(|(file, content)| {
+                let mut engine = self.create_engine()?;
+                self.execute(&mut engine, &query, file, content)
+            })?;
+        } else {
+            let mut engine = self.create_engine()?;
+            files
+                .iter()
+                .try_for_each(|(file, content)| self.execute(&mut engine, &query, file, content))?;
+        }
+
+        Ok(())
+    }
+
+    fn process_streaming(&self) -> miette::Result<()> {
+        let query = self.get_query()?;
+        let mut engine = self.create_engine()?;
+
+        self.process_lines(|file, line| self.execute(&mut engine, &query, &file.cloned(), line))
+    }
+
+    fn process_lines<F>(&self, mut process: F) -> miette::Result<()>
+    where
+        F: FnMut(Option<&PathBuf>, &str) -> miette::Result<()>,
+    {
+        // If files are specified, process each file line by line
+        if let Some(files) = &self.files {
+            for file in files {
+                let file_handle = fs::File::open(file).into_diagnostic()?;
+                let reader = io::BufReader::new(file_handle);
+                for line_result in reader.lines() {
+                    let line = line_result.into_diagnostic()?;
+                    process(Some(file), &line)?;
+                }
+            }
+        } else {
+            // Otherwise, process stdin line by line
+            let stdin = io::stdin();
+            let reader = io::BufReader::new(stdin.lock());
+            for line_result in reader.lines() {
+                let line = line_result.into_diagnostic()?;
+                process(None, &line)?;
+            }
+        }
+        Ok(())
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, String)>> {

@@ -148,6 +148,11 @@ In {year}, the snowfall was above average.
     "ok",
     Some("ok\n")
 )]
+#[case::test_stream(
+    vec!["--unbuffered", "-I", "text", "--stream", ".h"],
+    "# title\n",
+    None
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,
