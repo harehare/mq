@@ -10,7 +10,7 @@ include "xml"
 
 | def test_xml_stringify():
     let result = xml_stringify(xml_parse(input))
-    | assert_eq(result, "<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>")
+    | assert_eq(result, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>\n")
   end
 
 | def test_xml_to_markdown_table():

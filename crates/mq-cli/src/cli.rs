@@ -141,6 +141,10 @@ struct InputArgs {
     #[arg(long = "toml", default_value_t = false)]
     include_toml: bool,
 
+    /// Include the built-in XML module
+    #[arg(long = "xml", default_value_t = false)]
+    include_xml: bool,
+
     /// Include the built-in test module
     #[arg(long = "test", default_value_t = false)]
     include_test: bool,
@@ -384,6 +388,7 @@ impl Cli {
             ("json", self.input.include_json),
             ("toml", self.input.include_toml),
             ("yaml", self.input.include_yaml),
+            ("xml", self.input.include_xml),
             ("test", self.input.include_test),
         ]
         .iter()
