@@ -215,8 +215,7 @@ def xml_parse(input):
   | result[0]
 end
 
-# Serializes a value to an XML string.
-def xml_stringify(data):
+def _xml_stringify(data):
   def _format_attributes(attributes):
     if (is_empty(keys(attributes))):
       ""
@@ -242,7 +241,7 @@ def xml_stringify(data):
     else:
       ""
     | let child_content = if (!is_empty(children)):
-          join(map(children, xml_stringify), "")
+          join(map(children, _xml_stringify), "")
         else:
           ""
     | let all_content = content + child_content
@@ -253,6 +252,11 @@ def xml_stringify(data):
       _format_xml_element(data)
     else:
       to_string(data)
+end
+
+# Serializes a value to an XML string.
+def xml_stringify(data):
+  "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + _xml_stringify(data) + "\n"
 end
 
 def _xml_to_markdown_table(data, depth):

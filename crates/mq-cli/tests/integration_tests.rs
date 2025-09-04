@@ -143,6 +143,25 @@ In {year}, the snowfall was above average.
 "#,
     )
 )]
+#[case::xml_output(
+    vec!["--unbuffered", "-I", "raw", "--xml", "xml_parse() | xml_stringify()"],
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item>
+    <type>Heading</type>
+    <value>title1</value>
+  </item>
+  <item>
+    <type>Heading</type>
+    <value>title2</value>
+  </item>
+</root>
+"#,
+    Some(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<root><item><type>Heading</type><value>title1</value></item><item><type>Heading</type><value>title2</value></item></root>\n\n",
+    )
+)]
 #[case::test_option_success(
     vec!["--unbuffered", "-I", "text", "--test", "assert(true)"],
     "ok",
