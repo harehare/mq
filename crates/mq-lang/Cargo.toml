@@ -34,6 +34,7 @@ thiserror.workspace = true
 ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "compact_str/serde"]
 cst = []
 default = ["std"]
+file-io = []
 std = []
 
 [dev-dependencies]

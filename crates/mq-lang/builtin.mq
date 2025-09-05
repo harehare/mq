@@ -94,7 +94,7 @@ def filter(v, f):
       let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
 
   | let _filter = fn(v, f):
-        foreach (x, v): select(x, f(x)); | compact();
+      foreach (x, v): select(x, f(x)); | compact();
 
   | if (is_dict(v)):
       filter_dict(v, f)

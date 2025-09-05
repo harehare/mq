@@ -437,3 +437,28 @@ Content of section 3.
 
     Ok(())
 }
+
+#[test]
+fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = mq_test::create_file("test_read_file.md", "test");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = Command::cargo_bin("mq")?;
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg(format!(
+            r#"read_file("{}")"#,
+            temp_file_path.to_string_lossy(),
+        ))
+        .arg(temp_file_path.to_string_lossy().to_string())
+        .assert();
+
+    assert.success().code(0).stdout("test\n");
+    Ok(())
+}
