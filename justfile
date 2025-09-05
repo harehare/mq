@@ -19,7 +19,7 @@ bench: build-bench
 # Run benchmarks locally
 [working-directory: 'crates/mq-lang']
 bench-local:
-    cargo bench
+    cargo bench --all-features
 
 # Build the project in release mode
 build:

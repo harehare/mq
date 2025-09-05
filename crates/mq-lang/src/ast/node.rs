@@ -400,6 +400,8 @@ mod tests {
     use crate::{Position, TokenKind, arena::ArenaId};
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
+
+    #[cfg(feature = "ast-json")]
     use std::fmt::Write;
 
     fn create_token(range: Range) -> Rc<Token> {
@@ -735,6 +737,7 @@ mod tests {
         assert_eq!(name1.partial_cmp(name2), Some(expected));
     }
 
+    #[cfg(feature = "ast-json")]
     #[rstest]
     #[case(
         Node {
