@@ -28,7 +28,7 @@ itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter.workspace = true
 mq-hir.workspace = true
-mq-lang.workspace = true
+mq-lang = {workspace = true, features = ["file-io"]}
 mq-lsp.workspace = true
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown"]}
 mq-mcp.workspace = true
