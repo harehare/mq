@@ -2206,9 +2206,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             CompactString::new("read_file"),
             BuiltinFunction::new(ParamNum::Fixed(1), |ident, _, mut args| {
                 match args.as_mut_slice() {
-                    [RuntimeValue::String(path)] => match std::fs::read_to_string(path) {
+                    [RuntimeValue::String(path)] => match std::fs::read_to_string(&path) {
                         Ok(content) => Ok(RuntimeValue::String(content)),
-                        Err(e) => Err(Error::Runtime(format!("Failed to read file: {}", e))),
+                        Err(_) => Err(Error::Runtime(format!("Failed to read file: {}", path))),
                     },
                     [a] => Err(Error::InvalidTypes(
                         ident.to_string(),
