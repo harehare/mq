@@ -3249,6 +3249,16 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             params: &["heading_node"],
             },
         );
+
+        #[cfg(feature = "file-io")]
+        map.insert(
+            CompactString::new("read_file"),
+            BuiltinFunctionDoc {
+            description: "Reads the contents of a file at the given path and returns it as a string.",
+            params: &["path"],
+            },
+        );
+
         map
     });
 
