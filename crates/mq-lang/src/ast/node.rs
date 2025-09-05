@@ -226,7 +226,7 @@ impl Display for Literal {
             Literal::String(s) => write!(f, "{}", s),
             Literal::Number(n) => write!(f, "{}", n),
             Literal::Bool(b) => write!(f, "{}", b),
-            Literal::None => write!(f, "none"),
+            Literal::None => write!(f, "None"),
         }
     }
 }
@@ -253,12 +253,154 @@ pub enum Expr {
     Break,
     Continue,
 }
+
+#[cfg(feature = "ast-json")]
+impl Display for Node {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &*self.expr {
+            Expr::Call(ident, args) => {
+                write!(f, "{ident}(",)?;
+                let mut first = true;
+                for arg in args {
+                    if !first {
+                        f.write_str(", ")?;
+                    }
+                    first = false;
+                    write!(f, "{arg}")?;
+                }
+                f.write_str(")")
+            }
+            Expr::Def(ident, params, program) => {
+                write!(f, "def {ident}(")?;
+                let mut first = true;
+                for param in params {
+                    if !first {
+                        f.write_str("| ")?;
+                    }
+                    first = false;
+                    write!(f, "{param}")?;
+                }
+                f.write_str(") {{ ")?;
+                let mut first = true;
+                for stmt in program {
+                    if !first {
+                        f.write_str("| ")?;
+                    }
+                    first = false;
+                    write!(f, "{stmt}")?;
+                }
+                f.write_str(" }}")
+            }
+            Expr::Fn(params, program) => {
+                f.write_str("fn(")?;
+                let mut first = true;
+                for param in params {
+                    if !first {
+                        f.write_str(", ")?;
+                    }
+                    first = false;
+                    write!(f, "{param}")?;
+                }
+                f.write_str("): ")?;
+                let mut first = true;
+                for stmt in program {
+                    if !first {
+                        f.write_str(" | ")?;
+                    }
+                    first = false;
+                    write!(f, "{stmt}")?;
+                }
+                f.write_str(";")
+            }
+            Expr::Let(ident, node) => write!(f, "let {ident} = {node}"),
+            Expr::Literal(lit) => match lit {
+                Literal::String(s) => write!(f, "\"{s}\""),
+                _ => write!(f, "{lit}"),
+            },
+            Expr::Ident(ident) => write!(f, "{ident}"),
+            Expr::InterpolatedString(segments) => {
+                f.write_str("\"")?;
+                for seg in segments {
+                    match seg {
+                        StringSegment::Text(s) => f.write_str(s)?,
+                        StringSegment::Ident(ident) => write!(f, "${{{ident}}}")?,
+                        StringSegment::Env(env) => write!(f, "${{{env}}}")?,
+                        StringSegment::Self_ => f.write_str("${self}")?,
+                    }
+                }
+                f.write_str("\"")
+            }
+            Expr::Selector(sel) => write!(f, ":{:?}", sel),
+            Expr::While(cond, program) => {
+                write!(f, "while ({cond}): ")?;
+                let mut first = true;
+                for stmt in program {
+                    if !first {
+                        f.write_str(" | ")?;
+                    }
+                    first = false;
+                    write!(f, "{stmt}")?;
+                }
+                f.write_str(";")
+            }
+            Expr::Until(cond, program) => {
+                write!(f, "until ({cond}): ")?;
+                let mut first = true;
+                for stmt in program {
+                    if !first {
+                        f.write_str(" | ")?;
+                    }
+                    first = false;
+                    write!(f, "{stmt}")?;
+                }
+                f.write_str(";")
+            }
+            Expr::Foreach(ident, iterable, program) => {
+                write!(f, "foreach ({ident}, {iterable}): ")?;
+                let mut first = true;
+                for stmt in program {
+                    if !first {
+                        f.write_str(" | ")?;
+                    }
+                    first = false;
+                    write!(f, "{stmt}")?;
+                }
+                f.write_str(";")
+            }
+            Expr::If(branches) => {
+                for (i, (cond, node)) in branches.iter().enumerate() {
+                    if i == 0 {
+                        if let Some(cond) = cond {
+                            write!(f, "if ({}): ", cond)?;
+                        } else {
+                            f.write_str("if ")?;
+                        }
+                    } else if cond.is_some() {
+                        write!(f, " elif ({}): ", cond.as_ref().unwrap())?;
+                    } else {
+                        f.write_str(" else: ")?;
+                    }
+                    write!(f, "{node}")?;
+                }
+                Ok(())
+            }
+            Expr::Include(lit) => write!(f, r#"include "{lit}""#),
+            Expr::Self_ => f.write_str("self"),
+            Expr::Nodes => f.write_str("nodes"),
+            Expr::Paren(node) => write!(f, "({node})"),
+            Expr::Break => f.write_str("break"),
+            Expr::Continue => f.write_str("continue"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{Position, TokenKind, arena::ArenaId};
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
+    use std::fmt::Write;
 
     fn create_token(range: Range) -> Rc<Token> {
         Rc::new(Token {
@@ -591,5 +733,172 @@ mod tests {
         #[case] expected: std::cmp::Ordering,
     ) {
         assert_eq!(name1.partial_cmp(name2), Some(expected));
+    }
+
+    #[rstest]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Literal(Literal::String("hello".to_string())))
+        },
+        "\"hello\""
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Ident(Ident::new("foo")))
+        },
+        "foo"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Call(
+                Ident::new("bar"),
+                smallvec![
+                    Rc::new(Node {
+                        token_id: ArenaId::new(1),
+                        expr: Rc::new(Expr::Literal(Literal::Number(Number::from(1))))
+                    }),
+                    Rc::new(Node {
+                        token_id: ArenaId::new(2),
+                        expr: Rc::new(Expr::Literal(Literal::Number(Number::from(2))))
+                    })
+                ]
+            ))
+        },
+        "bar(1, 2)"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Let(
+                Ident::new("x"),
+                Rc::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Rc::new(Expr::Literal(Literal::Bool(true)))
+                })
+            ))
+        },
+        "let x = true"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::If(smallvec![
+                (Some(Rc::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Rc::new(Expr::Literal(Literal::Bool(true)))
+                })), Rc::new(Node {
+                    token_id: ArenaId::new(2),
+                    expr: Rc::new(Expr::Literal(Literal::String("then".to_string())))
+                })),
+                (None, Rc::new(Node {
+                    token_id: ArenaId::new(3),
+                    expr: Rc::new(Expr::Literal(Literal::String("else".to_string())))
+                }))
+            ]))
+        },
+        "if (true): \"then\" else: \"else\""
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::While(
+                Rc::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Rc::new(Expr::Literal(Literal::Bool(true)))
+                }),
+                vec![
+                    Rc::new(Node {
+                        token_id: ArenaId::new(2),
+                        expr: Rc::new(Expr::Literal(Literal::String("loop1".to_string())))
+                    }),
+                    Rc::new(Node {
+                        token_id: ArenaId::new(3),
+                        expr: Rc::new(Expr::Literal(Literal::String("loop2".to_string())))
+                    }),
+                ]
+            ))
+        },
+        "while (true): \"loop1\" | \"loop2\";"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Until(
+                Rc::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Rc::new(Expr::Literal(Literal::Bool(false)))
+                }),
+                vec![
+                    Rc::new(Node {
+                        token_id: ArenaId::new(2),
+                        expr: Rc::new(Expr::Literal(Literal::String("until1".to_string())))
+                    }),
+                    Rc::new(Node {
+                        token_id: ArenaId::new(3),
+                        expr: Rc::new(Expr::Literal(Literal::String("until2".to_string())))
+                    }),
+                ]
+            ))
+        },
+        "until (false): \"until1\" | \"until2\";"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Foreach(
+                Ident::new("item"),
+                Rc::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Rc::new(Expr::Ident(Ident::new("items")))
+                }),
+                vec![
+                    Rc::new(Node {
+                        token_id: ArenaId::new(2),
+                        expr: Rc::new(Expr::Literal(Literal::String("foreach1".to_string())))
+                    }),
+                    Rc::new(Node {
+                        token_id: ArenaId::new(3),
+                        expr: Rc::new(Expr::Literal(Literal::String("foreach2".to_string())))
+                    }),
+                ]
+            ))
+        },
+        "foreach (item, items): \"foreach1\" | \"foreach2\";"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Self_)
+        },
+        "self"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Nodes)
+        },
+        "nodes"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Break)
+        },
+        "break"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Continue)
+        },
+        "continue"
+    )]
+    fn test_node_display(#[case] node: Node, #[case] expected: &str) {
+        let mut s = String::new();
+        write!(&mut s, "{node}").unwrap();
+        assert_eq!(s, expected);
     }
 }
