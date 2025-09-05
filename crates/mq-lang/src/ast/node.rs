@@ -330,7 +330,45 @@ impl Display for Node {
                 }
                 f.write_str("\"")
             }
-            Expr::Selector(sel) => write!(f, ":{:?}", sel),
+            Expr::Selector(sel) => match sel {
+                Selector::Blockquote => f.write_str(".blockquote"),
+                Selector::Footnote => f.write_str(".footnote"),
+                Selector::List(_, Some(ordered)) => {
+                    write!(f, ".list({ordered})")
+                }
+                Selector::List(_, _) => f.write_str(".list"),
+                Selector::Toml => f.write_str(".toml"),
+                Selector::Yaml => f.write_str(".yaml"),
+                Selector::Break => f.write_str(".break"),
+                Selector::InlineCode => f.write_str(".code_inline"),
+                Selector::InlineMath => f.write_str(".math_inline"),
+                Selector::Delete => f.write_str(".delete"),
+                Selector::Emphasis => f.write_str(".emphasis"),
+                Selector::FootnoteRef => f.write_str(".footnote_ref"),
+                Selector::Html => f.write_str(".html"),
+                Selector::Image => f.write_str(".image"),
+                Selector::ImageRef => f.write_str(".image_ref"),
+                Selector::MdxJsxTextElement => f.write_str(".mdx_jsx_text_element"),
+                Selector::Link => f.write_str(".link"),
+                Selector::LinkRef => f.write_str(".link_ref"),
+                Selector::Strong => f.write_str(".strong"),
+                Selector::Code(Some(lang)) => write!(f, r#".code("{}")"#, lang),
+                Selector::Code(None) => f.write_str(".code"),
+                Selector::Math => f.write_str(".math"),
+                Selector::Heading(Some(depth)) => write!(f, ".h({})", depth),
+                Selector::Heading(None) => f.write_str(".h"),
+                Selector::Table(Some(rows), Some(cols)) => write!(f, ".[{rows}][{cols}]"),
+                Selector::Table(Some(rows), None) => write!(f, ".[{rows}][]"),
+                Selector::Table(None, Some(cols)) => write!(f, ".[][{cols}]"),
+                Selector::Table(None, None) => f.write_str(".[][]"),
+                Selector::Text => f.write_str(".text"),
+                Selector::HorizontalRule => f.write_str(".horizontal_rule"),
+                Selector::Definition => f.write_str(".definition"),
+                Selector::MdxFlowExpression => f.write_str(".mdx_flow_expression"),
+                Selector::MdxTextExpression => f.write_str(".mdx_text_expression"),
+                Selector::MdxJsEsm => f.write_str(".mdx_js_esm"),
+                Selector::MdxJsxFlowElement => f.write_str(".mdx_jsx_flow_element"),
+            },
             Expr::While(cond, program) => {
                 write!(f, "while ({cond}): ")?;
                 let mut first = true;
@@ -898,6 +936,251 @@ mod tests {
             expr: Rc::new(Expr::Continue)
         },
         "continue"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Blockquote))
+        },
+        ".blockquote"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Footnote))
+        },
+        ".footnote"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::List(Some(1), Some(true))))
+        },
+        ".list(true)"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::List(None, None)))
+        },
+        ".list"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Toml))
+        },
+        ".toml"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Yaml))
+        },
+        ".yaml"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Break))
+        },
+        ".break"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::InlineCode))
+        },
+        ".code_inline"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::InlineMath))
+        },
+        ".math_inline"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Delete))
+        },
+        ".delete"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Emphasis))
+        },
+        ".emphasis"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::FootnoteRef))
+        },
+        ".footnote_ref"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Html))
+        },
+        ".html"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Image))
+        },
+        ".image"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::ImageRef))
+        },
+        ".image_ref"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::MdxJsxTextElement))
+        },
+        ".mdx_jsx_text_element"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Link))
+        },
+        ".link"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::LinkRef))
+        },
+        ".link_ref"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Strong))
+        },
+        ".strong"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Code(Some("rust".into()))))
+        },
+        ".code(\"rust\")"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Code(None)))
+        },
+        ".code"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Math))
+        },
+        ".math"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Heading(Some(2))))
+        },
+        ".h(2)"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Heading(None)))
+        },
+        ".h"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Table(Some(3), Some(4))))
+        },
+        ".[3][4]"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Table(Some(3), None)))
+        },
+        ".[3][]"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Table(None, Some(4))))
+        },
+        ".[][4]"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Table(None, None)))
+        },
+        ".[][]"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Text))
+        },
+        ".text"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::HorizontalRule))
+        },
+        ".horizontal_rule"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::Definition))
+        },
+        ".definition"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::MdxFlowExpression))
+        },
+        ".mdx_flow_expression"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::MdxTextExpression))
+        },
+        ".mdx_text_expression"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::MdxJsEsm))
+        },
+        ".mdx_js_esm"
+    )]
+    #[case(
+        Node {
+            token_id: ArenaId::new(0),
+            expr: Rc::new(Expr::Selector(Selector::MdxJsxFlowElement))
+        },
+        ".mdx_jsx_flow_element"
     )]
     fn test_node_display(#[case] node: Node, #[case] expected: &str) {
         let mut s = String::new();
