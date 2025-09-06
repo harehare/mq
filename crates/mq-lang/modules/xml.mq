@@ -193,6 +193,7 @@ def _parse_text_content(input, text_parts):
       let pos = pos + 1
       | pos
     end
+  | if (is_none(pos)): error("Unexpected end of input while parsing text content")
   | let text = input[start_pos:pos]
   | let text_parts = text_parts + text
   | [None, text_parts, input[pos:len(input)]]
