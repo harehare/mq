@@ -1,5 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
+#[cfg(feature = "debugger")]
+use crate::Debugger;
 use crate::MqResult;
 use crate::optimizer::OptimizationLevel;
 
@@ -222,10 +224,21 @@ impl Engine {
             })
     }
 
+    /// Returns a reference to the debugger instance.
+    ///
+    /// This allows interactive debugging of mq code execution when the
+    /// `debugger` feature is enabled. Use this to inspect or control
+    /// the execution state for advanced debugging scenarios.
+    #[cfg(feature = "debugger")]
+    pub fn debugger(&self) -> Rc<std::cell::RefCell<Debugger>> {
+        self.evaluator.debugger()
+    }
+
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

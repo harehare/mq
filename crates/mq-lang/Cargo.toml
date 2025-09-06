@@ -33,6 +33,7 @@ thiserror.workspace = true
 [features]
 ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "compact_str/serde"]
 cst = []
+debugger = []
 default = ["std"]
 file-io = []
 std = []

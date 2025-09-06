@@ -103,6 +103,9 @@ pub use cst::parser::ErrorReporter as CstErrorReporter;
 #[cfg(feature = "cst")]
 pub use cst::parser::Parser as CstParser;
 
+#[cfg(feature = "debugger")]
+pub use eval::debugger::{Breakpoint, DebugContext, Debugger, DebuggerCommand};
+
 pub type MqResult = Result<Values, Box<Error>>;
 
 #[cfg(feature = "cst")]
