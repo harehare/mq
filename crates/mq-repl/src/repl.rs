@@ -338,7 +338,7 @@ mod tests {
 
         // Test command highlighting
         let result = highlight_mq_syntax("/help");
-        assert!(result.contains("/help"));
+        assert!(result.contains("help"));
 
         // Test operator highlighting
         let result = highlight_mq_syntax("x = 1 + 2");

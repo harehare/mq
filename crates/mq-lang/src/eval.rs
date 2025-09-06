@@ -7,7 +7,12 @@ use crate::{
     error::InnerError,
 };
 
+#[cfg(feature = "debugger")]
+use debugger::{DebugContext, Debugger};
+
 pub mod builtin;
+#[cfg(feature = "debugger")]
+pub mod debugger;
 pub mod env;
 pub mod error;
 pub mod module;
@@ -40,13 +45,43 @@ impl Default for Options {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Evaluator {
     env: Rc<RefCell<Env>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     call_stack_depth: u32,
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader,
+    #[cfg(feature = "debugger")]
+    debugger: Rc<RefCell<Debugger>>,
+}
+
+impl Default for Evaluator {
+    fn default() -> Self {
+        Self {
+            env: Rc::new(RefCell::new(Env::default())),
+            token_arena: Rc::new(RefCell::new(Arena::new(10))),
+            call_stack_depth: 0,
+            options: Options::default(),
+            module_loader: module::ModuleLoader::default(),
+            #[cfg(feature = "debugger")]
+            debugger: Rc::new(RefCell::new(Debugger::new())),
+        }
+    }
+}
+
+impl Clone for Evaluator {
+    fn clone(&self) -> Self {
+        Self {
+            env: Rc::clone(&self.env),
+            token_arena: Rc::clone(&self.token_arena),
+            call_stack_depth: self.call_stack_depth,
+            options: self.options.clone(),
+            module_loader: self.module_loader.clone(),
+            #[cfg(feature = "debugger")]
+            debugger: Rc::clone(&self.debugger),
+        }
+    }
 }
 
 impl Evaluator {
@@ -55,11 +90,9 @@ impl Evaluator {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Self {
         Self {
-            env: Rc::new(RefCell::new(Env::default())),
             module_loader,
-            call_stack_depth: 0,
             token_arena,
-            options: Options::default(),
+            ..Default::default()
         }
     }
 
@@ -101,6 +134,7 @@ impl Evaluator {
             let (program, nodes_program) = program.split_at_mut(*index);
             let program = program.to_vec();
             let nodes_program = nodes_program.to_vec();
+
             let values: Result<Vec<RuntimeValue>, InnerError> = input
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
@@ -356,6 +390,22 @@ impl Evaluator {
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
+        #[cfg(feature = "debugger")]
+        {
+            let debug_context = DebugContext {
+                current_value: runtime_value.clone(),
+                current_node: Rc::clone(&node),
+                call_stack: self.debugger.borrow().current_call_stack(),
+                env: Rc::clone(&env),
+            };
+
+            // TODO:
+            let _ = self
+                .debugger
+                .borrow_mut()
+                .should_break(&debug_context, &self.token_arena.borrow());
+        }
+
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
@@ -599,6 +649,8 @@ impl Evaluator {
         if let Ok(fn_value) = Rc::clone(&env).borrow().resolve(ident) {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
+                #[cfg(feature = "debugger")]
+                self.debugger.borrow_mut().push_call_stack(Rc::clone(&node));
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
                 let mut new_env_mut = new_env.borrow_mut();
@@ -652,6 +704,8 @@ impl Evaluator {
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
                 self.exit_scope();
+                #[cfg(feature = "debugger")]
+                self.debugger.borrow_mut().pop_call_stack();
 
                 result
             } else if let RuntimeValue::NativeFunction(ident) = fn_value {
