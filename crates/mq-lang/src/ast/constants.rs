@@ -23,3 +23,6 @@ pub const OR: &str = "or";
 pub const NOT: &str = "not";
 
 pub const RANGE: &str = "range";
+
+#[cfg(feature = "debugger")]
+pub const DBG: &str = "dbg";

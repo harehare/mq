@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(feature = "debugger")]
+use crate::ast::constants;
 use crate::{
     Program, Token, TokenKind,
     arena::Arena,
@@ -8,7 +10,7 @@ use crate::{
 };
 
 #[cfg(feature = "debugger")]
-use debugger::{DebugContext, Debugger};
+use debugger::{Breakpoint, DebugContext, Debugger};
 
 pub mod builtin;
 #[cfg(feature = "debugger")]
@@ -285,6 +287,34 @@ impl Evaluator {
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
+    #[cfg(feature = "debugger")]
+    fn eval_debugger(
+        &self,
+        runtime_value: &RuntimeValue,
+        node: Rc<ast::Node>,
+        env: Rc<RefCell<Env>>,
+    ) {
+        self.debugger.borrow_mut().breakpoint_hit(
+            &DebugContext {
+                current_value: runtime_value.clone(),
+                current_node: Rc::clone(&node),
+                call_stack: self.debugger.borrow().current_call_stack(),
+                env: Rc::clone(&env),
+            },
+            &Breakpoint {
+                id: 0,
+                line: (*self.token_arena.borrow()[node.token_id]).range.start.line as usize,
+                column: Some(
+                    (*self.token_arena.borrow()[node.token_id])
+                        .range
+                        .start
+                        .column,
+                ),
+                enabled: true,
+            },
+        );
+    }
+
     #[inline(always)]
     fn eval_include(&mut self, module: ast::Literal) -> Result<(), EvalError> {
         match module {
@@ -399,7 +429,6 @@ impl Evaluator {
                 env: Rc::clone(&env),
             };
 
-            // TODO:
             let _ = self
                 .debugger
                 .borrow_mut()
@@ -409,6 +438,12 @@ impl Evaluator {
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
+                #[cfg(feature = "debugger")]
+                if ident.name == constants::DBG {
+                    self.eval_debugger(runtime_value, Rc::clone(&node), Rc::clone(&env));
+                    return Ok(runtime_value.clone());
+                }
+
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
