@@ -1425,6 +1425,9 @@ pub static BUILTIN_FUNCTIONS: LazyLock<FxHashMap<CompactString, BuiltinFunction>
             BuiltinFunction::new(ParamNum::Fixed(2), |_, _, mut args| {
                 match args.as_mut_slice() {
                     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+                    [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
+                        Ok(s.repeat(n.value() as usize).into())
+                    }
                     [a, b] => match (to_number(a)?, to_number(b)?) {
                         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => {
                             Ok((n1 * n2).into())
