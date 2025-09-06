@@ -303,13 +303,8 @@ impl Evaluator {
             },
             &Breakpoint {
                 id: 0,
-                line: (*self.token_arena.borrow()[node.token_id]).range.start.line as usize,
-                column: Some(
-                    (*self.token_arena.borrow()[node.token_id])
-                        .range
-                        .start
-                        .column,
-                ),
+                line: self.token_arena.borrow()[node.token_id].range.start.line as usize,
+                column: Some(self.token_arena.borrow()[node.token_id].range.start.column),
                 enabled: true,
             },
         );
