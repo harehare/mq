@@ -1572,10 +1572,10 @@ mod tests {
        vec![
             ast_call("mul", smallvec![
                     ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string()))),
-                    ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                 ]),
        ],
-       Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
+       Ok(vec![RuntimeValue::String("tete".to_string())]))]
     #[case::mod_(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("mod", smallvec![
