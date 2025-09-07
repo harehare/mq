@@ -296,17 +296,20 @@ impl Evaluator {
         env: Rc<RefCell<Env>>,
     ) {
         let current_call_stack = self.debugger.borrow().current_call_stack();
+        let token = self.token_arena.borrow()[node.token_id].clone();
+
         self.debugger.borrow_mut().breakpoint_hit(
             &DebugContext {
                 current_value: runtime_value.clone(),
                 current_node: Rc::clone(&node),
+                token: Rc::clone(&token),
                 call_stack: current_call_stack,
                 env: Rc::clone(&env),
             },
             &Breakpoint {
                 id: 0,
-                line: self.token_arena.borrow()[node.token_id].range.start.line as usize,
-                column: Some(self.token_arena.borrow()[node.token_id].range.start.column),
+                line: token.range.start.line as usize,
+                column: Some(token.range.start.column),
                 enabled: true,
             },
         );
@@ -423,14 +426,15 @@ impl Evaluator {
             let debug_context = DebugContext {
                 current_value: runtime_value.clone(),
                 current_node: Rc::clone(&node),
+                token: Rc::clone(&self.token_arena.borrow()[node.token_id]),
                 call_stack: self.debugger.borrow().current_call_stack(),
                 env: Rc::clone(&env),
             };
 
-            let _ = self
-                .debugger
-                .borrow_mut()
-                .should_break(&debug_context, &self.token_arena.borrow());
+            let _ = self.debugger.borrow_mut().should_break(
+                &debug_context,
+                Rc::clone(&self.token_arena.borrow()[node.token_id]),
+            );
         }
 
         match &*node.expr {

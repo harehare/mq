@@ -1,5 +1,4 @@
 use super::runtime_value::RuntimeValue;
-use crate::Arena;
 use crate::Token;
 use crate::ast::node as ast;
 use crate::eval::Evaluator;
@@ -44,6 +43,8 @@ pub struct DebugContext {
     pub current_value: RuntimeValue,
     /// Current AST node being evaluated
     pub current_node: Rc<ast::Node>,
+    /// Current token being evaluated
+    pub token: Rc<Token>,
     /// Call stack of AST nodes representing the current execution path
     pub call_stack: Vec<Rc<ast::Node>>,
     /// Current evaluation environment info
@@ -165,13 +166,12 @@ impl Debugger {
     pub fn should_break(
         &mut self,
         context: &DebugContext,
-        token_arena: &Arena<Rc<Token>>,
+        token: Rc<Token>,
     ) -> (bool, Option<DebuggerAction>) {
         if !self.active {
             return (false, None);
         }
 
-        let token = &token_arena[context.current_node.token_id];
         let line = token.range.start.line as usize;
         let column = token.range.start.column;
 
@@ -362,7 +362,7 @@ impl Evaluator {
 mod tests {
     use rstest::rstest;
 
-    use crate::{Range, TokenKind, ast::TokenId, eval::module::ModuleId};
+    use crate::{Arena, Range, TokenKind, ast::TokenId, eval::module::ModuleId};
 
     use super::*;
 
@@ -390,19 +390,20 @@ mod tests {
         })
     }
 
-    fn make_debug_context(line: usize, column: usize) -> (DebugContext, Arena<Rc<Token>>) {
+    fn make_debug_context(line: usize, column: usize) -> DebugContext {
         let mut arena = Arena::new(10);
         let token = make_token(line, column);
-        let token_id = arena.alloc(token);
+        let token_id = arena.alloc(Rc::clone(&token));
         let node = make_node(token_id);
         let env = Rc::new(RefCell::new(Env::default()));
         let ctx = DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
+            token: Rc::clone(&token),
             call_stack: Vec::new(),
             env,
         };
-        (ctx, arena)
+        ctx
     }
 
     #[rstest]
@@ -424,8 +425,8 @@ mod tests {
         dbg.add_breakpoint(bp_line, bp_col);
 
         let col = node_col.unwrap_or(0);
-        let (ctx, arena) = make_debug_context(node_line, col);
-        let (hit, _) = dbg.should_break(&ctx, &arena);
+        let ctx = make_debug_context(node_line, col);
+        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
         assert_eq!(hit, should_match);
     }
 
@@ -440,8 +441,8 @@ mod tests {
         dbg.activate();
         dbg.set_command(command);
 
-        let (ctx, arena) = make_debug_context(1, 1);
-        let (hit, _) = dbg.should_break(&ctx, &arena);
+        let ctx = make_debug_context(1, 1);
+        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
         assert_eq!(hit, should_break);
     }
 
@@ -521,14 +522,14 @@ mod tests {
         dbg.set_command(command);
         dbg.step_depth = step_depth;
 
-        let (ctx, arena) = make_debug_context(1, 1);
+        let ctx = make_debug_context(1, 1);
         let mut ctx = ctx;
         ctx.call_stack = call_stack_indices
             .into_iter()
             .map(|i| make_node(TokenId::new(i as u32)))
             .collect();
 
-        let (hit, _) = dbg.should_break(&ctx, &arena);
+        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
         assert_eq!(hit, expected_hit);
     }
 

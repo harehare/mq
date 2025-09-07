@@ -124,10 +124,12 @@ impl DebuggerHandler {
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
 
-        let token = self.engine.token_arena().borrow()[context.current_node.token_id].clone();
-        let (start, snippet) =
-            self.get_source_code_with_context(token.module_id, token.range.start.line as usize, 5);
-        Self::print_source_code(start, token.range.start.line as usize + 1, snippet);
+        let (start, snippet) = self.get_source_code_with_context(
+            context.token.module_id,
+            context.token.range.start.line as usize,
+            5,
+        );
+        Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
 
         loop {
             let prompt = format!("{}", "(mqdbg) ".yellow());
@@ -140,21 +142,20 @@ impl DebuggerHandler {
             let command = Command::from(readline);
             match command {
                 Command::Backtrace => {
-                    let bt = self
-                        .engine
-                        .debugger()
-                        .borrow()
-                        .current_call_stack()
+                    let bt = context
+                        .call_stack
                         .iter()
                         .filter_map(|frame| {
-                            let token = self.engine.token_arena().borrow()[frame.token_id].clone();
+                            let range = self.engine.token_arena().borrow()[frame.token_id]
+                                .range
+                                .clone();
 
                             match &*frame.expr {
                                 mq_lang::AstExpr::Call(ident, _) => Some(format!(
                                     "{} at {}:{}",
                                     ident,
-                                    token.range.start.line + 1,
-                                    token.range.start.column + 1
+                                    range.start.line + 1,
+                                    range.start.column + 1
                                 )),
                                 _ => None,
                             }
