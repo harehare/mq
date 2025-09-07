@@ -3265,6 +3265,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
 
+        map.insert(
+            CompactString::new("dbg"),
+            BuiltinFunctionDoc {
+            description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
+            params: &[],
+            },
+        );
+
         map
     });
 
