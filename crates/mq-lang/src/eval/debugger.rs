@@ -89,6 +89,10 @@ impl Debugger {
         }
     }
 
+    pub fn set_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
+        self.handler = handler;
+    }
+
     /// Activate the debugger
     pub fn activate(&mut self) {
         self.active = true;

@@ -3,6 +3,8 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 #[cfg(feature = "debugger")]
 use crate::Debugger;
 use crate::MqResult;
+#[cfg(feature = "debugger")]
+use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
 
 use crate::{
@@ -15,11 +17,29 @@ use crate::{
 };
 
 /// Configuration options for the mq engine.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Options {
     /// Whether to enable code optimization during evaluation.
     /// When enabled, performs constant folding and dead code elimination.
     pub optimization_level: OptimizationLevel,
+}
+
+#[cfg(not(feature = "debugger"))]
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            optimization_level: OptimizationLevel::Full,
+        }
+    }
+}
+
+#[cfg(feature = "debugger")]
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            optimization_level: OptimizationLevel::None,
+        }
+    }
 }
 
 /// The main execution engine for the mq.
@@ -90,7 +110,7 @@ impl Engine {
     /// These paths will be searched when loading external modules
     /// via the `include` statement in mq code.
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
-        self.evaluator.module_loader.search_paths = Some(paths);
+        self.evaluator.module_loader.borrow_mut().search_paths = Some(paths);
     }
 
     /// Define a string variable that can be used in mq code.
@@ -118,16 +138,21 @@ impl Engine {
         let module = self
             .evaluator
             .module_loader
-            .load_from_file(module_name, Rc::clone(&self.token_arena))
-            .map_err(|e| {
-                error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
-            })?;
+            .borrow_mut()
+            .load_from_file(module_name, Rc::clone(&self.token_arena));
+        let module = module.map_err(|e| {
+            error::Error::from_error(
+                "",
+                e.into(),
+                (*self.evaluator.module_loader.borrow()).clone(),
+            )
+        })?;
 
         self.evaluator.load_module(module).map_err(|e| {
             Box::new(error::Error::from_error(
                 "",
                 e.into(),
-                self.evaluator.module_loader.clone(),
+                (*self.evaluator.module_loader.borrow()).clone(),
             ))
         })
     }
@@ -154,6 +179,12 @@ impl Engine {
         let mut program = parse(code, Rc::clone(&self.token_arena))?;
         Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
 
+        #[cfg(feature = "debugger")]
+        self.evaluator
+            .module_loader
+            .borrow_mut()
+            .set_source_code(code.to_string());
+
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
             .map(|values| {
@@ -167,7 +198,7 @@ impl Engine {
                 Box::new(error::Error::from_error(
                     code,
                     e,
-                    self.evaluator.module_loader.clone(),
+                    (*self.evaluator.module_loader.borrow()).clone(),
                 ))
             })
     }
@@ -219,7 +250,7 @@ impl Engine {
                 Box::new(error::Error::from_error(
                     "",
                     e,
-                    self.evaluator.module_loader.clone(),
+                    (*self.evaluator.module_loader.borrow()).clone(),
                 ))
             })
     }
@@ -232,6 +263,31 @@ impl Engine {
     #[cfg(feature = "debugger")]
     pub fn debugger(&self) -> Rc<std::cell::RefCell<Debugger>> {
         self.evaluator.debugger()
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn token_arena(&self) -> Rc<RefCell<Arena<Rc<Token>>>> {
+        Rc::clone(&self.token_arena)
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn get_source_code_for_debug(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<String, Box<error::Error>> {
+        let source_code = self
+            .evaluator
+            .module_loader
+            .borrow()
+            .get_source_code_for_debug(module_id, None);
+
+        source_code.map_err(|e| {
+            Box::new(error::Error::from_error(
+                "",
+                e.into(),
+                (*self.evaluator.module_loader.borrow()).clone(),
+            ))
+        })
     }
 
     pub const fn version() -> &'static str {
@@ -249,7 +305,10 @@ mod tests {
         let mut engine = Engine::default();
         let paths = vec![PathBuf::from("/test/path")];
         engine.set_paths(paths.clone());
-        assert_eq!(engine.evaluator.module_loader.search_paths, Some(paths));
+        assert_eq!(
+            engine.evaluator.module_loader.borrow_mut().search_paths,
+            Some(paths)
+        );
     }
 
     #[test]

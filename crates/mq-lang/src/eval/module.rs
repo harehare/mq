@@ -40,6 +40,8 @@ type StandardModules = FxHashMap<CompactString, fn() -> &'static str>;
 pub struct ModuleLoader {
     pub(crate) search_paths: Option<Vec<PathBuf>>,
     pub(crate) loaded_modules: Arena<ModuleName>,
+    #[cfg(feature = "debugger")]
+    pub(crate) source_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,12 +105,19 @@ impl ModuleLoader {
         Self {
             search_paths,
             loaded_modules,
+            #[cfg(feature = "debugger")]
+            source_code: None,
         }
     }
 
     #[inline(always)]
     pub fn module_name(&self, module_id: ModuleId) -> CompactString {
         self.loaded_modules[module_id].to_owned()
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn set_source_code(&mut self, source_code: String) {
+        self.source_code = Some(source_code);
     }
 
     pub fn load(
@@ -185,6 +194,31 @@ impl ModuleLoader {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Result<Option<Module>, ModuleError> {
         self.load(Module::BUILTIN_MODULE, Self::BUILTIN_FILE, token_arena)
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn get_source_code_for_debug(
+        &self,
+        module_id: ModuleId,
+        #[allow(unused_variables)] source_code: Option<String>,
+    ) -> Result<String, ModuleError> {
+        match self.module_name(module_id).as_str() {
+            Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
+            Module::BUILTIN_MODULE => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
+            module_name => self.read_file(module_name),
+        }
+    }
+
+    pub fn get_source_code(
+        &self,
+        module_id: ModuleId,
+        source_code: String,
+    ) -> Result<String, ModuleError> {
+        match self.module_name(module_id).as_str() {
+            Module::TOP_LEVEL_MODULE => Ok(source_code),
+            Module::BUILTIN_MODULE => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
+            module_name => self.read_file(module_name),
+        }
     }
 
     fn find(name: &str, search_paths: Option<Vec<PathBuf>>) -> Result<PathBuf, ModuleError> {
