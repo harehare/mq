@@ -398,15 +398,14 @@ mod tests {
         let token_id = arena.alloc(Rc::clone(&token));
         let node = make_node(token_id);
         let env = Rc::new(RefCell::new(Env::default()));
-        let ctx = DebugContext {
+        DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
             token: Rc::clone(&token),
             call_stack: Vec::new(),
             env,
             source_code: String::new(),
-        };
-        ctx
+        }
     }
 
     #[rstest]
@@ -429,7 +428,7 @@ mod tests {
 
         let col = node_col.unwrap_or(0);
         let ctx = make_debug_context(node_line, col);
-        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
+        let (hit, _) = dbg.should_break(&ctx, make_token(node_line, node_col.unwrap_or(0)));
         assert_eq!(hit, should_match);
     }
 

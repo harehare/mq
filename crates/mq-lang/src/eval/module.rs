@@ -112,7 +112,10 @@ impl ModuleLoader {
 
     #[inline(always)]
     pub fn module_name(&self, module_id: ModuleId) -> CompactString {
-        self.loaded_modules[module_id].to_owned()
+        self.loaded_modules
+            .get(module_id)
+            .unwrap_or(&CompactString::new("<unknown>"))
+            .to_owned()
     }
 
     #[cfg(feature = "debugger")]

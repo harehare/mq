@@ -4,6 +4,8 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use crate::Debugger;
 use crate::MqResult;
 #[cfg(feature = "debugger")]
+use crate::eval::env::Env;
+#[cfg(feature = "debugger")]
 use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
 
@@ -262,6 +264,21 @@ impl Engine {
     #[cfg(feature = "debugger")]
     pub fn token_arena(&self) -> Rc<RefCell<Arena<Rc<Token>>>> {
         Rc::clone(&self.token_arena)
+    }
+
+    /// Returns a reference to the underlying evaluator.
+    ///
+    /// This is primarily intended for advanced use cases such as debugging,
+    /// where direct access to the evaluator internals is required.
+    #[cfg(feature = "debugger")]
+    pub fn switch_env(&self, env: Rc<RefCell<Env>>) -> Self {
+        let token_arena = Rc::new(RefCell::new(self.token_arena.borrow().clone()));
+
+        Self {
+            evaluator: Evaluator::with_env(Rc::clone(&token_arena), Rc::clone(&env)),
+            options: self.options.clone(),
+            token_arena: Rc::clone(&token_arena),
+        }
     }
 
     #[cfg(feature = "debugger")]

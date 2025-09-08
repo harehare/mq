@@ -98,6 +98,18 @@ impl Evaluator {
         }
     }
 
+    #[allow(unused)]
+    pub(crate) fn with_env(
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        env: Rc<RefCell<Env>>,
+    ) -> Self {
+        Self {
+            token_arena,
+            env: Rc::clone(&env),
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn eval<I>(
         &mut self,
         program: &Program,

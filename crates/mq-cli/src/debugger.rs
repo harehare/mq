@@ -2,7 +2,7 @@ use colored::*;
 use miette::IntoDiagnostic;
 use mq_lang::DebugContext;
 use rustyline::{At, Cmd, DefaultEditor, KeyCode, KeyEvent, Modifiers, Movement, Word};
-use std::{cmp::max, fmt};
+use std::{cmp::max, fmt, rc::Rc};
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone, strum::EnumIter)]
@@ -126,7 +126,7 @@ impl DebuggerHandler {
         );
 
         let (start, snippet) =
-            self.get_source_code_with_context(&context, context.token.range.start.line as usize, 5);
+            self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
         Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
 
         loop {
@@ -169,12 +169,14 @@ impl DebuggerHandler {
                 }
                 Command::Eval(expr) => {
                     let value: mq_lang::Value = context.current_value.clone().into();
-                    let values = self
-                        .engine
-                        .eval(&expr, vec![value].into_iter())
-                        .map_err(|e| {
-                            miette::miette!("Failed to evaluate expression '{}': {}", expr, e)
-                        })?;
+                    let mut engine = self.engine.switch_env(Rc::clone(&context.env));
+                    let values = match engine.eval(&expr, vec![value].into_iter()) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Error evaluating expression: {}", e);
+                            continue;
+                        }
+                    };
 
                     let lines = values
                         .values()

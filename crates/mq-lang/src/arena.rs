@@ -85,6 +85,13 @@ impl<T> Index<ArenaId<T>> for Arena<T> {
     }
 }
 
+impl<T> Arena<T> {
+    /// Returns a reference to the element at the given `ArenaId`, or `None` if out of bounds.
+    pub fn get(&self, id: ArenaId<T>) -> Option<&T> {
+        self.items.get(id.id as usize)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
