@@ -53,7 +53,7 @@ pub struct Evaluator {
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     call_stack_depth: u32,
     pub(crate) options: Options,
-    pub(crate) module_loader: Rc<RefCell<module::ModuleLoader>>,
+    pub(crate) module_loader: module::ModuleLoader,
     #[cfg(feature = "debugger")]
     debugger: Rc<RefCell<Debugger>>,
 }
@@ -65,7 +65,7 @@ impl Default for Evaluator {
             token_arena: Rc::new(RefCell::new(Arena::new(10))),
             call_stack_depth: 0,
             options: Options::default(),
-            module_loader: Rc::new(RefCell::new(module::ModuleLoader::default())),
+            module_loader: module::ModuleLoader::default(),
             #[cfg(feature = "debugger")]
             debugger: Rc::new(RefCell::new(Debugger::new())),
         }
@@ -79,7 +79,7 @@ impl Clone for Evaluator {
             token_arena: Rc::clone(&self.token_arena),
             call_stack_depth: self.call_stack_depth,
             options: self.options.clone(),
-            module_loader: Rc::clone(&self.module_loader),
+            module_loader: self.module_loader.clone(),
             #[cfg(feature = "debugger")]
             debugger: Rc::clone(&self.debugger),
         }
@@ -92,7 +92,7 @@ impl Evaluator {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Self {
         Self {
-            module_loader: Rc::new(RefCell::new(module_loader)),
+            module_loader,
             token_arena,
             ..Default::default()
         }
@@ -210,7 +210,6 @@ impl Evaluator {
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
         let module = self
             .module_loader
-            .borrow_mut()
             .load_builtin(Rc::clone(&self.token_arena))?;
         self.load_module(module)
     }
@@ -305,6 +304,10 @@ impl Evaluator {
                 token: Rc::clone(&token),
                 call_stack: current_call_stack,
                 env: Rc::clone(&env),
+                source_code: self
+                    .module_loader
+                    .get_source_code_for_debug(token.module_id)
+                    .unwrap_or_default(),
             },
             &Breakpoint {
                 id: 0,
@@ -321,7 +324,6 @@ impl Evaluator {
             ast::Literal::String(module_name) => {
                 let module = self
                     .module_loader
-                    .borrow_mut()
                     .load_from_file(&module_name, Rc::clone(&self.token_arena))?;
                 self.load_module(module)
             }
@@ -423,12 +425,18 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         #[cfg(feature = "debugger")]
         {
+            let token = &self.token_arena.borrow()[node.token_id];
+            let call_stack = self.debugger.borrow().current_call_stack();
             let debug_context = DebugContext {
                 current_value: runtime_value.clone(),
                 current_node: Rc::clone(&node),
-                token: Rc::clone(&self.token_arena.borrow()[node.token_id]),
-                call_stack: self.debugger.borrow().current_call_stack(),
+                token: Rc::clone(token),
+                call_stack,
                 env: Rc::clone(&env),
+                source_code: self
+                    .module_loader
+                    .get_source_code_for_debug(token.module_id)
+                    .unwrap_or_default(),
             };
 
             let _ = self.debugger.borrow_mut().should_break(

@@ -1,5 +1,6 @@
 use colored::*;
 use miette::IntoDiagnostic;
+use mq_lang::DebugContext;
 use rustyline::{At, Cmd, DefaultEditor, KeyCode, KeyEvent, Modifiers, Movement, Word};
 use std::{cmp::max, fmt};
 use strum::IntoEnumIterator;
@@ -124,11 +125,8 @@ impl DebuggerHandler {
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
 
-        let (start, snippet) = self.get_source_code_with_context(
-            context.token.module_id,
-            context.token.range.start.line as usize,
-            5,
-        );
+        let (start, snippet) =
+            self.get_source_code_with_context(&context, context.token.range.start.line as usize, 5);
         Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
 
         loop {
@@ -248,21 +246,17 @@ impl DebuggerHandler {
 
     fn get_source_code_with_context(
         &self,
-        module_id: mq_lang::ModuleId,
+        context: &DebugContext,
         line: usize,
-        context: usize,
+        context_lines: usize,
     ) -> (usize, Vec<String>) {
-        let source = self
-            .engine
-            .get_source_code_for_debug(module_id)
-            .unwrap_or_default();
-        let lines: Vec<&str> = source.lines().collect();
+        let lines: Vec<&str> = context.source_code.lines().collect();
         if lines.is_empty() {
             return (0, vec![]);
         }
         let total_lines = lines.len();
-        let start = line.saturating_sub(context);
-        let end = (line + context + 1).min(total_lines);
+        let start = line.saturating_sub(context_lines);
+        let end = (line + context_lines + 1).min(total_lines);
         let snippet = lines[start..end].iter().map(|s| s.to_string()).collect();
         (start, snippet)
     }

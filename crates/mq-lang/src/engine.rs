@@ -110,7 +110,7 @@ impl Engine {
     /// These paths will be searched when loading external modules
     /// via the `include` statement in mq code.
     pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
-        self.evaluator.module_loader.borrow_mut().search_paths = Some(paths);
+        self.evaluator.module_loader.search_paths = Some(paths);
     }
 
     /// Define a string variable that can be used in mq code.
@@ -138,21 +138,16 @@ impl Engine {
         let module = self
             .evaluator
             .module_loader
-            .borrow_mut()
             .load_from_file(module_name, Rc::clone(&self.token_arena));
         let module = module.map_err(|e| {
-            error::Error::from_error(
-                "",
-                e.into(),
-                (*self.evaluator.module_loader.borrow()).clone(),
-            )
+            error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
         })?;
 
         self.evaluator.load_module(module).map_err(|e| {
             Box::new(error::Error::from_error(
                 "",
                 e.into(),
-                (*self.evaluator.module_loader.borrow()).clone(),
+                self.evaluator.module_loader.clone(),
             ))
         })
     }
@@ -182,7 +177,6 @@ impl Engine {
         #[cfg(feature = "debugger")]
         self.evaluator
             .module_loader
-            .borrow_mut()
             .set_source_code(code.to_string());
 
         self.evaluator
@@ -198,7 +192,7 @@ impl Engine {
                 Box::new(error::Error::from_error(
                     code,
                     e,
-                    (*self.evaluator.module_loader.borrow()).clone(),
+                    self.evaluator.module_loader.clone(),
                 ))
             })
     }
@@ -250,7 +244,7 @@ impl Engine {
                 Box::new(error::Error::from_error(
                     "",
                     e,
-                    (*self.evaluator.module_loader.borrow()).clone(),
+                    self.evaluator.module_loader.clone(),
                 ))
             })
     }
@@ -278,14 +272,13 @@ impl Engine {
         let source_code = self
             .evaluator
             .module_loader
-            .borrow()
-            .get_source_code_for_debug(module_id, None);
+            .get_source_code_for_debug(module_id);
 
         source_code.map_err(|e| {
             Box::new(error::Error::from_error(
                 "",
                 e.into(),
-                (*self.evaluator.module_loader.borrow()).clone(),
+                self.evaluator.module_loader.clone(),
             ))
         })
     }
@@ -305,10 +298,7 @@ mod tests {
         let mut engine = Engine::default();
         let paths = vec![PathBuf::from("/test/path")];
         engine.set_paths(paths.clone());
-        assert_eq!(
-            engine.evaluator.module_loader.borrow_mut().search_paths,
-            Some(paths)
-        );
+        assert_eq!(engine.evaluator.module_loader.search_paths, Some(paths));
     }
 
     #[test]

@@ -197,11 +197,7 @@ impl ModuleLoader {
     }
 
     #[cfg(feature = "debugger")]
-    pub fn get_source_code_for_debug(
-        &self,
-        module_id: ModuleId,
-        #[allow(unused_variables)] source_code: Option<String>,
-    ) -> Result<String, ModuleError> {
+    pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
         match self.module_name(module_id).as_str() {
             Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
             Module::BUILTIN_MODULE => Ok(ModuleLoader::BUILTIN_FILE.to_string()),

@@ -49,6 +49,8 @@ pub struct DebugContext {
     pub call_stack: Vec<Rc<ast::Node>>,
     /// Current evaluation environment info
     pub env: Rc<RefCell<Env>>,
+    /// Source code being executed
+    pub source_code: String,
 }
 
 /// The main debugger struct that manages breakpoints and execution state
@@ -402,6 +404,7 @@ mod tests {
             token: Rc::clone(&token),
             call_stack: Vec::new(),
             env,
+            source_code: String::new(),
         };
         ctx
     }
