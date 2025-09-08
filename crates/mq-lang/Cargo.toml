@@ -14,7 +14,7 @@ version = "0.2.21"
 
 [dependencies]
 base64 = "0.22.1"
-chrono = "0.4.41"
+chrono = "0.4.42"
 compact_str.workspace = true
 dirs.workspace = true
 itertools.workspace = true
