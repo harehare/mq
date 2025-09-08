@@ -1,8 +1,16 @@
 use colored::*;
 use miette::IntoDiagnostic;
 use mq_lang::DebugContext;
-use rustyline::{At, Cmd, DefaultEditor, KeyCode, KeyEvent, Modifiers, Movement, Word};
-use std::{cmp::max, fmt, rc::Rc};
+use rustyline::{
+    At, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers,
+    Movement, Word,
+    completion::Completer,
+    error::ReadlineError,
+    highlight::{CmdKind, Highlighter},
+    hint::Hinter,
+    validate::{ValidationContext, ValidationResult, Validator},
+};
+use std::{borrow::Cow, cmp::max, fmt, rc::Rc};
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone, strum::EnumIter)]
@@ -115,7 +123,16 @@ impl DebuggerHandler {
         &mut self,
         context: &mq_lang::DebugContext,
     ) -> miette::Result<mq_lang::DebuggerAction> {
-        let mut editor = DefaultEditor::new().into_diagnostic()?;
+        let config = Config::builder()
+            .history_ignore_space(true)
+            .completion_type(CompletionType::List)
+            .edit_mode(EditMode::Emacs)
+            .color_mode(rustyline::ColorMode::Enabled)
+            .build();
+        let mut editor = Editor::with_config(config).into_diagnostic()?;
+        let helper = DebuggerLineHelper;
+
+        editor.set_helper(Some(helper));
         editor.bind_sequence(
             KeyEvent(KeyCode::Left, Modifiers::CTRL),
             Cmd::Move(Movement::BackwardWord(1, Word::Big)),
@@ -130,8 +147,7 @@ impl DebuggerHandler {
         Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
 
         loop {
-            let prompt = format!("{}", "(mqdbg) ".yellow());
-            let readline = editor.readline(&prompt).into_diagnostic()?;
+            let readline = editor.readline("(mqdbg) ").into_diagnostic()?;
 
             if readline.trim().is_empty() {
                 continue;
@@ -230,8 +246,8 @@ impl DebuggerHandler {
             if line_number == current_line {
                 format!(
                     "=>{:>line_number_width$}| {}",
-                    line_number.to_string().red().bold(),
-                    line.red().bold(),
+                    line_number.to_string().yellow().bold(),
+                    line.yellow().bold(),
                     line_number_width = line_number_width - 2
                 )
             } else {
@@ -261,5 +277,107 @@ impl DebuggerHandler {
         let end = (line + context_lines + 1).min(total_lines);
         let snippet = lines[start..end].iter().map(|s| s.to_string()).collect();
         (start, snippet)
+    }
+}
+
+/// Highlight mq syntax with keywords and commands
+fn highlight_syntax(line: &str) -> Cow<str> {
+    let mut result = line.to_string();
+
+    let commands_pattern =
+        r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|)\b";
+    if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_green().to_string()
+            })
+            .to_string();
+    }
+
+    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None)\b";
+    if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_blue().to_string()
+            })
+            .to_string();
+    }
+
+    // Highlight strings
+    if let Ok(re) = regex_lite::Regex::new(r#""([^"\\]|\\.)*""#) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_green().to_string()
+            })
+            .to_string();
+    }
+
+    // Highlight numbers
+    if let Ok(re) = regex_lite::Regex::new(r"\b\d+\b") {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_magenta().to_string()
+            })
+            .to_string();
+    }
+
+    // Highlight operators (after other highlighting to avoid conflicts)
+    let operators_pattern = r"(->|<=|>=|==|!=|&&|[=|:;?!+\-*/%<>])";
+    if let Ok(re) = regex_lite::Regex::new(operators_pattern) {
+        result = re
+            .replace_all(&result, |caps: &regex_lite::Captures| {
+                caps[0].bright_yellow().to_string()
+            })
+            .to_string();
+    }
+
+    Cow::Owned(result)
+}
+
+pub struct DebuggerLineHelper;
+
+impl Hinter for DebuggerLineHelper {
+    type Hint = String;
+}
+
+impl Helper for DebuggerLineHelper {}
+impl Completer for DebuggerLineHelper {
+    type Candidate = String;
+}
+
+impl Highlighter for DebuggerLineHelper {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        _default: bool,
+    ) -> Cow<'b, str> {
+        prompt.cyan().to_string().into()
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        true
+    }
+
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        highlight_syntax(line)
+    }
+}
+
+impl Validator for DebuggerLineHelper {
+    fn validate(&self, ctx: &mut ValidationContext<'_>) -> Result<ValidationResult, ReadlineError> {
+        let input = ctx.input();
+        if input.is_empty() || input.ends_with("\n") || input.starts_with("/") {
+            return Ok(ValidationResult::Valid(None));
+        }
+
+        if mq_lang::parse_recovery(input).1.has_errors() {
+            Ok(ValidationResult::Incomplete)
+        } else {
+            Ok(ValidationResult::Valid(None))
+        }
+    }
+
+    fn validate_while_typing(&self) -> bool {
+        false
     }
 }

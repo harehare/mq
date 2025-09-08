@@ -2524,6 +2524,7 @@ dependencies = [
  "mq-test",
  "mq-tui",
  "rayon",
+ "regex-lite",
  "rstest",
  "rustyline",
  "strum 0.27.2",
