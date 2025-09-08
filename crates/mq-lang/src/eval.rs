@@ -461,7 +461,7 @@ impl Evaluator {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
-                if ident.name == constants::DBG {
+                if ident.name == constants::BREAKPOINT {
                     self.eval_debugger(runtime_value, Rc::clone(&node), Rc::clone(&env));
                     return Ok(runtime_value.clone());
                 }
