@@ -230,8 +230,8 @@ impl DebuggerHandler {
             if line_number == current_line {
                 format!(
                     "=>{:>line_number_width$}| {}",
-                    line_number.to_string().bold(),
-                    line.bold(),
+                    line_number.to_string().red().bold(),
+                    line.red().bold(),
                     line_number_width = line_number_width - 2
                 )
             } else {
