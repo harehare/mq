@@ -90,16 +90,9 @@ impl Error {
 
         match token {
             Some(token) => {
-                let source_code = match module_loader.module_name(token.module_id).as_str() {
-                    Module::TOP_LEVEL_MODULE => source_code,
-                    Module::BUILTIN_MODULE => ModuleLoader::BUILTIN_FILE.to_string(),
-                    module_name => module_loader
-                        .clone()
-                        .read_file(module_name)
-                        .unwrap_or_default()
-                        .clone(),
-                };
-
+                let source_code = module_loader
+                    .get_source_code(token.module_id, source_code)
+                    .unwrap_or_default();
                 let location = SourceSpan::new(
                     SourceOffset::from_location(
                         &source_code,

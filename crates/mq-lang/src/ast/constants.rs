@@ -23,3 +23,5 @@ pub const OR: &str = "or";
 pub const NOT: &str = "not";
 
 pub const RANGE: &str = "range";
+
+pub const BREAKPOINT: &str = "breakpoint";

@@ -1,3 +1,5 @@
+#![cfg(feature = "debugger")]
+
 use clap::Parser;
 
 fn main() -> miette::Result<()> {

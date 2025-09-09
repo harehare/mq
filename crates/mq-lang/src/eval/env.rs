@@ -46,7 +46,18 @@ impl PartialEq for Env {
 
 impl Display for Env {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Env {{ context: {:?} }}", self.context)
+        let values = self
+            .context
+            .iter()
+            .map(|(ident, v)| match v {
+                RuntimeValue::Function(params, _, _) => format!("{ident}/{}", params.len()),
+                RuntimeValue::NativeFunction(_) => format!("{ident} (native function)"),
+                _ => format!("{ident} = {v}"),
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        write!(f, "{}", values)
     }
 }
 

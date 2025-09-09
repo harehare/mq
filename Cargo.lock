@@ -2504,6 +2504,7 @@ version = "0.2.21"
 dependencies = [
  "assert_cmd",
  "clap",
+ "colored 3.0.0",
  "itertools 0.14.0",
  "miette",
  "mq-formatter",
@@ -2516,7 +2517,10 @@ dependencies = [
  "mq-test",
  "mq-tui",
  "rayon",
+ "regex-lite",
  "rstest",
+ "rustyline",
+ "strum 0.27.2",
  "tokio",
  "url",
 ]

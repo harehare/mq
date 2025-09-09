@@ -370,6 +370,17 @@ impl Cli {
             }
         }
 
+        #[cfg(feature = "debugger")]
+        {
+            use crate::debugger::DebuggerHandler;
+            let handler = DebuggerHandler::new(engine.clone());
+            engine
+                .debugger()
+                .borrow_mut()
+                .set_handler(Box::new(handler));
+            engine.debugger().borrow_mut().activate();
+        }
+
         Ok(engine)
     }
 
@@ -427,7 +438,9 @@ impl Cli {
                     "md" | "markdown" => &InputFormat::Markdown,
                     "mdx" => &InputFormat::Mdx,
                     "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" => &InputFormat::Raw,
+                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => {
+                        &InputFormat::Raw
+                    }
                     _ => &InputFormat::Markdown,
                 }
             } else if io::stdin().is_terminal() {

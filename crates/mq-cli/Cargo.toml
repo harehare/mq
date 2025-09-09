@@ -22,8 +22,14 @@ readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.2.21"
 
+[features]
+debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite"]
+default = ["std"]
+std = []
+
 [dependencies]
-clap = {version = "4.5.47", features = ["derive"]}
+clap.workspace = true
+colored.workspace = true
 itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
 mq-formatter.workspace = true
@@ -38,6 +44,10 @@ rayon = "1.11.0"
 tokio = {version = "1.47.1", features = ["io-util", "io-std", "rt"]}
 url.workspace = true
 
+regex-lite = {workspace = true, optional = true}
+rustyline = {version = "17.0.1", optional = true}
+strum = {version = "0.27.2", features = ["derive"], optional = true}
+
 [dev-dependencies]
 assert_cmd = "2.0.17"
 mq-test.workspace = true
@@ -47,3 +57,9 @@ rstest.workspace = true
 doc = false
 name = "mq"
 path = "src/main.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "mq-dbg"
+path = "src/bin/dbg.rs"
+required-features = ["debugger"]

@@ -80,8 +80,7 @@ pub use eval::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc,
     INTERNAL_FUNCTION_DOC,
 };
-pub use eval::module::Module;
-pub use eval::module::ModuleLoader;
+pub use eval::module::{Module, ModuleId, ModuleLoader};
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use optimizer::OptimizationLevel;
@@ -102,6 +101,11 @@ pub use cst::node::UnaryOp as CstUnaryOp;
 pub use cst::parser::ErrorReporter as CstErrorReporter;
 #[cfg(feature = "cst")]
 pub use cst::parser::Parser as CstParser;
+
+#[cfg(feature = "debugger")]
+pub use eval::debugger::{
+    Breakpoint, DebugContext, Debugger, DebuggerAction, DebuggerCommand, DebuggerHandler,
+};
 
 pub type MqResult = Result<Values, Box<Error>>;
 

@@ -12,14 +12,14 @@ version = "0.2.21"
 
 [dependencies]
 arboard.workspace = true
-colored = "3.0.0"
+colored.workspace = true
 dirs.workspace = true
 itertools.workspace = true
 miette.workspace = true
 mq-hir.workspace = true
 mq-lang.workspace = true
 mq-markdown.workspace = true
-regex-lite = "0.1"
+regex-lite.workspace = true
 rustyline = "17.0.1"
 strum = {version = "0.27.2", features = ["derive"]}
 

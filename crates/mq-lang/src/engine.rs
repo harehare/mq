@@ -1,6 +1,12 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
+#[cfg(feature = "debugger")]
+use crate::Debugger;
 use crate::MqResult;
+#[cfg(feature = "debugger")]
+use crate::eval::env::Env;
+#[cfg(feature = "debugger")]
+use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
 
 use crate::{
@@ -13,11 +19,29 @@ use crate::{
 };
 
 /// Configuration options for the mq engine.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Options {
     /// Whether to enable code optimization during evaluation.
     /// When enabled, performs constant folding and dead code elimination.
     pub optimization_level: OptimizationLevel,
+}
+
+#[cfg(not(feature = "debugger"))]
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            optimization_level: OptimizationLevel::Full,
+        }
+    }
+}
+
+#[cfg(feature = "debugger")]
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            optimization_level: OptimizationLevel::None,
+        }
+    }
 }
 
 /// The main execution engine for the mq.
@@ -116,10 +140,10 @@ impl Engine {
         let module = self
             .evaluator
             .module_loader
-            .load_from_file(module_name, Rc::clone(&self.token_arena))
-            .map_err(|e| {
-                error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
-            })?;
+            .load_from_file(module_name, Rc::clone(&self.token_arena));
+        let module = module.map_err(|e| {
+            error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
+        })?;
 
         self.evaluator.load_module(module).map_err(|e| {
             Box::new(error::Error::from_error(
@@ -151,6 +175,11 @@ impl Engine {
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
         let mut program = parse(code, Rc::clone(&self.token_arena))?;
         Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
+
+        #[cfg(feature = "debugger")]
+        self.evaluator
+            .module_loader
+            .set_source_code(code.to_string());
 
         self.evaluator
             .eval(&program, input.into_iter().map(|v| v.into()))
@@ -222,10 +251,60 @@ impl Engine {
             })
     }
 
+    /// Returns a reference to the debugger instance.
+    ///
+    /// This allows interactive debugging of mq code execution when the
+    /// `debugger` feature is enabled. Use this to inspect or control
+    /// the execution state for advanced debugging scenarios.
+    #[cfg(feature = "debugger")]
+    pub fn debugger(&self) -> Rc<std::cell::RefCell<Debugger>> {
+        self.evaluator.debugger()
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn token_arena(&self) -> Rc<RefCell<Arena<Rc<Token>>>> {
+        Rc::clone(&self.token_arena)
+    }
+
+    /// Returns a reference to the underlying evaluator.
+    ///
+    /// This is primarily intended for advanced use cases such as debugging,
+    /// where direct access to the evaluator internals is required.
+    #[cfg(feature = "debugger")]
+    pub fn switch_env(&self, env: Rc<RefCell<Env>>) -> Self {
+        let token_arena = Rc::new(RefCell::new(self.token_arena.borrow().clone()));
+
+        Self {
+            evaluator: Evaluator::with_env(Rc::clone(&token_arena), Rc::clone(&env)),
+            options: self.options.clone(),
+            token_arena: Rc::clone(&token_arena),
+        }
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn get_source_code_for_debug(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<String, Box<error::Error>> {
+        let source_code = self
+            .evaluator
+            .module_loader
+            .get_source_code_for_debug(module_id);
+
+        source_code.map_err(|e| {
+            Box::new(error::Error::from_error(
+                "",
+                e.into(),
+                self.evaluator.module_loader.clone(),
+            ))
+        })
+    }
+
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

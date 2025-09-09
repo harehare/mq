@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(feature = "debugger")]
+use crate::ast::constants;
 use crate::{
     Program, Token, TokenKind,
     arena::Arena,
@@ -7,7 +9,12 @@ use crate::{
     error::InnerError,
 };
 
+#[cfg(feature = "debugger")]
+use debugger::{Breakpoint, DebugContext, Debugger};
+
 pub mod builtin;
+#[cfg(feature = "debugger")]
+pub mod debugger;
 pub mod env;
 pub mod error;
 pub mod module;
@@ -40,13 +47,43 @@ impl Default for Options {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Evaluator {
     env: Rc<RefCell<Env>>,
     token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     call_stack_depth: u32,
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader,
+    #[cfg(feature = "debugger")]
+    debugger: Rc<RefCell<Debugger>>,
+}
+
+impl Default for Evaluator {
+    fn default() -> Self {
+        Self {
+            env: Rc::new(RefCell::new(Env::default())),
+            token_arena: Rc::new(RefCell::new(Arena::new(10))),
+            call_stack_depth: 0,
+            options: Options::default(),
+            module_loader: module::ModuleLoader::default(),
+            #[cfg(feature = "debugger")]
+            debugger: Rc::new(RefCell::new(Debugger::new())),
+        }
+    }
+}
+
+impl Clone for Evaluator {
+    fn clone(&self) -> Self {
+        Self {
+            env: Rc::clone(&self.env),
+            token_arena: Rc::clone(&self.token_arena),
+            call_stack_depth: self.call_stack_depth,
+            options: self.options.clone(),
+            module_loader: self.module_loader.clone(),
+            #[cfg(feature = "debugger")]
+            debugger: Rc::clone(&self.debugger),
+        }
+    }
 }
 
 impl Evaluator {
@@ -55,11 +92,21 @@ impl Evaluator {
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> Self {
         Self {
-            env: Rc::new(RefCell::new(Env::default())),
             module_loader,
-            call_stack_depth: 0,
             token_arena,
-            options: Options::default(),
+            ..Default::default()
+        }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn with_env(
+        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        env: Rc<RefCell<Env>>,
+    ) -> Self {
+        Self {
+            token_arena,
+            env: Rc::clone(&env),
+            ..Default::default()
         }
     }
 
@@ -101,6 +148,7 @@ impl Evaluator {
             let (program, nodes_program) = program.split_at_mut(*index);
             let program = program.to_vec();
             let nodes_program = nodes_program.to_vec();
+
             let values: Result<Vec<RuntimeValue>, InnerError> = input
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
@@ -251,6 +299,37 @@ impl Evaluator {
             .map_err(|e| e.to_eval_error((*node).clone(), Rc::clone(&self.token_arena)))
     }
 
+    #[cfg(feature = "debugger")]
+    fn eval_debugger(
+        &self,
+        runtime_value: &RuntimeValue,
+        node: Rc<ast::Node>,
+        env: Rc<RefCell<Env>>,
+    ) {
+        let current_call_stack = self.debugger.borrow().current_call_stack();
+        let token = self.token_arena.borrow()[node.token_id].clone();
+
+        self.debugger.borrow_mut().breakpoint_hit(
+            &DebugContext {
+                current_value: runtime_value.clone(),
+                current_node: Rc::clone(&node),
+                token: Rc::clone(&token),
+                call_stack: current_call_stack,
+                env: Rc::clone(&env),
+                source_code: self
+                    .module_loader
+                    .get_source_code_for_debug(token.module_id)
+                    .unwrap_or_default(),
+            },
+            &Breakpoint {
+                id: 0,
+                line: token.range.start.line as usize,
+                column: Some(token.range.start.column),
+                enabled: true,
+            },
+        );
+    }
+
     #[inline(always)]
     fn eval_include(&mut self, module: ast::Literal) -> Result<(), EvalError> {
         match module {
@@ -356,9 +435,37 @@ impl Evaluator {
         node: Rc<ast::Node>,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
+        #[cfg(feature = "debugger")]
+        {
+            let token = &self.token_arena.borrow()[node.token_id];
+            let call_stack = self.debugger.borrow().current_call_stack();
+            let debug_context = DebugContext {
+                current_value: runtime_value.clone(),
+                current_node: Rc::clone(&node),
+                token: Rc::clone(token),
+                call_stack,
+                env: Rc::clone(&env),
+                source_code: self
+                    .module_loader
+                    .get_source_code_for_debug(token.module_id)
+                    .unwrap_or_default(),
+            };
+
+            let _ = self.debugger.borrow_mut().should_break(
+                &debug_context,
+                Rc::clone(&self.token_arena.borrow()[node.token_id]),
+            );
+        }
+
         match &*node.expr {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
+                #[cfg(feature = "debugger")]
+                if ident.name == constants::BREAKPOINT {
+                    self.eval_debugger(runtime_value, Rc::clone(&node), Rc::clone(&env));
+                    return Ok(runtime_value.clone());
+                }
+
                 self.eval_fn(runtime_value, Rc::clone(&node), ident, args, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
@@ -599,6 +706,8 @@ impl Evaluator {
         if let Ok(fn_value) = Rc::clone(&env).borrow().resolve(ident) {
             if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
                 self.enter_scope()?;
+                #[cfg(feature = "debugger")]
+                self.debugger.borrow_mut().push_call_stack(Rc::clone(&node));
 
                 let new_env = Rc::new(RefCell::new(Env::with_parent(Rc::downgrade(fn_env))));
                 let mut new_env_mut = new_env.borrow_mut();
@@ -652,6 +761,8 @@ impl Evaluator {
 
                 let result = self.eval_program(program, runtime_value.clone(), new_env);
                 self.exit_scope();
+                #[cfg(feature = "debugger")]
+                self.debugger.borrow_mut().pop_call_stack();
 
                 result
             } else if let RuntimeValue::NativeFunction(ident) = fn_value {

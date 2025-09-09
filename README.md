@@ -54,7 +54,7 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 ```sh
 $ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.21
 # Latest Development Version
-$ cargo install --git https://github.com/harehare/mq.git mq-cli
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
 ```
 
 ### Binaries
@@ -144,8 +144,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
