@@ -114,8 +114,8 @@ impl ModuleLoader {
     pub fn module_name(&self, module_id: ModuleId) -> CompactString {
         self.loaded_modules
             .get(module_id)
-            .unwrap_or(&CompactString::new("<unknown>"))
-            .to_owned()
+            .map(|s| s.to_owned())
+            .unwrap_or_else(|| CompactString::new("<unknown>"))
     }
 
     #[cfg(feature = "debugger")]
