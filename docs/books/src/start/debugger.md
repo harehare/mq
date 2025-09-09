@@ -65,7 +65,9 @@ The debugger supports the following commands:
 
 You can set breakpoints in several ways:
 
-### Line-based Breakpoints
+### Interactive Breakpoints
+
+You can set breakpoints interactively from the debugger prompt:
 
 ```
 (mqdbg) breakpoint 15
@@ -74,3 +76,18 @@ You can set breakpoints in several ways:
 Breakpoints:
   [1] 15:10 (enabled)
 ```
+
+### Programmatic Breakpoints
+
+You can also set breakpoints directly in your mq code using the `breakpoint()` function:
+
+```mq
+def process_data(items) {
+   breakpoint()  # Execution will pause here when debugger is attached
+   | items | filter(fn(item): item == "test")
+}
+```
+
+When the debugger encounters a `breakpoint()` function call during execution, it will automatically pause and enter interactive debugging mode.
+
+**Note**: The `breakpoint()` function only has an effect when running under the debugger (`mq-dbg`). In normal execution (`mq`), it is ignored and has no impact on performance.
