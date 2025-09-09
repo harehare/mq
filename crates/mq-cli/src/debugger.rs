@@ -14,12 +14,14 @@ use std::{borrow::Cow, cmp::max, fmt, rc::Rc};
 use strum::IntoEnumIterator;
 
 type LineNo = usize;
+type BreakpointId = usize;
 
 #[derive(Debug, Clone, strum::EnumIter)]
 pub enum Command {
     Backtrace,
     Breakpoint(Option<LineNo>),
     Continue,
+    Clear(Option<BreakpointId>),
     Error(String),
     Eval(String),
     Finish,
@@ -39,6 +41,8 @@ impl fmt::Display for Command {
             Command::Breakpoint(Some(line)) => write!(f, "breakpoint {}", line),
             Command::Breakpoint(None) => write!(f, "breakpoint"),
             Command::Continue => write!(f, "continue"),
+            Command::Clear(Some(id)) => write!(f, "clear {}", id),
+            Command::Clear(None) => write!(f, "clear"),
             Command::Error(e) => write!(f, "error {}", e),
             Command::Eval(expr) => write!(f, "eval {}", expr),
             Command::Finish => write!(f, "finish"),
@@ -59,6 +63,7 @@ impl Command {
             Command::Backtrace => "Print the current backtrace".to_string(),
             Command::Breakpoint(_) => "Set a breakpoint at the specified line".to_string(),
             Command::Continue => "Continue execution".to_string(),
+            Command::Clear(_) => "Clear breakpoints at a specific identifier".to_string(),
             Command::Eval(_) | Command::Error(_) => "".to_string(),
             Command::Finish => "Finish execution and return to the caller".to_string(),
             Command::Help => "Print command help".to_string(),
@@ -84,6 +89,8 @@ impl From<String> for Command {
             ["breakpoint", line] | ["b", line] => Command::Breakpoint(line.parse().ok()),
             ["breakpoint"] | ["b"] => Command::Breakpoint(None),
             ["continue"] | ["c"] => Command::Continue,
+            ["clear", line] | ["cl", line] => Command::Clear(line.parse().ok()),
+            ["clear"] | ["cl"] => Command::Clear(None),
             ["env"] => Command::Error("Use 'info' command instead of 'env'".to_string()),
             ["eval", rest @ ..] | ["e", rest @ ..] => {
                 let expr = rest.join(" ");
@@ -198,6 +205,9 @@ impl DebuggerHandler {
                 }
                 Command::Breakpoint(line_opt) => {
                     return Ok(mq_lang::DebuggerAction::Breakpoint(line_opt));
+                }
+                Command::Clear(line_opt) => {
+                    return Ok(mq_lang::DebuggerAction::Clear(line_opt));
                 }
                 Command::List => {
                     let (start, snippet) = self.get_source_code_with_context(
@@ -417,6 +427,8 @@ impl Validator for DebuggerLineHelper {
                 | "b"
                 | "continue"
                 | "c"
+                | "clear"
+                | "cl"
                 | "env"
                 | "finish"
                 | "f"
@@ -435,6 +447,8 @@ impl Validator for DebuggerLineHelper {
                 | "s"
         ) || trimmed.starts_with("breakpoint ")
             || trimmed.starts_with("b ")
+            || trimmed.starts_with("clear ")
+            || trimmed.starts_with("cl ")
             || trimmed.starts_with("eval ")
             || trimmed.starts_with("e ");
 
