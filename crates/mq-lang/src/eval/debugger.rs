@@ -284,7 +284,7 @@ impl Debugger {
                         .sorted_by_key(|bp| (bp.line, bp.column))
                         .map(|bp| {
                             format!(
-                                "  [{}] {}:{}{}{}",
+                                "  [{}] {}:{}{}",
                                 bp.id,
                                 bp.line,
                                 bp.column
@@ -295,11 +295,16 @@ impl Debugger {
                                 } else {
                                     " (disabled)"
                                 },
-                                if bp.column.is_some() { "" } else { "" }
                             )
                         })
                         .join("\n")
                 );
+            }
+            DebuggerAction::Clear(Some(breakpoint_id)) => {
+                self.remove_breakpoint(breakpoint_id);
+            }
+            DebuggerAction::Clear(None) => {
+                self.clear_breakpoints();
             }
             DebuggerAction::Continue
             | DebuggerAction::Next
@@ -342,6 +347,7 @@ impl Debugger {
 }
 
 type LineNo = usize;
+type BreakpointId = usize;
 
 /// Result of debugger callback execution
 #[derive(Debug, Clone, PartialEq)]
@@ -350,6 +356,8 @@ pub enum DebuggerAction {
     Breakpoint(Option<LineNo>),
     /// Continue normal execution
     Continue,
+    /// Clear breakpoints at a specific location
+    Clear(Option<BreakpointId>),
     /// Step into next expression
     StepInto,
     /// Step over current expression
@@ -379,6 +387,7 @@ impl From<DebuggerAction> for DebuggerCommand {
     fn from(action: DebuggerAction) -> Self {
         match action {
             DebuggerAction::Breakpoint(_) => DebuggerCommand::Continue,
+            DebuggerAction::Clear(_) => DebuggerCommand::Continue,
             DebuggerAction::Continue => DebuggerCommand::Continue,
             DebuggerAction::StepInto => DebuggerCommand::StepInto,
             DebuggerAction::StepOver => DebuggerCommand::StepOver,
