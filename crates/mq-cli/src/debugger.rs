@@ -13,33 +13,42 @@ use rustyline::{
 use std::{borrow::Cow, cmp::max, fmt, rc::Rc};
 use strum::IntoEnumIterator;
 
+type LineNo = usize;
+
 #[derive(Debug, Clone, strum::EnumIter)]
 pub enum Command {
     Backtrace,
-    Info,
-    Eval(String),
-    Help,
+    Breakpoint(Option<LineNo>),
     Continue,
-    Step,
-    Next,
-    Finish,
-    Quit,
     Error(String),
+    Eval(String),
+    Finish,
+    Help,
+    Info,
+    List,
+    LongList,
+    Next,
+    Quit,
+    Step,
 }
 
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Backtrace => write!(f, "backtrace"),
-            Command::Eval(expr) => write!(f, "eval {}", expr),
-            Command::Error(e) => write!(f, "error {}", e),
-            Command::Help => write!(f, "help"),
+            Command::Breakpoint(Some(line)) => write!(f, "breakpoint {}", line),
+            Command::Breakpoint(None) => write!(f, "breakpoint"),
             Command::Continue => write!(f, "continue"),
-            Command::Step => write!(f, "step"),
-            Command::Info => write!(f, "info"),
-            Command::Next => write!(f, "next"),
+            Command::Error(e) => write!(f, "error {}", e),
+            Command::Eval(expr) => write!(f, "eval {}", expr),
             Command::Finish => write!(f, "finish"),
+            Command::Help => write!(f, "help"),
+            Command::Info => write!(f, "info"),
+            Command::List => write!(f, "list"),
+            Command::LongList => write!(f, "long-list"),
+            Command::Next => write!(f, "next"),
             Command::Quit => write!(f, "quit"),
+            Command::Step => write!(f, "step"),
         }
     }
 }
@@ -48,14 +57,17 @@ impl Command {
     pub fn help(&self) -> String {
         match self {
             Command::Backtrace => "Print the current backtrace".to_string(),
-            Command::Eval(_) | Command::Error(_) => "".to_string(),
-            Command::Help => "Print command help".to_string(),
+            Command::Breakpoint(_) => "Set a breakpoint at the specified line".to_string(),
             Command::Continue => "Continue execution".to_string(),
-            Command::Info => "Print information about the current context".to_string(),
-            Command::Step => "Step into the next function call".to_string(),
-            Command::Next => "Step over the next function call".to_string(),
+            Command::Eval(_) | Command::Error(_) => "".to_string(),
             Command::Finish => "Finish execution and return to the caller".to_string(),
+            Command::Help => "Print command help".to_string(),
+            Command::Info => "Print information about the current context".to_string(),
+            Command::List => "List source code around the current line".to_string(),
+            Command::LongList => "List all source code lines".to_string(),
+            Command::Next => "Step over the next function call".to_string(),
             Command::Quit => "Quit evaluation and exit".to_string(),
+            Command::Step => "Step into the next function call".to_string(),
         }
     }
 }
@@ -69,13 +81,9 @@ impl From<String> for Command {
             .as_slice()
         {
             ["backtrace"] | ["bt"] => Command::Backtrace,
-            ["step"] | ["s"] => Command::Step,
-            ["next"] | ["n"] => Command::Next,
-            ["finish"] | ["f"] => Command::Finish,
-            ["info"] | ["i"] => Command::Info,
+            ["breakpoint", line] | ["b", line] => Command::Breakpoint(line.parse().ok()),
+            ["breakpoint"] | ["b"] => Command::Breakpoint(None),
             ["continue"] | ["c"] => Command::Continue,
-            ["help"] => Command::Help,
-            ["quit"] => Command::Quit,
             ["env"] => Command::Error("Use 'info' command instead of 'env'".to_string()),
             ["eval", rest @ ..] | ["e", rest @ ..] => {
                 let expr = rest.join(" ");
@@ -85,6 +93,14 @@ impl From<String> for Command {
                     Command::Eval(expr)
                 }
             }
+            ["finish"] | ["f"] => Command::Finish,
+            ["help"] => Command::Help,
+            ["info"] | ["i"] => Command::Info,
+            ["list"] | ["l"] => Command::List,
+            ["long-list"] | ["ll"] => Command::LongList,
+            ["next"] | ["n"] => Command::Next,
+            ["quit"] | ["q"] => Command::Quit,
+            ["step"] | ["s"] => Command::Step,
             _ => Command::Eval(s),
         }
     }
@@ -180,6 +196,26 @@ impl DebuggerHandler {
                         println!("{}", bt.join("\n"));
                     }
                 }
+                Command::Breakpoint(line_opt) => {
+                    return Ok(mq_lang::DebuggerAction::Breakpoint(line_opt));
+                }
+                Command::List => {
+                    let (start, snippet) = self.get_source_code_with_context(
+                        context,
+                        context.token.range.start.line as usize,
+                        5,
+                    );
+                    Self::print_source_code(
+                        start,
+                        context.token.range.start.line as usize + 1,
+                        snippet,
+                    );
+                }
+                Command::LongList => {
+                    let lines: Vec<String> =
+                        context.source_code.lines().map(|s| s.to_string()).collect();
+                    Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
+                }
                 Command::Info => {
                     println!("{}", context.env.borrow());
                 }
@@ -228,7 +264,7 @@ impl DebuggerHandler {
                 Command::Step => return Ok(mq_lang::DebuggerAction::StepOver),
                 Command::Next => return Ok(mq_lang::DebuggerAction::Next),
                 Command::Finish => return Ok(mq_lang::DebuggerAction::FunctionExit),
-                Command::Quit => return Ok(mq_lang::DebuggerAction::Terminate),
+                Command::Quit => return Ok(mq_lang::DebuggerAction::Quit),
                 Command::Error(e) => {
                     eprintln!("{}", e);
                     continue;
@@ -366,7 +402,43 @@ impl Highlighter for DebuggerLineHelper {
 impl Validator for DebuggerLineHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> Result<ValidationResult, ReadlineError> {
         let input = ctx.input();
-        if input.is_empty() || input.ends_with("\n") || input.starts_with("/") {
+        // If input is empty or ends with newline, consider it valid
+        if input.is_empty() || input.ends_with('\n') {
+            return Ok(ValidationResult::Valid(None));
+        }
+
+        // If input matches a known command, consider it valid (return None)
+        let trimmed = input.trim();
+        let is_command = matches!(
+            trimmed,
+            "backtrace"
+                | "bt"
+                | "breakpoint"
+                | "b"
+                | "continue"
+                | "c"
+                | "env"
+                | "finish"
+                | "f"
+                | "help"
+                | "info"
+                | "i"
+                | "list"
+                | "l"
+                | "long-list"
+                | "ll"
+                | "next"
+                | "n"
+                | "quit"
+                | "q"
+                | "step"
+                | "s"
+        ) || trimmed.starts_with("breakpoint ")
+            || trimmed.starts_with("b ")
+            || trimmed.starts_with("eval ")
+            || trimmed.starts_with("e ");
+
+        if is_command {
             return Ok(ValidationResult::Valid(None));
         }
 

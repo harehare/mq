@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use super::runtime_value::RuntimeValue;
 use crate::Token;
 use crate::ast::node as ast;
@@ -21,6 +23,8 @@ pub enum DebuggerCommand {
     Next,
     /// Run to the end of the current function call.
     FunctionExit,
+    /// Quit the debugger.
+    Quit,
 }
 
 /// Represents a breakpoint in the debugger.
@@ -155,7 +159,7 @@ impl Debugger {
             DebuggerCommand::StepInto | DebuggerCommand::StepOver | DebuggerCommand::Next => {
                 self.step_depth = None;
             }
-            DebuggerCommand::FunctionExit => {
+            DebuggerCommand::FunctionExit | DebuggerCommand::Quit => {
                 // step_depth will be set to current depth - 1 when stepping
             }
             DebuggerCommand::Continue => {
@@ -183,6 +187,10 @@ impl Debugger {
 
         let should_break = match self.current_command {
             DebuggerCommand::Continue => false,
+            DebuggerCommand::Quit => {
+                self.deactivate();
+                false
+            }
             DebuggerCommand::StepInto => {
                 self.current_command = DebuggerCommand::Continue;
                 true
@@ -237,6 +245,8 @@ impl Debugger {
 
         if should_break {
             let action = self.handler.on_step(context);
+
+            self.handle_debugger_action(action.clone());
             self.current_command = action.clone().into();
             (true, Some(action))
         } else {
@@ -255,8 +265,49 @@ impl Debugger {
         }
 
         let action = self.handler.on_breakpoint_hit(breakpoint, context);
+
+        self.handle_debugger_action(action.clone());
         self.current_command = action.clone().into();
         (true, Some(action))
+    }
+
+    fn handle_debugger_action(&mut self, action: DebuggerAction) {
+        match action {
+            DebuggerAction::Breakpoint(Some(line_no)) => {
+                self.add_breakpoint(line_no, None);
+            }
+            DebuggerAction::Breakpoint(None) => {
+                println!(
+                    "Breakpoints:\n{}",
+                    self.breakpoints
+                        .iter()
+                        .sorted_by_key(|bp| (bp.line, bp.column))
+                        .map(|bp| {
+                            format!(
+                                "  [{}] {}:{}{}{}",
+                                bp.id,
+                                bp.line,
+                                bp.column
+                                    .map(|col| col.to_string())
+                                    .unwrap_or_else(|| "-".to_string()),
+                                if bp.enabled {
+                                    " (enabled)"
+                                } else {
+                                    " (disabled)"
+                                },
+                                if bp.column.is_some() { "" } else { "" }
+                            )
+                        })
+                        .join("\n")
+                );
+            }
+            DebuggerAction::Continue
+            | DebuggerAction::Next
+            | DebuggerAction::StepInto
+            | DebuggerAction::StepOver
+            | DebuggerAction::FunctionExit
+            | DebuggerAction::Quit => {}
+        }
     }
 
     fn find_active_breakpoint(&self, line: usize, column: usize) -> Option<Breakpoint> {
@@ -290,9 +341,13 @@ impl Debugger {
     }
 }
 
+type LineNo = usize;
+
 /// Result of debugger callback execution
 #[derive(Debug, Clone, PartialEq)]
 pub enum DebuggerAction {
+    /// Set a breakpoint at a specific location.
+    Breakpoint(Option<LineNo>),
     /// Continue normal execution
     Continue,
     /// Step into next expression
@@ -303,8 +358,8 @@ pub enum DebuggerAction {
     Next,
     /// Run until function exit
     FunctionExit,
-    /// Terminate execution
-    Terminate,
+    /// Quit the debugger
+    Quit,
 }
 
 impl From<DebuggerCommand> for DebuggerAction {
@@ -315,6 +370,7 @@ impl From<DebuggerCommand> for DebuggerAction {
             DebuggerCommand::StepOver => DebuggerAction::StepOver,
             DebuggerCommand::Next => DebuggerAction::Next,
             DebuggerCommand::FunctionExit => DebuggerAction::FunctionExit,
+            DebuggerCommand::Quit => DebuggerAction::Quit,
         }
     }
 }
@@ -322,12 +378,13 @@ impl From<DebuggerCommand> for DebuggerAction {
 impl From<DebuggerAction> for DebuggerCommand {
     fn from(action: DebuggerAction) -> Self {
         match action {
+            DebuggerAction::Breakpoint(_) => DebuggerCommand::Continue,
             DebuggerAction::Continue => DebuggerCommand::Continue,
             DebuggerAction::StepInto => DebuggerCommand::StepInto,
             DebuggerAction::StepOver => DebuggerCommand::StepOver,
             DebuggerAction::Next => DebuggerCommand::Next,
             DebuggerAction::FunctionExit => DebuggerCommand::FunctionExit,
-            DebuggerAction::Terminate => DebuggerCommand::Continue, // For now, treat terminate as continue
+            DebuggerAction::Quit => DebuggerCommand::Quit,
         }
     }
 }
