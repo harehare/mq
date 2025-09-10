@@ -334,7 +334,7 @@ impl Optimizer {
     }
 
     fn is_builtin_functions(func_name: &ast::Ident) -> bool {
-        builtin::BUILTIN_FUNCTIONS.contains_key(func_name.name.as_str())
+        builtin::get_builtin_functions(&func_name.name).is_some()
     }
 
     /// Applies function inlining to the program
