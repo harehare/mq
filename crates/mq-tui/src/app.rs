@@ -40,8 +40,6 @@ pub struct App {
     should_quit: bool,
     /// Error message if the query fails
     error_msg: Option<String>,
-    /// Delay before executing query after typing
-    typing_delay: Duration,
     /// Current app mode
     mode: Mode,
     /// Show detailed view of selected item
@@ -69,7 +67,6 @@ impl App {
             last_exec: Instant::now(),
             should_quit: false,
             error_msg: None,
-            typing_delay: Duration::from_millis(300),
             mode: Mode::Normal,
             show_detail: false,
             query_history: Vec::new(),
@@ -97,13 +94,6 @@ impl App {
 
             if let Some(event) = events.next()? {
                 self.handle_event(event)?;
-            }
-
-            if self.mode == Mode::Query
-                && !self.query.is_empty()
-                && Instant::now().duration_since(self.last_exec) > self.typing_delay
-            {
-                self.exec_query();
             }
         }
 
@@ -250,18 +240,21 @@ impl App {
                     self.query.insert(self.cursor_position, c);
                     self.cursor_position += 1;
                     self.last_exec = Instant::now();
+                    self.exec_query();
                 }
                 (KeyCode::Backspace, _) => {
                     if self.cursor_position > 0 {
                         self.query.remove(self.cursor_position - 1);
                         self.cursor_position -= 1;
                         self.last_exec = Instant::now();
+                        self.exec_query();
                     }
                 }
                 (KeyCode::Delete, _) => {
                     if self.cursor_position < self.query.len() {
                         self.query.remove(self.cursor_position);
                         self.last_exec = Instant::now();
+                        self.exec_query();
                     }
                 }
                 // Move cursor
