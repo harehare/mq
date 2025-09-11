@@ -659,4 +659,216 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_get_source_code_with_context_edge_cases() {
+        let handler = DebuggerHandler::new(mq_lang::Engine::default());
+
+        // Empty source code
+        let empty_context = DebugContext {
+            source_code: "".to_string(),
+            ..Default::default()
+        };
+        let (start, snippet) = handler.get_source_code_with_context(&empty_context, 0, 2);
+        assert_eq!(start, 0);
+        assert!(snippet.is_empty());
+
+        // Single line
+        let single_line_context = DebugContext {
+            source_code: "single line".to_string(),
+            ..Default::default()
+        };
+        let (start, snippet) = handler.get_source_code_with_context(&single_line_context, 0, 2);
+        assert_eq!(start, 0);
+        assert_eq!(snippet, vec!["single line".to_string()]);
+
+        // Line at beginning
+        let context = DebugContext {
+            source_code: "a\nb\nc".to_string(),
+            ..Default::default()
+        };
+        let (start, snippet) = handler.get_source_code_with_context(&context, 0, 1);
+        assert_eq!(start, 0);
+        assert_eq!(snippet, vec!["a".to_string(), "b".to_string()]);
+
+        // Line at end
+        let (start, snippet) = handler.get_source_code_with_context(&context, 2, 1);
+        assert_eq!(start, 1);
+        assert_eq!(snippet, vec!["b".to_string(), "c".to_string()]);
+
+        // Large context size
+        let (start, snippet) = handler.get_source_code_with_context(&context, 1, 10);
+        assert_eq!(start, 0);
+        assert_eq!(
+            snippet,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_debugger_handler_new() {
+        let engine = mq_lang::Engine::default();
+        let handler = DebuggerHandler::new(engine);
+        // Just verify it constructs without panic
+        assert!(std::mem::size_of_val(&handler) > 0);
+    }
+
+    #[test]
+    fn test_command_from_string_invalid_line_numbers() {
+        // Invalid line number should result in None
+        assert_eq!(
+            Command::from("breakpoint invalid".to_string()),
+            Command::Breakpoint(None)
+        );
+        assert_eq!(
+            Command::from("clear not_a_number".to_string()),
+            Command::Clear(None)
+        );
+        assert_eq!(Command::from("b -1".to_string()), Command::Breakpoint(None));
+    }
+
+    #[test]
+    fn test_command_from_string_multi_word_eval() {
+        assert_eq!(
+            Command::from("eval foo + bar - baz".to_string()),
+            Command::Eval("foo + bar - baz".to_string())
+        );
+        assert_eq!(
+            Command::from("e x = 1; y = 2".to_string()),
+            Command::Eval("x = 1; y = 2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_command_from_string_unknown() {
+        // Unknown commands should fallback to Eval
+        assert_eq!(
+            Command::from("unknown_command".to_string()),
+            Command::Eval("unknown_command".to_string())
+        );
+        assert_eq!(
+            Command::from("random text".to_string()),
+            Command::Eval("random text".to_string())
+        );
+    }
+
+    #[test]
+    fn test_highlight_syntax_edge_cases() {
+        // Empty string
+        let highlighted = highlight_syntax("");
+        assert_eq!(highlighted, "");
+
+        // Only whitespace
+        let highlighted = highlight_syntax("   ");
+        assert_eq!(highlighted, "   ");
+
+        // Complex expression
+        let input = r#"def foo(x) -> x + "hello" end"#;
+        let highlighted = highlight_syntax(input);
+        assert!(highlighted.contains("def"));
+        assert!(highlighted.contains("end"));
+        assert!(highlighted.contains("\"hello\""));
+
+        // Nested quotes (should not break)
+        let input = r#""outer \"inner\" quote""#;
+        let highlighted = highlight_syntax(input);
+        assert!(!highlighted.is_empty());
+
+        // Numbers with decimals (basic regex won't catch, but shouldn't break)
+        let input = "x = 3.14159";
+        let highlighted = highlight_syntax(input);
+        assert!(highlighted.contains("="));
+    }
+
+    #[test]
+    fn test_highlight_syntax_all_keywords() {
+        let keywords = [
+            "def", "let", "if", "elif", "else", "end", "while", "foreach", "until", "self",
+            "nodes", "fn", "break", "continue", "include", "true", "false", "None",
+        ];
+        for keyword in &keywords {
+            let input = format!("{} x", keyword);
+            let highlighted = highlight_syntax(&input);
+            assert!(
+                highlighted.contains(keyword),
+                "Keyword '{}' not highlighted in '{}'",
+                keyword,
+                highlighted
+            );
+        }
+    }
+
+    #[test]
+    fn test_highlight_syntax_all_operators() {
+        let operators = [
+            "->", "<=", ">=", "==", "!=", "&&", "=", "|", ":", ";", "?", "!", "+", "-", "*", "/",
+            "%", "<", ">",
+        ];
+        for operator in &operators {
+            let input = format!("x {} y", operator);
+            let highlighted = highlight_syntax(&input);
+            // Just verify it doesn't panic and produces some output
+            assert!(!highlighted.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_debugger_line_helper_highlighter() {
+        let helper = DebuggerLineHelper;
+
+        // Test prompt highlighting
+        let prompt = helper.highlight_prompt("(mqdbg) ", true);
+        assert!(!prompt.is_empty());
+
+        // Test line highlighting
+        let line = helper.highlight("let x = 42", 0);
+        assert!(line.contains("let"));
+        assert!(line.contains("42"));
+    }
+
+    #[test]
+    fn test_debugger_line_helper_validator() {
+        let helper = DebuggerLineHelper;
+
+        // Test validate_while_typing
+        assert!(!helper.validate_while_typing());
+    }
+
+    #[test]
+    fn test_command_iteration() {
+        // Test that all commands can be iterated
+        let commands: Vec<Command> = Command::iter().collect();
+        assert!(commands.len() > 10);
+
+        // Verify specific commands exist
+        assert!(commands.iter().any(|c| matches!(c, Command::Backtrace)));
+        assert!(commands.iter().any(|c| matches!(c, Command::Continue)));
+        assert!(commands.iter().any(|c| matches!(c, Command::Step)));
+        assert!(commands.iter().any(|c| matches!(c, Command::Quit)));
+    }
+
+    #[test]
+    fn test_command_debug_trait() {
+        // Test that Command implements Debug
+        let cmd = Command::Backtrace;
+        let debug_str = format!("{:?}", cmd);
+        assert!(debug_str.contains("Backtrace"));
+
+        let cmd = Command::Breakpoint(Some(42));
+        let debug_str = format!("{:?}", cmd);
+        assert!(debug_str.contains("Breakpoint"));
+        assert!(debug_str.contains("42"));
+    }
+
+    #[test]
+    fn test_command_clone() {
+        // Test that Command implements Clone
+        let cmd = Command::Eval("test expression".to_string());
+        let cloned = cmd.clone();
+        assert_eq!(cmd, cloned);
+
+        let cmd = Command::Breakpoint(Some(10));
+        let cloned = cmd.clone();
+        assert_eq!(cmd, cloned);
+    }
 }
