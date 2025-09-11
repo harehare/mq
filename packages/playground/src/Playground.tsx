@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import * as mq from "mq-web";
-import { FaGithub } from "react-icons/fa6";
 import { languages } from "monaco-editor";
 import LZString from "lz-string";
+import { GitHubStarButton } from "./components/GitHubStarButton";
 
 type SharedData = {
   code: string;
@@ -833,17 +833,9 @@ export const Playground = () => {
             </a>
             <h1>Playground</h1>
           </div>
-          <a
-            href="https://github.com/harehare/mq"
-            style={{
-              marginRight: "8px",
-              textDecoration: "none",
-              color: "inherit",
-            }}
-            target="_blank"
-          >
-            <FaGithub />
-          </a>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <GitHubStarButton />
+          </div>
         </header>
       )}
 
