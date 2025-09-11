@@ -16,7 +16,7 @@ use strum::IntoEnumIterator;
 type LineNo = usize;
 type BreakpointId = usize;
 
-#[derive(Debug, Clone, strum::EnumIter)]
+#[derive(Debug, Clone, PartialEq, strum::EnumIter)]
 pub enum Command {
     Backtrace,
     Breakpoint(Option<LineNo>),
@@ -465,5 +465,257 @@ impl Validator for DebuggerLineHelper {
 
     fn validate_while_typing(&self) -> bool {
         false
+    }
+}
+#[cfg(test)]
+mod tests {
+    use mq_lang::ModuleId;
+    use mq_lang::{self, DebugContext};
+    use std::rc::Rc;
+
+    use super::*;
+
+    #[test]
+    fn test_command_from_string_basic() {
+        assert!(matches!(
+            Command::from("backtrace".to_string()),
+            Command::Backtrace
+        ));
+        assert!(matches!(
+            Command::from("bt".to_string()),
+            Command::Backtrace
+        ));
+        assert!(matches!(
+            Command::from("continue".to_string()),
+            Command::Continue
+        ));
+        assert!(matches!(Command::from("c".to_string()), Command::Continue));
+        assert!(matches!(
+            Command::from("finish".to_string()),
+            Command::Finish
+        ));
+        assert!(matches!(Command::from("f".to_string()), Command::Finish));
+        assert!(matches!(Command::from("help".to_string()), Command::Help));
+        assert!(matches!(Command::from("info".to_string()), Command::Info));
+        assert!(matches!(Command::from("i".to_string()), Command::Info));
+        assert!(matches!(Command::from("list".to_string()), Command::List));
+        assert!(matches!(Command::from("l".to_string()), Command::List));
+        assert!(matches!(
+            Command::from("long-list".to_string()),
+            Command::LongList
+        ));
+        assert!(matches!(Command::from("ll".to_string()), Command::LongList));
+        assert!(matches!(Command::from("next".to_string()), Command::Next));
+        assert!(matches!(Command::from("n".to_string()), Command::Next));
+        assert!(matches!(Command::from("quit".to_string()), Command::Quit));
+        assert!(matches!(Command::from("q".to_string()), Command::Quit));
+        assert!(matches!(Command::from("step".to_string()), Command::Step));
+        assert!(matches!(Command::from("s".to_string()), Command::Step));
+    }
+
+    #[test]
+    fn test_command_from_string_breakpoint_and_clear() {
+        assert_eq!(
+            Command::from("breakpoint 10".to_string()),
+            Command::Breakpoint(Some(10))
+        );
+        assert_eq!(
+            Command::from("b 20".to_string()),
+            Command::Breakpoint(Some(20))
+        );
+        assert_eq!(
+            Command::from("breakpoint".to_string()),
+            Command::Breakpoint(None)
+        );
+        assert_eq!(Command::from("b".to_string()), Command::Breakpoint(None));
+        assert_eq!(
+            Command::from("clear 3".to_string()),
+            Command::Clear(Some(3))
+        );
+        assert_eq!(Command::from("cl 4".to_string()), Command::Clear(Some(4)));
+        assert_eq!(Command::from("clear".to_string()), Command::Clear(None));
+        assert_eq!(Command::from("cl".to_string()), Command::Clear(None));
+    }
+
+    #[test]
+    fn test_command_from_string_eval_and_error() {
+        assert_eq!(
+            Command::from("eval foo + 1".to_string()),
+            Command::Eval("foo + 1".to_string())
+        );
+        assert_eq!(
+            Command::from("e bar".to_string()),
+            Command::Eval("bar".to_string())
+        );
+        assert_eq!(
+            Command::from("eval".to_string()),
+            Command::Error("No expression provided for eval".to_string())
+        );
+        assert_eq!(
+            Command::from("e".to_string()),
+            Command::Error("No expression provided for eval".to_string())
+        );
+        assert_eq!(
+            Command::from("env".to_string()),
+            Command::Error("Use 'info' command instead of 'env'".to_string())
+        );
+    }
+
+    #[test]
+    fn test_command_display() {
+        assert_eq!(Command::Backtrace.to_string(), "backtrace");
+        assert_eq!(Command::Breakpoint(Some(42)).to_string(), "breakpoint 42");
+        assert_eq!(Command::Breakpoint(None).to_string(), "breakpoint");
+        assert_eq!(Command::Continue.to_string(), "continue");
+        assert_eq!(Command::Clear(Some(1)).to_string(), "clear 1");
+        assert_eq!(Command::Clear(None).to_string(), "clear");
+        assert_eq!(Command::Error("err".to_string()).to_string(), "error err");
+        assert_eq!(Command::Eval("foo".to_string()).to_string(), "eval foo");
+        assert_eq!(Command::Finish.to_string(), "finish");
+        assert_eq!(Command::Help.to_string(), "help");
+        assert_eq!(Command::Info.to_string(), "info");
+        assert_eq!(Command::List.to_string(), "list");
+        assert_eq!(Command::LongList.to_string(), "long-list");
+        assert_eq!(Command::Next.to_string(), "next");
+        assert_eq!(Command::Quit.to_string(), "quit");
+        assert_eq!(Command::Step.to_string(), "step");
+    }
+
+    #[test]
+    fn test_highlight_syntax_keywords_and_numbers() {
+        let input = r#"let x = 42"#;
+        let highlighted = highlight_syntax(input);
+        assert!(highlighted.contains("let"));
+        assert!(highlighted.contains("42"));
+    }
+
+    #[test]
+    fn test_highlight_syntax_string_and_operators() {
+        let input = r#"foo = "bar" + 1"#;
+        let highlighted = highlight_syntax(input);
+        assert!(highlighted.contains("\"bar\""));
+        assert!(highlighted.contains("+"));
+        assert!(highlighted.contains("="));
+    }
+
+    #[test]
+    fn test_get_source_code_with_context_basic() {
+        let context = DebugContext {
+            source_code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
+            token: Rc::new(mq_lang::Token {
+                range: mq_lang::Range {
+                    start: mq_lang::Position { line: 4, column: 0 },
+                    end: mq_lang::Position { line: 4, column: 1 },
+                },
+                kind: mq_lang::TokenKind::Eof,
+                module_id: ModuleId::new(0),
+            }),
+            ..Default::default()
+        };
+        let handler = DebuggerHandler::new(mq_lang::Engine::default());
+        let (start, snippet) = handler.get_source_code_with_context(&context, 4, 2);
+        assert_eq!(start, 2);
+        assert_eq!(
+            snippet,
+            vec![
+                "c".to_string(),
+                "d".to_string(),
+                "e".to_string(),
+                "f".to_string(),
+                "g".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_get_source_code_with_context_edge_cases() {
+        let handler = DebuggerHandler::new(mq_lang::Engine::default());
+
+        // Empty source code
+        let empty_context = DebugContext {
+            source_code: "".to_string(),
+            ..Default::default()
+        };
+        let (start, snippet) = handler.get_source_code_with_context(&empty_context, 0, 2);
+        assert_eq!(start, 0);
+        assert!(snippet.is_empty());
+
+        // Single line
+        let single_line_context = DebugContext {
+            source_code: "single line".to_string(),
+            ..Default::default()
+        };
+        let (start, snippet) = handler.get_source_code_with_context(&single_line_context, 0, 2);
+        assert_eq!(start, 0);
+        assert_eq!(snippet, vec!["single line".to_string()]);
+
+        // Line at beginning
+        let context = DebugContext {
+            source_code: "a\nb\nc".to_string(),
+            ..Default::default()
+        };
+        let (start, snippet) = handler.get_source_code_with_context(&context, 0, 1);
+        assert_eq!(start, 0);
+        assert_eq!(snippet, vec!["a".to_string(), "b".to_string()]);
+
+        // Line at end
+        let (start, snippet) = handler.get_source_code_with_context(&context, 2, 1);
+        assert_eq!(start, 1);
+        assert_eq!(snippet, vec!["b".to_string(), "c".to_string()]);
+
+        // Large context size
+        let (start, snippet) = handler.get_source_code_with_context(&context, 1, 10);
+        assert_eq!(start, 0);
+        assert_eq!(
+            snippet,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_debugger_handler_new() {
+        let engine = mq_lang::Engine::default();
+        let handler = DebuggerHandler::new(engine);
+        // Just verify it constructs without panic
+        assert!(std::mem::size_of_val(&handler) > 0);
+    }
+
+    #[test]
+    fn test_command_from_string_invalid_line_numbers() {
+        // Invalid line number should result in None
+        assert_eq!(
+            Command::from("breakpoint invalid".to_string()),
+            Command::Breakpoint(None)
+        );
+        assert_eq!(
+            Command::from("clear not_a_number".to_string()),
+            Command::Clear(None)
+        );
+        assert_eq!(Command::from("b -1".to_string()), Command::Breakpoint(None));
+    }
+
+    #[test]
+    fn test_command_from_string_multi_word_eval() {
+        assert_eq!(
+            Command::from("eval foo + bar - baz".to_string()),
+            Command::Eval("foo + bar - baz".to_string())
+        );
+        assert_eq!(
+            Command::from("e x = 1; y = 2".to_string()),
+            Command::Eval("x = 1; y = 2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_command_from_string_unknown() {
+        // Unknown commands should fallback to Eval
+        assert_eq!(
+            Command::from("unknown_command".to_string()),
+            Command::Eval("unknown_command".to_string())
+        );
+        assert_eq!(
+            Command::from("random text".to_string()),
+            Command::Eval("random text".to_string())
+        );
     }
 }

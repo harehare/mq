@@ -57,6 +57,26 @@ pub struct DebugContext {
     pub source_code: String,
 }
 
+impl Default for DebugContext {
+    fn default() -> Self {
+        Self {
+            current_value: RuntimeValue::NONE,
+            current_node: Rc::new(ast::Node {
+                token_id: crate::ast::TokenId::new(0),
+                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(0.0.into()))),
+            }),
+            token: Rc::new(Token {
+                kind: crate::TokenKind::Eof,
+                range: crate::Range::default(),
+                module_id: crate::eval::module::ModuleId::new(0),
+            }),
+            call_stack: Vec::new(),
+            env: Rc::new(RefCell::new(Env::default())),
+            source_code: String::new(),
+        }
+    }
+}
+
 /// The main debugger struct that manages breakpoints and execution state
 #[derive(Debug)]
 pub struct Debugger {
