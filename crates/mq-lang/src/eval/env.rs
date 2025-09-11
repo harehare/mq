@@ -84,7 +84,7 @@ impl Env {
                     env.resolve(ident)
                 }
                 None => {
-                    if builtin::BUILTIN_FUNCTIONS.contains_key(&ident.name) {
+                    if builtin::get_builtin_functions(&ident.name).is_some() {
                         Ok(RuntimeValue::NativeFunction(ident.clone()))
                     } else {
                         Err(EnvError::InvalidDefinition(ident.to_string()))
