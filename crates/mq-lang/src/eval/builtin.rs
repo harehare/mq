@@ -32,6 +32,7 @@ pub type Args = Vec<RuntimeValue>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
+    pub name: &'static str,
     pub num_params: ParamNum,
     pub func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
 }
@@ -74,17 +75,23 @@ impl ParamNum {
 
 impl BuiltinFunction {
     pub fn new(
+        name: &'static str,
         num_params: ParamNum,
         func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
     ) -> Self {
-        BuiltinFunction { num_params, func }
+        BuiltinFunction {
+            name,
+            num_params,
+            func,
+        }
     }
 }
 
 macro_rules! define_builtin {
     ($name:ident, $params:expr, $body:expr) => {
-        static $name: LazyLock<BuiltinFunction> =
-            LazyLock::new(|| BuiltinFunction::new($params, $body));
+        static $name: LazyLock<BuiltinFunction> = LazyLock::new(|| {
+            BuiltinFunction::new(stringify!($name).to_lowercase().leak(), $params, $body)
+        });
     };
 }
 
@@ -2282,8 +2289,7 @@ const HASH_VALUES: u64 = fnv1a_hash_64("values");
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
 pub fn get_builtin_functions(name: &AstIdentName) -> Option<&'static BuiltinFunction> {
-    let name = fnv1a_hash_64(name.as_str());
-    match name {
+    match fnv1a_hash_64(name.as_str()) {
         HASH_ABS => Some(&ABS),
         HASH_ADD => Some(&ADD),
         HASH_AND => Some(&AND),
@@ -2387,6 +2393,11 @@ pub fn get_builtin_functions(name: &AstIdentName) -> Option<&'static BuiltinFunc
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
     }
+    // This code checks for hash collisions among built-in function names.
+    // If two different function names produce the same hash, this assertion will fail.
+    // This ensures that the hash-based dispatch in get_builtin_functions is safe.
+    .filter(|func| func.name == name)
+    .map(|v| &**v)
 }
 
 #[derive(Clone, Debug)]
