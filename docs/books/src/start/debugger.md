@@ -2,6 +2,24 @@
 
 The `mq` debugger allows you to step through execution, set breakpoints, and inspect the state of your mq programs during runtime. This is particularly useful for debugging complex queries and understanding how data flows through your transformations.
 
+## Installation
+
+To use the debugger, you need to install `mq` with the debugger feature enabled. You can do this by building from source:
+
+```bash
+cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg
+```
+
+Alternatively, if a prebuilt binary is available for your platform, download it from the [releases page](https://github.com/harehare/mq/releases) and ensure it is in your `PATH`.
+
+### Homebrew
+
+If you use [Homebrew](https://brew.sh/), you can install the debugger-enabled `mq` with:
+
+```bash
+brew install harehare/tap/mq-dbg
+```
+
 ## Getting Started
 
 The debugger is available through the `mq-dbg` binary when the debugger feature is enabled.

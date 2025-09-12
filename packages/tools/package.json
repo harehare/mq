@@ -2,7 +2,7 @@
     "name": "tools",
     "description": "A collection of web-based tools for transforming and processing Markdown documents",
     "private": true,
-    "version": "0.2.21",
+  "version": "0.2.22",
     "type": "module",
     "scripts": {
         "dev": "vite",

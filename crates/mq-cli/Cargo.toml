@@ -20,7 +20,7 @@ license-file = "LICENSE"
 name = "mq-cli"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.2.21"
+version = "0.2.22"
 
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite"]
@@ -43,7 +43,6 @@ mq-tui.workspace = true
 rayon = "1.11.0"
 tokio = {version = "1.47.1", features = ["io-util", "io-std", "rt"]}
 url.workspace = true
-
 regex-lite = {workspace = true, optional = true}
 rustyline = {version = "17.0.1", optional = true}
 strum = {version = "0.27.2", features = ["derive"], optional = true}

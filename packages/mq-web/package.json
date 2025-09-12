@@ -1,7 +1,7 @@
 {
   "name": "mq-web",
   "description": "A jq-like command-line tool for Markdown processing",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "author": "harehare",
   "license": "MIT",
   "bugs": {
