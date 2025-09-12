@@ -32,14 +32,18 @@ Options:
           Sets string that can be referenced at runtime
       --rawfile <NAME> <FILE>
           Sets file contents that can be referenced at runtime
+      --stream
+          Enable streaming mode for processing large files line by line
       --json
-          Include the built-in JSON module
+          
       --csv
           Include the built-in CSV module
       --yaml
           Include the built-in YAML module
       --toml
           Include the built-in TOML module
+      --xml
+          Include the built-in XML module
       --test
           Include the built-in test module
   -F, --output-format <OUTPUT_FORMAT>

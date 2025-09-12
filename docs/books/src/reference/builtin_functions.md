@@ -13,6 +13,7 @@
 | `base64` | Encodes the given string to base64. | `input` | base64(input) |
 | `base64d` | Decodes the given base64 string. | `input` | base64d(input) |
 | `booleans` |  Returns boolean if input is boolean, None otherwise | `b` | booleans(b) |
+| `breakpoint` | Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached. |  | breakpoint() |
 | `ceil` | Rounds the given number up to the nearest integer. | `number` | ceil(number) |
 | `compact` | Removes None values from the given array. | `array` | compact(array) |
 | `contains` |  Checks if string contains a substring | `haystack`, `needle` | contains(haystack, needle) |
@@ -102,6 +103,7 @@
 | `pow` | Raises the base to the power of the exponent. | `base`, `exponent` | pow(base, exponent) |
 | `print` | Prints a message to standard output and returns the current value. | `message` | print(message) |
 | `range` | Creates an array from start to end with an optional step. | `start`, `end`, `step` | range(start, end, step) |
+| `read_file` | Reads the contents of a file at the given path and returns it as a string. | `path` | read_file(path) |
 | `repeat` | Repeats the given string a specified number of times. | `string`, `count` | repeat(string, count) |
 | `replace` | Replaces all occurrences of a substring with another substring. | `from`, `pattern`, `to` | replace(from, pattern, to) |
 | `reverse` | Reverses the given string or array. | `value` | reverse(value) |
