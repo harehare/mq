@@ -206,6 +206,9 @@ function App() {
             A collection of useful tools for working with Markdown documents.
             Transform, analyze, and process your Markdown content with ease.
           </p>
+          <div className="privacy-indicator">
+            🔒 Local 100% • Telemetry 0%
+          </div>
         </div>
         <div className="header-controls">
           <button

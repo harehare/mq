@@ -66,6 +66,14 @@
     flex-shrink: 1;
 }
 
+.privacy-indicator {
+    margin: 4px 0 0 12px;
+    font-size: 10px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 0.8;
+}
+
 .mq-link {
     text-decoration: none;
     transition: all 0.2s ease;
