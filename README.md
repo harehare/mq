@@ -55,6 +55,8 @@ mq makes working with Markdown files as easy as jq makes working with JSON. It's
 $ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.22
 # Latest Development Version
 $ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
+# Install the debugger
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger"
 ```
 
 ### Binaries
@@ -144,8 +146,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -163,7 +165,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+
       --csv
           Include the built-in CSV module
       --yaml
