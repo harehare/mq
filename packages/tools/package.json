@@ -2,7 +2,7 @@
     "name": "tools",
     "description": "A collection of web-based tools for transforming and processing Markdown documents",
     "private": true,
-  "version": "0.2.22",
+    "version": "0.2.22",
     "type": "module",
     "scripts": {
         "dev": "vite",
@@ -13,7 +13,7 @@
     "dependencies": {
         "@monaco-editor/react": "^4.7.0",
         "markdown-it": "^14.1.0",
-        "mq-web": "^0.2.21",
+        "mq-web": "^0.2.22",
         "react": "^19.1.0",
         "react-dom": "^19.1.0"
     },
