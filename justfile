@@ -79,6 +79,7 @@ test-mq:
     cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/json_tests.mq
     cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/yaml_tests.mq
     cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/xml_tests.mq
+    cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/fuzzy_tests.mq
 
 # Run formatting, linting and all tests
 test: fmt lint test-mq
