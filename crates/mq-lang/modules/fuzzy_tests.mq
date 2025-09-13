@@ -52,10 +52,25 @@ include "fuzzy"
     | assert_eq(result5, None)
   end
 
+| def test_fuzzy_filter():
+     let result1 = fuzzy_filter("lawn", ["flaw", "lawn", "pawn"], 0.9)
+    | assert_eq(len(result1), 1)
+
+    | let result2 = fuzzy_filter("flaw", ["lawn", "claw"], 0.8)
+    | assert_eq(len(result2), 2)
+
+    | let result3 = fuzzy_filter("flaw", ["lawn", "claw"], 0.8)
+    | assert_eq(len(result3), 2)
+
+    | let result4 = fuzzy_filter("flaw", [], 0.8)
+    | assert_eq(len(result4), 0)
+end
+
 |
 
 run_tests([
   test_case("Levenshtein Distance", test_levenshtein),
   test_case("Jaro-Winkler Distance", test_jaro_winkler),
-  test_case("Fuzzy Best Match", test_fuzzy_best_match)
+  test_case("Fuzzy Best Match", test_fuzzy_best_match),
+  test_case("Fuzzy Filter", test_fuzzy_filter)
 ])
