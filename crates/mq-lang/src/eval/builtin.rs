@@ -810,12 +810,9 @@ define_builtin!(INDEX, ParamNum::Fixed(2), |ident, _, mut args| {
                 ))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
-        [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
+        [RuntimeValue::Array(array), v] => Ok(array
             .iter()
-            .position(|o| match o {
-                RuntimeValue::String(s1) => s1 == s,
-                _ => false,
-            })
+            .position(|o| o == v)
             .map(|i| RuntimeValue::Number((i as i64).into()))
             .unwrap_or(RuntimeValue::Number((-1_i64).into()))),
         [RuntimeValue::None, _] => Ok(RuntimeValue::Number((-1_i64).into())),
@@ -3888,6 +3885,7 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
         }
         RuntimeValue::Bool(true) => Ok(RuntimeValue::Number(1.into())),
         RuntimeValue::Bool(false) => Ok(RuntimeValue::Number(0.into())),
+        RuntimeValue::Number(n) => Ok(RuntimeValue::Number(std::mem::take(n))),
         _ => Ok(RuntimeValue::Number(0.into())),
     }
 }

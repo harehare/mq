@@ -1,0 +1,191 @@
+# Fuzzy Match Implementation in mq
+
+def _levenshtein_distance(s1, s2):
+  let len1 = len(s1)
+  | let len2 = len(s2)
+  | let matrix = []
+  | let i = 0
+  | let matrix = until (i <= len1):
+      let j = 0
+      | let row = []
+      | let row = until (j <= len2):
+              let value = if (i == 0):
+                j
+              elif (j == 0):
+                i
+              else:
+                0
+              | let row = row + [value]
+              | let j = j + 1
+              | row
+            end
+      | let matrix = matrix + [row]
+      | let i = i + 1
+      | matrix
+    end
+  | let i = 1
+  | let matrix = until (i <= len1):
+      let j = 1
+      | let matrix = until (j <= len2):
+              let cost = if (s1[i - 1] == s2[j - 1]): 0 else: 1
+              | let deletion = matrix[i - 1][j] + 1
+              | let insertion = matrix[i][j - 1] + 1
+              | let substitution = matrix[i - 1][j - 1] + cost
+              | let min_value = if (deletion <= insertion && deletion <= substitution):
+                              deletion
+                            elif (insertion <= substitution):
+                              insertion
+                            else:
+                              substitution
+              | let row = matrix[i]
+              | let row = set(row, j, min_value)
+              | let matrix = set(matrix, i, row)
+              | let j = j + 1
+              | matrix
+            end
+      | let i = i + 1
+      | matrix
+    end
+  | if (len1 == 0): len2 elif (len2 == 0): len1 elif (is_none(matrix)): 0 else: matrix[len1][len2]
+end
+
+def _calculate_jaro_distance(s1, s2, len1, len2):
+  let match_window = floor(if (len1 > len2): (len1 / 2) - 1 else: (len2 / 2) - 1)
+  | let match_window = if (match_window < 0): 0 else: match_window
+  | let s1_matches = []
+  | let s2_matches = []
+  | let matches = 0
+  | let i = 0
+  | let result = until (i < len1):
+      let start = if (i >= match_window): i - match_window else: 0
+      | let end_ = if (i + match_window + 1 < len2): i + match_window + 1 else: len2
+      | let j = start
+      | let found = false
+      | let result = until (j < end_ && !found):
+              let reuslt = if (s1[i] == s2[j] && !contains(s2_matches, j)):
+                [true, j]
+              else:
+                [false, j + 1]
+              | let found = reuslt[0]
+              | let j = reuslt[1]
+              | [found, j]
+            end
+      | let found = result[0]
+      | let j = result[1]
+      | let result = if (found):
+              [s1_matches + [i], s2_matches + [j], matches + 1]
+            else:
+              [s1_matches, s2_matches, matches]
+      | let s1_matches = result[0]
+      | let s2_matches = result[1]
+      | let matches = result[2]
+      | let i = i + 1
+      | [s1_matches, s2_matches, matches]
+    end
+  | let s1_matches = result[0]
+  | let s2_matches = result[1]
+  | let matches = result[2]
+  | if (matches == 0):
+      0
+    else:
+      _calculate_jaro_with_transpositions(s1, s2, s1_matches, s2_matches, matches, len1, len2)
+end
+
+def _calculate_jaro_with_transpositions(s1, s2, s1_matches, s2_matches, matches, len1, len2):
+  let transpositions = 0
+  | let i = 0
+  | let s1_matches_len = len(s1_matches)
+  | let transpositions = until (i < s1_matches_len):
+      let transpositions = if (s1[s1_matches[i]] != s2[s2_matches[i]]):
+        transpositions + 1
+      else:
+        transpositions
+      | let i = i + 1
+      | transpositions
+    end
+  | let transpositions = transpositions / 2
+  | (to_number(matches) / to_number(len1) + to_number(matches) / to_number(len2) + (to_number(matches) - transpositions) / to_number(matches)) / 3
+end
+
+def _jaro_distance(s1, s2):
+  let len1 = len(s1)
+  | let len2 = len(s2)
+  | if (len1 == 0 && len2 == 0):
+      1
+    elif (len1 == 0 || len2 == 0):
+      0
+    else:
+      _calculate_jaro_distance(s1, s2, len1, len2)
+end
+
+def _common_prefix_length(s1, s2):
+  let min_len = if (len(s1) < len(s2)): len(s1) else: len(s2)
+  | let i = 0
+  | let i = until (i < min_len && s1[i] == s2[i]):
+      let i = i + 1
+      | i
+    end
+  | i
+end
+
+def _fuzzy_match_with_algorithm(query, candidates, algorithm):
+  let scored = map(candidates, fn(candidate):
+      {"text": candidate, "score": algorithm(query, candidate)}
+    end)
+  | sort_by(scored, fn(item): 1 - item["score"];)
+end
+
+# Calculates the Levenshtein distance between two strings.
+def levenshtein(s1, s2):
+  _levenshtein_distance(s1, s2)
+end
+
+# Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is exact match).
+def jaro(s1, s2):
+  _jaro_distance(s1, s2)
+end
+
+# Calculates the Jaro-Winkler distance between two strings.
+def jaro_winkler(s1, s2):
+  let jaro_dist = _jaro_distance(s1, s2)
+  | let prefix_length = _common_prefix_length(s1, s2)
+  | let prefix_length = if (prefix_length > 4): 4 else: prefix_length
+  | jaro_dist + (0.1 * to_number(prefix_length) * (1 - jaro_dist))
+end
+
+# Performs fuzzy matching on an array of strings using Jaro-Winkler distance.
+def fuzzy_match(query, candidates):
+  let candidates = if (is_array(candidates)):
+    candidates
+  else:
+    [candidates]
+  | _fuzzy_match_with_algorithm(query, candidates, jaro_winkler)
+end
+
+# Performs fuzzy matching using Levenshtein distance.
+def fuzzy_match_levenshtein(query, candidates):
+  let scored = map(candidates, fn(candidate):
+      {"text": candidate, "score": levenshtein(query, candidate)}
+    end)
+  | sort_by(scored, fn(item): item.score;)
+end
+
+# Performs fuzzy matching using Jaro distance.
+def fuzzy_match_jaro(query, candidates):
+  _fuzzy_match_with_algorithm(query, candidates, jaro)
+end
+
+# Filters candidates by minimum fuzzy match score using Jaro-Winkler.
+def fuzzy_filter(query, candidates, threshold):
+  let matches = fuzzy_match(query, candidates)
+  | filter(matches, fn(match): match["score"] >= threshold;)
+end
+
+# Finds the best fuzzy match from candidates.
+def fuzzy_best_match(query, candidates):
+  let matches = fuzzy_match(query, candidates)
+  | if (is_empty(matches)):
+      None
+    else:
+      first(matches)
+end
