@@ -15,7 +15,6 @@ version = "0.2.22"
 [dependencies]
 base64 = "0.22.1"
 chrono = "0.4.42"
-compact_str.workspace = true
 dirs.workspace = true
 itertools.workspace = true
 miette.workspace = true
@@ -28,10 +27,11 @@ rustc-hash.workspace = true
 serde = {workspace = true, features = ["derive", "rc"], optional = true}
 serde_json = {workspace = true, optional = true}
 smallvec = "1.15.1"
+smol_str.workspace = true
 thiserror.workspace = true
 
 [features]
-ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "compact_str/serde"]
+ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "smol_str/serde"]
 cst = []
 debugger = []
 default = ["std"]

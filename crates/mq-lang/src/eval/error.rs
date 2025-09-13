@@ -1,4 +1,4 @@
-use compact_str::CompactString;
+use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::{Token, number::Number};
@@ -6,7 +6,7 @@ use crate::{Token, number::Number};
 use super::module::ModuleError;
 
 type FunctionName = String;
-type ArgType = Vec<CompactString>;
+type ArgType = Vec<SmolStr>;
 type ErrorToken = Token;
 
 #[derive(Error, Debug, PartialEq)]
@@ -48,5 +48,5 @@ pub enum EvalError {
     #[error("Unexpected token continue")]
     Continue(ErrorToken),
     #[error("Not found env `{1}`")]
-    EnvNotFound(Token, CompactString),
+    EnvNotFound(Token, SmolStr),
 }

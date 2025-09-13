@@ -2,10 +2,10 @@ use super::{IdentName, Program, TokenId};
 #[cfg(feature = "ast-json")]
 use crate::arena::ArenaId;
 use crate::{Token, arena::Arena, lexer, number::Number, range::Range};
-use compact_str::CompactString;
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+use smol_str::SmolStr;
 use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
@@ -14,7 +14,7 @@ use std::{
 
 type Depth = u8;
 type Index = usize;
-type Lang = CompactString;
+type Lang = SmolStr;
 pub type Params = SmallVec<[Rc<Node>; 4]>;
 pub type Args = SmallVec<[Rc<Node>; 4]>;
 pub type Cond = (Option<Rc<Node>>, Rc<Node>);
@@ -143,7 +143,7 @@ impl Ident {
 
     pub fn new_with_token(name: &str, token: Option<Rc<Token>>) -> Self {
         Self {
-            name: CompactString::from(name),
+            name: SmolStr::from(name),
             token,
         }
     }
@@ -194,7 +194,7 @@ pub enum Selector {
 pub enum StringSegment {
     Text(String),
     Ident(Ident),
-    Env(CompactString),
+    Env(SmolStr),
     Self_,
 }
 
@@ -204,7 +204,7 @@ impl From<&lexer::token::StringSegment> for StringSegment {
             lexer::token::StringSegment::Text(text, _) => StringSegment::Text(text.to_owned()),
             lexer::token::StringSegment::Ident(ident, _) if ident == "self" => StringSegment::Self_,
             lexer::token::StringSegment::Ident(ident, _) if ident.starts_with("$") => {
-                StringSegment::Env(CompactString::from(&ident[1..]))
+                StringSegment::Env(SmolStr::from(&ident[1..]))
             }
             lexer::token::StringSegment::Ident(ident, _) => StringSegment::Ident(Ident::new(ident)),
         }

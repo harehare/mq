@@ -11,7 +11,6 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.22"
 
 [dependencies]
-compact_str.workspace = true
 ego-tree = {version = "0.10.0", optional = true}
 itertools.workspace = true
 markdown = "1.0.0"
@@ -21,6 +20,7 @@ scraper = {version = "0.24.0", optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
 serde_json = {workspace = true, optional = true}
 serde_yaml = {version = "0.9", optional = true}
+smol_str.workspace = true
 
 [dev-dependencies]
 rstest = "0.26.1"
@@ -28,5 +28,5 @@ rstest = "0.26.1"
 [features]
 default = ["std"]
 html-to-markdown = ["dep:scraper", "dep:ego-tree", "dep:serde_yaml"]
-json = ["dep:serde", "dep:serde_json", "compact_str/serde"]
+json = ["dep:serde", "dep:serde_json", "smol_str/serde"]
 std = []

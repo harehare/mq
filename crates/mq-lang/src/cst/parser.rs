@@ -1730,9 +1730,7 @@ impl<'a> Parser<'a> {
         let tokens = &mut self.tokens.clone();
         Self::try_parse_leading_trivia(tokens);
 
-        let token = tokens
-            .peek()
-            .ok_or_else(|| ParseError::UnexpectedEOFDetected);
+        let token = tokens.peek().ok_or(ParseError::UnexpectedEOFDetected);
 
         if token.is_err() {
             return false;
@@ -1788,7 +1786,7 @@ impl<'a> Parser<'a> {
             .tokens
             .peek()
             .cloned()
-            .ok_or_else(|| ParseError::UnexpectedEOFDetected)?;
+            .ok_or(ParseError::UnexpectedEOFDetected)?;
 
         if match_token_kind(&token.kind) {
             self.tokens.next();

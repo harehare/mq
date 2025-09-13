@@ -5,8 +5,8 @@ use crate::{
     lexer::{self, Lexer, error::LexerError},
     optimizer::{OptimizationLevel, Optimizer},
 };
-use compact_str::CompactString;
 use rustc_hash::FxHashMap;
+use smol_str::SmolStr;
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, sync::LazyLock};
 use thiserror::Error;
 
@@ -33,8 +33,8 @@ pub enum ModuleError {
 
 pub type ModuleId = ArenaId<ModuleName>;
 
-type ModuleName = CompactString;
-type StandardModules = FxHashMap<CompactString, fn() -> &'static str>;
+type ModuleName = SmolStr;
+type StandardModules = FxHashMap<SmolStr, fn() -> &'static str>;
 
 #[derive(Debug, Clone)]
 pub struct ModuleLoader {
@@ -67,7 +67,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
                 include_str!(concat!("../../modules/", stringify!($name), ".mq"))
             }
             map.insert(
-                CompactString::new(stringify!($name)),
+                SmolStr::new(stringify!($name)),
                 $name as fn() -> &'static str,
             );
         };
@@ -80,12 +80,12 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(toml);
     std_module!(xml);
 
-    map.insert(CompactString::new("csv"), csv as fn() -> &'static str);
-    map.insert(CompactString::new("yaml"), yaml as fn() -> &'static str);
-    map.insert(CompactString::new("json"), json as fn() -> &'static str);
-    map.insert(CompactString::new("test"), test as fn() -> &'static str);
-    map.insert(CompactString::new("toml"), toml as fn() -> &'static str);
-    map.insert(CompactString::new("xml"), xml as fn() -> &'static str);
+    map.insert(SmolStr::new("csv"), csv as fn() -> &'static str);
+    map.insert(SmolStr::new("yaml"), yaml as fn() -> &'static str);
+    map.insert(SmolStr::new("json"), json as fn() -> &'static str);
+    map.insert(SmolStr::new("test"), test as fn() -> &'static str);
+    map.insert(SmolStr::new("toml"), toml as fn() -> &'static str);
+    map.insert(SmolStr::new("xml"), xml as fn() -> &'static str);
     map
 });
 
@@ -111,11 +111,11 @@ impl ModuleLoader {
     }
 
     #[inline(always)]
-    pub fn module_name(&self, module_id: ModuleId) -> CompactString {
+    pub fn module_name(&self, module_id: ModuleId) -> SmolStr {
         self.loaded_modules
             .get(module_id)
             .map(|s| s.to_owned())
-            .unwrap_or_else(|| CompactString::new("<unknown>"))
+            .unwrap_or_else(|| SmolStr::new("<unknown>"))
     }
 
     #[cfg(feature = "debugger")]
@@ -283,9 +283,9 @@ impl ModuleLoader {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use compact_str::CompactString;
     use rstest::{fixture, rstest};
     use smallvec::{SmallVec, smallvec};
+    use smol_str::SmolStr;
 
     use crate::{
         Token, TokenKind,
@@ -309,7 +309,7 @@ mod tests {
         vars: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Let(
                 ast::Ident::new_with_token("test", Some(Rc::new(Token{
-                    kind: TokenKind::Ident(CompactString::new("test")),
+                    kind: TokenKind::Ident(SmolStr::new("test")),
                     range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                     module_id: 1.into()
                 }))),
@@ -322,7 +322,7 @@ mod tests {
         functions: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
             ast::Ident::new_with_token("test", Some(Rc::new(Token{
-                kind: TokenKind::Ident(CompactString::new("test")),
+                kind: TokenKind::Ident(SmolStr::new("test")),
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
             }))),
@@ -338,28 +338,28 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
-                ast::Ident::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
+                ast::Ident::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
                     Rc::new(ast::Node{token_id: 1.into(), expr:
                         Rc::new(
-                            ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
+                            ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
                         ))}),
                     Rc::new(ast::Node{token_id: 2.into(), expr:
                         Rc::new(
-                            ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
+                            ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
                         ))})
                 ],
                 vec![
                     Rc::new(ast::Node{token_id: 6.into(), expr: Rc::new(ast::Expr::Call(
-                    ast::Ident::new_with_token("add", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
+                    ast::Ident::new_with_token("add", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
                     smallvec![
                         Rc::new(ast::Node{token_id: 4.into(),
                             expr: Rc::new(
-                                ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
                                 )}),
                         Rc::new(ast::Node{token_id: 5.into(),
                             expr: Rc::new(
-                                ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(CompactString::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
                             )})
                     ],
                 ))})]

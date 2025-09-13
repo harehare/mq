@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use compact_str::CompactString;
+use smol_str::SmolStr;
 
 use crate::TokenKind;
 use crate::{Range, Token};
@@ -169,7 +169,7 @@ impl Node {
         }
     }
 
-    pub fn name(&self) -> Option<CompactString> {
+    pub fn name(&self) -> Option<SmolStr> {
         self.token.as_ref().map(|token| token.to_string().into())
     }
 
