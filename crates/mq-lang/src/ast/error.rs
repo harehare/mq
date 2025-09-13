@@ -1,4 +1,4 @@
-use compact_str::CompactString;
+use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::{Token, eval::module::ModuleId};
@@ -6,7 +6,7 @@ use crate::{Token, eval::module::ModuleId};
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {
     #[error("Not found env `{1}`")]
-    EnvNotFound(Token, CompactString),
+    EnvNotFound(Token, SmolStr),
     #[error("Unexpected token `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedToken(Token),
     #[error("Unexpected EOF detected")]

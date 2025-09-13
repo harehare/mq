@@ -1,4 +1,4 @@
-use compact_str::CompactString;
+use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::{Hir, Symbol, SymbolKind};
@@ -14,12 +14,12 @@ pub enum HirError {
     )]
     UnresolvedSymbol {
         symbol: Symbol,
-        similar_name: Option<Vec<CompactString>>,
+        similar_name: Option<Vec<SmolStr>>,
     },
     #[error("Included module not found: {module_name}")]
     ModuleNotFound {
         symbol: Symbol,
-        module_name: CompactString,
+        module_name: SmolStr,
     },
 }
 
@@ -49,7 +49,7 @@ impl Hir {
                     let module_name = symbol
                         .clone()
                         .value
-                        .unwrap_or(CompactString::new("unknown"))
+                        .unwrap_or(SmolStr::new("unknown"))
                         .clone();
                     match self.module_loader.read_file(&module_name) {
                         Ok(_) => None,
@@ -145,8 +145,8 @@ impl Hir {
             .collect::<Vec<_>>()
     }
 
-    fn find_similar_names(&self, target: &str) -> Option<Vec<CompactString>> {
-        let similar_names: Vec<CompactString> = self
+    fn find_similar_names(&self, target: &str) -> Option<Vec<SmolStr>> {
+        let similar_names: Vec<SmolStr> = self
             .symbols
             .iter()
             .filter_map(|(_, symbol)| {

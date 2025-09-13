@@ -1,4 +1,4 @@
-use compact_str::CompactString;
+use smol_str::SmolStr;
 
 use crate::{Hir, ScopeId, SourceId, Symbol, SymbolId, SymbolKind};
 
@@ -62,7 +62,7 @@ impl Hir {
     fn resolve_ref_symbol_of_source(
         &self,
         source_ids: Vec<SourceId>,
-        ref_name: &CompactString,
+        ref_name: &SmolStr,
     ) -> Option<(SymbolId, Symbol)> {
         let mut candidates = Vec::new();
 
@@ -102,7 +102,7 @@ impl Hir {
     fn resolve_ref_symbol_of_scope(
         &self,
         scope_id: ScopeId,
-        ref_name: &CompactString,
+        ref_name: &SmolStr,
         ref_symbol_id: SymbolId,
     ) -> Option<(SymbolId, Symbol)> {
         // Find all matching symbols in current scope with priority order

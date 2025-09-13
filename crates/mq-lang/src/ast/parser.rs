@@ -5,8 +5,8 @@ use std::rc::Rc;
 use crate::arena::Arena;
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
-use compact_str::CompactString;
 use smallvec::{SmallVec, smallvec};
+use smol_str::SmolStr;
 
 use super::constants;
 use super::error::ParseError;
@@ -391,7 +391,7 @@ impl<'a> Parser<'a> {
             TokenKind::Env(s) => Ok(Rc::new(Node {
                 token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                 expr: std::env::var(s)
-                    .map_err(|_| ParseError::EnvNotFound((*token).clone(), CompactString::new(s)))
+                    .map_err(|_| ParseError::EnvNotFound((*token).clone(), SmolStr::new(s)))
                     .map(|s| Rc::new(Expr::Literal(Literal::String(s.to_owned()))))?,
             })),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
@@ -1176,7 +1176,7 @@ impl<'a> Parser<'a> {
             // Create a new token for the base selector
             let base_token = Rc::new(Token {
                 range: token.range.clone(),
-                kind: TokenKind::Selector(CompactString::new(base_selector)),
+                kind: TokenKind::Selector(SmolStr::new(base_selector)),
                 module_id: token.module_id,
             });
 
@@ -1303,9 +1303,7 @@ impl<'a> Parser<'a> {
                     if let Ok(s) = self.parse_string_arg(Rc::clone(&token)) {
                         Ok(Rc::new(Node {
                             token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                            expr: Rc::new(Expr::Selector(Selector::Code(Some(
-                                CompactString::new(s),
-                            )))),
+                            expr: Rc::new(Expr::Selector(Selector::Code(Some(SmolStr::new(s))))),
                         }))
                     } else {
                         Ok(Rc::new(Node {
@@ -1616,7 +1614,6 @@ mod tests {
     use crate::{Module, range::Range};
 
     use super::*;
-    use compact_str::CompactString;
     use rstest::rstest;
     use smallvec::smallvec;
 
@@ -1631,14 +1628,14 @@ mod tests {
     #[rstest]
     #[case::ident1(
         vec![
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("contains"))),
+            token(TokenKind::Ident(SmolStr::new("contains"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("test".to_owned())),
             token(TokenKind::RParen),
             token(TokenKind::Comma),
-            token(TokenKind::Ident(CompactString::new("startswith"))),
+            token(TokenKind::Ident(SmolStr::new("startswith"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("test2".to_owned())),
             token(TokenKind::RParen),
@@ -1649,12 +1646,12 @@ mod tests {
             Rc::new(Node {
                 token_id: 4.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("and")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                                Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                                 smallvec![Rc::new(Node {
                                     token_id: 0.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("test".to_owned())))
@@ -1664,7 +1661,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 3.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("startswith", Some(Rc::new(token(TokenKind::Ident(CompactString::new("startswith")))))),
+                                Ident::new_with_token("startswith", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("startswith")))))),
                                 smallvec![Rc::new(Node {
                                     token_id: 2.into(),
                                     expr: Rc::new(Expr::Literal(Literal::String("test2".to_owned())))
@@ -1677,11 +1674,11 @@ mod tests {
         ]))]
     #[case::ident2(
         vec![
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::LParen),
-            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Selector(SmolStr::new(".h1"))),
             token(TokenKind::Comma),
-            token(TokenKind::Selector(CompactString::new("."))),
+            token(TokenKind::Selector(SmolStr::new("."))),
             token(TokenKind::LBracket),
             token(TokenKind::NumberLiteral(2.into())),
             token(TokenKind::RBracket),
@@ -1694,7 +1691,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 8.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("and")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1711,14 +1708,14 @@ mod tests {
     #[case::ident3(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("filter"))),
+            token(TokenKind::Ident(SmolStr::new("filter"))),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("arg1"))),
+            token(TokenKind::Ident(SmolStr::new("arg1"))),
             token(TokenKind::Comma),
-            token(TokenKind::Ident(CompactString::new("arg2"))),
+            token(TokenKind::Ident(SmolStr::new("arg2"))),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::Ident(CompactString::new("contains"))),
+            token(TokenKind::Ident(SmolStr::new("contains"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("arg1".to_owned())),
             token(TokenKind::Comma),
@@ -1729,21 +1726,21 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(Expr::Def(
-                    Ident::new_with_token("filter", Some(Rc::new(token(TokenKind::Ident(CompactString::new("filter")))))),
+                    Ident::new_with_token("filter", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("filter")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("arg1", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arg1")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("arg1", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("arg1")))))))),
                         }),
                         Rc::new(Node {
                             token_id: 2.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("arg2", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arg2")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("arg2", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("arg2")))))))),
                         }),
                     ],
                     vec![Rc::new(Node {
                         token_id: 6.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                            Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 4.into(),
@@ -1761,7 +1758,7 @@ mod tests {
         ]))]
     #[case::ident4(
         vec![
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::LParen),
             token(TokenKind::None),
             token(TokenKind::Comma),
@@ -1773,7 +1770,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(CompactString::new("and")))))),
+                    Ident::new_with_token(constants::AND, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("and")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1789,18 +1786,18 @@ mod tests {
         ]))]
     #[case::ident5(
         vec![
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::LParen),
             token(TokenKind::None),
             token(TokenKind::Comma),
             token(TokenKind::Self_),
             token(TokenKind::RParen),
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(CompactString::new("and"))))))]
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
     #[case::ident5(
         vec![
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::LParen),
             token(TokenKind::None),
             token(TokenKind::Comma),
@@ -1811,22 +1808,22 @@ mod tests {
         Err(ParseError::UnexpectedToken(token(TokenKind::Def))))]
     #[case::ident6(
         vec![
-            token(TokenKind::Ident(CompactString::new("and"))),
+            token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::Def),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(CompactString::new("and"))))))]
+        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
     #[case::error(
         vec![
-            token(TokenKind::Ident(CompactString::new("contains"))),
+            token(TokenKind::Ident(SmolStr::new("contains"))),
             token(TokenKind::LParen),
-            token(TokenKind::Selector(CompactString::new("inline_code"))),
+            token(TokenKind::Selector(SmolStr::new("inline_code"))),
             token(TokenKind::Eof)
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Selector(CompactString::new("inline_code"))))))]
+        Err(ParseError::UnexpectedToken(token(TokenKind::Selector(SmolStr::new("inline_code"))))))]
     #[case::def1(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
@@ -1837,7 +1834,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(Expr::Def(
-                        Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(CompactString::new("name")))))),
+                        Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         SmallVec::new(),
                         vec![Rc::new(Node {
                             token_id: 2.into(),
@@ -1849,7 +1846,7 @@ mod tests {
     #[case::def_with_end(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
@@ -1860,7 +1857,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(Expr::Def(
-                        Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(CompactString::new("name")))))),
+                        Ident::new_with_token("name", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         SmallVec::new(),
                         vec![Rc::new(Node {
                             token_id: 2.into(),
@@ -1872,7 +1869,7 @@ mod tests {
     #[case::def2(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::Comma),
             token(TokenKind::RParen),
@@ -1881,7 +1878,7 @@ mod tests {
     #[case::def3(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::Comma),
@@ -1891,7 +1888,7 @@ mod tests {
     #[case::def4(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::RParen),
@@ -1901,7 +1898,7 @@ mod tests {
     #[case::def5(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::RParen),
@@ -1912,7 +1909,7 @@ mod tests {
     #[case::def6(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::RParen),
@@ -1923,7 +1920,7 @@ mod tests {
     #[case::def7(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("name"))),
+            token(TokenKind::Ident(SmolStr::new("name"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::RParen),
@@ -1942,7 +1939,7 @@ mod tests {
     #[case::let_1(
             vec![
                 token(TokenKind::Let),
-                token(TokenKind::Ident(CompactString::new("x"))),
+                token(TokenKind::Ident(SmolStr::new("x"))),
                 token(TokenKind::Equal),
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
@@ -1951,7 +1948,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 0.into(),
                     expr: Rc::new(Expr::Let(
-                        Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))),
+                        Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))),
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Literal(Literal::Number(42.into()))),
@@ -1962,7 +1959,7 @@ mod tests {
     #[case::let_2(
             vec![
                 token(TokenKind::Let),
-                token(TokenKind::Ident(CompactString::new("y"))),
+                token(TokenKind::Ident(SmolStr::new("y"))),
                 token(TokenKind::Equal),
                 token(TokenKind::StringLiteral("hello".to_owned())),
                 token(TokenKind::Eof)
@@ -1971,7 +1968,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 0.into(),
                     expr: Rc::new(Expr::Let(
-                        Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))),
+                        Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))),
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Literal(Literal::String("hello".to_owned()))),
@@ -1982,7 +1979,7 @@ mod tests {
     #[case::let_3(
             vec![
                 token(TokenKind::Let),
-                token(TokenKind::Ident(CompactString::new("flag"))),
+                token(TokenKind::Ident(SmolStr::new("flag"))),
                 token(TokenKind::Equal),
                 token(TokenKind::BoolLiteral(true)),
                 token(TokenKind::Eof)
@@ -1991,7 +1988,7 @@ mod tests {
                 Rc::new(Node {
                     token_id: 0.into(),
                     expr: Rc::new(Expr::Let(
-                        Ident::new_with_token("flag", Some(Rc::new(token(TokenKind::Ident(CompactString::new("flag")))))),
+                        Ident::new_with_token("flag", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("flag")))))),
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Literal(Literal::Bool(true))),
@@ -2002,9 +1999,9 @@ mod tests {
     #[case::let_4(
             vec![
                 token(TokenKind::Let),
-                token(TokenKind::Ident(CompactString::new("z"))),
+                token(TokenKind::Ident(SmolStr::new("z"))),
                 token(TokenKind::Equal),
-                token(TokenKind::Ident(CompactString::new("some_var"))),
+                token(TokenKind::Ident(SmolStr::new("some_var"))),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -2016,7 +2013,7 @@ mod tests {
                             token_id: 2.into(),
                             expr: Rc::new(
                                 Expr::Ident(Ident::new_with_token("some_var",
-                                                 Some(Rc::new(token(TokenKind::Ident(CompactString::new("some_var"))))))))
+                                                 Some(Rc::new(token(TokenKind::Ident(SmolStr::new("some_var"))))))))
                         }),
                     )),
                 })
@@ -2024,9 +2021,9 @@ mod tests {
     #[case::let_5(
             vec![
                 token(TokenKind::Let),
-                token(TokenKind::Ident(CompactString::new("z"))),
+                token(TokenKind::Ident(SmolStr::new("z"))),
                 token(TokenKind::Equal),
-                token(TokenKind::Ident(CompactString::new("some_var"))),
+                token(TokenKind::Ident(SmolStr::new("some_var"))),
                 token(TokenKind::Pipe),
             ],
             Ok(vec![
@@ -2037,7 +2034,7 @@ mod tests {
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(
-                                Expr::Ident(Ident::new_with_token("some_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("some_var")))))))),
+                                Expr::Ident(Ident::new_with_token("some_var", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("some_var")))))))),
                         }),
                     )),
                 })
@@ -2045,9 +2042,9 @@ mod tests {
     #[case::let_6(
             vec![
                 token(TokenKind::Let),
-                token(TokenKind::Ident(CompactString::new("z"))),
+                token(TokenKind::Ident(SmolStr::new("z"))),
                 token(TokenKind::Equal),
-                token(TokenKind::Ident(CompactString::new("some_var"))),
+                token(TokenKind::Ident(SmolStr::new("some_var"))),
             ],
             Ok(vec![
                 Rc::new(Node {
@@ -2057,16 +2054,16 @@ mod tests {
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(
-                                Expr::Ident(Ident::new_with_token("some_var", Some(Rc::new(token(TokenKind::Ident(CompactString::new("some_var")))))))),
+                                Expr::Ident(Ident::new_with_token("some_var", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("some_var")))))))),
                         }),
                     )),
                 })
             ]))]
     #[case::root_semicolon_error(
             vec![
-                token(TokenKind::Ident(CompactString::new("x"))),
+                token(TokenKind::Ident(SmolStr::new("x"))),
                 token(TokenKind::SemiColon),
-                token(TokenKind::Ident(CompactString::new("y"))),
+                token(TokenKind::Ident(SmolStr::new("y"))),
                 token(TokenKind::Eof)
             ],
             Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
@@ -2287,7 +2284,7 @@ mod tests {
             Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Elif, module_id: 1.into()})))]
     #[case::h_selector(
         vec![
-            token(TokenKind::Selector(CompactString::new(".h"))),
+            token(TokenKind::Selector(SmolStr::new(".h"))),
             token(TokenKind::LParen),
             token(TokenKind::NumberLiteral(3.into())),
             token(TokenKind::RParen),
@@ -2301,7 +2298,7 @@ mod tests {
         ]))]
     #[case::h_selector_without_number(
         vec![
-            token(TokenKind::Selector(CompactString::new(".h"))),
+            token(TokenKind::Selector(SmolStr::new(".h"))),
             token(TokenKind::Eof)
         ],
         Ok(vec![
@@ -2398,14 +2395,14 @@ mod tests {
         vec![
             token(TokenKind::Foreach),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::Ident(SmolStr::new("item"))),
             token(TokenKind::Comma),
             token(TokenKind::StringLiteral("array".to_owned())),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::Ident(CompactString::new("print"))),
+            token(TokenKind::Ident(SmolStr::new("print"))),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::Ident(SmolStr::new("item"))),
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
@@ -2414,7 +2411,7 @@ mod tests {
             expr: Rc::new(Expr::Foreach(
                 Ident::new_with_token(
                     "item",
-                    Some(Rc::new(token(TokenKind::Ident(CompactString::new("item"))))),
+                    Some(Rc::new(token(TokenKind::Ident(SmolStr::new("item"))))),
                 ),
                 Rc::new(Node {
                     token_id: 2.into(),
@@ -2425,7 +2422,7 @@ mod tests {
                     expr: Rc::new(Expr::Call(
                         Ident::new_with_token(
                             "print",
-                            Some(Rc::new(token(TokenKind::Ident(CompactString::new(
+                            Some(Rc::new(token(TokenKind::Ident(SmolStr::new(
                                 "print",
                             ))))),
                         ),
@@ -2433,7 +2430,7 @@ mod tests {
                             token_id: 4.into(),
                             expr: Rc::new(Expr::Ident(Ident::new_with_token(
                                 "item",
-                                Some(Rc::new(token(TokenKind::Ident(CompactString::new("item"))))),
+                                Some(Rc::new(token(TokenKind::Ident(SmolStr::new("item"))))),
                             ))),
                         })],
                     )),
@@ -2446,9 +2443,9 @@ mod tests {
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::Ident(CompactString::new("print"))),
+            token(TokenKind::Ident(SmolStr::new("print"))),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::Ident(SmolStr::new("item"))),
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
@@ -2471,7 +2468,7 @@ mod tests {
         })]))]
     #[case::code_selector_with_language(
         vec![
-            token(TokenKind::Selector(CompactString::new(".code"))),
+            token(TokenKind::Selector(SmolStr::new(".code"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("rust".to_owned())),
             token(TokenKind::RParen),
@@ -2479,13 +2476,13 @@ mod tests {
         ],
         Ok(vec![Rc::new(Node {
             token_id: 2.into(),
-            expr: Rc::new(Expr::Selector(Selector::Code(Some(CompactString::new(
+            expr: Rc::new(Expr::Selector(Selector::Code(Some(SmolStr::new(
                 "rust",
             ))))),
         })]))]
     #[case::table_selector(
         vec![
-            token(TokenKind::Selector(CompactString::new("."))),
+            token(TokenKind::Selector(SmolStr::new("."))),
             token(TokenKind::LBracket),
             token(TokenKind::NumberLiteral(1.into())),
             token(TokenKind::RBracket),
@@ -2502,7 +2499,7 @@ mod tests {
         vec![
             token(TokenKind::Foreach),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("item"))),
+            token(TokenKind::Ident(SmolStr::new("item"))),
             token(TokenKind::Comma),
             token(TokenKind::StringLiteral("array".to_owned())),
             token(TokenKind::RParen),
@@ -2570,7 +2567,7 @@ mod tests {
     #[case::nodes_error_in_subprogram(
         vec![
             token(TokenKind::Def),
-            token(TokenKind::Ident(CompactString::new("test"))),
+            token(TokenKind::Ident(SmolStr::new("test"))),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
@@ -2582,7 +2579,7 @@ mod tests {
         vec![
             token(TokenKind::Nodes),
             token(TokenKind::Pipe),
-            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Selector(SmolStr::new(".h1"))),
             token(TokenKind::Eof)
         ],
         Ok(vec![
@@ -2601,9 +2598,9 @@ mod tests {
             token(TokenKind::Pipe),
             token(TokenKind::Nodes),
             token(TokenKind::Pipe),
-            token(TokenKind::Selector(CompactString::new(".h1"))),
+            token(TokenKind::Selector(SmolStr::new(".h1"))),
             token(TokenKind::Pipe),
-            token(TokenKind::Selector(CompactString::new(".text"))),
+            token(TokenKind::Selector(SmolStr::new(".text"))),
             token(TokenKind::Eof)
         ],
         Ok(vec![
@@ -2651,16 +2648,16 @@ mod tests {
         vec![
             token(TokenKind::Fn),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::Ident(SmolStr::new("x"))),
             token(TokenKind::Comma),
-            token(TokenKind::Ident(CompactString::new("y"))),
+            token(TokenKind::Ident(SmolStr::new("y"))),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
-            token(TokenKind::Ident(CompactString::new("contains"))),
+            token(TokenKind::Ident(SmolStr::new("contains"))),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::Ident(SmolStr::new("x"))),
             token(TokenKind::Comma),
-            token(TokenKind::Ident(CompactString::new("y"))),
+            token(TokenKind::Ident(SmolStr::new("y"))),
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
@@ -2671,26 +2668,26 @@ mod tests {
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                         }),
                         Rc::new(Node {
                             token_id: 2.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                         }),
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 6.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(CompactString::new("contains")))))),
+                                Ident::new_with_token("contains", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 4.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 5.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                                     }),
                                 ],
                             )),
@@ -2703,7 +2700,7 @@ mod tests {
         vec![
             token(TokenKind::Fn),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::Ident(SmolStr::new("x"))),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
             token(TokenKind::StringLiteral("first".to_owned())),
@@ -2718,7 +2715,7 @@ mod tests {
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                         }),
                     ],
                     vec![
@@ -2765,11 +2762,11 @@ mod tests {
         Err(ParseError::UnexpectedToken(token(TokenKind::SemiColon))))]
     #[case::fn_nested_in_call(
         vec![
-            token(TokenKind::Ident(CompactString::new("apply"))),
+            token(TokenKind::Ident(SmolStr::new("apply"))),
             token(TokenKind::LParen),
             token(TokenKind::Fn),
             token(TokenKind::LParen),
-            token(TokenKind::Ident(CompactString::new("x"))),
+            token(TokenKind::Ident(SmolStr::new("x"))),
             token(TokenKind::RParen),
             token(TokenKind::Colon),
             token(TokenKind::StringLiteral("processed".to_owned())),
@@ -2781,7 +2778,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 4.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token("apply", Some(Rc::new(token(TokenKind::Ident(CompactString::new("apply")))))),
+                    Ident::new_with_token("apply", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("apply")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -2789,7 +2786,7 @@ mod tests {
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 1.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                     }),
                                 ],
                                 vec![
@@ -2975,9 +2972,9 @@ mod tests {
     #[case::array_with_ident(
                     vec![
                         token(TokenKind::LBracket),
-                        token(TokenKind::Ident(CompactString::new("foo"))),
+                        token(TokenKind::Ident(SmolStr::new("foo"))),
                         token(TokenKind::Comma),
-                        token(TokenKind::Ident(CompactString::new("bar"))),
+                        token(TokenKind::Ident(SmolStr::new("bar"))),
                         token(TokenKind::RBracket),
                         token(TokenKind::Eof)
                     ],
@@ -2989,11 +2986,11 @@ mod tests {
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 1.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("foo")))))))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 2.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("bar")))))))),
                                     }),
                                 ],
                             )),
@@ -3076,9 +3073,9 @@ mod tests {
                     ]))]
     #[case::equality_with_identifiers(
                     vec![
-                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::Ident(SmolStr::new("x"))),
                         token(TokenKind::EqEq),
-                        token(TokenKind::Ident(CompactString::new("y"))),
+                        token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
                     Ok(vec![
@@ -3089,11 +3086,11 @@ mod tests {
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 2.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                                     }),
                                 ],
                             )),
@@ -3101,7 +3098,7 @@ mod tests {
                     ]))]
     #[case::equality_with_function_call(
                     vec![
-                        token(TokenKind::Ident(CompactString::new("foo"))),
+                        token(TokenKind::Ident(SmolStr::new("foo"))),
                         token(TokenKind::LParen),
                         token(TokenKind::StringLiteral("arg".to_owned())),
                         token(TokenKind::RParen),
@@ -3118,7 +3115,7 @@ mod tests {
                                     Rc::new(Node {
                                         token_id: 1.into(),
                                         expr: Rc::new(Expr::Call(
-                                            Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                                            Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 0.into(),
@@ -3137,9 +3134,9 @@ mod tests {
                     ]))]
     #[case::equality_with_selectors(
                     vec![
-                        token(TokenKind::Selector(CompactString::new(".h1"))),
+                        token(TokenKind::Selector(SmolStr::new(".h1"))),
                         token(TokenKind::EqEq),
-                        token(TokenKind::Selector(CompactString::new(".text"))),
+                        token(TokenKind::Selector(SmolStr::new(".text"))),
                         token(TokenKind::Eof)
                     ],
                     Ok(vec![
@@ -3196,7 +3193,7 @@ mod tests {
                     vec![
                         token(TokenKind::If),
                         token(TokenKind::LParen),
-                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::Ident(SmolStr::new("x"))),
                         token(TokenKind::EqEq),
                         token(TokenKind::NumberLiteral(5.into())),
                         token(TokenKind::RParen),
@@ -3216,7 +3213,7 @@ mod tests {
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 1.into(),
-                                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                                 }),
                                                 Rc::new(Node {
                                                     token_id: 3.into(),
@@ -3310,9 +3307,9 @@ mod tests {
                     ]))]
     #[case::not_equality_with_identifiers(
                     vec![
-                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::Ident(SmolStr::new("x"))),
                         token(TokenKind::NeEq),
-                        token(TokenKind::Ident(CompactString::new("y"))),
+                        token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
                     Ok(vec![
@@ -3323,11 +3320,11 @@ mod tests {
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 2.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                                     }),
                                 ],
                             )),
@@ -3335,7 +3332,7 @@ mod tests {
                     ]))]
     #[case::not_equality_with_function_call(
                     vec![
-                        token(TokenKind::Ident(CompactString::new("foo"))),
+                        token(TokenKind::Ident(SmolStr::new("foo"))),
                         token(TokenKind::LParen),
                         token(TokenKind::StringLiteral("arg".to_owned())),
                         token(TokenKind::RParen),
@@ -3352,7 +3349,7 @@ mod tests {
                                     Rc::new(Node {
                                         token_id: 1.into(),
                                         expr: Rc::new(Expr::Call(
-                                            Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                                            Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 0.into(),
@@ -3371,9 +3368,9 @@ mod tests {
                     ]))]
     #[case::not_equality_with_selectors(
                     vec![
-                        token(TokenKind::Selector(CompactString::new(".h1"))),
+                        token(TokenKind::Selector(SmolStr::new(".h1"))),
                         token(TokenKind::NeEq),
-                        token(TokenKind::Selector(CompactString::new(".text"))),
+                        token(TokenKind::Selector(SmolStr::new(".text"))),
                         token(TokenKind::Eof)
                     ],
                     Ok(vec![
@@ -3430,7 +3427,7 @@ mod tests {
                     vec![
                         token(TokenKind::If),
                         token(TokenKind::LParen),
-                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::Ident(SmolStr::new("x"))),
                         token(TokenKind::NeEq),
                         token(TokenKind::NumberLiteral(5.into())),
                         token(TokenKind::RParen),
@@ -3450,7 +3447,7 @@ mod tests {
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 1.into(),
-                                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                                 }),
                                                 Rc::new(Node {
                                                     token_id: 3.into(),
@@ -3494,9 +3491,9 @@ mod tests {
                     ]))]
     #[case::plus_with_identifiers(
                     vec![
-                        token(TokenKind::Ident(CompactString::new("x"))),
+                        token(TokenKind::Ident(SmolStr::new("x"))),
                         token(TokenKind::Plus),
-                        token(TokenKind::Ident(CompactString::new("y"))),
+                        token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
                     Ok(vec![
@@ -3507,11 +3504,11 @@ mod tests {
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 2.into(),
-                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                                     }),
                                 ],
                             )),
@@ -3642,7 +3639,7 @@ mod tests {
     #[case::dict_single_pair(
                         vec![
                             token(TokenKind::LBrace),
-                            token(TokenKind::Ident(CompactString::new("key"))),
+                            token(TokenKind::Ident(SmolStr::new("key"))),
                             token(TokenKind::Colon),
                             token(TokenKind::StringLiteral("value".to_owned())),
                             token(TokenKind::RBrace),
@@ -3657,11 +3654,11 @@ mod tests {
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(CompactString::new("key")))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("key")))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("key", Some(Rc::new(token(TokenKind::Ident(CompactString::new("key")))))))),
+                                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("key", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("key")))))))),
                                                     }),
                                                     Rc::new(Node {
                                                         token_id: 2.into(),
@@ -3677,7 +3674,7 @@ mod tests {
     #[case::dict_multiple_pairs(
                         vec![
                             token(TokenKind::LBrace),
-                            token(TokenKind::Ident(CompactString::new("a"))),
+                            token(TokenKind::Ident(SmolStr::new("a"))),
                             token(TokenKind::Colon),
                             token(TokenKind::NumberLiteral(1.into())),
                             token(TokenKind::Comma),
@@ -3696,11 +3693,11 @@ mod tests {
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
                                                     }),
                                                     Rc::new(Node {
                                                         token_id: 2.into(),
@@ -3732,7 +3729,7 @@ mod tests {
     #[case::dict_trailing_comma(
                         vec![
                             token(TokenKind::LBrace),
-                            token(TokenKind::Ident(CompactString::new("x"))),
+                            token(TokenKind::Ident(SmolStr::new("x"))),
                             token(TokenKind::Colon),
                             token(TokenKind::NumberLiteral(10.into())),
                             token(TokenKind::Comma),
@@ -3748,11 +3745,11 @@ mod tests {
                                         Rc::new(Node {
                                             token_id: 0.into(),
                                             expr: Rc::new(Expr::Call(
-                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))),
+                                                Ident::new_with_token(constants::ARRAY, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))),
                                                 smallvec![
                                                     Rc::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                                        expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                                     }),
                                                     Rc::new(Node {
                                                         token_id: 2.into(),
@@ -3768,7 +3765,7 @@ mod tests {
     #[case::dict_unclosed(
                         vec![
                             token(TokenKind::LBrace),
-                            token(TokenKind::Ident(CompactString::new("k"))),
+                            token(TokenKind::Ident(SmolStr::new("k"))),
                             token(TokenKind::Colon),
                             token(TokenKind::NumberLiteral(1.into())),
                             token(TokenKind::Eof)
@@ -3777,7 +3774,7 @@ mod tests {
     #[case::dict_missing_colon(
                         vec![
                             token(TokenKind::LBrace),
-                            token(TokenKind::Ident(CompactString::new("k"))),
+                            token(TokenKind::Ident(SmolStr::new("k"))),
                             token(TokenKind::NumberLiteral(1.into())),
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
@@ -3891,9 +3888,9 @@ mod tests {
         ]))]
     #[case::minus_with_identifiers(
         vec![
-            token(TokenKind::Ident(CompactString::new("a"))),
+            token(TokenKind::Ident(SmolStr::new("a"))),
             token(TokenKind::Minus),
-            token(TokenKind::Ident(CompactString::new("b"))),
+            token(TokenKind::Ident(SmolStr::new("b"))),
             token(TokenKind::Eof)
         ],
         Ok(vec![
@@ -3904,11 +3901,11 @@ mod tests {
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
                         }),
                         Rc::new(Node {
                             token_id: 2.into(),
-                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                         }),
                     ],
                 )),
@@ -3966,9 +3963,9 @@ mod tests {
             ]))]
     #[case::percent_with_identifiers(
             vec![
-                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::Ident(SmolStr::new("a"))),
                 token(TokenKind::Percent),
-                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -3979,11 +3976,11 @@ mod tests {
                         smallvec![
                             Rc::new(Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
                             }),
                             Rc::new(Node {
                                 token_id: 2.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                             }),
                         ],
                     )),
@@ -4023,9 +4020,9 @@ mod tests {
             ]))]
     #[case::mul_with_identifiers(
             vec![
-                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::Ident(SmolStr::new("a"))),
                 token(TokenKind::Asterisk),
-                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -4036,11 +4033,11 @@ mod tests {
                         smallvec![
                             Rc::new(Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
                             }),
                             Rc::new(Node {
                                 token_id: 2.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                             }),
                         ],
                     )),
@@ -4133,11 +4130,11 @@ mod tests {
             ]))]
     #[case::multiple_and_operators(
             vec![
-                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::Ident(SmolStr::new("a"))),
                 token(TokenKind::And),
-                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::And),
-                token(TokenKind::Ident(CompactString::new("c"))),
+                token(TokenKind::Ident(SmolStr::new("c"))),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -4153,18 +4150,18 @@ mod tests {
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
-                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
                                         }),
                                         Rc::new(Node {
                                             token_id: 2.into(),
-                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                                         }),
                                     ],
                                 )),
                             }),
                             Rc::new(Node {
                                 token_id: 4.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(CompactString::new("c")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
                             }),
                         ],
                     )),
@@ -4172,11 +4169,11 @@ mod tests {
             ]))]
     #[case::multiple_or_operators(
             vec![
-                token(TokenKind::Ident(CompactString::new("x"))),
+                token(TokenKind::Ident(SmolStr::new("x"))),
                 token(TokenKind::Or),
-                token(TokenKind::Ident(CompactString::new("y"))),
+                token(TokenKind::Ident(SmolStr::new("y"))),
                 token(TokenKind::Or),
-                token(TokenKind::Ident(CompactString::new("z"))),
+                token(TokenKind::Ident(SmolStr::new("z"))),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -4192,18 +4189,18 @@ mod tests {
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
-                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                         }),
                                         Rc::new(Node {
                                             token_id: 2.into(),
-                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(CompactString::new("y")))))))),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("y", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
                                         }),
                                     ],
                                 )),
                             }),
                             Rc::new(Node {
                                 token_id: 4.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("z", Some(Rc::new(token(TokenKind::Ident(CompactString::new("z")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("z", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("z")))))))),
                             }),
                         ],
                     )),
@@ -4211,11 +4208,11 @@ mod tests {
             ]))]
     #[case::and_or_mixed(
             vec![
-                token(TokenKind::Ident(CompactString::new("a"))),
+                token(TokenKind::Ident(SmolStr::new("a"))),
                 token(TokenKind::And),
-                token(TokenKind::Ident(CompactString::new("b"))),
+                token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::Or),
-                token(TokenKind::Ident(CompactString::new("c"))),
+                token(TokenKind::Ident(SmolStr::new("c"))),
                 token(TokenKind::Eof)
             ],
             Ok(vec![
@@ -4231,18 +4228,18 @@ mod tests {
                                     smallvec![
                                         Rc::new(Node {
                                             token_id: 0.into(),
-                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(CompactString::new("a")))))))),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("a", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
                                         }),
                                         Rc::new(Node {
                                             token_id: 2.into(),
-                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(CompactString::new("b")))))))),
+                                            expr: Rc::new(Expr::Ident(Ident::new_with_token("b", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
                                         }),
                                     ],
                                 )),
                             }),
                             Rc::new(Node {
                                 token_id: 4.into(),
-                                expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(CompactString::new("c")))))))),
+                                expr: Rc::new(Expr::Ident(Ident::new_with_token("c", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
                             }),
                         ],
                     )),
@@ -4275,9 +4272,9 @@ mod tests {
                 ]))]
     #[case::range_with_identifiers(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("start"))),
+                    token(TokenKind::Ident(SmolStr::new("start"))),
                     token(TokenKind::RangeOp),
-                    token(TokenKind::Ident(CompactString::new("end"))),
+                    token(TokenKind::Ident(SmolStr::new("end"))),
                     token(TokenKind::Eof)
                 ],
                 Ok(vec![
@@ -4288,11 +4285,11 @@ mod tests {
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("start", Some(Rc::new(token(TokenKind::Ident(CompactString::new("start")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("start", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("start")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 2.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(CompactString::new("end")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("end")))))))),
                                 }),
                             ],
                         )),
@@ -4307,7 +4304,7 @@ mod tests {
                 Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::args_missing_rparen(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::Ident(SmolStr::new("foo"))),
                     token(TokenKind::LParen),
                     token(TokenKind::StringLiteral("bar".to_owned())),
                     // Missing RParen
@@ -4317,7 +4314,7 @@ mod tests {
             )]
     #[case::args_unexpected_token(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::Ident(SmolStr::new("foo"))),
                     token(TokenKind::LParen),
                     token(TokenKind::NumberLiteral(1.into())),
                     token(TokenKind::Colon), // Invalid token in args
@@ -4328,10 +4325,10 @@ mod tests {
             )]
     #[case::args_leading_comma(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::Ident(SmolStr::new("foo"))),
                     token(TokenKind::LParen),
                     token(TokenKind::Comma),
-                    token(TokenKind::Ident(CompactString::new("bar"))),
+                    token(TokenKind::Ident(SmolStr::new("bar"))),
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
@@ -4339,12 +4336,12 @@ mod tests {
             )]
     #[case::args_double_comma(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("foo"))),
+                    token(TokenKind::Ident(SmolStr::new("foo"))),
                     token(TokenKind::LParen),
-                    token(TokenKind::Ident(CompactString::new("bar"))),
+                    token(TokenKind::Ident(SmolStr::new("bar"))),
                     token(TokenKind::Comma),
                     token(TokenKind::Comma),
-                    token(TokenKind::Ident(CompactString::new("baz"))),
+                    token(TokenKind::Ident(SmolStr::new("baz"))),
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
@@ -4426,7 +4423,7 @@ mod tests {
     #[case::not_with_expr(
                 vec![
                     token(TokenKind::Not),
-                    token(TokenKind::Ident(CompactString::new("x"))),
+                    token(TokenKind::Ident(SmolStr::new("x"))),
                     token(TokenKind::Eof)
                 ],
                 Ok(vec![
@@ -4437,7 +4434,7 @@ mod tests {
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 1.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(CompactString::new("x")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("x", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
                                 }),
                             ],
                         )),
@@ -4445,7 +4442,7 @@ mod tests {
                 ]))]
     #[case::bracket_access_with_number(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("arr"))),
+                    token(TokenKind::Ident(SmolStr::new("arr"))),
                     token(TokenKind::LBracket),
                     token(TokenKind::NumberLiteral(5.into())),
                     token(TokenKind::RBracket),
@@ -4455,11 +4452,11 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
+                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("arr", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("arr", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -4471,7 +4468,7 @@ mod tests {
                 ]))]
     #[case::bracket_access_with_string(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("dict"))),
+                    token(TokenKind::Ident(SmolStr::new("dict"))),
                     token(TokenKind::LBracket),
                     token(TokenKind::StringLiteral("key".to_owned())),
                     token(TokenKind::RBracket),
@@ -4481,11 +4478,11 @@ mod tests {
                     Rc::new(Node {
                         token_id: 2.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("dict")))))),
+                            Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("dict")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::Ident(CompactString::new("dict")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token(constants::DICT, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("dict")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -4497,7 +4494,7 @@ mod tests {
                 ]))]
     #[case::bracket_access_error_missing_rbracket(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("arr"))),
+                    token(TokenKind::Ident(SmolStr::new("arr"))),
                     token(TokenKind::LBracket),
                     token(TokenKind::NumberLiteral(5.into())),
                     token(TokenKind::Eof)
@@ -4505,7 +4502,7 @@ mod tests {
                 Err(ParseError::ExpectedClosingBracket(token(TokenKind::Eof))))]
     #[case::slice_access_with_numbers(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("arr"))),
+                    token(TokenKind::Ident(SmolStr::new("arr"))),
                     token(TokenKind::LBracket),
                     token(TokenKind::NumberLiteral(1.into())),
                     token(TokenKind::Colon),
@@ -4517,11 +4514,11 @@ mod tests {
                     Rc::new(Node {
                         token_id: 5.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token(constants::SLICE, Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))),
+                            Ident::new_with_token(constants::SLICE, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("arr", Some(Rc::new(token(TokenKind::Ident(CompactString::new("arr")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("arr", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 1.into(),
@@ -4537,11 +4534,11 @@ mod tests {
                 ]))]
     #[case::slice_access_with_variables(
                 vec![
-                    token(TokenKind::Ident(CompactString::new("items"))),
+                    token(TokenKind::Ident(SmolStr::new("items"))),
                     token(TokenKind::LBracket),
-                    token(TokenKind::Ident(CompactString::new("start"))),
+                    token(TokenKind::Ident(SmolStr::new("start"))),
                     token(TokenKind::Colon),
-                    token(TokenKind::Ident(CompactString::new("end"))),
+                    token(TokenKind::Ident(SmolStr::new("end"))),
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
@@ -4549,19 +4546,19 @@ mod tests {
                     Rc::new(Node {
                         token_id: 5.into(),
                         expr: Rc::new(Expr::Call(
-                            Ident::new_with_token(constants::SLICE, Some(Rc::new(token(TokenKind::Ident(CompactString::new("items")))))),
+                            Ident::new_with_token(constants::SLICE, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("items")))))),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("items", Some(Rc::new(token(TokenKind::Ident(CompactString::new("items")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("items", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("items")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 1.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("start", Some(Rc::new(token(TokenKind::Ident(CompactString::new("start")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("start", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("start")))))))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 2.into(),
-                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(CompactString::new("end")))))))),
+                                    expr: Rc::new(Expr::Ident(Ident::new_with_token("end", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("end")))))))),
                                 }),
                             ],
                         )),
@@ -4779,7 +4776,7 @@ mod tests {
     // Test function call followed by index access (e.g., foo()[0])
     #[case::function_call_with_index_access(
         vec![
-            token(TokenKind::Ident(CompactString::new("foo"))),
+            token(TokenKind::Ident(SmolStr::new("foo"))),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::LBracket),
@@ -4791,12 +4788,12 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(CompactString::new("foo")))))),
+                                Ident::new_with_token("foo", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                 SmallVec::new(),
                             )),
                         }),
@@ -4811,7 +4808,7 @@ mod tests {
     // Test function call with arguments followed by index access
     #[case::function_call_with_args_and_index_access(
         vec![
-            token(TokenKind::Ident(CompactString::new("bar"))),
+            token(TokenKind::Ident(SmolStr::new("bar"))),
             token(TokenKind::LParen),
             token(TokenKind::StringLiteral("arg".to_owned())),
             token(TokenKind::RParen),
@@ -4824,12 +4821,12 @@ mod tests {
             Rc::new(Node {
                 token_id: 1.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))),
+                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("bar")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(CompactString::new("bar")))))),
+                                Ident::new_with_token("bar", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("bar")))))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -4849,7 +4846,7 @@ mod tests {
     // Test chained index access on function call result
     #[case::function_call_with_chained_index_access(
         vec![
-            token(TokenKind::Ident(CompactString::new("baz"))),
+            token(TokenKind::Ident(SmolStr::new("baz"))),
             token(TokenKind::LParen),
             token(TokenKind::RParen),
             token(TokenKind::LBracket),
@@ -4864,17 +4861,17 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(Expr::Call(
-                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                    Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("baz")))))),
                     smallvec![
                         Rc::new(Node {
                             token_id: 2.into(),
                             expr: Rc::new(Expr::Call(
-                                Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                                Ident::new_with_token(constants::GET, Some(Rc::new(token(TokenKind::Ident(SmolStr::new("baz")))))),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
                                         expr: Rc::new(Expr::Call(
-                                            Ident::new_with_token("baz", Some(Rc::new(token(TokenKind::Ident(CompactString::new("baz")))))),
+                                            Ident::new_with_token("baz", Some(Rc::new(token(TokenKind::Ident(SmolStr::new("baz")))))),
                                             SmallVec::new(),
                                         )),
                                     }),
@@ -4963,7 +4960,7 @@ mod tests {
         let arena = Arena::new(10);
         let token = Rc::new(Token {
             range: Range::default(),
-            kind: TokenKind::Selector(CompactString::new(selector_str)),
+            kind: TokenKind::Selector(SmolStr::new(selector_str)),
             module_id: 1.into(),
         });
 
@@ -4997,7 +4994,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(".code", "rust", Selector::Code(Some(CompactString::new("rust"))))]
+    #[case(".code", "rust", Selector::Code(Some(SmolStr::new("rust"))))]
     #[case(".h", "2", Selector::Heading(Some(2)))]
     #[case(".list", "3", Selector::List(Some(3), None))]
     fn test_parse_selector_with_args(
@@ -5009,7 +5006,7 @@ mod tests {
         let tokens = [
             Rc::new(Token {
                 range: Range::default(),
-                kind: TokenKind::Selector(CompactString::new(selector_str)),
+                kind: TokenKind::Selector(SmolStr::new(selector_str)),
                 module_id: 1.into(),
             }),
             Rc::new(Token {
@@ -5071,7 +5068,7 @@ mod tests {
         let mut tokens = vec![
             Rc::new(Token {
                 range: Range::default(),
-                kind: TokenKind::Selector(CompactString::new(selector_str)),
+                kind: TokenKind::Selector(SmolStr::new(selector_str)),
                 module_id: 1.into(),
             }),
             Rc::new(Token {
@@ -5220,7 +5217,7 @@ mod tests {
         let tokens = [
             Rc::new(Token {
                 range: Range::default(),
-                kind: TokenKind::Ident(CompactString::new("function")),
+                kind: TokenKind::Ident(SmolStr::new("function")),
                 module_id: 1.into(),
             }),
             Rc::new(Token {
@@ -5287,7 +5284,7 @@ mod tests {
         let arena = Arena::new(10);
         let token = Rc::new(Token {
             range: Range::default(),
-            kind: TokenKind::Selector(CompactString::new(selector_str)),
+            kind: TokenKind::Selector(SmolStr::new(selector_str)),
             module_id: 1.into(),
         });
 

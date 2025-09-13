@@ -455,6 +455,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "borsh"
+version = "1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad8646f98db542e39fc66e68a20b2144f6a732636df7c2354e74645faaa433ce"
+dependencies = [
+ "cfg_aliases",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -711,21 +720,6 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
- "static_assertions",
-]
-
-[[package]]
-name = "compact_str"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdb1325a1cece981e8a296ab8f0f9b63ae357bd0784a9faaf548cc7b480707a"
-dependencies = [
- "castaway",
- "cfg-if",
- "itoa",
- "rustversion",
- "ryu",
- "serde",
  "static_assertions",
 ]
 
@@ -2563,12 +2557,12 @@ dependencies = [
 name = "mq-hir"
 version = "0.2.22"
 dependencies = [
- "compact_str 0.9.0",
  "itertools 0.14.0",
  "mq-lang",
  "rstest",
  "rustc-hash",
  "slotmap",
+ "smol_str",
  "strsim",
  "thiserror 2.0.16",
  "url",
@@ -2581,7 +2575,6 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "codspeed-divan-compat",
- "compact_str 0.9.0",
  "dirs",
  "itertools 0.14.0",
  "miette",
@@ -2596,6 +2589,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "smol_str",
  "thiserror 2.0.16",
 ]
 
@@ -2641,7 +2635,6 @@ dependencies = [
 name = "mq-markdown"
 version = "0.2.22"
 dependencies = [
- "compact_str 0.9.0",
  "ego-tree",
  "itertools 0.14.0",
  "markdown",
@@ -2652,6 +2645,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "smol_str",
 ]
 
 [[package]]
@@ -3443,7 +3437,7 @@ checksum = "eabd94c2f37801c20583fc49dd5cd6b0ba68c716787c2dd6ed18571e1e63117b"
 dependencies = [
  "bitflags 2.9.1",
  "cassowary",
- "compact_str 0.8.1",
+ "compact_str",
  "crossterm 0.28.1",
  "indoc",
  "instability",
@@ -4133,6 +4127,16 @@ version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "smol_str"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9676b89cd56310a87b93dec47b11af744f34d5fc9f367b829474eec0a891350d"
+dependencies = [
+ "borsh",
  "serde",
 ]
 

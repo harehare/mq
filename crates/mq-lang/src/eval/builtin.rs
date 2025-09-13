@@ -3,11 +3,11 @@ use crate::ast::{constants, node as ast};
 use crate::number::Number;
 use crate::{AstIdentName, Token};
 use base64::prelude::*;
-use compact_str::CompactString;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use smol_str::SmolStr;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::process::exit;
@@ -2406,12 +2406,12 @@ pub struct BuiltinSelectorDoc {
     pub params: &'static [&'static str],
 }
 
-pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelectorDoc>> =
+pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>> =
     LazyLock::new(|| {
         let mut map = FxHashMap::with_capacity_and_hasher(100, FxBuildHasher);
 
         map.insert(
-            CompactString::new(".h"),
+            SmolStr::new(".h"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the specified depth.",
                 params: &["depth"],
@@ -2419,7 +2419,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".text"),
+            SmolStr::new(".text"),
             BuiltinSelectorDoc {
                 description: "Selects a text node.",
                 params: &[],
@@ -2427,7 +2427,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".h1"),
+            SmolStr::new(".h1"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 1 depth.",
                 params: &[],
@@ -2435,7 +2435,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".h2"),
+            SmolStr::new(".h2"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 2 depth.",
                 params: &[],
@@ -2443,7 +2443,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".h3"),
+            SmolStr::new(".h3"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 3 depth.",
                 params: &[],
@@ -2451,7 +2451,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".h4"),
+            SmolStr::new(".h4"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 4 depth.",
                 params: &[],
@@ -2459,7 +2459,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".h5"),
+            SmolStr::new(".h5"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 5 depth.",
                 params: &[],
@@ -2467,7 +2467,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".h6"),
+            SmolStr::new(".h6"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the 6 depth.",
                 params: &[],
@@ -2475,7 +2475,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".code"),
+            SmolStr::new(".code"),
             BuiltinSelectorDoc {
                 description: "Selects a code block node with the specified language.",
                 params: &["lang"],
@@ -2483,7 +2483,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".code_inline"),
+            SmolStr::new(".code_inline"),
             BuiltinSelectorDoc {
                 description: "Selects an inline code node.",
                 params: &[],
@@ -2491,7 +2491,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".inline_math"),
+            SmolStr::new(".inline_math"),
             BuiltinSelectorDoc {
                 description: "Selects an inline math node.",
                 params: &[],
@@ -2499,7 +2499,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".strong"),
+            SmolStr::new(".strong"),
             BuiltinSelectorDoc {
                 description: "Selects a strong (bold) node.",
                 params: &[],
@@ -2507,7 +2507,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".emphasis"),
+            SmolStr::new(".emphasis"),
             BuiltinSelectorDoc {
                 description: "Selects an emphasis (italic) node.",
                 params: &[],
@@ -2515,7 +2515,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".delete"),
+            SmolStr::new(".delete"),
             BuiltinSelectorDoc {
                 description: "Selects a delete (strikethrough) node.",
                 params: &[],
@@ -2523,7 +2523,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".link"),
+            SmolStr::new(".link"),
             BuiltinSelectorDoc {
                 description: "Selects a link node.",
                 params: &[],
@@ -2531,7 +2531,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".link_ref"),
+            SmolStr::new(".link_ref"),
             BuiltinSelectorDoc {
                 description: "Selects a link reference node.",
                 params: &[],
@@ -2539,7 +2539,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".image"),
+            SmolStr::new(".image"),
             BuiltinSelectorDoc {
                 description: "Selects an image node.",
                 params: &[],
@@ -2547,7 +2547,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".heading"),
+            SmolStr::new(".heading"),
             BuiltinSelectorDoc {
                 description: "Selects a heading node with the specified depth.",
                 params: &[],
@@ -2555,7 +2555,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".horizontal_rule"),
+            SmolStr::new(".horizontal_rule"),
             BuiltinSelectorDoc {
                 description: "Selects a horizontal rule node.",
                 params: &[],
@@ -2563,7 +2563,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".blockquote"),
+            SmolStr::new(".blockquote"),
             BuiltinSelectorDoc {
                 description: "Selects a blockquote node.",
                 params: &[],
@@ -2571,7 +2571,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".[][]"),
+            SmolStr::new(".[][]"),
             BuiltinSelectorDoc {
                 description: "Selects a table cell node with the specified row and column.",
                 params: &["row", "column"],
@@ -2579,7 +2579,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".html"),
+            SmolStr::new(".html"),
             BuiltinSelectorDoc {
                 description: "Selects an HTML node.",
                 params: &[],
@@ -2587,7 +2587,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".<>"),
+            SmolStr::new(".<>"),
             BuiltinSelectorDoc {
                 description: "Selects an HTML node.",
                 params: &[],
@@ -2595,7 +2595,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".footnote"),
+            SmolStr::new(".footnote"),
             BuiltinSelectorDoc {
                 description: "Selects a footnote node.",
                 params: &[],
@@ -2603,7 +2603,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".mdx_jsx_flow_element"),
+            SmolStr::new(".mdx_jsx_flow_element"),
             BuiltinSelectorDoc {
                 description: "Selects an MDX JSX flow element node.",
                 params: &[],
@@ -2611,7 +2611,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".list"),
+            SmolStr::new(".list"),
             BuiltinSelectorDoc {
                 description: "Selects a list node with the specified index and checked state.",
                 params: &["indent", "checked"],
@@ -2619,7 +2619,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".mdx_js_esm"),
+            SmolStr::new(".mdx_js_esm"),
             BuiltinSelectorDoc {
                 description: "Selects an MDX JS ESM node.",
                 params: &[],
@@ -2627,7 +2627,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".toml"),
+            SmolStr::new(".toml"),
             BuiltinSelectorDoc {
                 description: "Selects a TOML node.",
                 params: &[],
@@ -2635,7 +2635,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".yaml"),
+            SmolStr::new(".yaml"),
             BuiltinSelectorDoc {
                 description: "Selects a YAML node.",
                 params: &[],
@@ -2643,7 +2643,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".break"),
+            SmolStr::new(".break"),
             BuiltinSelectorDoc {
                 description: "Selects a break node.",
                 params: &[],
@@ -2651,7 +2651,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".mdx_text_expression"),
+            SmolStr::new(".mdx_text_expression"),
             BuiltinSelectorDoc {
                 description: "Selects an MDX text expression node.",
                 params: &[],
@@ -2659,7 +2659,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".footnote_ref"),
+            SmolStr::new(".footnote_ref"),
             BuiltinSelectorDoc {
                 description: "Selects a footnote reference node.",
                 params: &[],
@@ -2667,7 +2667,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".image_ref"),
+            SmolStr::new(".image_ref"),
             BuiltinSelectorDoc {
                 description: "Selects an image reference node.",
                 params: &[],
@@ -2675,7 +2675,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".mdx_jsx_text_element"),
+            SmolStr::new(".mdx_jsx_text_element"),
             BuiltinSelectorDoc {
                 description: "Selects an MDX JSX text element node.",
                 params: &[],
@@ -2683,7 +2683,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".math"),
+            SmolStr::new(".math"),
             BuiltinSelectorDoc {
                 description: "Selects a math node.",
                 params: &[],
@@ -2691,7 +2691,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".math_inline"),
+            SmolStr::new(".math_inline"),
             BuiltinSelectorDoc {
                 description: "Selects a math inline node.",
                 params: &[],
@@ -2699,7 +2699,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".mdx_flow_expression"),
+            SmolStr::new(".mdx_flow_expression"),
             BuiltinSelectorDoc {
                 description: "Selects an MDX flow expression node.",
                 params: &[],
@@ -2707,7 +2707,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         );
 
         map.insert(
-            CompactString::new(".definition"),
+            SmolStr::new(".definition"),
             BuiltinSelectorDoc {
                 description: "Selects a definition node.",
                 params: &[],
@@ -2717,12 +2717,12 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<CompactString, BuiltinSelect
         map
     });
 
-pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFunctionDoc>> =
-    LazyLock::new(|| {
+pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>> = LazyLock::new(
+    || {
         let mut map = FxHashMap::default();
 
         map.insert(
-            CompactString::new("_sort_by_impl"),
+            SmolStr::new("_sort_by_impl"),
             BuiltinFunctionDoc{
                 description: "Internal implementation of sort_by functionality that sorts arrays of arrays using the first element as the key.",
                 params: &[],
@@ -2730,7 +2730,8 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFunct
         );
 
         map
-    });
+    },
+);
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunctionDoc {
@@ -2738,285 +2739,285 @@ pub struct BuiltinFunctionDoc {
     pub params: &'static [&'static str],
 }
 
-pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFunctionDoc>> =
-    LazyLock::new(|| {
+pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>> = LazyLock::new(
+    || {
         let mut map = FxHashMap::with_capacity_and_hasher(100, FxBuildHasher);
 
         map.insert(
-            CompactString::new("halt"),
+            SmolStr::new("halt"),
             BuiltinFunctionDoc {
                 description: "Terminates the program with the given exit code.",
                 params: &["exit_code"],
             },
         );
         map.insert(
-            CompactString::new("error"),
+            SmolStr::new("error"),
             BuiltinFunctionDoc {
                 description: "Raises a user-defined error with the specified message.",
                 params: &["message"],
             },
         );
         map.insert(
-            CompactString::new("assert"),
+            SmolStr::new("assert"),
             BuiltinFunctionDoc {
             description: "Asserts that two values are equal, returns the value if true, otherwise raises an error.",
             params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("print"),
+            SmolStr::new("print"),
             BuiltinFunctionDoc {
                 description: "Prints a message to standard output and returns the current value.",
                 params: &["message"],
             },
         );
         map.insert(
-            CompactString::new("stderr"),
+            SmolStr::new("stderr"),
             BuiltinFunctionDoc {
                 description: "Prints a message to standard error and returns the current value.",
                 params: &["message"],
             },
         );
         map.insert(
-            CompactString::new("type"),
+            SmolStr::new("type"),
             BuiltinFunctionDoc {
                 description: "Returns the type of the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new(constants::ARRAY),
+            SmolStr::new(constants::ARRAY),
             BuiltinFunctionDoc {
                 description: "Creates an array from the given values.",
                 params: &["values"],
             },
         );
         map.insert(
-            CompactString::new("flatten"),
+            SmolStr::new("flatten"),
             BuiltinFunctionDoc {
                 description: "Flattens a nested array into a single level array.",
                 params: &["array"],
             },
         );
         map.insert(
-            CompactString::new("from_date"),
+            SmolStr::new("from_date"),
             BuiltinFunctionDoc {
                 description: "Converts a date string to a timestamp.",
                 params: &["date_str"],
             },
         );
         map.insert(
-            CompactString::new("to_date"),
+            SmolStr::new("to_date"),
             BuiltinFunctionDoc {
                 description: "Converts a timestamp to a date string with the given format.",
                 params: &["timestamp", "format"],
             },
         );
         map.insert(
-            CompactString::new("now"),
+            SmolStr::new("now"),
             BuiltinFunctionDoc {
                 description: "Returns the current timestamp.",
                 params: &[],
             },
         );
         map.insert(
-            CompactString::new("base64"),
+            SmolStr::new("base64"),
             BuiltinFunctionDoc {
                 description: "Encodes the given string to base64.",
                 params: &["input"],
             },
         );
         map.insert(
-            CompactString::new("base64d"),
+            SmolStr::new("base64d"),
             BuiltinFunctionDoc {
                 description: "Decodes the given base64 string.",
                 params: &["input"],
             },
         );
         map.insert(
-            CompactString::new("min"),
+            SmolStr::new("min"),
             BuiltinFunctionDoc {
                 description: "Returns the minimum of two values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("max"),
+            SmolStr::new("max"),
             BuiltinFunctionDoc {
                 description: "Returns the maximum of two values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new("to_html"),
+            SmolStr::new("to_html"),
             BuiltinFunctionDoc {
                 description: "Converts the given markdown string to HTML.",
                 params: &["markdown"],
             },
         );
         map.insert(
-            CompactString::new("to_string"),
+            SmolStr::new("to_string"),
             BuiltinFunctionDoc {
                 description: "Converts the given value to a string.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_markdown_string"),
+            SmolStr::new("to_markdown_string"),
             BuiltinFunctionDoc {
                 description: "Converts the given value(s) to a markdown string representation.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_number"),
+            SmolStr::new("to_number"),
             BuiltinFunctionDoc {
                 description: "Converts the given value to a number.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_array"),
+            SmolStr::new("to_array"),
             BuiltinFunctionDoc {
                 description: "Converts the given value to an array.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("url_encode"),
+            SmolStr::new("url_encode"),
             BuiltinFunctionDoc {
                 description: "URL-encodes the given string.",
                 params: &["input"],
             },
         );
         map.insert(
-            CompactString::new("to_text"),
+            SmolStr::new("to_text"),
             BuiltinFunctionDoc {
                 description: "Converts the given markdown node to plain text.",
                 params: &["markdown"],
             },
         );
         map.insert(
-            CompactString::new("ends_with"),
+            SmolStr::new("ends_with"),
             BuiltinFunctionDoc {
                 description: "Checks if the given string ends with the specified substring.",
                 params: &["string", "substring"],
             },
         );
         map.insert(
-            CompactString::new("starts_with"),
+            SmolStr::new("starts_with"),
             BuiltinFunctionDoc {
                 description: "Checks if the given string starts with the specified substring.",
                 params: &["string", "substring"],
             },
         );
         map.insert(
-            CompactString::new("match"),
+            SmolStr::new("match"),
             BuiltinFunctionDoc {
                 description: "Finds all matches of the given pattern in the string.",
                 params: &["string", "pattern"],
             },
         );
         map.insert(
-            CompactString::new("downcase"),
+            SmolStr::new("downcase"),
             BuiltinFunctionDoc {
                 description: "Converts the given string to lowercase.",
                 params: &["input"],
             },
         );
         map.insert(
-            CompactString::new("gsub"),
+            SmolStr::new("gsub"),
             BuiltinFunctionDoc {
                 description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
                 params: &["from","pattern",  "to"],
             },
         );
         map.insert(
-            CompactString::new("replace"),
+            SmolStr::new("replace"),
             BuiltinFunctionDoc {
                 description: "Replaces all occurrences of a substring with another substring.",
                 params: &["from", "pattern", "to"],
             },
         );
         map.insert(
-            CompactString::new("repeat"),
+            SmolStr::new("repeat"),
             BuiltinFunctionDoc {
                 description: "Repeats the given string a specified number of times.",
                 params: &["string", "count"],
             },
         );
         map.insert(
-            CompactString::new("explode"),
+            SmolStr::new("explode"),
             BuiltinFunctionDoc {
                 description: "Splits the given string into an array of characters.",
                 params: &["string"],
             },
         );
         map.insert(
-            CompactString::new("implode"),
+            SmolStr::new("implode"),
             BuiltinFunctionDoc {
                 description: "Joins an array of characters into a string.",
                 params: &["array"],
             },
         );
         map.insert(
-            CompactString::new("trim"),
+            SmolStr::new("trim"),
             BuiltinFunctionDoc {
                 description: "Trims whitespace from both ends of the given string.",
                 params: &["input"],
             },
         );
         map.insert(
-            CompactString::new("upcase"),
+            SmolStr::new("upcase"),
             BuiltinFunctionDoc {
                 description: "Converts the given string to uppercase.",
                 params: &["input"],
             },
         );
         map.insert(
-            CompactString::new(constants::SLICE),
+            SmolStr::new(constants::SLICE),
             BuiltinFunctionDoc {
                 description: "Extracts a substring from the given string.",
                 params: &["string", "start", "end"],
             },
         );
         map.insert(
-            CompactString::new("update"),
+            SmolStr::new("update"),
             BuiltinFunctionDoc {
                 description: "Update the value with specified value.",
                 params: &["target_value", "source_value"],
             },
         );
         map.insert(
-            CompactString::new("pow"),
+            SmolStr::new("pow"),
             BuiltinFunctionDoc {
                 description: "Raises the base to the power of the exponent.",
                 params: &["base", "exponent"],
             },
         );
         map.insert(
-            CompactString::new("index"),
+            SmolStr::new("index"),
             BuiltinFunctionDoc {
                 description: "Finds the first occurrence of a substring in the given string.",
                 params: &["string", "substring"],
             },
         );
         map.insert(
-            CompactString::new("len"),
+            SmolStr::new("len"),
             BuiltinFunctionDoc {
                 description: "Returns the length of the given string or array.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("rindex"),
+            SmolStr::new("rindex"),
             BuiltinFunctionDoc {
                 description: "Finds the last occurrence of a substring in the given string.",
                 params: &["string", "substring"],
             },
         );
         map.insert(
-            CompactString::new("join"),
+            SmolStr::new("join"),
             BuiltinFunctionDoc {
                 description:
                     "Joins the elements of an array into a string with the given separator.",
@@ -3024,63 +3025,63 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("reverse"),
+            SmolStr::new("reverse"),
             BuiltinFunctionDoc {
                 description: "Reverses the given string or array.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("sort"),
+            SmolStr::new("sort"),
             BuiltinFunctionDoc {
                 description: "Sorts the elements of the given array.",
                 params: &["array"],
             },
         );
         map.insert(
-            CompactString::new("compact"),
+            SmolStr::new("compact"),
             BuiltinFunctionDoc {
                 description: "Removes None values from the given array.",
                 params: &["array"],
             },
         );
         map.insert(
-            CompactString::new("split"),
+            SmolStr::new("split"),
             BuiltinFunctionDoc {
                 description: "Splits the given string by the specified separator.",
                 params: &["string", "separator"],
             },
         );
         map.insert(
-            CompactString::new("uniq"),
+            SmolStr::new("uniq"),
             BuiltinFunctionDoc {
                 description: "Removes duplicate elements from the given array.",
                 params: &["array"],
             },
         );
         map.insert(
-            CompactString::new(constants::EQ),
+            SmolStr::new(constants::EQ),
             BuiltinFunctionDoc {
                 description: "Checks if two values are equal.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::NE),
+            SmolStr::new(constants::NE),
             BuiltinFunctionDoc {
                 description: "Checks if two values are not equal.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::GT),
+            SmolStr::new(constants::GT),
             BuiltinFunctionDoc {
                 description: "Checks if the first value is greater than the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::GTE),
+            SmolStr::new(constants::GTE),
             BuiltinFunctionDoc {
                 description:
                     "Checks if the first value is greater than or equal to the second value.",
@@ -3088,70 +3089,70 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new(constants::LT),
+            SmolStr::new(constants::LT),
             BuiltinFunctionDoc {
                 description: "Checks if the first value is less than the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::LTE),
+            SmolStr::new(constants::LTE),
             BuiltinFunctionDoc {
                 description: "Checks if the first value is less than or equal to the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::ADD),
+            SmolStr::new(constants::ADD),
             BuiltinFunctionDoc {
                 description: "Adds two values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::SUB),
+            SmolStr::new(constants::SUB),
             BuiltinFunctionDoc {
                 description: "Subtracts the second value from the first value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::DIV),
+            SmolStr::new(constants::DIV),
             BuiltinFunctionDoc {
                 description: "Divides the first value by the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::MUL),
+            SmolStr::new(constants::MUL),
             BuiltinFunctionDoc {
                 description: "Multiplies two values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::MOD),
+            SmolStr::new(constants::MOD),
             BuiltinFunctionDoc {
                 description: "Calculates the remainder of the division of the first value by the second value.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::AND),
+            SmolStr::new(constants::AND),
             BuiltinFunctionDoc {
                 description: "Performs a logical AND operation on two boolean values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::OR),
+            SmolStr::new(constants::OR),
             BuiltinFunctionDoc {
                 description: "Performs a logical OR operation on two boolean values.",
                 params: &["value1", "value2"],
             },
         );
         map.insert(
-            CompactString::new(constants::NOT),
+            SmolStr::new(constants::NOT),
             BuiltinFunctionDoc {
                 description: "Performs a logical NOT operation on a boolean value.",
                 params: &["value"],
@@ -3159,14 +3160,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
         );
 
         map.insert(
-            CompactString::new("round"),
+            SmolStr::new("round"),
             BuiltinFunctionDoc {
                 description: "Rounds the given number to the nearest integer.",
                 params: &["number"],
             },
         );
         map.insert(
-            CompactString::new("trunc"),
+            SmolStr::new("trunc"),
             BuiltinFunctionDoc {
                 description:
                     "Truncates the given number to an integer by removing the fractional part.",
@@ -3174,70 +3175,70 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("ceil"),
+            SmolStr::new("ceil"),
             BuiltinFunctionDoc {
                 description: "Rounds the given number up to the nearest integer.",
                 params: &["number"],
             },
         );
         map.insert(
-            CompactString::new("floor"),
+            SmolStr::new("floor"),
             BuiltinFunctionDoc {
                 description: "Rounds the given number down to the nearest integer.",
                 params: &["number"],
             },
         );
         map.insert(
-            CompactString::new("del"),
+            SmolStr::new("del"),
             BuiltinFunctionDoc {
                 description: "Deletes the element at the specified index in the array or string.",
                 params: &["array_or_string", "index"],
             },
         );
         map.insert(
-            CompactString::new("abs"),
+            SmolStr::new("abs"),
             BuiltinFunctionDoc {
                 description: "Returns the absolute value of the given number.",
                 params: &["number"],
             },
         );
         map.insert(
-            CompactString::new(constants::ATTR),
+            SmolStr::new(constants::ATTR),
             BuiltinFunctionDoc {
                 description: "Retrieves the value of the specified attribute from a markdown node.",
                 params: &["markdown", "attribute"],
             },
         );
         map.insert(
-            CompactString::new("set_attr"),
+            SmolStr::new("set_attr"),
             BuiltinFunctionDoc {
                 description: "Sets the value of the specified attribute on a markdown node.",
                 params: &["markdown", "attribute", "value"],
             },
         );
         map.insert(
-            CompactString::new("to_md_name"),
+            SmolStr::new("to_md_name"),
             BuiltinFunctionDoc {
                 description: "Returns the name of the given markdown node.",
                 params: &["markdown"],
             },
         );
         map.insert(
-            CompactString::new("set_list_ordered"),
+            SmolStr::new("set_list_ordered"),
             BuiltinFunctionDoc {
                 description: "Sets the ordered property of a markdown list node.",
                 params: &["list", "ordered"],
             },
         );
         map.insert(
-            CompactString::new("to_md_text"),
+            SmolStr::new("to_md_text"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown text node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_image"),
+            SmolStr::new("to_image"),
             BuiltinFunctionDoc {
                 description:
                     "Creates a markdown image node with the given URL, alt text, and title.",
@@ -3245,175 +3246,175 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("to_code"),
+            SmolStr::new("to_code"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown code block with the given value and language.",
                 params: &["value", "language"],
             },
         );
         map.insert(
-            CompactString::new("to_code_inline"),
+            SmolStr::new("to_code_inline"),
             BuiltinFunctionDoc {
                 description: "Creates an inline markdown code node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_h"),
+            SmolStr::new("to_h"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown heading node with the given value and depth.",
                 params: &["value", "depth"],
             },
         );
         map.insert(
-            CompactString::new("to_math"),
+            SmolStr::new("to_math"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown math block with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_math_inline"),
+            SmolStr::new("to_math_inline"),
             BuiltinFunctionDoc {
                 description: "Creates an inline markdown math node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_strong"),
+            SmolStr::new("to_strong"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown strong (bold) node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_em"),
+            SmolStr::new("to_em"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown emphasis (italic) node with the given value.",
                 params: &["value"],
             },
         );
         map.insert(
-            CompactString::new("to_hr"),
+            SmolStr::new("to_hr"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown horizontal rule node.",
                 params: &[],
             },
         );
         map.insert(
-            CompactString::new("to_link"),
+            SmolStr::new("to_link"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown link node  with the given  url and title.",
                 params: &["url", "value", "title"],
             },
         );
         map.insert(
-            CompactString::new("to_md_list"),
+            SmolStr::new("to_md_list"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given value and indent level.",
                 params: &["value", "indent"],
             },
         );
         map.insert(
-            CompactString::new("to_md_table_row"),
+            SmolStr::new("to_md_table_row"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown table row node with the given values.",
                 params: &["cells"],
             },
         );
         map.insert(
-            CompactString::new("get_title"),
+            SmolStr::new("get_title"),
             BuiltinFunctionDoc {
                 description: "Returns the title of a markdown node.",
                 params: &["node"],
             },
         );
         map.insert(
-            CompactString::new("get_url"),
+            SmolStr::new("get_url"),
             BuiltinFunctionDoc {
                 description: "Returns the url of a markdown node.",
                 params: &["node"],
             },
         );
         map.insert(
-            CompactString::new("set_check"),
+            SmolStr::new("set_check"),
             BuiltinFunctionDoc {
                 description: "Creates a markdown list node with the given checked state.",
                 params: &["list", "checked"],
             },
         );
         map.insert(
-            CompactString::new("set_ref"),
+            SmolStr::new("set_ref"),
             BuiltinFunctionDoc {
             description: "Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).",
             params: &["node", "reference_id"],
             },
         );
         map.insert(
-            CompactString::new("set_code_block_lang"),
+            SmolStr::new("set_code_block_lang"),
             BuiltinFunctionDoc {
                 description: "Sets the language of a markdown code block node.",
                 params: &["code_block", "language"],
             },
         );
         map.insert(
-            CompactString::new(constants::DICT),
+            SmolStr::new(constants::DICT),
             BuiltinFunctionDoc {
                 description: "Creates a new, empty dict.",
                 params: &[],
             },
         );
         map.insert(
-            CompactString::new(constants::GET),
+            SmolStr::new(constants::GET),
             BuiltinFunctionDoc {
                 description: "Retrieves a value from a dict by its key. Returns None if the key is not found.",
                 params: &["obj", "key"],
             },
         );
         map.insert(
-            CompactString::new("set"),
+            SmolStr::new("set"),
             BuiltinFunctionDoc {
                 description: "Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.",
                 params: &["obj", "key", "value"],
             },
         );
         map.insert(
-            CompactString::new("keys"),
+            SmolStr::new("keys"),
             BuiltinFunctionDoc {
                 description: "Returns an array of keys from the dict.",
                 params: &["dict"],
             },
         );
         map.insert(
-            CompactString::new("values"),
+            SmolStr::new("values"),
             BuiltinFunctionDoc {
                 description: "Returns an array of values from the dict.",
                 params: &["dict"],
             },
         );
         map.insert(
-            CompactString::new("entries"),
+            SmolStr::new("entries"),
             BuiltinFunctionDoc {
                 description: "Returns an array of key-value pairs from the dict as arrays.",
                 params: &["dict"],
             },
         );
         map.insert(
-            CompactString::new(constants::RANGE),
+            SmolStr::new(constants::RANGE),
             BuiltinFunctionDoc {
                 description: "Creates an array from start to end with an optional step.",
                 params: &["start", "end", "step"],
             },
         );
         map.insert(
-            CompactString::new("insert"),
+            SmolStr::new("insert"),
             BuiltinFunctionDoc {
             description: "Inserts a value into an array or string at the specified index, or into a dict with the specified key.",
             params: &["target", "index_or_key", "value"],
             },
         );
         map.insert(
-            CompactString::new("increase_header_level"),
+            SmolStr::new("increase_header_level"),
             BuiltinFunctionDoc {
                 description:
                     "Increases the level of a markdown heading node by one, up to a maximum of 6.",
@@ -3421,7 +3422,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
             },
         );
         map.insert(
-            CompactString::new("decrease_header_level"),
+            SmolStr::new("decrease_header_level"),
             BuiltinFunctionDoc {
             description: "Decreases the level of a markdown heading node by one, down to a minimum of 1.",
             params: &["heading_node"],
@@ -3430,7 +3431,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
 
         #[cfg(feature = "file-io")]
         map.insert(
-            CompactString::new("read_file"),
+            SmolStr::new("read_file"),
             BuiltinFunctionDoc {
             description: "Reads the contents of a file at the given path and returns it as a string.",
             params: &["path"],
@@ -3438,7 +3439,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
         );
 
         map.insert(
-            CompactString::new(constants::BREAKPOINT),
+            SmolStr::new(constants::BREAKPOINT),
             BuiltinFunctionDoc {
             description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
             params: &[],
@@ -3446,7 +3447,8 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<CompactString, BuiltinFuncti
         );
 
         map
-    });
+    },
+);
 
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
@@ -3918,7 +3920,7 @@ mod tests {
         #[case] expected: Result<RuntimeValue, Error>,
     ) {
         let ident = ast::Ident {
-            name: CompactString::new(func_name),
+            name: SmolStr::new(func_name),
             token: None,
         };
 
@@ -3937,7 +3939,7 @@ mod tests {
         #[case] expected_error: Error,
     ) {
         let ident = ast::Ident {
-            name: CompactString::new(func_name),
+            name: SmolStr::new(func_name),
             token: None,
         };
 
@@ -3949,7 +3951,7 @@ mod tests {
     #[test]
     fn test_implicit_first_arg() {
         let ident = ast::Ident {
-            name: CompactString::new("starts_with"),
+            name: SmolStr::new("starts_with"),
             token: None,
         };
 
@@ -4181,7 +4183,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_new_dict() {
         let ident = ast::Ident {
-            name: CompactString::new("dict"),
+            name: SmolStr::new("dict"),
             token: None,
         };
         let result = eval_builtin(&RuntimeValue::None, &ident, vec![]);
@@ -4214,7 +4216,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_set_dict() {
         let ident_set = ast::Ident {
-            name: CompactString::new("set"),
+            name: SmolStr::new("set"),
             token: None,
         };
         let initial_map = RuntimeValue::new_dict();
@@ -4330,7 +4332,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_get_map() {
         let ident_get = ast::Ident {
-            name: CompactString::new("get"),
+            name: SmolStr::new("get"),
             token: None,
         };
         let mut map_data = BTreeMap::default();
@@ -4376,7 +4378,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_keys_dict() {
         let ident_keys = ast::Ident {
-            name: CompactString::new("keys"),
+            name: SmolStr::new("keys"),
             token: None,
         };
 
@@ -4428,7 +4430,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_values_dict() {
         let ident_values = ast::Ident {
-            name: CompactString::new("values"),
+            name: SmolStr::new("values"),
             token: None,
         };
 

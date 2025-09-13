@@ -2,19 +2,19 @@ use std::fmt;
 
 use crate::source::SourceInfo;
 use crate::{SourceId, scope::ScopeId};
-use compact_str::CompactString;
 use itertools::Itertools;
+use smol_str::SmolStr;
 
 slotmap::new_key_type! { pub struct SymbolId; }
 
-type Params = Vec<CompactString>;
+type Params = Vec<SmolStr>;
 pub type Doc = (mq_lang::Range, String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
     pub doc: Vec<Doc>,
     pub kind: SymbolKind,
-    pub value: Option<CompactString>,
+    pub value: Option<SmolStr>,
     pub scope: ScopeId,
     pub source: SourceInfo,
     pub parent: Option<SymbolId>,
@@ -99,7 +99,7 @@ mod tests {
         Symbol {
             doc: Vec::new(),
             kind,
-            value: value.map(CompactString::from),
+            value: value.map(SmolStr::from),
             scope: ScopeId::default(),
             source: SourceInfo::new(None, None),
             parent: None,
@@ -108,7 +108,7 @@ mod tests {
 
     #[rstest]
     #[case(SymbolKind::Function(Vec::new()), true)]
-    #[case(SymbolKind::Function(vec![CompactString::from("param")]), true)]
+    #[case(SymbolKind::Function(vec![SmolStr::from("param")]), true)]
     #[case(SymbolKind::Variable, false)]
     #[case(SymbolKind::Call, false)]
     fn test_is_function(#[case] kind: SymbolKind, #[case] expected: bool) {

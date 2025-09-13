@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use compact_str::CompactString;
 use node::Node;
+use smol_str::SmolStr;
 
 use crate::{Token, arena::ArenaId};
 
@@ -11,7 +11,7 @@ pub mod node;
 pub mod parser;
 
 pub type Program = Vec<Rc<Node>>;
-pub type IdentName = CompactString;
+pub type IdentName = SmolStr;
 pub type TokenId = ArenaId<Rc<Token>>;
 
 /// Serializes an AST `Program` to a JSON string.

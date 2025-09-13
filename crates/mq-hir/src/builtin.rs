@@ -1,14 +1,14 @@
-use compact_str::CompactString;
 use rustc_hash::FxHashMap;
+use smol_str::SmolStr;
 
 use crate::{scope::ScopeId, source::SourceId};
 
 #[derive(Debug, Default)]
 pub struct Builtin {
     pub disabled: bool,
-    pub functions: FxHashMap<CompactString, mq_lang::BuiltinFunctionDoc>,
-    pub internal_functions: FxHashMap<CompactString, mq_lang::BuiltinFunctionDoc>,
-    pub selectors: FxHashMap<CompactString, mq_lang::BuiltinSelectorDoc>,
+    pub functions: FxHashMap<SmolStr, mq_lang::BuiltinFunctionDoc>,
+    pub internal_functions: FxHashMap<SmolStr, mq_lang::BuiltinFunctionDoc>,
+    pub selectors: FxHashMap<SmolStr, mq_lang::BuiltinSelectorDoc>,
     pub source_id: SourceId,
     pub scope_id: ScopeId,
     pub loaded: bool,

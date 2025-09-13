@@ -1,8 +1,8 @@
 use std::fmt::{self, Display};
 
-use compact_str::CompactString;
 use itertools::Itertools;
 use markdown::mdast::{self};
+use smol_str::SmolStr;
 
 type Level = u8;
 
@@ -387,7 +387,7 @@ pub struct Yaml {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct CodeInline {
-    pub value: CompactString,
+    pub value: SmolStr,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
@@ -399,7 +399,7 @@ pub struct CodeInline {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MathInline {
-    pub value: CompactString,
+    pub value: SmolStr,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
@@ -423,7 +423,7 @@ pub struct Math {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxFlowExpression {
-    pub value: CompactString,
+    pub value: SmolStr,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
@@ -449,7 +449,7 @@ pub struct MdxJsxFlowElement {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub enum MdxAttributeContent {
-    Expression(CompactString),
+    Expression(SmolStr),
     Property(MdxJsxAttribute),
 }
 
@@ -460,7 +460,7 @@ pub enum MdxAttributeContent {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxJsxAttribute {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub value: Option<MdxAttributeValue>,
 }
 
@@ -471,8 +471,8 @@ pub struct MdxJsxAttribute {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub enum MdxAttributeValue {
-    Expression(CompactString),
-    Literal(CompactString),
+    Expression(SmolStr),
+    Literal(SmolStr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -485,7 +485,7 @@ pub struct MdxJsxTextElement {
     pub children: Vec<Node>,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
-    pub name: Option<CompactString>,
+    pub name: Option<SmolStr>,
     pub attributes: Vec<MdxAttributeContent>,
 }
 
@@ -496,7 +496,7 @@ pub struct MdxJsxTextElement {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxTextExpression {
-    pub value: CompactString,
+    pub value: SmolStr,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
@@ -508,7 +508,7 @@ pub struct MdxTextExpression {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxJsEsm {
-    pub value: CompactString,
+    pub value: SmolStr,
     #[cfg_attr(feature = "json", serde(skip))]
     pub position: Option<Position>,
 }
@@ -1104,7 +1104,7 @@ impl Node {
         }
     }
 
-    pub fn name(&self) -> CompactString {
+    pub fn name(&self) -> SmolStr {
         match self {
             Self::Blockquote(_) => "blockquote".into(),
             Self::Break { .. } => "break".into(),
@@ -1375,7 +1375,7 @@ impl Node {
         matches!(self, Self::Definition(_))
     }
 
-    pub fn is_code(&self, lang: Option<CompactString>) -> bool {
+    pub fn is_code(&self, lang: Option<SmolStr>) -> bool {
         if let Self::Code(Code {
             lang: node_lang, ..
         }) = &self
@@ -2574,7 +2574,7 @@ impl Node {
             .collect()
     }
 
-    fn mdx_attribute_content_to_string(attr: MdxAttributeContent) -> CompactString {
+    fn mdx_attribute_content_to_string(attr: MdxAttributeContent) -> SmolStr {
         match attr {
             MdxAttributeContent::Expression(value) => format!("{{{}}}", value).into(),
             MdxAttributeContent::Property(property) => match property.value {
@@ -3061,11 +3061,7 @@ mod tests {
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), true, None)]
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: false, meta: None, position: None}), true, None)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false, None)]
-    fn test_is_code(
-        #[case] node: Node,
-        #[case] expected: bool,
-        #[case] lang: Option<CompactString>,
-    ) {
+    fn test_is_code(#[case] node: Node, #[case] expected: bool, #[case] lang: Option<SmolStr>) {
         assert_eq!(node.is_code(lang), expected);
     }
 

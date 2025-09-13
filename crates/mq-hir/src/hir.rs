@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use compact_str::CompactString;
 use mq_lang::{Token, TokenKind};
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
+use smol_str::SmolStr;
 use url::Url;
 
 use crate::{
@@ -185,7 +185,7 @@ impl Hir {
                     mq_lang::BUILTIN_FUNCTION_DOC[name]
                         .params
                         .iter()
-                        .map(|p| CompactString::new(p))
+                        .map(SmolStr::new)
                         .collect::<Vec<_>>(),
                 ),
                 source: SourceInfo::new(Some(self.builtin.source_id), None),
@@ -209,7 +209,7 @@ impl Hir {
                         mq_lang::INTERNAL_FUNCTION_DOC[name]
                             .params
                             .iter()
-                            .map(|p| CompactString::new(p))
+                            .map(SmolStr::new)
                             .collect::<Vec<_>>(),
                     ),
                     source: SourceInfo::new(Some(self.builtin.source_id), None),

@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 
-use compact_str::CompactString;
 use itertools::Itertools;
+use smol_str::SmolStr;
 
 #[cfg(feature = "ast-json")]
 use crate::ArenaId;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub enum StringSegment {
     Text(String, Range),
-    Ident(CompactString, Range),
+    Ident(SmolStr, Range),
 }
 
 impl Display for StringSegment {
@@ -56,7 +56,7 @@ pub enum TokenKind {
     Elif,
     Else,
     End,
-    Env(CompactString),
+    Env(SmolStr),
     Eof,
     Equal,
     EqEq,
@@ -64,7 +64,7 @@ pub enum TokenKind {
     Foreach,
     Gt,
     Gte,
-    Ident(CompactString),
+    Ident(SmolStr),
     If,
     Include,
     InterpolatedString(Vec<StringSegment>),
@@ -86,7 +86,7 @@ pub enum TokenKind {
     RBracket,
     RBrace,
     RParen,
-    Selector(CompactString),
+    Selector(SmolStr),
     Self_,
     SemiColon,
     StringLiteral(String),
@@ -186,14 +186,14 @@ mod tests {
         "hello"
     )]
     #[case(
-        StringSegment::Ident(CompactString::new("world"), Range::default()),
+        StringSegment::Ident(SmolStr::new("world"), Range::default()),
         "${world}"
     )]
     #[case(
         StringSegment::Text("".to_string(), Range::default()),
         ""
     )]
-    #[case(StringSegment::Ident(CompactString::new(""), Range::default()), "${}")]
+    #[case(StringSegment::Ident(SmolStr::new(""), Range::default()), "${}")]
     fn string_segment_display_works(#[case] segment: StringSegment, #[case] expected: &str) {
         assert_eq!(segment.to_string(), expected);
     }
