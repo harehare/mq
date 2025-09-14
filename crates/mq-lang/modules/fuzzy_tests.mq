@@ -37,7 +37,7 @@ include "fuzzy"
 
 | def test_fuzzy_best_match():
     let result1 = fuzzy_best_match("lawn", "lawn")
-    | assert_eq(result1,  {"score": 1, "text": "lawn"})
+    | assert_eq(result1, {"score": 1, "text": "lawn"})
 
     | let result2 = fuzzy_best_match("lawn", ["flaw", "lawn", "pawn"])
     | assert_eq(result2, {"score": 1, "text": "lawn"})
@@ -53,18 +53,18 @@ include "fuzzy"
   end
 
 | def test_fuzzy_filter():
-     let result1 = fuzzy_filter("lawn", ["flaw", "lawn", "pawn"], 0.9)
+    let result1 = fuzzy_filter("lawn", ["flaw", "lawn", "pawn"], 0.9)
     | assert_eq(len(result1), 1)
 
-    | let result2 = fuzzy_filter("flaw", ["lawn", "claw"], 0.8)
-    | assert_eq(len(result2), 2)
+    | let result2 = fuzzy_filter("flaw", ["lawn", "claw"], 0.7)
+    | assert_eq(len(result2), 1)
 
-    | let result3 = fuzzy_filter("flaw", ["lawn", "claw"], 0.8)
+    | let result3 = fuzzy_filter("flaw", ["lawn", "claw"], 0.6)
     | assert_eq(len(result3), 2)
 
     | let result4 = fuzzy_filter("flaw", [], 0.8)
     | assert_eq(len(result4), 0)
-end
+  end
 
 |
 

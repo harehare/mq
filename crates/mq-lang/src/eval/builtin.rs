@@ -538,28 +538,9 @@ define_builtin!(
     REPEAT,
     ParamNum::Fixed(2),
     |ident, _, mut args| match args.as_mut_slice() {
-        [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            Ok(s.repeat(n.value() as usize).into())
+        [v, RuntimeValue::Number(n)] => {
+            repeat(v, n.value() as usize)
         }
-        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(n)] => node
-            .markdown_node()
-            .map(|md| {
-                Ok(node.update_markdown_value(md.value().repeat(n.value() as usize).as_str()))
-            })
-            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
-            let n = n.value() as usize;
-            if n == 0 {
-                return Ok(RuntimeValue::EMPTY_ARRAY);
-            }
-
-            let mut repeated_array = Vec::with_capacity(array.len() * n);
-            for _ in 0..n {
-                repeated_array.extend_from_slice(array);
-            }
-            Ok(RuntimeValue::Array(repeated_array))
-        }
-        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -1382,8 +1363,8 @@ define_builtin!(
     ParamNum::Fixed(2),
     |_, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
-        [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            Ok(s.repeat(n.value() as usize).into())
+        [v, RuntimeValue::Number(n)] => {
+            repeat(v, n.value() as usize)
         }
         [a, b] => match (to_number(a)?, to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
@@ -3887,6 +3868,34 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
         RuntimeValue::Bool(false) => Ok(RuntimeValue::Number(0.into())),
         RuntimeValue::Number(n) => Ok(RuntimeValue::Number(std::mem::take(n))),
         _ => Ok(RuntimeValue::Number(0.into())),
+    }
+}
+
+fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
+    match &*value {
+        RuntimeValue::String(s) => Ok(s.repeat(n).into()),
+        node @ RuntimeValue::Markdown(_, _) => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(md.value().repeat(n).as_str())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        RuntimeValue::Array(array) => {
+            if n == 0 {
+                return Ok(RuntimeValue::EMPTY_ARRAY);
+            }
+
+            let mut repeated_array = Vec::with_capacity(array.len() * n);
+            for _ in 0..n {
+                repeated_array.extend_from_slice(array);
+            }
+            Ok(RuntimeValue::Array(repeated_array))
+        }
+        v => {
+            let mut repeated_array = Vec::with_capacity(n);
+            for _ in 0..n {
+                repeated_array.push(v.clone());
+            }
+            Ok(RuntimeValue::Array(repeated_array))
+        }
     }
 }
 

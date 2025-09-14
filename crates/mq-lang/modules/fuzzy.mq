@@ -57,25 +57,26 @@ def _calculate_jaro_distance(s1, s2, len1, len2):
   | let matches = 0
   | let i = 0
   | let result = until (i < len1):
-      let start = if (i >= match_window): i - match_window else: 0
-      | let end_ = if (i + match_window + 1 < len2): i + match_window + 1 else: len2
+      let start = max(i - match_window, 0)
+      | let end_ = min(len2, i + match_window + 1)
       | let j = start
       | let found = false
       | let result = until (j < end_ && !found):
-              let reuslt = if (s1[i] == s2[j] && !contains(s2_matches, j)):
+              let result = if (s1[i] == s2[j] && !contains(s2_matches, j)):
                 [true, j]
               else:
                 [false, j + 1]
-              | let found = reuslt[0]
-              | let j = reuslt[1]
-              | [found, j]
+              | let found = result[0]
+              | let j = result[1]
+              | let result = if (found):
+                              [s1_matches + [i], s2_matches + [j], matches + 1]
+                            else:
+                              [s1_matches, s2_matches, matches]
+              | let s1_matches = result[0]
+              | let s2_matches = result[1]
+              | let matches = result[2]
+              | result
             end
-      | let found = result[0]
-      | let j = result[1]
-      | let result = if (found):
-              [s1_matches + [i], s2_matches + [j], matches + 1]
-            else:
-              [s1_matches, s2_matches, matches]
       | let s1_matches = result[0]
       | let s2_matches = result[1]
       | let matches = result[2]
@@ -96,7 +97,7 @@ def _calculate_jaro_with_transpositions(s1, s2, s1_matches, s2_matches, matches,
   | let i = 0
   | let s1_matches_len = len(s1_matches)
   | let transpositions = until (i < s1_matches_len):
-      let transpositions = if (s1[s1_matches[i]] != s2[s2_matches[i]]):
+      let transpositions = if (s1_matches[i] != s2_matches[i]):
         transpositions + 1
       else:
         transpositions
@@ -104,7 +105,7 @@ def _calculate_jaro_with_transpositions(s1, s2, s1_matches, s2_matches, matches,
       | transpositions
     end
   | let transpositions = transpositions / 2
-  | (to_number(matches) / to_number(len1) + to_number(matches) / to_number(len2) + (to_number(matches) - transpositions) / to_number(matches)) / 3
+  | ((matches / len1) + (matches / len2) + ((matches - transpositions) / matches)) / 3
 end
 
 def _jaro_distance(s1, s2):

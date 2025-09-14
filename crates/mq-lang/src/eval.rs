@@ -813,6 +813,8 @@ impl Evaluator {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use crate::ast::node::Args;
     use crate::range::Range;
     use crate::{AstExpr, AstNode, ModuleLoader};
@@ -3149,15 +3151,17 @@ mod tests {
             ])
         ],
         Ok(vec!["".to_string().into()]))]
-    #[case::repeat_invalid_type(vec![RuntimeValue::Number(42.into())],
+    #[case::repeat_number(vec![RuntimeValue::Number(42.into())],
         vec![
             ast_call("repeat", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(3.into())))
             ])
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                     name: "repeat".to_string(),
-                                                     args: vec![42.to_string().into(), 3.to_string().into()]})))]
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(42.into()),
+            RuntimeValue::Number(42.into()),
+            RuntimeValue::Number(42.into()),
+        ])]))]
     #[case::debug(vec![RuntimeValue::String("test".to_string())],
         vec![
             ast_call("stderr", SmallVec::new())
@@ -4474,13 +4478,13 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::NONE]))]
-    #[case::replace(vec![RuntimeValue::NONE],
+    #[case::repeat(vec![RuntimeValue::NONE],
        vec![
             ast_call("repeat", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
             ])
        ],
-       Ok(vec![RuntimeValue::NONE]))]
+       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::NONE])]))]
     #[case::trim(vec![RuntimeValue::NONE],
        vec![
             ast_call("trim", SmallVec::new())
