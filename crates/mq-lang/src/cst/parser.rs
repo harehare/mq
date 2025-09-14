@@ -842,6 +842,11 @@ impl<'a> Parser<'a> {
                 range: _,
                 kind: TokenKind::LParen,
                 ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::LBrace,
+                ..
             } => self.parse_expr(leading_trivia, false, false),
             _ => Err(ParseError::UnexpectedToken(Arc::clone(&token))),
         }

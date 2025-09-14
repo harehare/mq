@@ -29,6 +29,12 @@ impl Number {
     }
 }
 
+impl Default for Number {
+    fn default() -> Self {
+        Number(0.0)
+    }
+}
+
 impl From<i64> for Number {
     fn from(value: i64) -> Self {
         Number(value as f64)

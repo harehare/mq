@@ -74,18 +74,13 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     }
 
     std_module!(csv);
-    std_module!(yaml);
+    std_module!(fuzzy);
     std_module!(json);
     std_module!(test);
     std_module!(toml);
     std_module!(xml);
+    std_module!(yaml);
 
-    map.insert(SmolStr::new("csv"), csv as fn() -> &'static str);
-    map.insert(SmolStr::new("yaml"), yaml as fn() -> &'static str);
-    map.insert(SmolStr::new("json"), json as fn() -> &'static str);
-    map.insert(SmolStr::new("test"), test as fn() -> &'static str);
-    map.insert(SmolStr::new("toml"), toml as fn() -> &'static str);
-    map.insert(SmolStr::new("xml"), xml as fn() -> &'static str);
     map
 });
 

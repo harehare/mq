@@ -1,0 +1,85 @@
+include "fuzzy"
+| include "test"
+
+| def test_levenshtein():
+    let result1 = levenshtein("flaw", "lawn")
+    | assert_eq(result1, 2)
+
+    | let result2 = levenshtein("", "")
+    | assert_eq(result2, 0)
+
+    | let result3 = levenshtein("a", "")
+    | assert_eq(result3, 1)
+
+    | let result4 = levenshtein("", "a")
+    | assert_eq(result4, 1)
+
+    | let result5 = levenshtein("abc", "abc")
+    | assert_eq(result5, 0)
+  end
+
+| def test_jaro_winkler():
+    let result1 = jaro_winkler("flaw", "lawn")
+    | assert(result1 > 0 && result1 < 1)
+
+    | let result2 = jaro_winkler("", "")
+    | assert_eq(result2, 1)
+
+    | let result3 = jaro_winkler("a", "")
+    | assert_eq(result3, 0)
+
+    | let result4 = jaro_winkler("", "a")
+    | assert_eq(result4, 0)
+
+    | let result5 = jaro_winkler("abc", "abc")
+    | assert_eq(result5, 1)
+  end
+
+| def test_fuzzy_best_match():
+    let result1 = fuzzy_best_match("lawn", "lawn")
+    | assert_eq(result1, {"score": 1, "text": "lawn"})
+
+    | let result2 = fuzzy_best_match("lawn", ["flaw", "lawn", "pawn"])
+    | assert_eq(result2, {"score": 1, "text": "lawn"})
+
+    | let result3 = fuzzy_best_match("flaw", ["lawn", "flaw", "claw"])
+    | assert_eq(result3, {"score": 1, "text": "flaw"})
+
+    | let result4 = fuzzy_best_match("flaw", ["lawn", "claw"])
+    | assert(result4["score"] < 1 && (result4["text"] == "lawn" || result4["text"] == "claw"))
+
+    | let result5 = fuzzy_best_match("flaw", [])
+    | assert_eq(result5, None)
+  end
+
+| def test_fuzzy_match_levenshtein():
+    let result1 = fuzzy_match_levenshtein("lawn", "lawn")
+    | assert_eq(result1, [{"score": 0, "text": "lawn"}])
+
+    | let result2 = fuzzy_match_levenshtein("book", "back")
+    | assert_eq(result2, [{"score": 2, "text": "back"}])
+  end
+
+| def test_fuzzy_filter():
+    let result1 = fuzzy_filter("lawn", ["flaw", "lawn", "pawn"], 0.9)
+    | assert_eq(len(result1), 1)
+
+    | let result2 = fuzzy_filter("flaw", ["lawn", "claw"], 0.7)
+    | assert_eq(len(result2), 1)
+
+    | let result3 = fuzzy_filter("flaw", ["lawn", "claw"], 0.6)
+    | assert_eq(len(result3), 2)
+
+    | let result4 = fuzzy_filter("flaw", [], 0.8)
+    | assert_eq(len(result4), 0)
+  end
+
+|
+
+run_tests([
+  test_case("Levenshtein Distance", test_levenshtein),
+  test_case("Jaro-Winkler Distance", test_jaro_winkler),
+  test_case("Fuzzy Best Match", test_fuzzy_best_match),
+  test_case("Fuzzy Filter", test_fuzzy_filter),
+  test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein)
+])
