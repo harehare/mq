@@ -30,9 +30,10 @@ It's written in Rust, allowing you to easily slice, filter, map, and transform s
 
 ## Why mq?
 
-mq makes working with Markdown files as easy as jq makes working with JSON. It's especially useful for:
+mq makes working with Markdown files as easy as jq makes working with JSON. Since LLM inputs are primarily in Markdown format, mq provides efficient tools for generating and processing the structured Markdown content that LLMs require. It's especially useful for:
 
 - **LLM Workflows**: Efficiently manipulate and process Markdown used in LLM prompts and outputs
+- **LLM Input Generation**: Generate structured Markdown content optimized for LLM consumption, since Markdown serves as the primary input format for most language models
 - **Documentation Management**: Extract, transform, and organize content across multiple documentation files
 - **Content Analysis**: Quickly extract specific sections or patterns from Markdown documents
 - **Batch Processing**: Apply consistent transformations across multiple Markdown files
