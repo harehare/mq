@@ -3866,7 +3866,7 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
         }
         RuntimeValue::Bool(true) => Ok(RuntimeValue::Number(1.into())),
         RuntimeValue::Bool(false) => Ok(RuntimeValue::Number(0.into())),
-        RuntimeValue::Number(n) => Ok(RuntimeValue::Number(std::mem::take(n))),
+        RuntimeValue::Number(n) => Ok(RuntimeValue::Number(*n)),
         _ => Ok(RuntimeValue::Number(0.into())),
     }
 }

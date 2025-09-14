@@ -165,10 +165,11 @@ end
 
 # Performs fuzzy matching using Levenshtein distance.
 def fuzzy_match_levenshtein(query, candidates):
-  let scored = map(candidates, fn(candidate):
-      {"text": candidate, "score": levenshtein(query, candidate)}
-    end)
-  | sort_by(scored, fn(item): item["score"];)
+  let candidates = if (is_array(candidates)):
+    candidates
+  else:
+    [candidates]
+  | _fuzzy_match_with_algorithm(query, candidates, levenshtein)
 end
 
 # Performs fuzzy matching using Jaro distance.

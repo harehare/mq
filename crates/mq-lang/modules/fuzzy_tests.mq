@@ -52,6 +52,14 @@ include "fuzzy"
     | assert_eq(result5, None)
   end
 
+| def test_fuzzy_match_levenshtein():
+    let result1 = fuzzy_match_levenshtein("lawn", "lawn")
+    | assert_eq(result1, [{"score": 0, "text": "lawn"}])
+
+    | let result2 = fuzzy_match_levenshtein("book", "back")
+    | assert_eq(result2, [{"score": 2, "text": "back"}])
+  end
+
 | def test_fuzzy_filter():
     let result1 = fuzzy_filter("lawn", ["flaw", "lawn", "pawn"], 0.9)
     | assert_eq(len(result1), 1)
@@ -72,5 +80,6 @@ run_tests([
   test_case("Levenshtein Distance", test_levenshtein),
   test_case("Jaro-Winkler Distance", test_jaro_winkler),
   test_case("Fuzzy Best Match", test_fuzzy_best_match),
-  test_case("Fuzzy Filter", test_fuzzy_filter)
+  test_case("Fuzzy Filter", test_fuzzy_filter),
+  test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein)
 ])
