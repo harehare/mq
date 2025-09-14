@@ -660,6 +660,9 @@ impl Formatter {
                         self.append_indent(indent_level);
                         self.output.push_str(&token.to_string());
                     } else {
+                        if !self.output.ends_with(' ') {
+                            self.append_space();
+                        }
                         self.output.push_str(&token.to_string());
                     }
                 }
@@ -1238,6 +1241,7 @@ process();"#,
     #[case::group_with_call("(test(1, 2))", "(test(1, 2))")]
     #[case::group_with_if("(if(test): test else: test2)", "(if (test): test else: test2)")]
     #[case::group_with_let("(let x = 1)", "(let x = 1)")]
+    #[case::fn_end("fn(): 1 end", "fn(): 1 end")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
