@@ -130,10 +130,9 @@ def _common_prefix_length(s1, s2):
 end
 
 def _fuzzy_match_with_algorithm(query, candidates, algorithm):
-  let scored = map(candidates, fn(candidate):
-      {"text": candidate, "score": algorithm(query, candidate)}
-    end)
-  | sort_by(scored, fn(item): 1 - item["score"];)
+  map(candidates, fn(candidate):
+    {"text": candidate, "score": algorithm(query, candidate)}
+  end)
 end
 
 # Calculates the Levenshtein distance between two strings.
@@ -161,6 +160,7 @@ def fuzzy_match(query, candidates):
   else:
     [candidates]
   | _fuzzy_match_with_algorithm(query, candidates, jaro_winkler)
+  | sort_by(fn(item): 1 - item["score"];)
 end
 
 # Performs fuzzy matching using Levenshtein distance.
@@ -170,11 +170,13 @@ def fuzzy_match_levenshtein(query, candidates):
   else:
     [candidates]
   | _fuzzy_match_with_algorithm(query, candidates, levenshtein)
+  | sort_by(fn(item): item["score"];)
 end
 
 # Performs fuzzy matching using Jaro distance.
 def fuzzy_match_jaro(query, candidates):
   _fuzzy_match_with_algorithm(query, candidates, jaro)
+  | sort_by(fn(item): 1 - item["score"];)
 end
 
 # Filters candidates by minimum fuzzy match score using Jaro-Winkler.
