@@ -86,7 +86,7 @@ def _calculate_jaro_distance(s1, s2, len1, len2):
   | let s1_matches = result[0]
   | let s2_matches = result[1]
   | let matches = result[2]
-  | if (matches == 0):
+  | if (is_none(matches) || matches == 0):
       0
     else:
       _calculate_jaro_with_transpositions(s1, s2, s1_matches, s2_matches, matches, len1, len2)
@@ -168,7 +168,7 @@ def fuzzy_match_levenshtein(query, candidates):
   let scored = map(candidates, fn(candidate):
       {"text": candidate, "score": levenshtein(query, candidate)}
     end)
-  | sort_by(scored, fn(item): item.score;)
+  | sort_by(scored, fn(item): item["score"];)
 end
 
 # Performs fuzzy matching using Jaro distance.

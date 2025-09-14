@@ -87,13 +87,13 @@ include "fuzzy"
 
 # Calculate Jaro-Winkler distance
 | jaro_winkler("hello", "hallo")
-# Returns: 0.8666666666666667
+# Returns: 0.88
 
 | jaro_winkler("martha", "marhta")
 # Returns: 0.9611111111111111
 
 | jaro_winkler("prefix_test", "prefix_example")
-# Returns: 0.8571428571428571
+# Returns: 0.84724
 
 | jaro_winkler("identical", "identical")
 # Returns: 1.0
@@ -117,10 +117,10 @@ include "fuzzy"
 # Fuzzy match with multiple candidates
 | fuzzy_match("hello", ["hallo", "hello", "hi", "help"])
 # Returns: [
-#   {"text": "hello", "score": 1.0},
-#   {"text": "hallo", "score": 0.8666666666666667},
-#   {"text": "help", "score": 0.7333333333333334},
-#   {"text": "hi", "score": 0.0}
+#   {"text": "hello", "score": 1},
+#   {"text": "hallo", "score": 0.88},
+#   {"text": "help", "score": 0.848333},
+#   {"text": "hi", "score": 0.1}
 # ]
 
 # Fuzzy match with single candidate
@@ -226,7 +226,7 @@ include "fuzzy"
 
 # Find best match
 | fuzzy_best_match("hello", ["hallo", "hi", "help"])
-# Returns: {"text": "hallo", "score": 0.8666666666666667}
+# Returns: {"text": "hallo", "score": 0.88}
 
 # No matches case
 | fuzzy_best_match("xyz", [])

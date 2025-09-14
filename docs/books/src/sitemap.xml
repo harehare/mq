@@ -141,6 +141,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/reference/fuzzy_functions</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference/json_functions</loc>
     <priority>1.0</priority>
   </url>
