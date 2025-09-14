@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         language: [ 'rust' ]
-        build-mode: [ 'autobuild' ]
+        build-mode: [ 'none' ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
