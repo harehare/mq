@@ -12,7 +12,7 @@ import { useCustomTools } from "./hooks/useCustomTools";
 import { TREE_VIEW_SETTINGS } from "./constants";
 import { tools } from "./tools";
 import { CustomToolManager } from "./components/CustomToolManager";
-import { GitHubStarButton } from "./components/GitHubStarButton";
+import { GitHubButton } from "./components/GitHubButton";
 
 const mdParser = new MarkdownIt();
 
@@ -206,9 +206,7 @@ function App() {
             A collection of useful tools for working with Markdown documents.
             Transform, analyze, and process your Markdown content with ease.
           </p>
-          <div className="privacy-indicator">
-            🔒 Local 100% • Telemetry 0%
-          </div>
+          <div className="privacy-indicator">🔒 Local 100% • Telemetry 0%</div>
         </div>
         <div className="header-controls">
           <button
@@ -236,7 +234,7 @@ function App() {
           <button onClick={toggleDarkMode} className="theme-toggle">
             {isDarkMode ? "☀️" : "🌙"}
           </button>
-          <GitHubStarButton />
+          <GitHubButton />
         </div>
       </header>
 
