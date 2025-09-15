@@ -4,7 +4,7 @@ import "./index.css";
 import * as mq from "mq-web";
 import { languages } from "monaco-editor";
 import LZString from "lz-string";
-import { GitHubStarButton } from "./components/GitHubStarButton";
+import { GitHubButton } from "./components/GitHubButton";
 
 type SharedData = {
   code: string;
@@ -834,7 +834,7 @@ export const Playground = () => {
             <h1>Playground</h1>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <GitHubStarButton />
+            <GitHubButton />
           </div>
         </header>
       )}
