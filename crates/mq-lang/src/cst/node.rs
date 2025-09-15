@@ -128,6 +128,7 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     Not,
+    Negate,
 }
 
 impl Display for Node {

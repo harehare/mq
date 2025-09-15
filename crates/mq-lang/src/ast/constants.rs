@@ -21,6 +21,7 @@ pub const MOD: &str = "mod";
 pub const AND: &str = "and";
 pub const OR: &str = "or";
 pub const NOT: &str = "not";
+pub const NEGATE: &str = "negate";
 
 pub const RANGE: &str = "range";
 

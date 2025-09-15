@@ -243,6 +243,7 @@ impl<'a> Parser<'a> {
             TokenKind::LBrace => self.parse_dict(token),
             TokenKind::LParen => self.parse_paren(token),
             TokenKind::Not => self.parse_not(token),
+            TokenKind::Minus => self.parse_negate(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
@@ -289,6 +290,25 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(Node {
             token_id,
             expr: Rc::new(Expr::Call(not_ident, args)),
+        }))
+    }
+
+    fn parse_negate(&mut self, minus_token: Rc<Token>) -> Result<Rc<Node>, ParseError> {
+        let token_id = self.token_arena.borrow_mut().alloc(Rc::clone(&minus_token));
+
+        let expr_token = match self.tokens.next() {
+            Some(t) => t,
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        let expr_node = self.parse_primary_expr(Rc::clone(expr_token))?;
+
+        let negate_ident = Ident::new_with_token(constants::NEGATE, Some(Rc::clone(&minus_token)));
+        let args = smallvec![expr_node];
+
+        Ok(Rc::new(Node {
+            token_id,
+            expr: Rc::new(Expr::Call(negate_ident, args)),
         }))
     }
 

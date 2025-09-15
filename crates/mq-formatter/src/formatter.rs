@@ -323,7 +323,7 @@ impl Formatter {
             self.output.push_str(&token.to_string());
 
             match op {
-                mq_lang::CstUnaryOp::Not => {
+                mq_lang::CstUnaryOp::Not | mq_lang::CstUnaryOp::Negate => {
                     self.format_node(Arc::clone(&node.children[0]), indent_level);
                 }
             }

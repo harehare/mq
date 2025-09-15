@@ -2129,6 +2129,19 @@ define_builtin!(
     }
 );
 
+define_builtin!(
+    NEGATE,
+    ParamNum::Fixed(1),
+    |ident, _, mut args| match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number((-n.value()).into())),
+        [a] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a)],
+        )),
+        _ => unreachable!(),
+    }
+);
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2205,6 +2218,7 @@ const HASH_LTE: u64 = fnv1a_hash_64(constants::LTE);
 const HASH_MATCH: u64 = fnv1a_hash_64("match");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
+const HASH_NEGATE: u64 = fnv1a_hash_64("negate");
 const HASH_MOD: u64 = fnv1a_hash_64(constants::MOD);
 const HASH_MUL: u64 = fnv1a_hash_64(constants::MUL);
 const HASH_NE: u64 = fnv1a_hash_64(constants::NE);
@@ -2309,6 +2323,7 @@ pub fn get_builtin_functions(name: &AstIdentName) -> Option<&'static BuiltinFunc
         HASH_MATCH => Some(&MATCH),
         HASH_MAX => Some(&MAX),
         HASH_MIN => Some(&MIN),
+        HASH_NEGATE => Some(&NEGATE),
         HASH_MOD => Some(&MOD),
         HASH_MUL => Some(&MUL),
         HASH_NE => Some(&NE),
@@ -3424,6 +3439,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             },
         );
 
+        map.insert(
+            SmolStr::new("negate"),
+            BuiltinFunctionDoc {
+                description: "Returns the negation of the given number.",
+                params: &["number"],
+            },
+        );
         map
     },
 );

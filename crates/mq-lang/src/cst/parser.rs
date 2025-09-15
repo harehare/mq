@@ -519,6 +519,11 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Not,
                     ..
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Minus,
+                    ..
                 } => self.parse_unary_op(leading_trivia, root),
                 Token {
                     range: _,
@@ -811,6 +816,11 @@ impl<'a> Parser<'a> {
             | Token {
                 range: _,
                 kind: TokenKind::Not,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Minus,
                 ..
             }
             | Token {
@@ -1594,6 +1604,11 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Not,
                     ..
                 } => NodeKind::UnaryOp(UnaryOp::Not),
+                Token {
+                    range: _,
+                    kind: TokenKind::Minus,
+                    ..
+                } => NodeKind::UnaryOp(UnaryOp::Negate),
                 _ => return Err(ParseError::UnexpectedToken(Arc::clone(operator_token))),
             },
             token: Some(Arc::clone(operator_token)),
