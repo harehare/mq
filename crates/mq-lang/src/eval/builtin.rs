@@ -2133,7 +2133,7 @@ define_builtin!(
     NEGATE,
     ParamNum::Fixed(1),
     |ident, _, mut args| match args.as_mut_slice() {
-        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number((-n.value()).into())),
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(-(*n))),
         [a] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a)],
