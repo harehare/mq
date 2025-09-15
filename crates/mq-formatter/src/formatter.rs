@@ -1242,6 +1242,7 @@ process();"#,
     #[case::group_with_if("(if(test): test else: test2)", "(if (test): test else: test2)")]
     #[case::group_with_let("(let x = 1)", "(let x = 1)")]
     #[case::fn_end("fn(): test end", "fn(): test end")]
+    #[case::negate_operator("-v", "-v")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

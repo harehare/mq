@@ -5156,6 +5156,32 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::negate(
+        vec![
+            Arc::new(token(TokenKind::Minus)),
+            Arc::new(token(TokenKind::NumberLiteral(42.into()))),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::UnaryOp(UnaryOp::Negate),
+                    token: Some(Arc::new(token(TokenKind::Minus))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::NumberLiteral(42.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
     fn test_parse(
         #[case] input: Vec<Arc<Token>>,
         #[case] expected: (Vec<Arc<Node>>, ErrorReporter),
