@@ -519,6 +519,11 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Not,
                     ..
+                }
+                | Token {
+                    range: _,
+                    kind: TokenKind::Minus,
+                    ..
                 } => self.parse_unary_op(leading_trivia, root),
                 Token {
                     range: _,
@@ -811,6 +816,11 @@ impl<'a> Parser<'a> {
             | Token {
                 range: _,
                 kind: TokenKind::Not,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Minus,
                 ..
             }
             | Token {
@@ -1594,6 +1604,11 @@ impl<'a> Parser<'a> {
                     kind: TokenKind::Not,
                     ..
                 } => NodeKind::UnaryOp(UnaryOp::Not),
+                Token {
+                    range: _,
+                    kind: TokenKind::Minus,
+                    ..
+                } => NodeKind::UnaryOp(UnaryOp::Negate),
                 _ => return Err(ParseError::UnexpectedToken(Arc::clone(operator_token))),
             },
             token: Some(Arc::clone(operator_token)),
@@ -5131,6 +5146,32 @@ mod tests {
                         Arc::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Arc::new(token(TokenKind::RBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::negate(
+        vec![
+            Arc::new(token(TokenKind::Minus)),
+            Arc::new(token(TokenKind::NumberLiteral(42.into()))),
+        ],
+        (
+            vec![
+                Arc::new(Node {
+                    kind: NodeKind::UnaryOp(UnaryOp::Negate),
+                    token: Some(Arc::new(token(TokenKind::Minus))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Arc::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Arc::new(token(TokenKind::NumberLiteral(42.into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),

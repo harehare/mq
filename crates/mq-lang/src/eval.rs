@@ -524,6 +524,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_foreach(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -585,6 +586,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_until(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -631,6 +633,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_while(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -668,6 +671,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_if(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -695,6 +699,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_fn(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -778,6 +783,7 @@ impl Evaluator {
         }
     }
 
+    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -813,6 +819,7 @@ impl Evaluator {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
     use std::vec;
 
     use crate::ast::node::Args;
@@ -4507,6 +4514,35 @@ mod tests {
              ast_call("get_url", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::NONE]))]
+    #[case::negate_positive(vec![RuntimeValue::Number(1.into())],
+            vec![
+                ast_call("negate", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Number((-1).into())]))]
+    #[case::negate_negative(vec![RuntimeValue::Number((-42).into())],
+            vec![
+                ast_call("negate", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Number(42.into())]))]
+    #[case::negate_zero(vec![RuntimeValue::Number(0.into())],
+            vec![
+                ast_call("negate", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Number(0.into())]))]
+    #[case::negate_decimal(vec![RuntimeValue::Number(PI.into())],
+            vec![
+                ast_call("negate", SmallVec::new())
+            ],
+            Ok(vec![RuntimeValue::Number((-PI).into())]))]
+    #[case::negate_invalid_type(vec![RuntimeValue::String("test".to_string())],
+            vec![
+                ast_call("negate", SmallVec::new())
+            ],
+            Err(InnerError::Eval(EvalError::InvalidTypes{
+                token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() },
+                name: "negate".to_string(),
+                args: vec!["test".to_string().into()]
+            })))]
     fn test_eval(
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

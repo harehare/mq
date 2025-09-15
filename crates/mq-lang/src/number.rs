@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Number(f64);
@@ -32,6 +32,14 @@ impl Number {
 impl Default for Number {
     fn default() -> Self {
         Number(0.0)
+    }
+}
+
+impl Neg for Number {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Number(-self.0)
     }
 }
 

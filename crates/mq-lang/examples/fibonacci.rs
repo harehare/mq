@@ -2,10 +2,8 @@ fn main() {
     let mut engine = mq_lang::Engine::default();
     let code = "
      def fibonacci(x):
-      if(x == 0):
-        0
-      elif (x == 1):
-        1
+      if(x < 2):
+        x
       else:
         fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)";
     println!(
