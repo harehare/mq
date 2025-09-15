@@ -4,7 +4,8 @@ use super::builtin;
 use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
 use crate::arena::Arena;
-use crate::{AstIdent, AstNode, Token, ast};
+use crate::ast::TokenId;
+use crate::{AstIdent, Token, ast};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display};
@@ -19,12 +20,12 @@ pub enum EnvError {
 impl EnvError {
     pub fn to_eval_error(
         &self,
-        node: AstNode,
+        token_id: TokenId,
         token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
     ) -> EvalError {
         match self {
             EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(
-                (*token_arena.borrow()[node.token_id]).clone(),
+                (*token_arena.borrow()[token_id]).clone(),
                 def.to_string(),
             ),
         }
