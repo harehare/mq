@@ -90,7 +90,7 @@ impl Env {
                         .resolve_with(builtin::get_builtin_functions_by_str)
                         .is_some()
                     {
-                        Ok(RuntimeValue::NativeFunction(ident.clone()))
+                        Ok(RuntimeValue::NativeFunction(ident))
                     } else {
                         Err(EnvError::InvalidDefinition(ident.to_string()))
                     }
