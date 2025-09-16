@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use node::Node;
-use smol_str::SmolStr;
 
 use crate::{Token, arena::ArenaId};
 
@@ -11,7 +10,6 @@ pub mod node;
 pub mod parser;
 
 pub type Program = Vec<Rc<Node>>;
-pub type IdentName = SmolStr;
 pub type TokenId = ArenaId<Rc<Token>>;
 
 /// Serializes an AST `Program` to a JSON string.
@@ -44,11 +42,11 @@ mod tests {
     #[cfg(feature = "ast-json")]
     #[test]
     fn test_ast_to_json_and_from_json_roundtrip() {
-        use crate::{AstExpr, AstIdent};
+        use crate::{AstExpr, ast::node::IdentWithToken};
 
         let ident = Rc::new(Node {
             token_id: TokenId::new(1),
-            expr: Rc::new(AstExpr::Ident(AstIdent::new("foo"))),
+            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("foo"))),
         });
         let program = vec![ident.clone()];
 
@@ -57,7 +55,7 @@ mod tests {
 
         assert_eq!(deserialized.len(), 1);
         match &*deserialized[0].expr {
-            AstExpr::Ident(name) => assert_eq!(name.name, "foo"),
+            AstExpr::Ident(name) => assert_eq!(name.name, "foo".into()),
             _ => panic!("Expected Ident node"),
         }
     }

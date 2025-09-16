@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 #[cfg(feature = "debugger")]
 use crate::ast::constants;
 use crate::{
-    AstIdent, Program, Token, TokenKind,
+    Ident, Program, Token, TokenKind,
     arena::Arena,
     ast::{
         TokenId,
@@ -127,7 +127,7 @@ impl Evaluator {
                 match &*node.expr {
                     ast::Expr::Def(ident, params, program) => {
                         self.env.borrow_mut().define(
-                            ident,
+                            ident.name,
                             RuntimeValue::Function(
                                 params.clone(),
                                 program.clone(),
@@ -216,10 +216,9 @@ impl Evaluator {
     }
 
     pub fn define_string_value(&self, name: &str, value: &str) {
-        self.env.borrow_mut().define(
-            &ast::Ident::new(name),
-            RuntimeValue::String(value.to_string()),
-        );
+        self.env
+            .borrow_mut()
+            .define(Ident::new(name), RuntimeValue::String(value.to_string()));
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
@@ -246,7 +245,7 @@ impl Evaluator {
             for node in &module.functions {
                 if let ast::Expr::Def(ident, params, program) = &*node.expr {
                     mut_env.define(
-                        ident,
+                        ident.name,
                         RuntimeValue::Function(
                             params.clone(),
                             program.clone(),
@@ -262,7 +261,7 @@ impl Evaluator {
                 if let ast::Expr::Let(ident, node) = &*node.expr {
                     let val =
                         self.eval_expr(&RuntimeValue::NONE, Rc::clone(node), Rc::clone(&self.env))?;
-                    self.env.borrow_mut().define(ident, val);
+                    self.env.borrow_mut().define(ident.name, val);
                 } else {
                     return Err(EvalError::InternalError(
                         (*self.token_arena.borrow()[node.token_id]).clone(),
@@ -294,7 +293,7 @@ impl Evaluator {
     #[inline(always)]
     fn eval_ident(
         &self,
-        ident: &ast::Ident,
+        ident: Ident,
         token_id: TokenId,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
@@ -385,7 +384,7 @@ impl Evaluator {
     fn eval_interpolated_string(
         &self,
         runtime_value: &RuntimeValue,
-        segments: &Vec<ast::StringSegment>,
+        segments: &[ast::StringSegment],
         token_id: TokenId,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
@@ -408,7 +407,7 @@ impl Evaluator {
                     match segment {
                         ast::StringSegment::Text(s) => acc.push_str(s),
                         ast::StringSegment::Ident(ident) => {
-                            let value = self.eval_ident(ident, token_id, Rc::clone(&env))?;
+                            let value = self.eval_ident(*ident, token_id, Rc::clone(&env))?;
                             acc.push_str(&value.to_string());
                         }
                         ast::StringSegment::Env(env) => {
@@ -462,23 +461,23 @@ impl Evaluator {
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
-                if ident.name == constants::BREAKPOINT {
+                if ident.name == constants::BREAKPOINT.into() {
                     self.eval_debugger(runtime_value, Rc::clone(&node), Rc::clone(&env));
                     return Ok(runtime_value.clone());
                 }
 
-                self.eval_fn(runtime_value, Rc::clone(&node), ident, args, env)
+                self.eval_fn(runtime_value, Rc::clone(&node), ident.name, args, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
             ast::Expr::Break => Err(self.eval_break(node)),
             ast::Expr::Continue => Err(self.eval_continue(node)),
             ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
-            ast::Expr::Ident(ident) => self.eval_ident(ident, node.token_id, Rc::clone(&env)),
+            ast::Expr::Ident(ident) => self.eval_ident(ident.name, node.token_id, Rc::clone(&env)),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
             ast::Expr::Def(ident, params, program) => {
                 let function =
                     RuntimeValue::Function(params.clone(), program.clone(), Rc::clone(&env));
-                env.borrow_mut().define(ident, function.clone());
+                env.borrow_mut().define(ident.name, function.clone());
                 Ok(function)
             }
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
@@ -488,13 +487,13 @@ impl Evaluator {
             )),
             ast::Expr::Let(ident, node) => {
                 let val = self.eval_expr(runtime_value, Rc::clone(node), Rc::clone(&env))?;
-                env.borrow_mut().define(ident, val);
+                env.borrow_mut().define(ident.name, val);
                 Ok(runtime_value.clone())
             }
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Until(cond, program) => self.eval_until(runtime_value, cond, program, env),
             ast::Expr::Foreach(ident, values, body) => {
-                self.eval_foreach(runtime_value, ident, values, body, node.token_id, env)
+                self.eval_foreach(runtime_value, ident.name, values, body, node.token_id, env)
             }
             ast::Expr::InterpolatedString(segments) => {
                 self.eval_interpolated_string(runtime_value, segments, node.token_id, env)
@@ -531,7 +530,7 @@ impl Evaluator {
     fn eval_foreach(
         &mut self,
         runtime_value: &RuntimeValue,
-        ident: &AstIdent,
+        ident: Ident,
         values: &Rc<ast::Node>,
         body: &Program,
         token_id: TokenId,
@@ -694,7 +693,7 @@ impl Evaluator {
         &mut self,
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
-        ident: &ast::Ident,
+        ident: Ident,
         args: &ast::Args,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
@@ -708,8 +707,8 @@ impl Evaluator {
                 let mut new_env_mut = new_env.borrow_mut();
 
                 if params.len() == args.len() + 1 {
-                    if let ast::Expr::Ident(name) = &*params.first().unwrap().expr {
-                        new_env_mut.define(name, runtime_value.clone());
+                    if let ast::Expr::Ident(id) = &*params.first().unwrap().expr {
+                        new_env_mut.define(id.name, runtime_value.clone());
                     } else {
                         return Err(EvalError::InvalidDefinition(
                             (*self.token_arena.borrow()[params.first().unwrap().token_id]).clone(),
@@ -718,9 +717,9 @@ impl Evaluator {
                     }
 
                     for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
-                        if let ast::Expr::Ident(name) = &*param.expr {
+                        if let ast::Expr::Ident(id) = &*param.expr {
                             new_env_mut.define(
-                                name,
+                                id.name,
                                 self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?,
                             );
                         } else {
@@ -739,9 +738,9 @@ impl Evaluator {
                     ));
                 } else {
                     for (arg, param) in args.into_iter().zip(params.iter()) {
-                        if let ast::Expr::Ident(name) = &*param.expr {
+                        if let ast::Expr::Ident(id) = &*param.expr {
                             new_env_mut.define(
-                                name,
+                                id.name,
                                 self.eval_expr(runtime_value, Rc::clone(arg), Rc::clone(&env))?,
                             );
                         } else {
@@ -769,7 +768,7 @@ impl Evaluator {
                 ))
             }
         } else {
-            self.eval_builtin(runtime_value, node, ident, args, env)
+            self.eval_builtin(runtime_value, node, &ident, args, env)
         }
     }
 
@@ -778,7 +777,7 @@ impl Evaluator {
         &mut self,
         runtime_value: &RuntimeValue,
         node: Rc<ast::Node>,
-        ident: &ast::Ident,
+        ident: &Ident,
         args: &ast::Args,
         env: Rc<RefCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
@@ -812,7 +811,7 @@ mod tests {
     use std::f64::consts::PI;
     use std::vec;
 
-    use crate::ast::node::Args;
+    use crate::ast::node::{Args, IdentWithToken};
     use crate::range::Range;
     use crate::{AstExpr, AstNode, ModuleLoader};
     use crate::{Token, TokenKind};
@@ -845,7 +844,7 @@ mod tests {
     fn ast_call(name: &str, args: Args) -> Rc<AstNode> {
         Rc::new(AstNode {
             token_id: 0.into(),
-            expr: Rc::new(ast::Expr::Call(ast::Ident::new(name), args)),
+            expr: Rc::new(ast::Expr::Call(IdentWithToken::new(name), args)),
         })
     }
 
@@ -2003,13 +2002,13 @@ mod tests {
     #[case::def(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
             ast_node(ast::Expr::Def(
-                ast::Ident::new("split2"),
+                IdentWithToken::new("split2"),
                 smallvec![
-                    ast_node(ast::Expr::Ident(ast::Ident::new("str"))),
+                    ast_node(ast::Expr::Ident(IdentWithToken::new("str"))),
                 ],
                 vec![ast_call("split",
                     smallvec![
-                        ast_node(ast::Expr::Ident(ast::Ident::new("str"))),
+                        ast_node(ast::Expr::Ident(IdentWithToken::new("str"))),
                         ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string()))),
                     ])
                 ]
@@ -2022,15 +2021,15 @@ mod tests {
     #[case::def2(vec![RuntimeValue::String("Hello".to_string())],
        vec![
             ast_node(ast::Expr::Def(
-                ast::Ident::new("concat_self"),
+                IdentWithToken::new("concat_self"),
                 smallvec![
-                    ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
-                    ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
+                    ast_node(ast::Expr::Ident(IdentWithToken::new("str1"))),
+                    ast_node(ast::Expr::Ident(IdentWithToken::new("str2"))),
                 ],
                 vec![ast_call("add",
                     smallvec![
-                        ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
-                        ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
+                        ast_node(ast::Expr::Ident(IdentWithToken::new("str1"))),
+                        ast_node(ast::Expr::Ident(IdentWithToken::new("str2"))),
                     ])
                 ]
             )),
@@ -2043,15 +2042,15 @@ mod tests {
     #[case::def3(vec![RuntimeValue::String("Test".to_string())],
        vec![
             ast_node(ast::Expr::Def(
-                ast::Ident::new("prepend_self"),
+                IdentWithToken::new("prepend_self"),
                 smallvec![
-                    ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
-                    ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
+                    ast_node(ast::Expr::Ident(IdentWithToken::new("str1"))),
+                    ast_node(ast::Expr::Ident(IdentWithToken::new("str2"))),
                 ],
                 vec![ast_call("add",
                     smallvec![
-                        ast_node(ast::Expr::Ident(ast::Ident::new("str1"))),
-                        ast_node(ast::Expr::Ident(ast::Ident::new("str2"))),
+                        ast_node(ast::Expr::Ident(IdentWithToken::new("str1"))),
+                        ast_node(ast::Expr::Ident(IdentWithToken::new("str2"))),
                     ])
                 ]
             )),
@@ -4133,15 +4132,15 @@ mod tests {
         ])],
             vec![
                 ast_node(ast::Expr::Foreach(
-                    ast::Ident::new("x"),
+                    IdentWithToken::new("x"),
                     ast_node(ast::Expr::Self_),
                     vec![
                         ast_node(ast::Expr::If(smallvec![
                             (
                                 Some(ast_node(ast::Expr::Call(
-                                    ast::Ident::new("eq"),
+                                    IdentWithToken::new("eq"),
                                     smallvec![
-                                        ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                                        ast_node(ast::Expr::Ident(IdentWithToken::new("x"))),
                                         ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                                     ],
                                 ))),
@@ -4149,7 +4148,7 @@ mod tests {
                             ),
                             (
                                 None,
-                                ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                                ast_node(ast::Expr::Ident(IdentWithToken::new("x"))),
                             ),
                         ])),
                     ],
@@ -4167,15 +4166,15 @@ mod tests {
         ])],
         vec![
             ast_node(ast::Expr::Foreach(
-                ast::Ident::new("x"),
+                IdentWithToken::new("x"),
                 ast_node(ast::Expr::Self_),
                 vec![
                     ast_node(ast::Expr::If(smallvec![
                         (
                             Some(ast_node(ast::Expr::Call(
-                                ast::Ident::new("eq"),
+                                IdentWithToken::new("eq"),
                                 smallvec![
-                                    ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                                    ast_node(ast::Expr::Ident(IdentWithToken::new("x"))),
                                     ast_node(ast::Expr::Literal(ast::Literal::Number(2.into()))),
                                 ],
                             ))),
@@ -4183,7 +4182,7 @@ mod tests {
                         ),
                         (
                             None,
-                            ast_node(ast::Expr::Ident(ast::Ident::new("x"))),
+                            ast_node(ast::Expr::Ident(IdentWithToken::new("x"))),
                         ),
                     ])),
                 ],
@@ -4198,10 +4197,10 @@ mod tests {
         vec![RuntimeValue::String("abc".to_string())],
         vec![
             ast_node(ast::Expr::Foreach(
-                ast::Ident::new("c"),
+                IdentWithToken::new("c"),
                 ast_node(ast::Expr::Self_),
                 vec![
-                    ast_node(ast::Expr::Ident(ast::Ident::new("c"))),
+                    ast_node(ast::Expr::Ident(IdentWithToken::new("c"))),
                 ],
             )),
         ],
@@ -4567,7 +4566,10 @@ mod tests {
             }),
             Rc::new(ast::Node {
                 token_id: 0.into(),
-                expr: Rc::new(ast::Expr::Call(ast::Ident::new("func1"), SmallVec::new())),
+                expr: Rc::new(ast::Expr::Call(
+                    IdentWithToken::new("func1"),
+                    SmallVec::new(),
+                )),
             }),
         ];
         assert_eq!(

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    AstIdent, AstParams, Program, eval::runtime_value::RuntimeValue, impl_value_formatting,
+    AstParams, Ident, Program, eval::runtime_value::RuntimeValue, impl_value_formatting,
     number::Number,
 };
 use mq_markdown::Node;
@@ -27,7 +27,7 @@ pub enum Value {
     /// A user-defined function with parameters and body
     Function(AstParams, Program),
     /// A built-in native function
-    NativeFunction(AstIdent),
+    NativeFunction(Ident),
     /// A dictionary/map of string keys to values
     Dict(BTreeMap<String, Value>),
     /// Represents no value or null
@@ -708,7 +708,7 @@ mod tests {
 
     #[rstest]
     #[case(Value::Function(SmallVec::new(), Vec::new()), true)]
-    #[case(Value::NativeFunction(AstIdent::new("native_fn")), false)]
+    #[case(Value::NativeFunction(Ident::new("native_fn")), false)]
     #[case(Value::Number(Number::from(1.0)), false)]
     #[case(Value::String("test".to_string()), false)]
     #[case(Value::None, false)]

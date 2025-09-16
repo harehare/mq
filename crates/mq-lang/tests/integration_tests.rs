@@ -1513,7 +1513,7 @@ mod ast_json {
     #[case(
     Rc::new(AstNode {
         token_id: default_token_id(),
-        expr: Rc::new(AstExpr::Ident(mq_lang::AstIdent::new("my_var"))),
+        expr: Rc::new(AstExpr::Ident(mq_lang::IdentWithToken::new("my_var"))),
     }),
     Some(vec!["Ident", "my_var"]),
     true
@@ -1522,7 +1522,7 @@ mod ast_json {
     Rc::new(AstNode {
         token_id: default_token_id(),
         expr: Rc::new(AstExpr::Call(
-            mq_lang::AstIdent::new("my_func"),
+            mq_lang::IdentWithToken::new("my_func"),
             smallvec![Rc::new(AstNode {
                 token_id: default_token_id(),
                 expr: Rc::new(AstExpr::Literal(AstLiteral::Number(1.into()))),

@@ -17,6 +17,7 @@ base64 = "0.22.1"
 chrono = "0.4.42"
 dirs.workspace = true
 itertools.workspace = true
+string-interner = "0.17"
 miette.workspace = true
 mq-markdown = {workspace = true, features = ["html-to-markdown"]}
 nom = {version = "8.0.0"}

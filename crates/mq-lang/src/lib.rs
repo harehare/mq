@@ -48,6 +48,7 @@ mod cst;
 mod engine;
 mod error;
 mod eval;
+mod ident;
 mod lexer;
 mod number;
 mod optimizer;
@@ -64,10 +65,9 @@ use std::sync::Arc;
 pub use arena::Arena;
 #[cfg(feature = "ast-json")]
 pub use arena::ArenaId;
-pub use ast::IdentName as AstIdentName;
 pub use ast::Program;
 pub use ast::node::Expr as AstExpr;
-pub use ast::node::Ident as AstIdent;
+pub use ast::node::IdentWithToken;
 pub use ast::node::Literal as AstLiteral;
 pub use ast::node::Node as AstNode;
 pub use ast::node::Params as AstParams;
@@ -81,6 +81,7 @@ pub use eval::builtin::{
     INTERNAL_FUNCTION_DOC,
 };
 pub use eval::module::{Module, ModuleId, ModuleLoader};
+pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use optimizer::OptimizationLevel;
