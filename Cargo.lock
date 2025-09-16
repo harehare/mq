@@ -2590,6 +2590,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "smol_str",
+ "string-interner",
  "thiserror 2.0.16",
 ]
 
@@ -4182,6 +4183,16 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "string-interner"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23de088478b31c349c9ba67816fa55d9355232d63c3afea8bf513e31f0f1d2c0"
+dependencies = [
+ "hashbrown 0.15.3",
+ "serde",
+]
 
 [[package]]
 name = "string_cache"

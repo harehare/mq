@@ -1,7 +1,7 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
 use crate::number::Number;
-use crate::{AstIdentName, Token};
+use crate::{Ident, Token};
 use base64::prelude::*;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -34,7 +34,7 @@ pub type Args = Vec<RuntimeValue>;
 pub struct BuiltinFunction {
     pub name: &'static str,
     pub num_params: ParamNum,
-    pub func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
+    pub func: fn(&Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -77,7 +77,7 @@ impl BuiltinFunction {
     pub fn new(
         name: &'static str,
         num_params: ParamNum,
-        func: fn(&ast::Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
+        func: fn(&Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
     ) -> Self {
         BuiltinFunction {
             name,
@@ -98,7 +98,7 @@ macro_rules! define_builtin {
 define_builtin!(
     HALT,
     ParamNum::Fixed(1),
-    |ident: &ast::Ident, _: &RuntimeValue, mut args: Args| {
+    |ident: &Ident, _: &RuntimeValue, mut args: Args| {
         match args.as_mut_slice() {
             [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
             [a] => Err(Error::InvalidTypes(
@@ -2280,8 +2280,12 @@ const HASH_VALUES: u64 = fnv1a_hash_64("values");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
-pub fn get_builtin_functions(name: &AstIdentName) -> Option<&'static BuiltinFunction> {
-    match fnv1a_hash_64(name.as_str()) {
+pub fn get_builtin_functions(name: &Ident) -> Option<&'static BuiltinFunction> {
+    name.resolve_with(get_builtin_functions_by_str)
+}
+
+pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFunction> {
+    match fnv1a_hash_64(name_str) {
         HASH_ABS => Some(&ABS),
         HASH_ADD => Some(&ADD),
         HASH_AND => Some(&AND),
@@ -2389,7 +2393,7 @@ pub fn get_builtin_functions(name: &AstIdentName) -> Option<&'static BuiltinFunc
     // This code checks for hash collisions among built-in function names.
     // If two different function names produce the same hash, this assertion will fail.
     // This ensures that the hash-based dispatch in get_builtin_functions is safe.
-    .filter(|func| func.name == name)
+    .filter(|func| func.name == name_str)
     .map(|v| &**v)
 }
 
@@ -3527,10 +3531,10 @@ impl Error {
 #[inline(always)]
 pub fn eval_builtin(
     runtime_value: &RuntimeValue,
-    ident: &ast::Ident,
+    ident: &Ident,
     args: Args,
 ) -> Result<RuntimeValue, Error> {
-    get_builtin_functions(&ident.name).map_or_else(
+    get_builtin_functions(ident).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
         |f| {
             let args_len = args.len() as u8;
@@ -3948,11 +3952,7 @@ mod tests {
         #[case] args: Args,
         #[case] expected: Result<RuntimeValue, Error>,
     ) {
-        let ident = ast::Ident {
-            name: SmolStr::new(func_name),
-            token: None,
-        };
-
+        let ident = Ident::new(func_name);
         assert_eq!(eval_builtin(&RuntimeValue::None, &ident, args), expected);
     }
 
@@ -3967,11 +3967,7 @@ mod tests {
         #[case] args: Args,
         #[case] expected_error: Error,
     ) {
-        let ident = ast::Ident {
-            name: SmolStr::new(func_name),
-            token: None,
-        };
-
+        let ident = Ident::new(func_name);
         let result = eval_builtin(&RuntimeValue::None, &ident, args);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected_error);
@@ -3979,11 +3975,7 @@ mod tests {
 
     #[test]
     fn test_implicit_first_arg() {
-        let ident = ast::Ident {
-            name: SmolStr::new("starts_with"),
-            token: None,
-        };
-
+        let ident = Ident::new("starts_with");
         let first_arg = RuntimeValue::String("hello world".into());
         let args = vec![RuntimeValue::String("hello".into())];
 
@@ -4211,10 +4203,7 @@ mod tests {
     // Tests for Dict functions
     #[test]
     fn test_eval_builtin_new_dict() {
-        let ident = ast::Ident {
-            name: SmolStr::new("dict"),
-            token: None,
-        };
+        let ident = Ident::new("dict");
         let result = eval_builtin(&RuntimeValue::None, &ident, vec![]);
         assert!(result.is_ok());
         let map_val = result.unwrap();
@@ -4244,10 +4233,7 @@ mod tests {
 
     #[test]
     fn test_eval_builtin_set_dict() {
-        let ident_set = ast::Ident {
-            name: SmolStr::new("set"),
-            token: None,
-        };
+        let ident_set = Ident::new("set");
         let initial_map = RuntimeValue::new_dict();
 
         let args1 = vec![
@@ -4360,10 +4346,7 @@ mod tests {
 
     #[test]
     fn test_eval_builtin_get_map() {
-        let ident_get = ast::Ident {
-            name: SmolStr::new("get"),
-            token: None,
-        };
+        let ident_get = Ident::new("get");
         let mut map_data = BTreeMap::default();
         map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
@@ -4406,11 +4389,7 @@ mod tests {
 
     #[test]
     fn test_eval_builtin_keys_dict() {
-        let ident_keys = ast::Ident {
-            name: SmolStr::new("keys"),
-            token: None,
-        };
-
+        let ident_keys = Ident::new("keys");
         let empty_map = RuntimeValue::new_dict();
         let args1 = vec![empty_map.clone()];
         let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1);
@@ -4458,11 +4437,7 @@ mod tests {
 
     #[test]
     fn test_eval_builtin_values_dict() {
-        let ident_values = ast::Ident {
-            name: SmolStr::new("values"),
-            token: None,
-        };
-
+        let ident_values = Ident::new("values");
         let empty_map = RuntimeValue::new_dict();
         let args1 = vec![empty_map.clone()];
         let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1);

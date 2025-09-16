@@ -284,7 +284,7 @@ mod tests {
 
     use crate::{
         Token, TokenKind,
-        ast::node as ast,
+        ast::node::{self as ast, IdentWithToken},
         range::{Position, Range},
     };
 
@@ -303,7 +303,7 @@ mod tests {
         modules: Vec::new(),
         vars: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Let(
-                ast::Ident::new_with_token("test", Some(Rc::new(Token{
+                IdentWithToken::new_with_token("test", Some(Rc::new(Token{
                     kind: TokenKind::Ident(SmolStr::new("test")),
                     range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                     module_id: 1.into()
@@ -316,7 +316,7 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
-            ast::Ident::new_with_token("test", Some(Rc::new(Token{
+            IdentWithToken::new_with_token("test", Some(Rc::new(Token{
                 kind: TokenKind::Ident(SmolStr::new("test")),
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
@@ -333,28 +333,28 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
-                ast::Ident::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
+                IdentWithToken::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
                     Rc::new(ast::Node{token_id: 1.into(), expr:
                         Rc::new(
-                            ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
+                            ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
                         ))}),
                     Rc::new(ast::Node{token_id: 2.into(), expr:
                         Rc::new(
-                            ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
+                            ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
                         ))})
                 ],
                 vec![
                     Rc::new(ast::Node{token_id: 6.into(), expr: Rc::new(ast::Expr::Call(
-                    ast::Ident::new_with_token("add", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
+                    IdentWithToken::new_with_token("add", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
                     smallvec![
                         Rc::new(ast::Node{token_id: 4.into(),
                             expr: Rc::new(
-                                ast::Expr::Ident(ast::Ident::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
                                 )}),
                         Rc::new(ast::Node{token_id: 5.into(),
                             expr: Rc::new(
-                                ast::Expr::Ident(ast::Ident::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
                             )})
                     ],
                 ))})]

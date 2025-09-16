@@ -1,6 +1,6 @@
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeMap, rc::Rc};
 
-use crate::{AstIdent, AstParams, Program, Value, impl_value_formatting, number::Number};
+use crate::{AstParams, Ident, Program, Value, impl_value_formatting, number::Number};
 use mq_markdown::Node;
 
 use super::env::Env;
@@ -18,7 +18,7 @@ pub enum RuntimeValue {
     Array(Vec<RuntimeValue>),
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Rc<RefCell<Env>>),
-    NativeFunction(AstIdent),
+    NativeFunction(Ident),
     Dict(BTreeMap<String, RuntimeValue>),
     #[default]
     None,
@@ -236,7 +236,7 @@ impl RuntimeValue {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AstExpr, AstNode, arena::ArenaId};
+    use crate::{AstExpr, AstNode, arena::ArenaId, ast::node::IdentWithToken};
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
 
@@ -335,7 +335,7 @@ mod tests {
             "function"
         );
         assert_eq!(
-            RuntimeValue::NativeFunction(AstIdent::new("name")).name(),
+            RuntimeValue::NativeFunction(Ident::new("name")).name(),
             "native_function"
         );
         assert_eq!(
@@ -384,7 +384,7 @@ mod tests {
         );
         assert!(!RuntimeValue::Array(Vec::new()).is_truthy());
         assert!(!RuntimeValue::None.is_truthy());
-        assert!(RuntimeValue::NativeFunction(AstIdent::new("name")).is_truthy());
+        assert!(RuntimeValue::NativeFunction(Ident::new("name")).is_truthy());
         assert!(
             RuntimeValue::Function(
                 SmallVec::new(),
@@ -426,7 +426,7 @@ mod tests {
                 Rc::new(RefCell::new(Env::default()))
             ) < RuntimeValue::Function(
                 smallvec![Rc::new(AstNode {
-                    expr: Rc::new(AstExpr::Ident(AstIdent::new("test"))),
+                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("test"))),
                     token_id: ArenaId::new(0),
                 })],
                 Vec::new(),
@@ -480,7 +480,7 @@ mod tests {
         );
         assert_eq!(format!("{:?}", function), "function");
 
-        let native_fn = RuntimeValue::NativeFunction(AstIdent::new("debug"));
+        let native_fn = RuntimeValue::NativeFunction(Ident::new("debug"));
         assert_eq!(format!("{:?}", native_fn), "native_function");
 
         let mut map = BTreeMap::default();
@@ -526,8 +526,8 @@ mod tests {
             )
         );
 
-        let ident = AstIdent::new("test_fn");
-        let native_fn_value = Value::NativeFunction(ident.clone());
+        let ident = Ident::new("test_fn");
+        let native_fn_value = Value::NativeFunction(ident);
         assert_eq!(
             RuntimeValue::from(native_fn_value),
             RuntimeValue::NativeFunction(ident)

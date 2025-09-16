@@ -1,7 +1,7 @@
-use super::{IdentName, Program, TokenId};
+use super::{Program, TokenId};
 #[cfg(feature = "ast-json")]
 use crate::arena::ArenaId;
-use crate::{Token, arena::Arena, lexer, number::Number, range::Range};
+use crate::{Ident, Token, arena::Arena, lexer, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -109,8 +109,8 @@ impl Node {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Debug, Eq, Clone)]
-pub struct Ident {
-    pub name: IdentName,
+pub struct IdentWithToken {
+    pub name: Ident,
     #[cfg_attr(
         feature = "ast-json",
         serde(skip_serializing_if = "Option::is_none", default)
@@ -118,38 +118,38 @@ pub struct Ident {
     pub token: Option<Rc<Token>>,
 }
 
-impl Hash for Ident {
+impl Hash for IdentWithToken {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-impl Ord for Ident {
+impl Ord for IdentWithToken {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.name.cmp(&other.name)
     }
 }
 
-impl PartialOrd for Ident {
+impl PartialOrd for IdentWithToken {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ident {
+impl IdentWithToken {
     pub fn new(name: &str) -> Self {
         Self::new_with_token(name, None)
     }
 
     pub fn new_with_token(name: &str, token: Option<Rc<Token>>) -> Self {
         Self {
-            name: SmolStr::from(name),
+            name: name.into(),
             token,
         }
     }
 }
 
-impl Display for Ident {
+impl Display for IdentWithToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.name)
     }
@@ -234,17 +234,17 @@ impl Display for Literal {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
-    Call(Ident, Args),
-    Def(Ident, Params, Program),
+    Call(IdentWithToken, Args),
+    Def(IdentWithToken, Params, Program),
     Fn(Params, Program),
-    Let(Ident, Rc<Node>),
+    Let(IdentWithToken, Rc<Node>),
     Literal(Literal),
-    Ident(Ident),
+    Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
     While(Rc<Node>, Program),
     Until(Rc<Node>, Program),
-    Foreach(Ident, Rc<Node>, Program),
+    Foreach(IdentWithToken, Rc<Node>, Program),
     If(Branches),
     Include(Literal),
     Self_,
@@ -316,7 +316,7 @@ mod tests {
         let def_node = Node {
             token_id: def_token_id,
             expr: Rc::new(Expr::Def(
-                Ident::new("test_func"),
+                IdentWithToken::new("test_func"),
                 SmallVec::new(),
                 vec![stmt1, stmt2],
             )),
@@ -461,7 +461,7 @@ mod tests {
         let foreach_node = Node {
             token_id: foreach_token_id,
             expr: Rc::new(Expr::Foreach(
-                Ident::new("item"),
+                IdentWithToken::new("item"),
                 iterable_node,
                 vec![stmt1, stmt2],
             )),
@@ -510,7 +510,10 @@ mod tests {
         }));
         let call_node = Node {
             token_id: call_token_id,
-            expr: Rc::new(Expr::Call(Ident::new("test_func"), smallvec![arg1, arg2])),
+            expr: Rc::new(Expr::Call(
+                IdentWithToken::new("test_func"),
+                smallvec![arg1, arg2],
+            )),
         };
 
         assert_eq!(

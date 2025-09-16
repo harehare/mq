@@ -1,5 +1,5 @@
 use super::ast::node as ast;
-use crate::{Program, ast::IdentName, eval::builtin};
+use crate::{Ident, Program, eval::builtin};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::rc::Rc;
 
@@ -19,8 +19,8 @@ pub enum OptimizationLevel {
 
 #[derive(Debug)]
 pub struct Optimizer {
-    constant_table: FxHashMap<IdentName, Rc<ast::Expr>>,
-    function_table: FxHashMap<IdentName, (ast::Params, Program, LineCount)>,
+    constant_table: FxHashMap<Ident, Rc<ast::Expr>>,
+    function_table: FxHashMap<Ident, (ast::Params, Program, LineCount)>,
     inline_threshold: LineCount,
     optimization_level: OptimizationLevel,
 }
@@ -101,7 +101,7 @@ impl Optimizer {
     }
 
     #[inline(always)]
-    fn collect_used_identifiers(&mut self, program: &Program) -> FxHashSet<IdentName> {
+    fn collect_used_identifiers(&mut self, program: &Program) -> FxHashSet<Ident> {
         let mut used_idents = FxHashSet::default();
         for node in program {
             Self::collect_used_identifiers_in_node(node, &mut used_idents);
@@ -109,16 +109,13 @@ impl Optimizer {
         used_idents
     }
 
-    fn collect_used_identifiers_in_node(
-        node: &Rc<ast::Node>,
-        used_idents: &mut FxHashSet<IdentName>,
-    ) {
+    fn collect_used_identifiers_in_node(node: &Rc<ast::Node>, used_idents: &mut FxHashSet<Ident>) {
         match &*node.expr {
             ast::Expr::Ident(ident) => {
-                used_idents.insert(ident.name.clone());
+                used_idents.insert(ident.name);
             }
             ast::Expr::Call(func_ident, args) => {
-                used_idents.insert(func_ident.name.clone());
+                used_idents.insert(func_ident.name);
                 for arg in args {
                     Self::collect_used_identifiers_in_node(arg, used_idents);
                 }
@@ -155,7 +152,7 @@ impl Optimizer {
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments {
                     if let ast::StringSegment::Ident(ident) = segment {
-                        used_idents.insert(ident.name.clone());
+                        used_idents.insert(*ident);
                     }
                 }
             }
@@ -174,23 +171,23 @@ impl Optimizer {
 
     /// Collects function definitions that are candidates for inlining
     fn collect_functions_for_inlining(&mut self, program: &Program) {
-        let mut exist_function_names: FxHashSet<IdentName> = FxHashSet::default();
+        let mut exist_function_names: FxHashSet<Ident> = FxHashSet::default();
 
         for node in program {
             if let ast::Expr::Def(func_ident, params, body) = &*node.expr {
                 let line_count = program.len();
 
                 if line_count < self.inline_threshold
-                    && !Self::is_used_in_conditionals(func_ident, program)
-                    && !Self::is_recursive_function(func_ident, body)
-                    && !Self::is_builtin_functions(func_ident)
+                    && !Self::is_used_in_conditionals(func_ident.name, program)
+                    && !Self::is_recursive_function(func_ident.name, body)
+                    && !Self::is_builtin_functions(func_ident.name)
                 {
                     let name = func_ident.name.to_owned();
 
                     if exist_function_names.contains(&name) {
                         self.function_table.remove(&name);
                     } else {
-                        exist_function_names.insert(name.clone());
+                        exist_function_names.insert(name);
                         self.function_table
                             .insert(name, (params.clone(), body.clone(), line_count));
                     }
@@ -201,7 +198,7 @@ impl Optimizer {
 
     /// Checks if a function is used within if/elif/else conditions
     #[inline(always)]
-    fn is_used_in_conditionals(func_name: &ast::Ident, program: &Program) -> bool {
+    fn is_used_in_conditionals(func_name: Ident, program: &Program) -> bool {
         for node in program {
             if Self::check_conditional_usage_in_node(func_name, node) {
                 return true;
@@ -211,7 +208,7 @@ impl Optimizer {
     }
 
     /// Recursively checks if a function is used in conditional contexts within a node
-    fn check_conditional_usage_in_node(func_name: &ast::Ident, node: &Rc<ast::Node>) -> bool {
+    fn check_conditional_usage_in_node(func_name: Ident, node: &Rc<ast::Node>) -> bool {
         match &*node.expr {
             ast::Expr::If(conditions) => {
                 for (cond_node_opt, _) in conditions {
@@ -255,10 +252,10 @@ impl Optimizer {
     }
 
     /// Checks if a function call exists within a node tree
-    fn contains_function_call(func_name: &ast::Ident, node: &Rc<ast::Node>) -> bool {
+    fn contains_function_call(func_name: Ident, node: &Rc<ast::Node>) -> bool {
         match &*node.expr {
             ast::Expr::Call(call_ident, args) => {
-                if call_ident.name == func_name.name {
+                if call_ident.name == func_name {
                     return true;
                 }
                 for arg in args {
@@ -281,7 +278,7 @@ impl Optimizer {
                 }
 
                 for body_node in program {
-                    if Self::contains_function_call(ident, body_node) {
+                    if Self::contains_function_call(ident.name, body_node) {
                         return true;
                     }
                 }
@@ -324,7 +321,7 @@ impl Optimizer {
         false
     }
 
-    fn is_recursive_function(func_name: &ast::Ident, body: &Program) -> bool {
+    fn is_recursive_function(func_name: Ident, body: &Program) -> bool {
         for node in body {
             if Self::contains_function_call(func_name, node) {
                 return true;
@@ -333,8 +330,8 @@ impl Optimizer {
         false
     }
 
-    fn is_builtin_functions(func_name: &ast::Ident) -> bool {
-        builtin::get_builtin_functions(&func_name.name).is_some()
+    fn is_builtin_functions(func_name: Ident) -> bool {
+        builtin::get_builtin_functions(&func_name).is_some()
     }
 
     /// Applies function inlining to the program
@@ -356,7 +353,7 @@ impl Optimizer {
                 let mut param_bindings = FxHashMap::default();
                 for (param, arg) in params.iter().zip(args.iter()) {
                     if let ast::Expr::Ident(param_ident) = &*param.expr {
-                        param_bindings.insert(param_ident.name.clone(), arg.clone());
+                        param_bindings.insert(param_ident.name, arg.clone());
                     }
                 }
 
@@ -427,7 +424,7 @@ impl Optimizer {
                     let mut param_bindings = FxHashMap::default();
                     for (param, arg) in params.iter().zip(new_args.iter()) {
                         if let ast::Expr::Ident(param_ident) = &*param.expr {
-                            param_bindings.insert(param_ident.name.clone(), arg.clone());
+                            param_bindings.insert(param_ident.name, arg.clone());
                         }
                     }
                     // For single-expression functions, return the substituted expression directly
@@ -460,7 +457,7 @@ impl Optimizer {
 
     fn substitute_parameters(
         node: &Rc<ast::Node>,
-        param_bindings: &FxHashMap<IdentName, Rc<ast::Node>>,
+        param_bindings: &FxHashMap<Ident, Rc<ast::Node>>,
     ) -> Rc<ast::Node> {
         let new_expr = match &*node.expr {
             ast::Expr::Ident(ident) => {
@@ -503,66 +500,71 @@ impl Optimizer {
                     self.optimize_node(arg);
                 }
 
-                let new_expr = match (ident.name.as_str(), args.as_slice()) {
-                    ("add", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                        (
-                            ast::Expr::Literal(ast::Literal::Number(a)),
-                            ast::Expr::Literal(ast::Literal::Number(b)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::Number(*a + *b))),
-                        (
-                            ast::Expr::Literal(ast::Literal::String(a)),
-                            ast::Expr::Literal(ast::Literal::String(b)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::String(format!(
-                            "{}{}",
-                            a, b
-                        )))),
-                        _ => None,
-                    },
-                    ("sub", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                        (
-                            ast::Expr::Literal(ast::Literal::Number(a)),
-                            ast::Expr::Literal(ast::Literal::Number(b)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::Number(*a - *b))),
-                        _ => None,
-                    },
-                    ("div", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                        (
-                            ast::Expr::Literal(ast::Literal::Number(a)),
-                            ast::Expr::Literal(ast::Literal::Number(b)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::Number(*a / *b))),
-                        _ => None,
-                    },
-                    ("mul", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                        (
-                            ast::Expr::Literal(ast::Literal::Number(a)),
-                            ast::Expr::Literal(ast::Literal::Number(b)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::Number(*a * *b))),
-                        _ => None,
-                    },
-                    ("mod", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                        (
-                            ast::Expr::Literal(ast::Literal::Number(a)),
-                            ast::Expr::Literal(ast::Literal::Number(b)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::Number(*a % *b))),
-                        _ => None,
-                    },
-                    ("repeat", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                        (
-                            ast::Expr::Literal(ast::Literal::String(s)),
-                            ast::Expr::Literal(ast::Literal::Number(n)),
-                        ) => Some(ast::Expr::Literal(ast::Literal::String(
-                            s.repeat(n.value() as usize),
-                        ))),
-                        _ => None,
-                    },
-                    ("reverse", [arg1]) => match &*arg1.expr {
-                        ast::Expr::Literal(ast::Literal::String(s)) => Some(ast::Expr::Literal(
-                            ast::Literal::String(s.chars().rev().collect::<String>()),
-                        )),
-                        _ => None,
-                    },
-                    _ => None,
-                };
+                let new_expr =
+                    ident
+                        .name
+                        .resolve_with(|name_str| match (name_str, args.as_slice()) {
+                            ("add", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                                (
+                                    ast::Expr::Literal(ast::Literal::Number(a)),
+                                    ast::Expr::Literal(ast::Literal::Number(b)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a + *b))),
+                                (
+                                    ast::Expr::Literal(ast::Literal::String(a)),
+                                    ast::Expr::Literal(ast::Literal::String(b)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::String(format!(
+                                    "{}{}",
+                                    a, b
+                                )))),
+                                _ => None,
+                            },
+                            ("sub", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                                (
+                                    ast::Expr::Literal(ast::Literal::Number(a)),
+                                    ast::Expr::Literal(ast::Literal::Number(b)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a - *b))),
+                                _ => None,
+                            },
+                            ("div", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                                (
+                                    ast::Expr::Literal(ast::Literal::Number(a)),
+                                    ast::Expr::Literal(ast::Literal::Number(b)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a / *b))),
+                                _ => None,
+                            },
+                            ("mul", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                                (
+                                    ast::Expr::Literal(ast::Literal::Number(a)),
+                                    ast::Expr::Literal(ast::Literal::Number(b)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a * *b))),
+                                _ => None,
+                            },
+                            ("mod", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                                (
+                                    ast::Expr::Literal(ast::Literal::Number(a)),
+                                    ast::Expr::Literal(ast::Literal::Number(b)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a % *b))),
+                                _ => None,
+                            },
+                            ("repeat", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                                (
+                                    ast::Expr::Literal(ast::Literal::String(s)),
+                                    ast::Expr::Literal(ast::Literal::Number(n)),
+                                ) => Some(ast::Expr::Literal(ast::Literal::String(
+                                    s.repeat(n.value() as usize),
+                                ))),
+                                _ => None,
+                            },
+                            ("reverse", [arg1]) => match &*arg1.expr {
+                                ast::Expr::Literal(ast::Literal::String(s)) => {
+                                    Some(ast::Expr::Literal(ast::Literal::String(
+                                        s.chars().rev().collect::<String>(),
+                                    )))
+                                }
+                                _ => None,
+                            },
+                            _ => None,
+                        });
                 if let Some(expr) = new_expr {
                     mut_node.expr = Rc::new(expr);
                 }
@@ -604,7 +606,7 @@ impl Optimizer {
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments.iter_mut() {
                     if let ast::StringSegment::Ident(ident) = segment {
-                        if let Some(expr) = self.constant_table.get(&ident.name) {
+                        if let Some(expr) = self.constant_table.get(ident) {
                             if let ast::Expr::Literal(lit) = &**expr {
                                 *segment = ast::StringSegment::Text(lit.to_string());
                             }
@@ -620,7 +622,7 @@ impl Optimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::node::{Expr as AstExpr, Ident, Literal, Node}; // Added Ident
+    use crate::ast::node::{Expr as AstExpr, IdentWithToken, Literal, Node}; // Added Ident
     use rstest::rstest;
     use smallvec::smallvec;
 
@@ -630,7 +632,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
-                        ast::Ident::new("add"),
+                        IdentWithToken::new("add"),
                         smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
@@ -655,7 +657,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
-                        ast::Ident::new("add"),
+                        IdentWithToken::new("add"),
                         smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
@@ -680,7 +682,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
-                        ast::Ident::new("sub"),
+                        IdentWithToken::new("sub"),
                         smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
@@ -705,7 +707,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
-                        ast::Ident::new("mul"),
+                        IdentWithToken::new("mul"),
                         smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
@@ -730,7 +732,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
-                        ast::Ident::new("div"),
+                        IdentWithToken::new("div"),
                         smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
@@ -755,7 +757,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Call(
-                        ast::Ident::new("mod"),
+                        IdentWithToken::new("mod"),
                         smallvec![
                             Rc::new(ast::Node {
                                 token_id: 0.into(),
@@ -780,7 +782,7 @@ mod tests {
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Let(
-                        ast::Ident::new("x"),
+                        IdentWithToken::new("x"),
                         Rc::new(ast::Node {
                             token_id: 0.into(),
                             expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
@@ -789,14 +791,14 @@ mod tests {
                 }),
                 Rc::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Ident(ast::Ident::new("x"))),
+                    expr: Rc::new(ast::Expr::Ident(IdentWithToken::new("x"))),
                 })
             ],
             vec![
                 Rc::new(ast::Node {
                     token_id: 0.into(),
                     expr: Rc::new(ast::Expr::Let(
-                        ast::Ident::new("x"),
+                        IdentWithToken::new("x"),
                         Rc::new(ast::Node {
                             token_id: 0.into(),
                             expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
@@ -813,7 +815,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("unused_var"),
+                    IdentWithToken::new("unused_var"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))),
@@ -823,7 +825,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("used_var"),
+                    IdentWithToken::new("used_var"),
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
@@ -832,7 +834,7 @@ mod tests {
             }),
             Rc::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Ident(Ident::new("used_var"))),
+                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("used_var"))),
             }),
         ],
         // Expected: unused_var is removed
@@ -840,7 +842,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("used_var"),
+                    IdentWithToken::new("used_var"),
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
@@ -858,7 +860,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("x"),
+                    IdentWithToken::new("x"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
@@ -867,14 +869,14 @@ mod tests {
             }),
             Rc::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
             }),
         ],
         vec![
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("x"),
+                    IdentWithToken::new("x"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
@@ -891,25 +893,25 @@ mod tests {
         vec![
             Rc::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("a"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("a"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
             }),
             Rc::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("b"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("b"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
             }),
             Rc::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
             }),
              Rc::new(Node {
                 token_id: 6.into(),
-                expr: Rc::new(AstExpr::Ident(Ident::new("c"))),
+                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("c"))),
             }),
         ],
         vec![
             Rc::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
             }),
              Rc::new(Node {
                 token_id: 6.into(),
@@ -921,25 +923,25 @@ mod tests {
         vec![
             Rc::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("unused1"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("unused1"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
             }),
             Rc::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
             }),
             Rc::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("unused2"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("unused2"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
             }),
             Rc::new(Node {
                 token_id: 6.into(),
-                expr: Rc::new(AstExpr::Ident(Ident::new("used1"))),
+                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("used1"))),
             }),
         ],
         vec![
             Rc::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(Ident::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
+                expr: Rc::new(AstExpr::Let(IdentWithToken::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
             }),
             Rc::new(Node {
                 token_id: 6.into(),
@@ -952,7 +954,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("const_unused"),
+                    IdentWithToken::new("const_unused"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(100.0.into()))),
@@ -962,7 +964,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("another_var"),
+                    IdentWithToken::new("another_var"),
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
@@ -971,14 +973,14 @@ mod tests {
             }),
             Rc::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Ident(Ident::new("another_var"))),
+                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("another_var"))),
             }),
         ],
         vec![
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("another_var"),
+                    IdentWithToken::new("another_var"),
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
@@ -996,7 +998,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("repeat"),
+                    IdentWithToken::new("repeat"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
@@ -1022,7 +1024,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("reverse"),
+                    IdentWithToken::new("reverse"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 1.into(),
@@ -1044,7 +1046,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("name"),
+                    IdentWithToken::new("name"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
@@ -1064,7 +1066,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("name"),
+                    IdentWithToken::new("name"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
@@ -1086,7 +1088,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("first"),
+                    IdentWithToken::new("first"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
@@ -1096,7 +1098,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("last"),
+                    IdentWithToken::new("last"),
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
@@ -1117,7 +1119,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("first"),
+                    IdentWithToken::new("first"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
@@ -1127,7 +1129,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 2.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("last"),
+                    IdentWithToken::new("last"),
                     Rc::new(Node {
                         token_id: 3.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
@@ -1150,11 +1152,11 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("dynamic"),
+                    IdentWithToken::new("dynamic"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Call(
-                            Ident::new("some_func"),
+                            IdentWithToken::new("some_func"),
                             smallvec![],
                         )),
                     }),
@@ -1172,11 +1174,11 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("dynamic"),
+                    IdentWithToken::new("dynamic"),
                     Rc::new(Node {
                         token_id: 1.into(),
                         expr: Rc::new(AstExpr::Call(
-                            Ident::new("some_func"),
+                            IdentWithToken::new("some_func"),
                             smallvec![],
                         )),
                     }),
@@ -1196,22 +1198,22 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("add_one"),
+                    IdentWithToken::new("add_one"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("add"),
+                                IdentWithToken::new("add"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -1226,7 +1228,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("add_one"),
+                    IdentWithToken::new("add_one"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1240,22 +1242,22 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("add_one"),
+                    IdentWithToken::new("add_one"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("add"),
+                                IdentWithToken::new("add"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -1279,26 +1281,26 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("square"),
+                    IdentWithToken::new("square"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("mul"),
+                                IdentWithToken::new("mul"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
                                 ],
                             )),
@@ -1309,7 +1311,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("square"),
+                    IdentWithToken::new("square"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1323,26 +1325,26 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("square"),
+                    IdentWithToken::new("square"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("mul"),
+                                IdentWithToken::new("mul"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
                                 ],
                             )),
@@ -1362,27 +1364,27 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("factorial"),
+                    IdentWithToken::new("factorial"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("factorial"),
+                                IdentWithToken::new("factorial"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
                                         expr: Rc::new(AstExpr::Call(
-                                            Ident::new("sub"),
+                                            IdentWithToken::new("sub"),
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                                 }),
                                                 Rc::new(Node {
                                                     token_id: 0.into(),
@@ -1400,7 +1402,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("factorial"),
+                    IdentWithToken::new("factorial"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1415,27 +1417,27 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("factorial"),
+                    IdentWithToken::new("factorial"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("factorial"),
+                                IdentWithToken::new("factorial"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
                                         expr: Rc::new(AstExpr::Call(
-                                            Ident::new("sub"),
+                                            IdentWithToken::new("sub"),
                                             smallvec![
                                                 Rc::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Rc::new(AstExpr::Ident(Ident::new("n"))),
+                                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                                 }),
                                                 Rc::new(Node {
                                                     token_id: 0.into(),
@@ -1453,7 +1455,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("factorial"),
+                    IdentWithToken::new("factorial"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1469,26 +1471,26 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("multi_step"),
+                    IdentWithToken::new("multi_step"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Let(
-                                Ident::new("temp"),
+                                IdentWithToken::new("temp"),
                                 Rc::new(Node {
                                     token_id: 0.into(),
                                     expr: Rc::new(AstExpr::Call(
-                                        Ident::new("add"),
+                                        IdentWithToken::new("add"),
                                         smallvec![
                                             Rc::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                             }),
                                             Rc::new(Node {
                                                 token_id: 0.into(),
@@ -1502,11 +1504,11 @@ mod tests {
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("mul"),
+                                IdentWithToken::new("mul"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("temp"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("temp"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -1521,7 +1523,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("multi_step"),
+                    IdentWithToken::new("multi_step"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1535,26 +1537,26 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("multi_step"),
+                    IdentWithToken::new("multi_step"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Let(
-                                Ident::new("temp"),
+                                IdentWithToken::new("temp"),
                                 Rc::new(Node {
                                     token_id: 0.into(),
                                     expr: Rc::new(AstExpr::Call(
-                                        Ident::new("add"),
+                                        IdentWithToken::new("add"),
                                         smallvec![
                                             Rc::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                             }),
                                             Rc::new(Node {
                                                 token_id: 0.into(),
@@ -1568,11 +1570,11 @@ mod tests {
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("mul"),
+                                IdentWithToken::new("mul"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("temp"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("temp"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -1588,7 +1590,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("temp"),
+                    IdentWithToken::new("temp"),
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))), // add(5, 1) = 6
@@ -1630,7 +1632,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("long_func"),
+                    IdentWithToken::new("long_func"),
                     smallvec![],
                     vec![
                         Rc::new(Node {
@@ -1646,7 +1648,7 @@ mod tests {
             }),
             Rc::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(Ident::new("long_func"), smallvec![])),
+                expr: Rc::new(AstExpr::Call(IdentWithToken::new("long_func"), smallvec![])),
             }),
         ];
 
@@ -1665,7 +1667,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Let(
-                    Ident::new("x"),
+                    IdentWithToken::new("x"),
                     Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
@@ -1675,7 +1677,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("add"),
+                    IdentWithToken::new("add"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1705,19 +1707,19 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("double"),
+                    IdentWithToken::new("double"),
                     smallvec![Rc::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
                     vec![Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Call(
-                            Ident::new("mul"),
+                            IdentWithToken::new("mul"),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -1731,7 +1733,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("double"),
+                    IdentWithToken::new("double"),
                     smallvec![Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
@@ -1742,7 +1744,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("add"),
+                    IdentWithToken::new("add"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1765,19 +1767,19 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("double"),
+                    IdentWithToken::new("double"),
                     smallvec![Rc::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
                     vec![Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Call(
-                            Ident::new("mul"),
+                            IdentWithToken::new("mul"),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -1792,7 +1794,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("mul"),
+                    IdentWithToken::new("mul"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1809,7 +1811,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("add"),
+                    IdentWithToken::new("add"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1835,19 +1837,19 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("double"),
+                    IdentWithToken::new("double"),
                     smallvec![Rc::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
                     vec![Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Call(
-                            Ident::new("mul"),
+                            IdentWithToken::new("mul"),
                             smallvec![
                                 Rc::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                 }),
                                 Rc::new(Node {
                                     token_id: 0.into(),
@@ -1861,7 +1863,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("double"),
+                    IdentWithToken::new("double"),
                     smallvec![Rc::new(Node {
                         token_id: 0.into(),
                         expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
@@ -1872,7 +1874,7 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Call(
-                    Ident::new("add"),
+                    IdentWithToken::new("add"),
                     smallvec![
                         Rc::new(Node {
                             token_id: 0.into(),
@@ -1895,21 +1897,21 @@ mod tests {
             Rc::new(Node {
                 token_id: 0.into(),
                 expr: Rc::new(AstExpr::Def(
-                    Ident::new("double"),
+                    IdentWithToken::new("double"),
                     smallvec![Rc::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
                     vec![
                         // The function body remains unchanged, but inlined calls are optimized
                         Rc::new(Node {
                             token_id: 0.into(),
                             expr: Rc::new(AstExpr::Call(
-                                Ident::new("mul"),
+                                IdentWithToken::new("mul"),
                                 smallvec![
                                     Rc::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(Ident::new("x"))),
+                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                     }),
                                     Rc::new(Node {
                                         token_id: 0.into(),
@@ -1940,7 +1942,7 @@ mod tests {
 
     #[test]
     fn test_contains_function_call_in_if_conditions() {
-        let func_name = &Ident::new("test_func");
+        let func_name = Ident::new("test_func");
 
         // Test function call in if condition
         let if_node = Rc::new(Node {
@@ -1948,7 +1950,7 @@ mod tests {
             expr: Rc::new(AstExpr::If(smallvec![(
                 Some(Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
@@ -1969,7 +1971,7 @@ mod tests {
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })
             )])),
         });
@@ -1979,7 +1981,7 @@ mod tests {
 
     #[test]
     fn test_contains_function_call_in_while_conditions() {
-        let func_name = &Ident::new("test_func");
+        let func_name = Ident::new("test_func");
 
         // Test function call in while condition
         let while_node = Rc::new(Node {
@@ -1987,7 +1989,7 @@ mod tests {
             expr: Rc::new(AstExpr::While(
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
@@ -2008,7 +2010,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2021,7 +2023,7 @@ mod tests {
 
     #[test]
     fn test_contains_function_call_in_until_conditions() {
-        let func_name = &Ident::new("test_func");
+        let func_name = Ident::new("test_func");
 
         // Test function call in until condition
         let until_node = Rc::new(Node {
@@ -2029,7 +2031,7 @@ mod tests {
             expr: Rc::new(AstExpr::Until(
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
@@ -2050,7 +2052,7 @@ mod tests {
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2063,16 +2065,16 @@ mod tests {
 
     #[test]
     fn test_contains_function_call_in_foreach_conditions() {
-        let func_name = &Ident::new("test_func");
+        let func_name = Ident::new("test_func");
 
         // Test function call in foreach collection
         let foreach_collection_node = Rc::new(Node {
             token_id: 0.into(),
             expr: Rc::new(AstExpr::Foreach(
-                Ident::new("item"),
+                IdentWithToken::new("item"),
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
@@ -2090,14 +2092,14 @@ mod tests {
         let foreach_body_node = Rc::new(Node {
             token_id: 0.into(),
             expr: Rc::new(AstExpr::Foreach(
-                Ident::new("item"),
+                IdentWithToken::new("item"),
                 Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Ident(Ident::new("items"))),
+                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("items"))),
                 }),
                 vec![Rc::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2110,7 +2112,7 @@ mod tests {
 
     #[test]
     fn test_contains_function_call_nested_control_structures() {
-        let func_name = &Ident::new("test_func");
+        let func_name = Ident::new("test_func");
 
         // Test nested if inside while with function call
         let nested_node = Rc::new(Node {
@@ -2125,7 +2127,10 @@ mod tests {
                     expr: Rc::new(AstExpr::If(smallvec![(
                         Some(Rc::new(Node {
                             token_id: 3.into(),
-                            expr: Rc::new(AstExpr::Call(Ident::new("test_func"), smallvec![],)),
+                            expr: Rc::new(AstExpr::Call(
+                                IdentWithToken::new("test_func"),
+                                smallvec![],
+                            )),
                         })),
                         Rc::new(Node {
                             token_id: 4.into(),
@@ -2141,8 +2146,8 @@ mod tests {
 
     #[test]
     fn test_contains_function_call_no_match() {
-        let func_name = &Ident::new("test_func");
-        let different_func = &Ident::new("other_func");
+        let func_name = Ident::new("test_func");
+        let different_func = IdentWithToken::new("other_func");
 
         // Test that it returns false when function name doesn't match
         let if_node = Rc::new(Node {
@@ -2150,7 +2155,7 @@ mod tests {
             expr: Rc::new(AstExpr::If(smallvec![(
                 Some(Rc::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(different_func.clone(), smallvec![])),
+                    expr: Rc::new(AstExpr::Call(different_func, smallvec![])),
                 })),
                 Rc::new(Node {
                     token_id: 2.into(),
