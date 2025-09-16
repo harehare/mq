@@ -70,3 +70,45 @@ impl<'de> serde::Deserialize<'de> for Ident {
         Ok(Ident::new(&s))
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ident_new_and_as_str() {
+        let ident = Ident::new("hello");
+        assert_eq!(ident.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_ident_from_str_and_string() {
+        let ident1: Ident = "world".into();
+        let ident2: Ident = String::from("world").into();
+        assert_eq!(ident1, ident2);
+        assert_eq!(ident1.as_str(), "world");
+    }
+
+    #[test]
+    fn test_ident_display_trait() {
+        let ident = Ident::new("display_test");
+        let s = format!("{}", ident);
+        assert_eq!(s, "display_test");
+    }
+
+    #[test]
+    fn test_ident_resolve_with() {
+        let ident = Ident::new("resolve");
+        let len = ident.resolve_with(|s| s.len());
+        assert_eq!(len, "resolve".len());
+    }
+
+    #[cfg(feature = "ast-json")]
+    #[test]
+    fn test_ident_serde() {
+        let ident = Ident::new("serde_test");
+        let serialized = serde_json::to_string(&ident).unwrap();
+        assert_eq!(serialized, "\"serde_test\"");
+        let deserialized: Ident = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, ident);
+    }
+}
