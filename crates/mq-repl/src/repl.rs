@@ -14,7 +14,7 @@ use std::{borrow::Cow, cell::RefCell, fs, rc::Rc};
 use crate::command_context::{Command, CommandContext, CommandOutput};
 
 /// Highlight mq syntax with keywords and commands
-fn highlight_mq_syntax(line: &str) -> Cow<str> {
+fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
     let commands_pattern = r"^(/copy|/env|/help|/quit|/load|/vars|/version)\b";
