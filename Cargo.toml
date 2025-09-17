@@ -16,6 +16,7 @@ members = [
   "crates/mq-mcp",
   "crates/mq-python",
   "crates/mq-web-api",
+  "crates/mq-dap",
   "crates/mq-crawler",
 ]
 resolver = "3"
