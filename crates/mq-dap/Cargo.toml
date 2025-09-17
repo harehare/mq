@@ -1,0 +1,15 @@
+[package]
+edition = "2024"
+name = "mq-dap"
+version = "0.1.0"
+
+[dependencies]
+dap = "0.4.1-alpha1"
+mq-lang = {workspace = true, features = ["debugger"]}
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { version = "1.0", features = ["full"] }
+miette = { version = "7.2.0", features = ["fancy"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
