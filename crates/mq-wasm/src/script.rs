@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, str::FromStr};
+use std::str::FromStr;
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -248,7 +248,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
 
 #[wasm_bindgen(js_name=toAst)]
 pub fn to_ast(code: &str) -> Result<String, JsValue> {
-    let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(10240)));
+    let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(10240)));
     mq_lang::parse(code, token_arena)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse code: {}", e)))
         .and_then(|json| {

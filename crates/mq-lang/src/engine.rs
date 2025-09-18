@@ -1,13 +1,13 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
 use crate::Debugger;
-use crate::MqResult;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
+use crate::{MqResult, Shared, SharedCell, token_alloc};
 
 use crate::{
     ModuleLoader, Token, Value,
@@ -65,17 +65,20 @@ impl Default for Options {
 pub struct Engine {
     pub(crate) evaluator: Evaluator,
     pub(crate) options: Options,
-    token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+    token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 }
 
-fn create_default_token_arena() -> Rc<RefCell<Arena<Rc<Token>>>> {
-    let token_arena = Rc::new(RefCell::new(Arena::new(10240)));
-    token_arena.borrow_mut().alloc(Rc::new(Token {
-        // Ensure at least one token for ArenaId::new(0)
-        kind: crate::TokenKind::Eof, // Dummy token
-        range: crate::range::Range::default(),
-        module_id: crate::arena::ArenaId::new(0), // Dummy module_id
-    }));
+fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(10240)));
+    token_alloc(
+        &token_arena,
+        &Shared::new(Token {
+            // Ensure at least one token for ArenaId::new(0)
+            kind: crate::TokenKind::Eof, // Dummy token
+            range: crate::range::Range::default(),
+            module_id: crate::arena::ArenaId::new(0), // Dummy module_id
+        }),
+    );
     token_arena
 }
 
@@ -83,7 +86,7 @@ impl Default for Engine {
     fn default() -> Self {
         let token_arena = create_default_token_arena();
         Self {
-            evaluator: Evaluator::new(ModuleLoader::default(), Rc::clone(&token_arena)),
+            evaluator: Evaluator::new(ModuleLoader::default(), Shared::clone(&token_arena)),
             options: Options::default(),
             token_arena,
         }
@@ -140,7 +143,7 @@ impl Engine {
         let module = self
             .evaluator
             .module_loader
-            .load_from_file(module_name, Rc::clone(&self.token_arena));
+            .load_from_file(module_name, Shared::clone(&self.token_arena));
         let module = module.map_err(|e| {
             error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
         })?;
@@ -173,7 +176,7 @@ impl Engine {
     /// ```
     ///
     pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
-        let mut program = parse(code, Rc::clone(&self.token_arena))?;
+        let mut program = parse(code, Shared::clone(&self.token_arena))?;
         Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
 
         #[cfg(feature = "debugger")]
@@ -208,8 +211,7 @@ impl Engine {
     ///
     /// ```rust
     /// #[cfg(feature = "ast-json")]
-    /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, Value};
-    /// use std::rc::Rc;
+    /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, Value, Shared};
     ///
     /// let mut engine = Engine::default();
     /// engine.load_builtin_module();
@@ -257,13 +259,13 @@ impl Engine {
     /// `debugger` feature is enabled. Use this to inspect or control
     /// the execution state for advanced debugging scenarios.
     #[cfg(feature = "debugger")]
-    pub fn debugger(&self) -> Rc<std::cell::RefCell<Debugger>> {
+    pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         self.evaluator.debugger()
     }
 
     #[cfg(feature = "debugger")]
-    pub fn token_arena(&self) -> Rc<RefCell<Arena<Rc<Token>>>> {
-        Rc::clone(&self.token_arena)
+    pub fn token_arena(&self) -> Shared<SharedCell<Arena<Shared<Token>>>> {
+        Shared::clone(&self.token_arena)
     }
 
     /// Returns a reference to the underlying evaluator.
@@ -271,13 +273,16 @@ impl Engine {
     /// This is primarily intended for advanced use cases such as debugging,
     /// where direct access to the evaluator internals is required.
     #[cfg(feature = "debugger")]
-    pub fn switch_env(&self, env: Rc<RefCell<Env>>) -> Self {
-        let token_arena = Rc::new(RefCell::new(self.token_arena.borrow().clone()));
+    pub fn switch_env(&self, env: Shared<SharedCell<Env>>) -> Self {
+        #[cfg(not(feature = "sync"))]
+        let token_arena = Shared::new(SharedCell::new(self.token_arena.borrow().clone()));
+        #[cfg(feature = "sync")]
+        let token_arena = Shared::new(SharedCell::new(self.token_arena.read().unwrap().clone()));
 
         Self {
-            evaluator: Evaluator::with_env(Rc::clone(&token_arena), Rc::clone(&env)),
+            evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
             options: self.options.clone(),
-            token_arena: Rc::clone(&token_arena),
+            token_arena: Shared::clone(&token_arena),
         }
     }
 
@@ -387,9 +392,9 @@ mod tests {
         let mut engine = Engine::default();
         engine.load_builtin_module();
 
-        let program = vec![Rc::new(AstNode {
+        let program = vec![Shared::new(AstNode {
             token_id: crate::arena::ArenaId::new(1),
-            expr: Rc::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+            expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
         })];
 
         let result = engine.eval_ast(program, crate::null_input().into_iter());

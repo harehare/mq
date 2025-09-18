@@ -393,13 +393,11 @@ impl Diagnostic for Error {
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, rc::Rc};
-
     use mq_test::defer;
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::{Arena, Range, Token, TokenKind, arena::ArenaId};
+    use crate::{Arena, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
 
     #[fixture]
     fn module_loader() -> ModuleLoader {
@@ -603,7 +601,7 @@ mod test {
             }
         }
 
-        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
         let mut loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
         loader
             .load_from_file("test_from_error_with_module_source", token_arena)
@@ -623,7 +621,7 @@ mod test {
 
     #[test]
     fn test_from_error_with_builtin_module() {
-        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
         let mut loader = ModuleLoader::default();
         loader.load_builtin(token_arena).unwrap();
         let token = Token {

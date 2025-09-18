@@ -1,5 +1,4 @@
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
-
+use std::borrow::Cow;
 use tower_lsp::jsonrpc::Result;
 
 pub fn response(
@@ -39,7 +38,8 @@ pub fn response(
             .as_slice()
         {
             [Some(code)] => {
-                let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(1024)));
+                let token_arena =
+                    mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
                 let program =
                     mq_lang::parse(code, token_arena).map_err(|e| tower_lsp::jsonrpc::Error {
                         code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,

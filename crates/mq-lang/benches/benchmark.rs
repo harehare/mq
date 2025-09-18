@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use mq_lang::{Shared, SharedCell};
 
 fn main() {
     divan::main();
@@ -149,8 +149,8 @@ fn eval_dead_code_elimination_benchmark() -> mq_lang::Values {
 }
 
 #[divan::bench]
-fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
-    let token_arena = Rc::new(RefCell::new(mq_lang::Arena::new(100)));
+fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(100)));
     mq_lang::parse(
         "
      def fibonacci(x):
@@ -160,7 +160,7 @@ fn parse_fibonacci() -> Vec<Rc<mq_lang::AstNode>> {
         1
       else:
         fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
-        Rc::clone(&token_arena),
+        Shared::clone(&token_arena),
     )
     .unwrap()
 }

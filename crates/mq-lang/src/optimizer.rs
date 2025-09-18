@@ -1,7 +1,6 @@
 use super::ast::node as ast;
-use crate::{Ident, Program, eval::builtin};
+use crate::{Ident, Program, Shared, eval::builtin};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use std::rc::Rc;
 
 type LineCount = usize;
 
@@ -19,7 +18,7 @@ pub enum OptimizationLevel {
 
 #[derive(Debug)]
 pub struct Optimizer {
-    constant_table: FxHashMap<Ident, Rc<ast::Expr>>,
+    constant_table: FxHashMap<Ident, Shared<ast::Expr>>,
     function_table: FxHashMap<Ident, (ast::Params, Program, LineCount)>,
     inline_threshold: LineCount,
     optimization_level: OptimizationLevel,
@@ -109,7 +108,10 @@ impl Optimizer {
         used_idents
     }
 
-    fn collect_used_identifiers_in_node(node: &Rc<ast::Node>, used_idents: &mut FxHashSet<Ident>) {
+    fn collect_used_identifiers_in_node(
+        node: &Shared<ast::Node>,
+        used_idents: &mut FxHashSet<Ident>,
+    ) {
         match &*node.expr {
             ast::Expr::Ident(ident) => {
                 used_idents.insert(ident.name);
@@ -208,7 +210,7 @@ impl Optimizer {
     }
 
     /// Recursively checks if a function is used in conditional contexts within a node
-    fn check_conditional_usage_in_node(func_name: Ident, node: &Rc<ast::Node>) -> bool {
+    fn check_conditional_usage_in_node(func_name: Ident, node: &Shared<ast::Node>) -> bool {
         match &*node.expr {
             ast::Expr::If(conditions) => {
                 for (cond_node_opt, _) in conditions {
@@ -252,7 +254,7 @@ impl Optimizer {
     }
 
     /// Checks if a function call exists within a node tree
-    fn contains_function_call(func_name: Ident, node: &Rc<ast::Node>) -> bool {
+    fn contains_function_call(func_name: Ident, node: &Shared<ast::Node>) -> bool {
         match &*node.expr {
             ast::Expr::Call(call_ident, args) => {
                 if call_ident.name == func_name {
@@ -347,7 +349,7 @@ impl Optimizer {
     }
 
     /// Handles inlining of top-level function calls
-    fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Rc<ast::Node>) {
+    fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Shared<ast::Node>) {
         if let ast::Expr::Call(func_ident, args) = &*node.expr {
             if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
                 let mut param_bindings = FxHashMap::default();
@@ -369,35 +371,35 @@ impl Optimizer {
     }
 
     /// Recursively applies function inlining within a node
-    fn inline_functions_in_node(&mut self, node: Rc<ast::Node>) -> Rc<ast::Node> {
+    fn inline_functions_in_node(&mut self, node: Shared<ast::Node>) -> Shared<ast::Node> {
         let new_expr = match &*node.expr {
             ast::Expr::Def(ident, params, body) => {
                 let mut new_body = body.clone();
                 self.inline_functions(&mut new_body);
-                Rc::new(ast::Expr::Def(ident.clone(), params.clone(), new_body))
+                Shared::new(ast::Expr::Def(ident.clone(), params.clone(), new_body))
             }
             ast::Expr::Fn(params, body) => {
                 let mut new_body = body.clone();
                 self.inline_functions(&mut new_body);
-                Rc::new(ast::Expr::Fn(params.clone(), new_body))
+                Shared::new(ast::Expr::Fn(params.clone(), new_body))
             }
             ast::Expr::While(cond, body) => {
                 let new_cond = self.inline_functions_in_node(cond.clone());
                 let mut new_body = body.clone();
                 self.inline_functions(&mut new_body);
-                Rc::new(ast::Expr::While(new_cond, new_body))
+                Shared::new(ast::Expr::While(new_cond, new_body))
             }
             ast::Expr::Until(cond, body) => {
                 let new_cond = self.inline_functions_in_node(cond.clone());
                 let mut new_body = body.clone();
                 self.inline_functions(&mut new_body);
-                Rc::new(ast::Expr::Until(new_cond, new_body))
+                Shared::new(ast::Expr::Until(new_cond, new_body))
             }
             ast::Expr::Foreach(ident, collection, body) => {
-                let new_collection = self.inline_functions_in_node(Rc::clone(collection));
+                let new_collection = self.inline_functions_in_node(Shared::clone(collection));
                 let mut new_body = body.clone();
                 self.inline_functions(&mut new_body);
-                Rc::new(ast::Expr::Foreach(ident.clone(), new_collection, new_body))
+                Shared::new(ast::Expr::Foreach(ident.clone(), new_collection, new_body))
             }
             ast::Expr::If(conditions) => {
                 let new_conditions = conditions
@@ -405,17 +407,17 @@ impl Optimizer {
                     .map(|(cond_opt, body)| {
                         let new_cond = cond_opt
                             .as_ref()
-                            .map(|cond| self.inline_functions_in_node(Rc::clone(cond)));
-                        let new_body = self.inline_functions_in_node(Rc::clone(body));
+                            .map(|cond| self.inline_functions_in_node(Shared::clone(cond)));
+                        let new_body = self.inline_functions_in_node(Shared::clone(body));
                         (new_cond, new_body)
                     })
                     .collect();
-                Rc::new(ast::Expr::If(new_conditions))
+                Shared::new(ast::Expr::If(new_conditions))
             }
             ast::Expr::Call(func_ident, args) => {
                 let new_args: ast::Args = args
                     .iter()
-                    .map(|arg| self.inline_functions_in_node(Rc::clone(arg)))
+                    .map(|arg| self.inline_functions_in_node(Shared::clone(arg)))
                     .collect();
 
                 // Check if this function call can be inlined
@@ -436,29 +438,29 @@ impl Optimizer {
                     // Multi-expression functions can only be inlined at the top level
                 }
 
-                Rc::new(ast::Expr::Call(func_ident.clone(), new_args))
+                Shared::new(ast::Expr::Call(func_ident.clone(), new_args))
             }
             ast::Expr::Let(ident, value) => {
-                let new_value = self.inline_functions_in_node(Rc::clone(value));
-                Rc::new(ast::Expr::Let(ident.clone(), new_value))
+                let new_value = self.inline_functions_in_node(Shared::clone(value));
+                Shared::new(ast::Expr::Let(ident.clone(), new_value))
             }
             ast::Expr::Paren(inner) => {
-                let new_inner = self.inline_functions_in_node(Rc::clone(inner));
-                Rc::new(ast::Expr::Paren(new_inner))
+                let new_inner = self.inline_functions_in_node(Shared::clone(inner));
+                Shared::new(ast::Expr::Paren(new_inner))
             }
-            _ => Rc::clone(&node.expr),
+            _ => Shared::clone(&node.expr),
         };
 
-        Rc::new(ast::Node {
+        Shared::new(ast::Node {
             token_id: node.token_id,
             expr: new_expr,
         })
     }
 
     fn substitute_parameters(
-        node: &Rc<ast::Node>,
-        param_bindings: &FxHashMap<Ident, Rc<ast::Node>>,
-    ) -> Rc<ast::Node> {
+        node: &Shared<ast::Node>,
+        param_bindings: &FxHashMap<Ident, Shared<ast::Node>>,
+    ) -> Shared<ast::Node> {
         let new_expr = match &*node.expr {
             ast::Expr::Ident(ident) => {
                 if let Some(arg_node) = param_bindings.get(&ident.name) {
@@ -471,28 +473,28 @@ impl Optimizer {
                     .iter()
                     .map(|arg| Self::substitute_parameters(arg, param_bindings))
                     .collect();
-                Rc::new(ast::Expr::Call(func_ident.clone(), substituted_args))
+                Shared::new(ast::Expr::Call(func_ident.clone(), substituted_args))
             }
             ast::Expr::Let(ident, value) => {
                 let substituted_value = Self::substitute_parameters(value, param_bindings);
-                Rc::new(ast::Expr::Let(ident.clone(), substituted_value))
+                Shared::new(ast::Expr::Let(ident.clone(), substituted_value))
             }
             ast::Expr::Paren(inner) => {
                 let substituted_inner = Self::substitute_parameters(inner, param_bindings);
-                Rc::new(ast::Expr::Paren(substituted_inner))
+                Shared::new(ast::Expr::Paren(substituted_inner))
             }
             _ => node.expr.clone(),
         };
 
-        Rc::new(ast::Node {
+        Shared::new(ast::Node {
             token_id: node.token_id,
             expr: new_expr,
         })
     }
 
-    fn optimize_node(&mut self, node: &mut Rc<ast::Node>) {
-        let mut_node = Rc::make_mut(node);
-        let mut_expr = Rc::make_mut(&mut mut_node.expr);
+    fn optimize_node(&mut self, node: &mut Shared<ast::Node>) {
+        let mut_node = Shared::make_mut(node);
+        let mut_expr = Shared::make_mut(&mut mut_node.expr);
 
         match mut_expr {
             ast::Expr::Call(ident, args) => {
@@ -566,12 +568,12 @@ impl Optimizer {
                             _ => None,
                         });
                 if let Some(expr) = new_expr {
-                    mut_node.expr = Rc::new(expr);
+                    mut_node.expr = Shared::new(expr);
                 }
             }
             ast::Expr::Ident(ident) => {
                 if let Some(expr) = self.constant_table.get(&ident.name) {
-                    mut_node.expr = Rc::clone(expr);
+                    mut_node.expr = Shared::clone(expr);
                 }
             }
             ast::Expr::Foreach(_, each_values, program) => {
@@ -592,7 +594,7 @@ impl Optimizer {
                 self.optimize_node(value);
                 if let ast::Expr::Literal(_) = &*value.expr {
                     self.constant_table
-                        .insert(ident.name.to_owned(), Rc::clone(&value.expr));
+                        .insert(ident.name.to_owned(), Shared::clone(&value.expr));
                 }
             }
             ast::Expr::Def(_, _, program) | ast::Expr::Fn(_, program) => {
@@ -629,433 +631,433 @@ mod tests {
     #[rstest]
     #[case::constant_folding_add(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Call(
+                    expr: Shared::new(ast::Expr::Call(
                         IdentWithToken::new("add"),
                         smallvec![
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
                             }),
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
                     )),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                 })
             ])]
     #[case::constant_folding_add(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Call(
+                    expr: Shared::new(ast::Expr::Call(
                         IdentWithToken::new("add"),
                         smallvec![
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::String("hello".to_string()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::String("hello".to_string()))),
                             }),
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::String("world".to_string()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::String("world".to_string()))),
                             }),
                         ],
                     )),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::String("helloworld".to_string()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::String("helloworld".to_string()))),
                 })
             ])]
     #[case::constant_folding_sub(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Call(
+                    expr: Shared::new(ast::Expr::Call(
                         IdentWithToken::new("sub"),
                         smallvec![
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                             }),
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
                     )),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
                 })
             ])]
     #[case::constant_folding_mul(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Call(
+                    expr: Shared::new(ast::Expr::Call(
                         IdentWithToken::new("mul"),
                         smallvec![
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
                             }),
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
                     )),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(6.0.into()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(6.0.into()))),
                 })
             ])]
     #[case::constant_folding_div(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Call(
+                    expr: Shared::new(ast::Expr::Call(
                         IdentWithToken::new("div"),
                         smallvec![
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(6.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(6.0.into()))),
                             }),
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
                     )),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
                 })
             ])]
     #[case::constant_folding_mod(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Call(
+                    expr: Shared::new(ast::Expr::Call(
                         IdentWithToken::new("mod"),
                         smallvec![
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                             }),
-                            Rc::new(ast::Node {
+                            Shared::new(ast::Node {
                                 token_id: 0.into(),
-                                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
+                                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(3.0.into()))),
                             }),
                         ],
                     )),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(2.0.into()))),
                 })
             ])]
     #[case::constant_propagation(
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Let(
+                    expr: Shared::new(ast::Expr::Let(
                         IdentWithToken::new("x"),
-                        Rc::new(ast::Node {
+                        Shared::new(ast::Node {
                             token_id: 0.into(),
-                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
+                            expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                         }),
                     )),
                 }),
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Ident(IdentWithToken::new("x"))),
+                    expr: Shared::new(ast::Expr::Ident(IdentWithToken::new("x"))),
                 })
             ],
             vec![
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Let(
+                    expr: Shared::new(ast::Expr::Let(
                         IdentWithToken::new("x"),
-                        Rc::new(ast::Node {
+                        Shared::new(ast::Node {
                             token_id: 0.into(),
-                            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
+                            expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                         }),
                     )),
                 }),
-                Rc::new(ast::Node {
+                Shared::new(ast::Node {
                     token_id: 0.into(),
-                    expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
+                    expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(5.0.into()))),
                 })
             ])]
     #[case::dead_code_elimination_simple_unused(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("unused_var"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(10.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("used_var"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(20.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("used_var"))),
+                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("used_var"))),
             }),
         ],
         // Expected: unused_var is removed
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("used_var"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(20.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(20.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(20.0.into()))),
             }),
         ]
     )]
     #[case::dead_code_elimination_used_variable_kept(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("x"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("x"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
             }),
         ]
     )]
     #[case::dead_code_elimination_multiple_unused(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("a"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("a"), Shared::new(Node { token_id: 1.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("b"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("b"), Shared::new(Node { token_id: 3.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("c"), Shared::new(Node { token_id: 5.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
             }),
-             Rc::new(Node {
+             Shared::new(Node {
                 token_id: 6.into(),
-                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("c"))),
+                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("c"))),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("c"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("c"), Shared::new(Node { token_id: 5.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(30.0.into()))) }))),
             }),
-             Rc::new(Node {
+             Shared::new(Node {
                 token_id: 6.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(30.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(30.0.into()))),
             }),
         ]
     )]
     #[case::dead_code_elimination_mixed_used_unused(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("unused1"), Rc::new(Node { token_id: 1.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("unused1"), Shared::new(Node { token_id: 1.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))) }))),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("used1"), Shared::new(Node { token_id: 3.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("unused2"), Rc::new(Node { token_id: 5.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("unused2"), Shared::new(Node { token_id: 5.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))) }))),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 6.into(),
-                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("used1"))),
+                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("used1"))),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(IdentWithToken::new("used1"), Rc::new(Node { token_id: 3.into(), expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
+                expr: Shared::new(AstExpr::Let(IdentWithToken::new("used1"), Shared::new(Node { token_id: 3.into(), expr: Shared::new(AstExpr::Literal(Literal::Number(10.0.into()))) }))),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 6.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(10.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(10.0.into()))),
             }),
         ]
     )]
     #[case::dead_code_elimination_unused_constant_candidate(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("const_unused"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(100.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(100.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("another_var"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(200.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("another_var"))),
+                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("another_var"))),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("another_var"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(200.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(200.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(200.0.into()))),
             }),
         ]
     )]
     #[case::constant_folding_repeat(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("repeat"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::String("ab".to_string()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::String("ab".to_string()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         }),
                     ],
                 )),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::String("ababab".to_string()))),
+                expr: Shared::new(AstExpr::Literal(Literal::String("ababab".to_string()))),
             }),
         ]
     )]
     #[case::constant_folding_reverse(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("reverse"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::String("abc".to_string()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::String("abc".to_string()))),
                         }),
                     ],
                 )),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::String("cba".to_string()))),
+                expr: Shared::new(AstExpr::Literal(Literal::String("cba".to_string()))),
             }),
         ]
     )]
     #[case::constant_folding_interpolated_string_ident(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("name"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Hello, ".to_string()),
                     ast::StringSegment::Ident(Ident::new("name")),
                     ast::StringSegment::Text("!".to_string()),
@@ -1063,19 +1065,19 @@ mod tests {
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("name"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Hello, ".to_string()),
                     ast::StringSegment::Text("Alice".to_string()),
                     ast::StringSegment::Text("!".to_string()),
@@ -1085,29 +1087,29 @@ mod tests {
     )]
     #[case::constant_folding_interpolated_string_multiple_idents(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("first"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("last"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Name: ".to_string()),
                     ast::StringSegment::Ident(Ident::new("first")),
                     ast::StringSegment::Text(" ".to_string()),
@@ -1116,29 +1118,29 @@ mod tests {
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("first"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("last"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 4.into(),
-                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Name: ".to_string()),
                     ast::StringSegment::Text("Bob".to_string()),
                     ast::StringSegment::Text(" ".to_string()),
@@ -1149,44 +1151,44 @@ mod tests {
     )]
     #[case::constant_folding_interpolated_string_ident_non_const(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("dynamic"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Call(
+                        expr: Shared::new(AstExpr::Call(
                             IdentWithToken::new("some_func"),
                             smallvec![],
                         )),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Value: ".to_string()),
                     ast::StringSegment::Ident(Ident::new("dynamic")),
                 ])),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("dynamic"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Rc::new(AstExpr::Call(
+                        expr: Shared::new(AstExpr::Call(
                             IdentWithToken::new("some_func"),
                             smallvec![],
                         )),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 2.into(),
-                expr: Rc::new(AstExpr::InterpolatedString(vec![
+                expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Value: ".to_string()),
                     ast::StringSegment::Ident(Ident::new("dynamic")),
                 ])),
@@ -1195,29 +1197,29 @@ mod tests {
     )]
     #[case::function_inlining_simple(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("add_one"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("add"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                        expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                     }),
                                 ],
                             )),
@@ -1225,43 +1227,43 @@ mod tests {
                     ],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("add_one"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
                 )),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("add_one"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("add"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                        expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                     }),
                                 ],
                             )),
@@ -1270,37 +1272,37 @@ mod tests {
                 )),
             }),
             // Inlined function call
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(6.0.into()))),
             }),
         ]
     )]
     #[case::function_inlining_not_recursive(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("square"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("mul"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
                                 ],
                             )),
@@ -1308,43 +1310,43 @@ mod tests {
                     ],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("square"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         })
                     ],
                 )),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("square"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("mul"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                     }),
                                 ],
                             )),
@@ -1353,42 +1355,42 @@ mod tests {
                 )),
             }),
             // Inlined and optimized function call: 3 * 3 = 9
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(9.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(9.0.into()))),
             }),
         ]
     )]
     #[case::function_not_inlined_recursive(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("factorial"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("factorial"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Call(
+                                        expr: Shared::new(AstExpr::Call(
                                             IdentWithToken::new("sub"),
                                             smallvec![
-                                                Rc::new(Node {
+                                                Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                                                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                                 }),
-                                                Rc::new(Node {
+                                                Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                                 }),
                                             ],
                                         )),
@@ -1399,14 +1401,14 @@ mod tests {
                     ],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("factorial"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
                 )),
@@ -1414,34 +1416,34 @@ mod tests {
         ],
         // Should not be inlined because it's recursive
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("factorial"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("factorial"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Call(
+                                        expr: Shared::new(AstExpr::Call(
                                             IdentWithToken::new("sub"),
                                             smallvec![
-                                                Rc::new(Node {
+                                                Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("n"))),
+                                                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("n"))),
                                                 }),
-                                                Rc::new(Node {
+                                                Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                                 }),
                                             ],
                                         )),
@@ -1452,14 +1454,14 @@ mod tests {
                     ],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("factorial"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
                 )),
@@ -1468,51 +1470,51 @@ mod tests {
     )]
     #[case::function_inlining_multi_line(
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("multi_step"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Let(
+                            expr: Shared::new(AstExpr::Let(
                                 IdentWithToken::new("temp"),
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Call(
+                                    expr: Shared::new(AstExpr::Call(
                                         IdentWithToken::new("add"),
                                         smallvec![
-                                            Rc::new(Node {
+                                            Shared::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                             }),
-                                            Rc::new(Node {
+                                            Shared::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                                expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                             }),
                                         ],
                                     )),
                                 }),
                             )),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("mul"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("temp"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("temp"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                        expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                     }),
                                 ],
                             )),
@@ -1520,65 +1522,65 @@ mod tests {
                     ],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("multi_step"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                         })
                     ],
                 )),
             }),
         ],
         vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("multi_step"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                         })
                     ],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Let(
+                            expr: Shared::new(AstExpr::Let(
                                 IdentWithToken::new("temp"),
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Call(
+                                    expr: Shared::new(AstExpr::Call(
                                         IdentWithToken::new("add"),
                                         smallvec![
-                                            Rc::new(Node {
+                                            Shared::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                                expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                             }),
-                                            Rc::new(Node {
+                                            Shared::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                                                expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                                             }),
                                         ],
                                     )),
                                 }),
                             )),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("mul"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("temp"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("temp"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                        expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                     }),
                                 ],
                             )),
@@ -1587,20 +1589,20 @@ mod tests {
                 )),
             }),
             // Multi-line function inlined - first statement
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("temp"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))), // add(5, 1) = 6
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(6.0.into()))), // add(5, 1) = 6
                     }),
                 )),
             }),
             // Multi-line function inlined - second statement
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(12.0.into()))), // mul(6, 2) = 12
+                expr: Shared::new(AstExpr::Literal(Literal::Number(12.0.into()))), // mul(6, 2) = 12
             }),
         ]
     )]
@@ -1629,26 +1631,26 @@ mod tests {
         let mut optimizer = Optimizer::with_inline_threshold(1);
 
         let input = vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("long_func"),
                     smallvec![],
                     vec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                         }),
                     ],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(IdentWithToken::new("long_func"), smallvec![])),
+                expr: Shared::new(AstExpr::Call(IdentWithToken::new("long_func"), smallvec![])),
             }),
         ];
 
@@ -1664,28 +1666,28 @@ mod tests {
         let mut optimizer = Optimizer::with_level(OptimizationLevel::None);
 
         let input = vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Let(
+                expr: Shared::new(AstExpr::Let(
                     IdentWithToken::new("x"),
-                    Rc::new(Node {
+                    Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(5.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(5.0.into()))),
                     }),
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("add"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         }),
                     ],
                 )),
@@ -1704,55 +1706,57 @@ mod tests {
         let mut optimizer = Optimizer::with_level(OptimizationLevel::InlineOnly);
 
         let input = vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("double"),
-                    smallvec![Rc::new(Node {
+                    smallvec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
-                    vec![Rc::new(Node {
+                    vec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Call(
+                        expr: Shared::new(AstExpr::Call(
                             IdentWithToken::new("mul"),
                             smallvec![
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                 }),
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    expr: Shared::new(AstExpr::Literal(Literal::Number(
+                                        2.0.into()
+                                    ))),
                                 }),
                             ],
                         )),
                     })],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("double"),
-                    smallvec![Rc::new(Node {
+                    smallvec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                     })],
                 )),
             }),
             // This should not be constant-folded in InlineOnly mode
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("add"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
                     ],
                 )),
@@ -1764,26 +1768,28 @@ mod tests {
 
         // Function should be inlined, but constant folding should not happen
         let expected = vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("double"),
-                    smallvec![Rc::new(Node {
+                    smallvec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
-                    vec![Rc::new(Node {
+                    vec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Call(
+                        expr: Shared::new(AstExpr::Call(
                             IdentWithToken::new("mul"),
                             smallvec![
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                 }),
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    expr: Shared::new(AstExpr::Literal(Literal::Number(
+                                        2.0.into()
+                                    ))),
                                 }),
                             ],
                         )),
@@ -1791,35 +1797,35 @@ mod tests {
                 )),
             }),
             // Inlined function body
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("mul"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                         }),
                     ],
                 )),
             }),
             // This add operation should NOT be constant-folded in InlineOnly mode
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("add"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
                     ],
                 )),
@@ -1834,55 +1840,57 @@ mod tests {
         let mut optimizer = Optimizer::with_level(OptimizationLevel::Full);
 
         let input = vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("double"),
-                    smallvec![Rc::new(Node {
+                    smallvec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
-                    vec![Rc::new(Node {
+                    vec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Call(
+                        expr: Shared::new(AstExpr::Call(
                             IdentWithToken::new("mul"),
                             smallvec![
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                 }),
-                                Rc::new(Node {
+                                Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                                    expr: Shared::new(AstExpr::Literal(Literal::Number(
+                                        2.0.into()
+                                    ))),
                                 }),
                             ],
                         )),
                     })],
                 )),
             }),
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("double"),
-                    smallvec![Rc::new(Node {
+                    smallvec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Literal(Literal::Number(3.0.into()))),
+                        expr: Shared::new(AstExpr::Literal(Literal::Number(3.0.into()))),
                     })],
                 )),
             }),
             // This should be constant-folded in Full mode
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Call(
+                expr: Shared::new(AstExpr::Call(
                     IdentWithToken::new("add"),
                     smallvec![
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         }),
                     ],
                 )),
@@ -1894,28 +1902,28 @@ mod tests {
 
         // Both inlining and constant folding should happen
         let expected = vec![
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Def(
+                expr: Shared::new(AstExpr::Def(
                     IdentWithToken::new("double"),
-                    smallvec![Rc::new(Node {
+                    smallvec![Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                     })],
                     vec![
                         // The function body remains unchanged, but inlined calls are optimized
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("mul"),
                                 smallvec![
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
                                     }),
-                                    Rc::new(Node {
+                                    Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Rc::new(AstExpr::Literal(Literal::Number(
+                                        expr: Shared::new(AstExpr::Literal(Literal::Number(
                                             2.0.into()
                                         ))),
                                     }),
@@ -1926,14 +1934,14 @@ mod tests {
                 )),
             }),
             // Inlined and optimized function result: mul(3, 2) = 6
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(6.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(6.0.into()))),
             }),
             // Constant-folded add operation
-            Rc::new(Node {
+            Shared::new(Node {
                 token_id: 0.into(),
-                expr: Rc::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
             }),
         ];
 
@@ -1945,16 +1953,16 @@ mod tests {
         let func_name = Ident::new("test_func");
 
         // Test function call in if condition
-        let if_node = Rc::new(Node {
+        let if_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::If(smallvec![(
-                Some(Rc::new(Node {
+            expr: Shared::new(AstExpr::If(smallvec![(
+                Some(Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })),
-                Rc::new(Node {
+                Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                 })
             )])),
         });
@@ -1962,16 +1970,16 @@ mod tests {
         assert!(Optimizer::contains_function_call(func_name, &if_node));
 
         // Test function call in if body
-        let if_body_node = Rc::new(Node {
+        let if_body_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::If(smallvec![(
-                Some(Rc::new(Node {
+            expr: Shared::new(AstExpr::If(smallvec![(
+                Some(Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Bool(true))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Bool(true))),
                 })),
-                Rc::new(Node {
+                Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })
             )])),
         });
@@ -1984,16 +1992,16 @@ mod tests {
         let func_name = Ident::new("test_func");
 
         // Test function call in while condition
-        let while_node = Rc::new(Node {
+        let while_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::While(
-                Rc::new(Node {
+            expr: Shared::new(AstExpr::While(
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                 })],
             )),
         });
@@ -2001,16 +2009,16 @@ mod tests {
         assert!(Optimizer::contains_function_call(func_name, &while_node));
 
         // Test function call in while body
-        let while_body_node = Rc::new(Node {
+        let while_body_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::While(
-                Rc::new(Node {
+            expr: Shared::new(AstExpr::While(
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Bool(true))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Bool(true))),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2026,16 +2034,16 @@ mod tests {
         let func_name = Ident::new("test_func");
 
         // Test function call in until condition
-        let until_node = Rc::new(Node {
+        let until_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::Until(
-                Rc::new(Node {
+            expr: Shared::new(AstExpr::Until(
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                 })],
             )),
         });
@@ -2043,16 +2051,16 @@ mod tests {
         assert!(Optimizer::contains_function_call(func_name, &until_node));
 
         // Test function call in until body
-        let until_body_node = Rc::new(Node {
+        let until_body_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::Until(
-                Rc::new(Node {
+            expr: Shared::new(AstExpr::Until(
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Bool(false))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Bool(false))),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2068,17 +2076,17 @@ mod tests {
         let func_name = Ident::new("test_func");
 
         // Test function call in foreach collection
-        let foreach_collection_node = Rc::new(Node {
+        let foreach_collection_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::Foreach(
+            expr: Shared::new(AstExpr::Foreach(
                 IdentWithToken::new("item"),
-                Rc::new(Node {
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                 })],
             )),
         });
@@ -2089,17 +2097,17 @@ mod tests {
         ));
 
         // Test function call in foreach body
-        let foreach_body_node = Rc::new(Node {
+        let foreach_body_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::Foreach(
+            expr: Shared::new(AstExpr::Foreach(
                 IdentWithToken::new("item"),
-                Rc::new(Node {
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("items"))),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("items"))),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
+                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
                 })],
             )),
         });
@@ -2115,26 +2123,26 @@ mod tests {
         let func_name = Ident::new("test_func");
 
         // Test nested if inside while with function call
-        let nested_node = Rc::new(Node {
+        let nested_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::While(
-                Rc::new(Node {
+            expr: Shared::new(AstExpr::While(
+                Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Bool(true))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Bool(true))),
                 }),
-                vec![Rc::new(Node {
+                vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::If(smallvec![(
-                        Some(Rc::new(Node {
+                    expr: Shared::new(AstExpr::If(smallvec![(
+                        Some(Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Rc::new(AstExpr::Call(
+                            expr: Shared::new(AstExpr::Call(
                                 IdentWithToken::new("test_func"),
                                 smallvec![],
                             )),
                         })),
-                        Rc::new(Node {
+                        Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                         })
                     )])),
                 })],
@@ -2150,16 +2158,16 @@ mod tests {
         let different_func = IdentWithToken::new("other_func");
 
         // Test that it returns false when function name doesn't match
-        let if_node = Rc::new(Node {
+        let if_node = Shared::new(Node {
             token_id: 0.into(),
-            expr: Rc::new(AstExpr::If(smallvec![(
-                Some(Rc::new(Node {
+            expr: Shared::new(AstExpr::If(smallvec![(
+                Some(Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Rc::new(AstExpr::Call(different_func, smallvec![])),
+                    expr: Shared::new(AstExpr::Call(different_func, smallvec![])),
                 })),
-                Rc::new(Node {
+                Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Rc::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
                 })
             )])),
         });

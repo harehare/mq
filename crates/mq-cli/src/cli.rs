@@ -376,9 +376,10 @@ impl Cli {
             let handler = DebuggerHandler::new(engine.clone());
             engine
                 .debugger()
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .set_handler(Box::new(handler));
-            engine.debugger().borrow_mut().activate();
+            engine.debugger().write().unwrap().activate();
         }
 
         Ok(engine)

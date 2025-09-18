@@ -1,7 +1,7 @@
 use super::{Program, TokenId};
 #[cfg(feature = "ast-json")]
 use crate::arena::ArenaId;
-use crate::{Ident, Token, arena::Arena, lexer, number::Number, range::Range};
+use crate::{Ident, Shared, Token, arena::Arena, lexer, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -9,15 +9,14 @@ use smol_str::SmolStr;
 use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
-    rc::Rc,
 };
 
 type Depth = u8;
 type Index = usize;
 type Lang = SmolStr;
-pub type Params = SmallVec<[Rc<Node>; 4]>;
-pub type Args = SmallVec<[Rc<Node>; 4]>;
-pub type Cond = (Option<Rc<Node>>, Rc<Node>);
+pub type Params = SmallVec<[Shared<Node>; 4]>;
+pub type Args = SmallVec<[Shared<Node>; 4]>;
+pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
@@ -28,7 +27,7 @@ pub struct Node {
         serde(skip_serializing, skip_deserializing, default = "default_token_id")
     )]
     pub token_id: TokenId,
-    pub expr: Rc<Expr>,
+    pub expr: Shared<Expr>,
 }
 
 #[cfg(feature = "ast-json")]
@@ -47,7 +46,7 @@ impl Node {
         serde_json::from_str(json_str)
     }
 
-    pub fn range(&self, arena: Rc<Arena<Rc<Token>>>) -> Range {
+    pub fn range(&self, arena: Shared<Arena<Shared<Token>>>) -> Range {
         match &*self.expr {
             Expr::Def(_, _, program)
             | Expr::Fn(_, program)
@@ -56,30 +55,30 @@ impl Node {
             | Expr::Foreach(_, _, program) => {
                 let start = program
                     .first()
-                    .map(|node| node.range(Rc::clone(&arena)).start)
+                    .map(|node| node.range(Shared::clone(&arena)).start)
                     .unwrap_or_default();
                 let end = program
                     .last()
-                    .map(|node| node.range(Rc::clone(&arena)).end)
+                    .map(|node| node.range(Shared::clone(&arena)).end)
                     .unwrap_or_default();
                 Range { start, end }
             }
             Expr::Call(_, args) => {
                 let start = args
                     .first()
-                    .map(|node| node.range(Rc::clone(&arena)).start)
+                    .map(|node| node.range(Shared::clone(&arena)).start)
                     .unwrap_or_default();
                 let end = args
                     .last()
-                    .map(|node| node.range(Rc::clone(&arena)).end)
+                    .map(|node| node.range(Shared::clone(&arena)).end)
                     .unwrap_or_default();
                 Range { start, end }
             }
-            Expr::Let(_, node) => node.range(Rc::clone(&arena)),
+            Expr::Let(_, node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
-                    let start = first.1.range(Rc::clone(&arena));
-                    let end = last.1.range(Rc::clone(&arena));
+                    let start = first.1.range(Shared::clone(&arena));
+                    let end = last.1.range(Shared::clone(&arena));
                     Range {
                         start: start.start,
                         end: end.end,
@@ -89,7 +88,7 @@ impl Node {
                     arena[self.token_id].range.clone()
                 }
             }
-            Expr::Paren(node) => node.range(Rc::clone(&arena)),
+            Expr::Paren(node) => node.range(Shared::clone(&arena)),
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -115,7 +114,7 @@ pub struct IdentWithToken {
         feature = "ast-json",
         serde(skip_serializing_if = "Option::is_none", default)
     )]
-    pub token: Option<Rc<Token>>,
+    pub token: Option<Shared<Token>>,
 }
 
 impl Hash for IdentWithToken {
@@ -141,7 +140,7 @@ impl IdentWithToken {
         Self::new_with_token(name, None)
     }
 
-    pub fn new_with_token(name: &str, token: Option<Rc<Token>>) -> Self {
+    pub fn new_with_token(name: &str, token: Option<Shared<Token>>) -> Self {
         Self {
             name: name.into(),
             token,
@@ -237,19 +236,19 @@ pub enum Expr {
     Call(IdentWithToken, Args),
     Def(IdentWithToken, Params, Program),
     Fn(Params, Program),
-    Let(IdentWithToken, Rc<Node>),
+    Let(IdentWithToken, Shared<Node>),
     Literal(Literal),
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
-    While(Rc<Node>, Program),
-    Until(Rc<Node>, Program),
-    Foreach(IdentWithToken, Rc<Node>, Program),
+    While(Shared<Node>, Program),
+    Until(Shared<Node>, Program),
+    Foreach(IdentWithToken, Shared<Node>, Program),
     If(Branches),
     Include(Literal),
     Self_,
     Nodes,
-    Paren(Rc<Node>),
+    Paren(Shared<Node>),
     Break,
     Continue,
 }
@@ -260,8 +259,8 @@ mod tests {
     use rstest::rstest;
     use smallvec::{SmallVec, smallvec};
 
-    fn create_token(range: Range) -> Rc<Token> {
-        Rc::new(Token {
+    fn create_token(range: Range) -> Shared<Token> {
+        Shared::new(Token {
             range,
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
@@ -276,14 +275,14 @@ mod tests {
             end: Position::new(2, 2),
         };
         let token = create_token(range.clone());
-        let token_id = arena.alloc(Rc::clone(&token));
+        let token_id = arena.alloc(Shared::clone(&token));
 
         let node = Node {
             token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("test".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("test".to_string()))),
         };
 
-        assert_eq!(node.range(Rc::new(arena)), range);
+        assert_eq!(node.range(Shared::new(arena)), range);
     }
 
     #[test]
@@ -302,20 +301,20 @@ mod tests {
         };
         let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
 
-        let stmt1 = Rc::new(Node {
+        let stmt1 = Shared::new(Node {
             token_id: stmt1_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("statement1".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("statement1".to_string()))),
         });
 
-        let stmt2 = Rc::new(Node {
+        let stmt2 = Shared::new(Node {
             token_id: stmt2_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("statement2".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("statement2".to_string()))),
         });
 
         let def_token_id = arena.alloc(create_token(Range::default()));
         let def_node = Node {
             token_id: def_token_id,
-            expr: Rc::new(Expr::Def(
+            expr: Shared::new(Expr::Def(
                 IdentWithToken::new("test_func"),
                 SmallVec::new(),
                 vec![stmt1, stmt2],
@@ -323,7 +322,7 @@ mod tests {
         };
 
         assert_eq!(
-            def_node.range(Rc::new(arena)),
+            def_node.range(Shared::new(arena)),
             Range {
                 start: Position::new(1, 1),
                 end: Position::new(2, 15)
@@ -348,29 +347,29 @@ mod tests {
         let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
 
         let cond_token_id = arena.alloc(create_token(Range::default()));
-        let cond_node = Rc::new(Node {
+        let cond_node = Shared::new(Node {
             token_id: cond_token_id,
-            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
         });
 
-        let stmt1 = Rc::new(Node {
+        let stmt1 = Shared::new(Node {
             token_id: stmt1_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("loop1".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("loop1".to_string()))),
         });
 
-        let stmt2 = Rc::new(Node {
+        let stmt2 = Shared::new(Node {
             token_id: stmt2_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("loop2".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("loop2".to_string()))),
         });
 
         let while_token_id = arena.alloc(create_token(Range::default()));
         let while_node = Node {
             token_id: while_token_id,
-            expr: Rc::new(Expr::While(cond_node, vec![stmt1, stmt2])),
+            expr: Shared::new(Expr::While(cond_node, vec![stmt1, stmt2])),
         };
 
         assert_eq!(
-            while_node.range(Rc::new(arena)),
+            while_node.range(Shared::new(arena)),
             Range {
                 start: Position::new(3, 2),
                 end: Position::new(4, 12)
@@ -395,29 +394,29 @@ mod tests {
         let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
 
         let cond_token_id = arena.alloc(create_token(Range::default()));
-        let cond_node = Rc::new(Node {
+        let cond_node = Shared::new(Node {
             token_id: cond_token_id,
-            expr: Rc::new(Expr::Literal(Literal::Bool(false))),
+            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
         });
 
-        let stmt1 = Rc::new(Node {
+        let stmt1 = Shared::new(Node {
             token_id: stmt1_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("until1".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("until1".to_string()))),
         });
 
-        let stmt2 = Rc::new(Node {
+        let stmt2 = Shared::new(Node {
             token_id: stmt2_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("until2".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("until2".to_string()))),
         });
 
         let until_token_id = arena.alloc(create_token(Range::default()));
         let until_node = Node {
             token_id: until_token_id,
-            expr: Rc::new(Expr::Until(cond_node, vec![stmt1, stmt2])),
+            expr: Shared::new(Expr::Until(cond_node, vec![stmt1, stmt2])),
         };
 
         assert_eq!(
-            until_node.range(Rc::new(arena)),
+            until_node.range(Shared::new(arena)),
             Range {
                 start: Position::new(5, 4),
                 end: Position::new(6, 15)
@@ -442,25 +441,25 @@ mod tests {
         let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
 
         let iterable_token_id = arena.alloc(create_token(Range::default()));
-        let iterable_node = Rc::new(Node {
+        let iterable_node = Shared::new(Node {
             token_id: iterable_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("items".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("items".to_string()))),
         });
 
-        let stmt1 = Rc::new(Node {
+        let stmt1 = Shared::new(Node {
             token_id: stmt1_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("foreach1".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("foreach1".to_string()))),
         });
 
-        let stmt2 = Rc::new(Node {
+        let stmt2 = Shared::new(Node {
             token_id: stmt2_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("foreach2".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("foreach2".to_string()))),
         });
 
         let foreach_token_id = arena.alloc(create_token(Range::default()));
         let foreach_node = Node {
             token_id: foreach_token_id,
-            expr: Rc::new(Expr::Foreach(
+            expr: Shared::new(Expr::Foreach(
                 IdentWithToken::new("item"),
                 iterable_node,
                 vec![stmt1, stmt2],
@@ -468,7 +467,7 @@ mod tests {
         };
 
         assert_eq!(
-            foreach_node.range(Rc::new(arena)),
+            foreach_node.range(Shared::new(arena)),
             Range {
                 start: Position::new(10, 2),
                 end: Position::new(11, 20)
@@ -485,23 +484,23 @@ mod tests {
             end: Position::new(2, 2),
         };
         let arg1_token = create_token(arg1_range.clone());
-        let arg1_token_id = arena.alloc(Rc::clone(&arg1_token));
+        let arg1_token_id = arena.alloc(Shared::clone(&arg1_token));
 
         let arg2_range = Range {
             start: Position::new(3, 3),
             end: Position::new(3, 3),
         };
         let arg2_token = create_token(arg2_range.clone());
-        let arg2_token_id = arena.alloc(Rc::clone(&arg2_token));
+        let arg2_token_id = arena.alloc(Shared::clone(&arg2_token));
 
-        let arg1 = Rc::new(Node {
+        let arg1 = Shared::new(Node {
             token_id: arg1_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("arg1".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("arg1".to_string()))),
         });
 
-        let arg2 = Rc::new(Node {
+        let arg2 = Shared::new(Node {
             token_id: arg2_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("arg2".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("arg2".to_string()))),
         });
 
         let call_token_id = arena.alloc(create_token(Range {
@@ -510,14 +509,14 @@ mod tests {
         }));
         let call_node = Node {
             token_id: call_token_id,
-            expr: Rc::new(Expr::Call(
+            expr: Shared::new(Expr::Call(
                 IdentWithToken::new("test_func"),
                 smallvec![arg1, arg2],
             )),
         };
 
         assert_eq!(
-            call_node.range(Rc::new(arena)),
+            call_node.range(Shared::new(arena)),
             Range {
                 start: Position::new(2, 2),
                 end: Position::new(3, 3)
@@ -547,19 +546,19 @@ mod tests {
         };
         let else_token_id = arena.alloc(create_token(else_range.clone()));
 
-        let cond_node = Rc::new(Node {
+        let cond_node = Shared::new(Node {
             token_id: cond_token_id,
-            expr: Rc::new(Expr::Literal(Literal::Bool(true))),
+            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
         });
 
-        let then_node = Rc::new(Node {
+        let then_node = Shared::new(Node {
             token_id: then_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("then".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("then".to_string()))),
         });
 
-        let else_node = Rc::new(Node {
+        let else_node = Shared::new(Node {
             token_id: else_token_id,
-            expr: Rc::new(Expr::Literal(Literal::String("else".to_string()))),
+            expr: Shared::new(Expr::Literal(Literal::String("else".to_string()))),
         });
 
         let if_node = Node {
@@ -567,14 +566,14 @@ mod tests {
                 start: Position::new(0, 0),
                 end: Position::new(0, 0),
             })),
-            expr: Rc::new(Expr::If(smallvec![
+            expr: Shared::new(Expr::If(smallvec![
                 (Some(cond_node), then_node),
                 (None, else_node),
             ])),
         };
 
         assert_eq!(
-            if_node.range(Rc::new(arena)),
+            if_node.range(Shared::new(arena)),
             Range {
                 start: Position::new(2, 2),
                 end: Position::new(3, 3)

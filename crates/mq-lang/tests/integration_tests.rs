@@ -1484,48 +1484,47 @@ fn test_eval_error(mut engine_no_opt: Engine, #[case] program: &str, #[case] inp
 
 #[cfg(feature = "ast-json")]
 mod ast_json {
-    use mq_lang::{ArenaId, AstExpr, AstLiteral, AstNode, Program};
+    use mq_lang::{ArenaId, AstExpr, AstLiteral, AstNode, Program, Shared};
     use rstest::rstest;
     use smallvec::smallvec;
-    use std::rc::Rc;
 
-    fn default_token_id() -> ArenaId<Rc<mq_lang::Token>> {
+    fn default_token_id() -> ArenaId<Shared<mq_lang::Token>> {
         ArenaId::new(0)
     }
 
     #[rstest]
     #[case(
-    Rc::new(AstNode {
+    Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Rc::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+        expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
     }),
     Some(vec!["Literal", "String", "hello"]),
     true
 )]
     #[case(
-    Rc::new(AstNode {
+    Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Rc::new(AstExpr::Literal(AstLiteral::Number(123.45.into()))),
+        expr: Shared::new(AstExpr::Literal(AstLiteral::Number(123.45.into()))),
     }),
     Some(vec!["Literal", "Number", "123.45"]),
     true
 )]
     #[case(
-    Rc::new(AstNode {
+    Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Rc::new(AstExpr::Ident(mq_lang::IdentWithToken::new("my_var"))),
+        expr: Shared::new(AstExpr::Ident(mq_lang::IdentWithToken::new("my_var"))),
     }),
     Some(vec!["Ident", "my_var"]),
     true
 )]
     #[case(
-    Rc::new(AstNode {
+    Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Rc::new(AstExpr::Call(
+        expr: Shared::new(AstExpr::Call(
             mq_lang::IdentWithToken::new("my_func"),
-            smallvec![Rc::new(AstNode {
+            smallvec![Shared::new(AstNode {
                 token_id: default_token_id(),
-                expr: Rc::new(AstExpr::Literal(AstLiteral::Number(1.into()))),
+                expr: Shared::new(AstExpr::Literal(AstLiteral::Number(1.into()))),
             })],
         )),
     }),
@@ -1533,17 +1532,17 @@ mod ast_json {
     true
 )]
     #[case(
-    Rc::new(AstNode {
+    Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Rc::new(AstExpr::If(smallvec![
+        expr: Shared::new(AstExpr::If(smallvec![
             (
-                Some(Rc::new(AstNode {
+                Some(Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: Rc::new(AstExpr::Literal(AstLiteral::Bool(true))),
+                    expr: Shared::new(AstExpr::Literal(AstLiteral::Bool(true))),
                 })),
-                Rc::new(AstNode {
+                Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: Rc::new(AstExpr::Literal(AstLiteral::String("then_branch".to_string()))),
+                    expr: Shared::new(AstExpr::Literal(AstLiteral::String("then_branch".to_string()))),
                 })
             )
         ])),
@@ -1552,7 +1551,7 @@ mod ast_json {
     false
 )]
     fn test_astnode_serialization_deserialization(
-        #[case] original_node: Rc<AstNode>,
+        #[case] original_node: Shared<AstNode>,
         #[case] expected_json_parts: Option<Vec<&str>>,
         #[case] check_token_id: bool,
     ) {
@@ -1578,13 +1577,13 @@ mod ast_json {
 
     #[test]
     fn test_program_serialization_deserialization() {
-        let node1 = Rc::new(AstNode {
+        let node1 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: Rc::new(AstExpr::Literal(AstLiteral::String("first".to_string()))),
+            expr: Shared::new(AstExpr::Literal(AstLiteral::String("first".to_string()))),
         });
-        let node2 = Rc::new(AstNode {
+        let node2 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: Rc::new(AstExpr::Literal(AstLiteral::Number(10.into()))),
+            expr: Shared::new(AstExpr::Literal(AstLiteral::Number(10.into()))),
         });
         let original_program: Program = vec![node1, node2];
 

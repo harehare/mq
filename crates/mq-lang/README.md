@@ -16,12 +16,10 @@ let mut engine = mq_lang::Engine::default();
 assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
 
 // Parse code into AST nodes
-use mq_lang::{tokenize, LexerOptions, AstParser, Arena};
-use std::rc::Rc;
-use std::cell::RefCell;
+use mq_lang::{tokenize, LexerOptions, AstParser, Arena, Shared, SharedCell};
 
 let code = "1 + 2";
-let token_arena = Rc::new(RefCell::new(Arena::new()));
+let token_arena = Shared::new(SharedCell::new(Arena::new()));
 let ast = mq_lang::parse(code, token_arena).unwrap();
 
 assert_eq!(ast.nodes.len(), 1);

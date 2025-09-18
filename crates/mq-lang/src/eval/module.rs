@@ -1,5 +1,5 @@
 use crate::{
-    Program, Token,
+    Program, Shared, TokenArena,
     arena::{Arena, ArenaId},
     ast::{error::ParseError, node as ast, parser::Parser},
     lexer::{self, Lexer, error::LexerError},
@@ -7,7 +7,7 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc, sync::LazyLock};
+use std::{fs, path::PathBuf, sync::LazyLock};
 use thiserror::Error;
 
 const DEFAULT_PATHS: [&str; 4] = [
@@ -122,7 +122,7 @@ impl ModuleLoader {
         &mut self,
         module_name: &str,
         code: &str,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        token_arena: TokenArena,
     ) -> Result<Option<Module>, ModuleError> {
         if self.loaded_modules.contains(module_name.into()) {
             return Ok(None);
@@ -167,7 +167,7 @@ impl ModuleLoader {
     pub fn load_from_file(
         &mut self,
         module_name: &str,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        token_arena: TokenArena,
     ) -> Result<Option<Module>, ModuleError> {
         let program = self.read_file(module_name)?;
         self.load(module_name, &program, token_arena)
@@ -187,10 +187,7 @@ impl ModuleLoader {
         }
     }
 
-    pub fn load_builtin(
-        &mut self,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-    ) -> Result<Option<Module>, ModuleError> {
+    pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Option<Module>, ModuleError> {
         self.load(Module::BUILTIN_MODULE, Self::BUILTIN_FILE, token_arena)
     }
 
@@ -260,11 +257,15 @@ impl ModuleLoader {
     fn parse_program(
         code: &str,
         module_id: ModuleId,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        token_arena: TokenArena,
     ) -> Result<Program, ModuleError> {
         let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
         let program = Parser::new(
-            tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+            tokens
+                .into_iter()
+                .map(Shared::new)
+                .collect::<Vec<_>>()
+                .iter(),
             token_arena,
             module_id,
         )
@@ -276,14 +277,12 @@ impl ModuleLoader {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
     use rstest::{fixture, rstest};
     use smallvec::{SmallVec, smallvec};
     use smol_str::SmolStr;
 
     use crate::{
-        Token, TokenKind,
+        Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken},
         range::{Position, Range},
     };
@@ -291,8 +290,8 @@ mod tests {
     use super::{Module, ModuleError, ModuleLoader};
 
     #[fixture]
-    fn token_arena() -> Rc<RefCell<crate::arena::Arena<Rc<Token>>>> {
-        Rc::new(RefCell::new(crate::arena::Arena::new(10)))
+    fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+        Shared::new(SharedCell::new(crate::arena::Arena::new(10)))
     }
 
     #[rstest]
@@ -302,28 +301,28 @@ mod tests {
         functions: Vec::new(),
         modules: Vec::new(),
         vars: vec![
-            Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Let(
-                IdentWithToken::new_with_token("test", Some(Rc::new(Token{
+            Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Let(
+                IdentWithToken::new_with_token("test", Some(Shared::new(Token{
                     kind: TokenKind::Ident(SmolStr::new("test")),
                     range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                     module_id: 1.into()
                 }))),
-                Rc::new(ast::Node{token_id: 2.into(), expr: Rc::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
+                Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
             ))})]
     })))]
     #[case::load3("def test(): 1;".to_string(), Ok(Some(Module{
         name: "test".to_string(),
         modules: Vec::new(),
         functions: vec![
-            Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
-            IdentWithToken::new_with_token("test", Some(Rc::new(Token{
+            Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
+            IdentWithToken::new_with_token("test", Some(Shared::new(Token{
                 kind: TokenKind::Ident(SmolStr::new("test")),
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
             }))),
             SmallVec::new(),
             vec![
-                Rc::new(ast::Node{token_id: 2.into(), expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
+                Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
             ]
             ))})],
         vars: Vec::new()
@@ -332,29 +331,29 @@ mod tests {
         name: "test".to_string(),
         modules: Vec::new(),
         functions: vec![
-            Rc::new(ast::Node{token_id: 0.into(), expr: Rc::new(ast::Expr::Def(
-                IdentWithToken::new_with_token("test", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
+            Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
+                IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
-                    Rc::new(ast::Node{token_id: 1.into(), expr:
-                        Rc::new(
-                            ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
+                    Shared::new(ast::Node{token_id: 1.into(), expr:
+                        Shared::new(
+                            ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))
                         ))}),
-                    Rc::new(ast::Node{token_id: 2.into(), expr:
-                        Rc::new(
-                            ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
+                    Shared::new(ast::Node{token_id: 2.into(), expr:
+                        Shared::new(
+                            ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))
                         ))})
                 ],
                 vec![
-                    Rc::new(ast::Node{token_id: 6.into(), expr: Rc::new(ast::Expr::Call(
-                    IdentWithToken::new_with_token("add", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
+                    Shared::new(ast::Node{token_id: 6.into(), expr: Shared::new(ast::Expr::Call(
+                    IdentWithToken::new_with_token("add", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
                     smallvec![
-                        Rc::new(ast::Node{token_id: 4.into(),
-                            expr: Rc::new(
-                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
+                        Shared::new(ast::Node{token_id: 4.into(),
+                            expr: Shared::new(
+                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
                                 )}),
-                        Rc::new(ast::Node{token_id: 5.into(),
-                            expr: Rc::new(
-                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Rc::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
+                        Shared::new(ast::Node{token_id: 5.into(),
+                            expr: Shared::new(
+                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
                             )})
                     ],
                 ))})]
@@ -362,7 +361,7 @@ mod tests {
         vars: Vec::new()
     })))]
     fn test_load(
-        token_arena: Rc<RefCell<crate::arena::Arena<Rc<Token>>>>,
+        token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
         #[case] program: String,
         #[case] expected: Result<Option<Module>, ModuleError>,
     ) {
@@ -380,7 +379,7 @@ mod tests {
         vars: Vec::new(),
     })))]
     fn test_load_standard_module(
-        token_arena: Rc<RefCell<crate::arena::Arena<Rc<Token>>>>,
+        token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
         #[case] module_name: &str,
         #[case] expected: Result<Option<Module>, ModuleError>,
     ) {

@@ -1,18 +1,15 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
 use crate::number::Number;
-use crate::{Ident, Token};
+use crate::{Ident, Shared, SharedCell, Token, get_token};
 use base64::prelude::*;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smol_str::SmolStr;
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::process::exit;
-
-use std::rc::Rc;
 use std::{
     sync::{LazyLock, Mutex},
     vec,
@@ -3480,26 +3477,27 @@ impl Error {
     pub fn to_eval_error(
         &self,
         node: ast::Node,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
+        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     ) -> EvalError {
         match self {
             Error::UserDefined(message) => EvalError::UserDefined {
                 message: message.to_owned(),
-                token: (*token_arena.borrow()[node.token_id]).clone(),
+                token: (*get_token(token_arena, node.token_id)).clone(),
             },
             Error::InvalidBase64String(e) => EvalError::InvalidBase64String(
-                (*token_arena.borrow()[node.token_id]).clone(),
+                (*get_token(token_arena, node.token_id)).clone(),
                 e.to_string(),
             ),
-            Error::NotDefined(name) => {
-                EvalError::NotDefined((*token_arena.borrow()[node.token_id]).clone(), name.clone())
-            }
+            Error::NotDefined(name) => EvalError::NotDefined(
+                (*get_token(token_arena, node.token_id)).clone(),
+                name.clone(),
+            ),
             Error::InvalidDateTimeFormat(msg) => EvalError::DateTimeFormatError(
-                (*token_arena.borrow()[node.token_id]).clone(),
+                (*get_token(token_arena, node.token_id)).clone(),
                 msg.clone(),
             ),
             Error::InvalidTypes(name, args) => EvalError::InvalidTypes {
-                token: (*token_arena.borrow()[node.token_id]).clone(),
+                token: (*get_token(token_arena, node.token_id)).clone(),
                 name: name.clone(),
                 args: args
                     .iter()
@@ -3508,21 +3506,22 @@ impl Error {
             },
             Error::InvalidNumberOfArguments(name, expected, got) => {
                 EvalError::InvalidNumberOfArguments(
-                    (*token_arena.borrow()[node.token_id]).clone(),
+                    (*get_token(token_arena, node.token_id)).clone(),
                     name.clone(),
                     *expected,
                     *got,
                 )
             }
             Error::InvalidRegularExpression(regex) => EvalError::InvalidRegularExpression(
-                (*token_arena.borrow()[node.token_id]).clone(),
+                (*get_token(token_arena, node.token_id)).clone(),
                 regex.clone(),
             ),
-            Error::Runtime(msg) => {
-                EvalError::RuntimeError((*token_arena.borrow()[node.token_id]).clone(), msg.clone())
-            }
+            Error::Runtime(msg) => EvalError::RuntimeError(
+                (*get_token(token_arena, node.token_id)).clone(),
+                msg.clone(),
+            ),
             Error::ZeroDivision => {
-                EvalError::ZeroDivision((*token_arena.borrow()[node.token_id]).clone())
+                EvalError::ZeroDivision((*get_token(token_arena, node.token_id)).clone())
             }
         }
     }
