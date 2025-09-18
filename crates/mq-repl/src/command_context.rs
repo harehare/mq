@@ -237,6 +237,7 @@ impl CommandContext {
                     .map(|result| {
                         self.hir
                             .add_line_of_code(self.source_id, self.scope_id, &code);
+                        self.input = result.values().clone();
                         Ok(CommandOutput::Value(result.values().clone()))
                     })
                     .map_err(|e| *e)?

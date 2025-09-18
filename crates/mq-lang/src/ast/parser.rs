@@ -1359,6 +1359,10 @@ impl<'a> Parser<'a> {
                     token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
                     expr: Rc::new(Expr::Selector(Selector::Text)),
                 })),
+                ".table" => Ok(Rc::new(Node {
+                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
+                    expr: Rc::new(Expr::Selector(Selector::Table(None, None))),
+                })),
                 // Handles table/array indexing selectors like `.[index]` or `.[index1][index2]`.
                 "." => self.parse_selector_table_args(Rc::clone(&token)),
                 _ => Err(ParseError::UnexpectedToken((*token).clone())),
