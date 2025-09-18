@@ -70,7 +70,7 @@ impl Default for Evaluator {
             call_stack_depth: 0,
             options: Options::default(),
             module_loader: module::ModuleLoader::default(),
-            #[allow(clippy::arc_with_non_send_sync)]
+            #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
         }
