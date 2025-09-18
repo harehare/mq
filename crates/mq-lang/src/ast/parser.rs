@@ -1326,9 +1326,9 @@ impl<'a> Parser<'a> {
                     token_id: token_alloc(&self.token_arena, &token),
                     expr: Shared::new(Expr::Selector(Selector::Text)),
                 })),
-                ".table" => Ok(Rc::new(Node {
-                    token_id: self.token_arena.borrow_mut().alloc(Rc::clone(&token)),
-                    expr: Rc::new(Expr::Selector(Selector::Table(None, None))),
+                ".table" => Ok(Shared::new(Node {
+                    token_id: token_alloc(&self.token_arena, &token),
+                    expr: Shared::new(Expr::Selector(Selector::Table(None, None))),
                 })),
                 // Handles table/array indexing selectors like `.[index]` or `.[index1][index2]`.
                 "." => self.parse_selector_table_args(Shared::clone(&token)),
