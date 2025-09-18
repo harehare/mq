@@ -330,8 +330,7 @@ impl Evaluator {
         env: Shared<SharedCell<Env>>,
     ) {
         let current_call_stack = self.debugger.read().unwrap().current_call_stack();
-        let token = self.token_arena.read().unwrap()[node.token_id].clone();
-
+        let token = get_token(Shared::clone(&self.token_arena), node.token_id);
         self.debugger.write().unwrap().breakpoint_hit(
             &DebugContext {
                 current_value: runtime_value.clone(),
@@ -473,7 +472,7 @@ impl Evaluator {
 
             let _ = self.debugger.write().unwrap().should_break(
                 &debug_context,
-                Shared::clone(&self.token_arena.read().unwrap()[node.token_id]),
+                get_token(Shared::clone(&self.token_arena), node.token_id),
             );
         }
 

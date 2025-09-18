@@ -61,58 +61,45 @@ impl Command {
     pub fn help(&self) -> String {
         match self {
             Command::Backtrace => {
-                format!(
-                    "{:<20}{}",
-                    "backtrace or bt",
-                    "Print the current backtrace".to_string()
-                )
+                format!("{:<20}{}", "backtrace or bt", "Print the current backtrace")
             }
             Command::Breakpoint(_) => format!(
                 "{:<20}{}",
-                "b[reakpoint]",
-                "Set a breakpoint at the specified line".to_string()
+                "b[reakpoint]", "Set a breakpoint at the specified line"
             ),
             Command::Continue => {
-                format!("{:<20}{}", "c[ontinue]", "Continue execution".to_string())
+                format!("{:<20}{}", "c[ontinue]", "Continue execution")
             }
             Command::Clear(_) => format!(
                 "{:<20}{}",
-                "cl[ear]",
-                "Clear breakpoints at a specific identifier".to_string()
+                "cl[ear]", "Clear breakpoints at a specific identifier"
             ),
             Command::Eval(_) | Command::Error(_) => "".to_string(),
             Command::Finish => format!(
                 "{:<20}{}",
-                "f[inish]",
-                "Finish execution and return to the caller".to_string()
+                "f[inish]", "Finish execution and return to the caller"
             ),
-            Command::Help => format!("{:<20}{}", "h[elp]", "Print command help".to_string()),
+            Command::Help => format!("{:<20}{}", "h[elp]", "Print command help"),
             Command::Info => format!(
                 "{:<20}{}",
-                "i[nfo]",
-                "Print information about the current context".to_string()
+                "i[nfo]", "Print information about the current context"
             ),
             Command::List => format!(
                 "{:<20}{}",
-                "l[ist]",
-                "List source code around the current line".to_string()
+                "l[ist]", "List source code around the current line"
             ),
-            Command::LongList => format!(
-                "{:<20}{}",
-                "long-list or ll",
-                "List all source code lines".to_string()
-            ),
-            Command::Next => format!(
-                "{:<20}{}",
-                "n[ext]",
-                "Step over the next function call".to_string()
-            ),
-            Command::Quit => format!("{:<20}{}", "q[uit]", "Quit evaluation and exit".to_string()),
-            Command::Step => format!(
-                "{:<20}{}",
-                "s[tep]",
-                "Step into the next function call".to_string()
-            ),
+            Command::LongList => {
+                format!("{:<20}{}", "long-list or ll", "List all source code lines")
+            }
+            Command::Next => {
+                format!("{:<20}{}", "n[ext]", "Step over the next function call")
+            }
+            Command::Quit => {
+                format!("{:<20}{}", "q[uit]", "Quit evaluation and exit")
+            }
+            Command::Step => {
+                format!("{:<20}{}", "s[tep]", "Step into the next function call")
+            }
         }
     }
 }
