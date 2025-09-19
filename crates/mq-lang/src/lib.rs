@@ -223,27 +223,29 @@ pub fn raw_input(input: &str) -> Vec<Value> {
 }
 
 #[inline(always)]
-#[cfg(not(feature = "sync"))]
 pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId {
-    arena.borrow_mut().alloc(Shared::clone(token))
+    #[cfg(not(feature = "sync"))]
+    {
+        arena.borrow_mut().alloc(Shared::clone(token))
+    }
+
+    #[cfg(feature = "sync")]
+    {
+        arena.write().unwrap().alloc(Shared::clone(token))
+    }
 }
 
 #[inline(always)]
-#[cfg(feature = "sync")]
-pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId {
-    arena.write().unwrap().alloc(Shared::clone(token))
-}
-
-#[inline(always)]
-#[cfg(not(feature = "sync"))]
 pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
-    Shared::clone(&arena.borrow()[token_id])
-}
+    #[cfg(not(feature = "sync"))]
+    {
+        Shared::clone(&arena.borrow()[token_id])
+    }
 
-#[inline(always)]
-#[cfg(feature = "sync")]
-pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
-    Shared::clone(&arena.read().unwrap()[token_id])
+    #[cfg(feature = "sync")]
+    {
+        Shared::clone(&arena.read().unwrap()[token_id])
+    }
 }
 
 #[cfg(test)]
