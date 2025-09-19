@@ -5,25 +5,19 @@ use dap::responses::{
 };
 use dap::types::Breakpoint;
 use serde::Deserialize;
+use std::fs;
 use std::io::{self, BufReader, BufWriter};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use thiserror::Error;
+use std::thread;
 use tracing::{debug, error, info};
 
-#[derive(Error, Debug)]
-enum MqAdapterError {
-    #[error("Unhandled command: {0:?}")]
-    UnhandledCommand(Command),
-    #[error("Protocol error: {0}")]
-    ProtocolError(String),
-    #[error("Failed to deserialize launch arguments: {0}")]
-    LaunchArgumentsError(serde_json::Error),
-    #[error("Missing launch arguments")]
-    MissingLaunchArguments,
-}
+use crate::error::MqAdapterError;
 
-type DynResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+mod error;
+
+type DynResult<T> = miette::Result<T, Box<dyn std::error::Error>>;
 
 /// Messages sent from the debugger handler to the DAP server
 #[derive(Debug, Clone)]
@@ -65,10 +59,8 @@ pub enum DapCommand {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct LaunchArgs {
-    // Optional arguments to the program.
-    args: Option<Vec<String>>,
-    // Optional working directory for the program.
-    cwd: Option<String>,
+    query: String,
+    input: Option<String>,
 }
 
 fn main() -> DynResult<()> {
@@ -170,9 +162,6 @@ struct DapDebuggerHandler {
     thread_id: i64,
 }
 
-unsafe impl Send for DapDebuggerHandler {}
-unsafe impl Sync for DapDebuggerHandler {}
-
 impl std::fmt::Debug for DapDebuggerHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DapDebuggerHandler")
@@ -196,10 +185,83 @@ impl DapDebuggerHandler {
     }
 }
 
-// This implementation is no longer used as the logic moved to DapHandlerWrapper
 impl mq_lang::DebuggerHandler for DapDebuggerHandler {}
 
 impl MqAdapter {
+    /// Execute query in a separate thread
+    fn execute_query_in_thread(
+        mut engine: mq_lang::Engine,
+        query: String,
+        input_file: Option<String>,
+    ) -> DynResult<()> {
+        debug!(query = %query, input_file = ?input_file, "Executing query in background thread");
+
+        let query = fs::read_to_string(&query).map_err(|e| {
+            let error_msg = format!("Failed to read query file '{}': {}", query, e);
+            error!(error = %error_msg);
+            Box::new(MqAdapterError::FileError(error_msg)) as Box<dyn std::error::Error>
+        })?;
+
+        // Prepare input data
+        let input_data = if let Some(file_path) = input_file {
+            let input = fs::read_to_string(&file_path).map_err(|e| {
+                let error_msg = format!("Failed to read input file '{}': {}", file_path, e);
+                error!(error = %error_msg);
+                Box::new(MqAdapterError::FileError(error_msg)) as Box<dyn std::error::Error>
+            })?;
+
+            match PathBuf::from(&file_path)
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase()
+                .as_str()
+            {
+                "json" | "csv" | "tsv" | "xml" | "toml" | "yaml" | "yml" | "txt" => {
+                    mq_lang::raw_input(&input)
+                }
+                "html" | "htm" => mq_lang::parse_html_input(&input).map_err(|e| {
+                    let error_msg = format!("Failed to parse input file '{}': {}", file_path, e);
+                    error!(error = %error_msg);
+                    Box::new(MqAdapterError::FileError(error_msg)) as Box<dyn std::error::Error>
+                })?,
+                "mdx" => mq_lang::parse_mdx_input(&input).map_err(|e| {
+                    let error_msg = format!("Failed to parse input file '{}': {}", file_path, e);
+                    error!(error = %error_msg);
+                    Box::new(MqAdapterError::FileError(error_msg)) as Box<dyn std::error::Error>
+                })?,
+                _ => mq_lang::parse_markdown_input(&input).map_err(|e| {
+                    let error_msg = format!("Failed to parse input file '{}': {}", file_path, e);
+                    error!(error = %error_msg);
+                    Box::new(MqAdapterError::FileError(error_msg)) as Box<dyn std::error::Error>
+                })?,
+            }
+        } else {
+            mq_lang::null_input()
+        };
+
+        let result = engine.eval(&query, input_data.into_iter());
+
+        match result {
+            Ok(values) => {
+                let output = values
+                    .values()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                info!(output = %output, "Query execution completed successfully");
+            }
+            Err(e) => {
+                let error_msg = format!("Query execution failed: {}", e);
+                error!(error = %error_msg);
+                return Err(Box::new(MqAdapterError::QueryError(error_msg)));
+            }
+        }
+
+        Ok(())
+    }
+
     fn new() -> Self {
         // Create channels for communication between DAP server and debugger handler
         let (message_tx, message_rx) = mpsc::channel::<DebuggerMessage>();
@@ -400,6 +462,19 @@ impl MqAdapter {
 
                 self.engine.debugger().write().unwrap().activate();
 
+                // Parse command line arguments for query and input file
+
+                // Execute query in a separate thread
+                let engine_clone = self.engine.clone();
+
+                thread::spawn(move || {
+                    if let Err(e) =
+                        Self::execute_query_in_thread(engine_clone, args.query, args.input)
+                    {
+                        error!(error = %e, "Failed to execute query in background thread");
+                    }
+                });
+
                 server.send_event(Event::Initialized)?;
 
                 let rsp = req.success(ResponseBody::Launch);
@@ -499,11 +574,6 @@ impl MqAdapter {
             Command::Continue(_) => {
                 debug!("Received Continue request");
                 self.send_debugger_command(DapCommand::Continue)?;
-                self.engine
-                    .debugger()
-                    .write()
-                    .unwrap()
-                    .set_command(mq_lang::DebuggerCommand::Continue);
                 let rsp = req.success(ResponseBody::Continue(ContinueResponse {
                     all_threads_continued: Some(true),
                 }));
