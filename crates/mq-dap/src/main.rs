@@ -4,7 +4,6 @@ use dap::responses::{
     ThreadsResponse, VariablesResponse,
 };
 use dap::types::Breakpoint;
-use mq_lang::{Breakpoint as MqBreakpoint, DebugContext, DebuggerAction, DebuggerHandler};
 use serde::Deserialize;
 use std::io::{self, BufReader, BufWriter};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -34,15 +33,15 @@ pub enum DebuggerMessage {
         thread_id: i64,
         reason: String,
         line: usize,
-        breakpoint: MqBreakpoint,
-        context: DebugContext,
+        breakpoint: mq_lang::Breakpoint,
+        context: mq_lang::DebugContext,
     },
     /// A step operation completed, should send stopped event
     StepCompleted {
         thread_id: i64,
         reason: String,
         line: usize,
-        context: DebugContext,
+        context: mq_lang::DebugContext,
     },
     /// Program has terminated
     Terminated,
@@ -166,7 +165,7 @@ struct MqAdapter {
 }
 
 struct DapDebuggerHandler {
-    current_context: Option<DebugContext>,
+    current_context: Option<mq_lang::DebugContext>,
     message_tx: Sender<DebuggerMessage>,
     thread_id: i64,
 }
@@ -192,13 +191,13 @@ impl DapDebuggerHandler {
         }
     }
 
-    fn set_context(&mut self, context: DebugContext) {
+    fn set_context(&mut self, context: mq_lang::DebugContext) {
         self.current_context = Some(context);
     }
 }
 
 // This implementation is no longer used as the logic moved to DapHandlerWrapper
-impl DebuggerHandler for DapDebuggerHandler {}
+impl mq_lang::DebuggerHandler for DapDebuggerHandler {}
 
 impl MqAdapter {
     fn new() -> Self {
@@ -216,7 +215,11 @@ impl MqAdapter {
                 handler: handler_clone,
                 command_rx: Arc::new(Mutex::new(command_rx)),
             });
-            engine.debugger().borrow_mut().set_handler(handler_boxed);
+            engine
+                .debugger()
+                .write()
+                .unwrap()
+                .set_handler(handler_boxed);
         }
 
         Self {
@@ -235,12 +238,12 @@ struct DapHandlerWrapper {
     command_rx: Arc<Mutex<Receiver<DapCommand>>>,
 }
 
-impl DebuggerHandler for DapHandlerWrapper {
+impl mq_lang::DebuggerHandler for DapHandlerWrapper {
     fn on_breakpoint_hit(
         &mut self,
-        breakpoint: &MqBreakpoint,
-        context: &DebugContext,
-    ) -> DebuggerAction {
+        breakpoint: &mq_lang::Breakpoint,
+        context: &mq_lang::DebugContext,
+    ) -> mq_lang::DebuggerAction {
         if let (Ok(mut handler), Ok(command_rx)) = (self.handler.lock(), self.command_rx.lock()) {
             handler.set_context(context.clone());
             debug!(line = breakpoint.line, "Breakpoint hit");
@@ -256,27 +259,27 @@ impl DebuggerHandler for DapHandlerWrapper {
 
             if let Err(e) = handler.message_tx.send(message) {
                 error!(error = %e, "Failed to send breakpoint message to DAP server");
-                return DebuggerAction::Continue;
+                return mq_lang::DebuggerAction::Continue;
             }
 
             // Wait for command from DAP server
             match command_rx.recv() {
-                Ok(DapCommand::Continue) => DebuggerAction::Continue,
-                Ok(DapCommand::Next) => DebuggerAction::Next,
-                Ok(DapCommand::StepIn) => DebuggerAction::StepInto,
-                Ok(DapCommand::StepOut) => DebuggerAction::FunctionExit,
-                Ok(DapCommand::Terminate) => DebuggerAction::Quit,
+                Ok(DapCommand::Continue) => mq_lang::DebuggerAction::Continue,
+                Ok(DapCommand::Next) => mq_lang::DebuggerAction::Next,
+                Ok(DapCommand::StepIn) => mq_lang::DebuggerAction::StepInto,
+                Ok(DapCommand::StepOut) => mq_lang::DebuggerAction::FunctionExit,
+                Ok(DapCommand::Terminate) => mq_lang::DebuggerAction::Quit,
                 Err(e) => {
                     error!(error = %e, "Failed to receive command from DAP server");
-                    DebuggerAction::Continue
+                    mq_lang::DebuggerAction::Continue
                 }
             }
         } else {
-            DebuggerAction::Continue
+            mq_lang::DebuggerAction::Continue
         }
     }
 
-    fn on_step(&mut self, context: &DebugContext) -> DebuggerAction {
+    fn on_step(&mut self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         if let (Ok(mut handler), Ok(command_rx)) = (self.handler.lock(), self.command_rx.lock()) {
             handler.set_context(context.clone());
             debug!(line = context.token.range.start.line + 1, "Step event");
@@ -291,23 +294,23 @@ impl DebuggerHandler for DapHandlerWrapper {
 
             if let Err(e) = handler.message_tx.send(message) {
                 error!(error = %e, "Failed to send step message to DAP server");
-                return DebuggerAction::Continue;
+                return mq_lang::DebuggerAction::Continue;
             }
 
             // Wait for command from DAP server
             match command_rx.recv() {
-                Ok(DapCommand::Continue) => DebuggerAction::Continue,
-                Ok(DapCommand::Next) => DebuggerAction::Next,
-                Ok(DapCommand::StepIn) => DebuggerAction::StepInto,
-                Ok(DapCommand::StepOut) => DebuggerAction::FunctionExit,
-                Ok(DapCommand::Terminate) => DebuggerAction::Quit,
+                Ok(DapCommand::Continue) => mq_lang::DebuggerAction::Continue,
+                Ok(DapCommand::Next) => mq_lang::DebuggerAction::Next,
+                Ok(DapCommand::StepIn) => mq_lang::DebuggerAction::StepInto,
+                Ok(DapCommand::StepOut) => mq_lang::DebuggerAction::FunctionExit,
+                Ok(DapCommand::Terminate) => mq_lang::DebuggerAction::Quit,
                 Err(e) => {
                     error!(error = %e, "Failed to receive command from DAP server");
-                    DebuggerAction::Continue
+                    mq_lang::DebuggerAction::Continue
                 }
             }
         } else {
-            DebuggerAction::Continue
+            mq_lang::DebuggerAction::Continue
         }
     }
 }
@@ -395,10 +398,8 @@ impl MqAdapter {
                     self.current_program = Some(program.to_string());
                 }
 
-                // Activate the debugger
-                self.engine.debugger().borrow_mut().activate();
+                self.engine.debugger().write().unwrap().activate();
 
-                // Send initialized event
                 server.send_event(Event::Initialized)?;
 
                 let rsp = req.success(ResponseBody::Launch);
@@ -410,7 +411,7 @@ impl MqAdapter {
                 let breakpoints_vec = args.breakpoints.as_ref().cloned().unwrap_or_default();
 
                 for breakpoint in &breakpoints_vec {
-                    self.engine.debugger().borrow_mut().add_breakpoint(
+                    self.engine.debugger().write().unwrap().add_breakpoint(
                         breakpoint.line as usize,
                         breakpoint.column.map(|bp| bp as usize),
                     );
@@ -452,15 +453,12 @@ impl MqAdapter {
             Command::StackTrace(args) => {
                 debug!(?args, "Received StackTrace request");
 
-                let debugger_rc = self.engine.debugger();
-                let debugger = debugger_rc.borrow();
-                let call_stack = debugger.current_call_stack();
-
+                let call_stack = self.engine.debugger().read().unwrap().current_call_stack();
                 let stack_frames: Vec<types::StackFrame> = call_stack
                     .iter()
                     .enumerate()
                     .map(|(i, frame)| {
-                        let token_range = self.engine.token_arena().borrow()[frame.token_id]
+                        let token_range = self.engine.token_arena().read().unwrap()[frame.token_id]
                             .range
                             .clone();
                         types::StackFrame {
@@ -490,6 +488,7 @@ impl MqAdapter {
                 }));
                 server.respond(rsp)?;
             }
+
             Command::Variables(args) => {
                 debug!(?args, "Received Variables request");
                 let rsp = req.success(ResponseBody::Variables(VariablesResponse {
@@ -500,6 +499,11 @@ impl MqAdapter {
             Command::Continue(_) => {
                 debug!("Received Continue request");
                 self.send_debugger_command(DapCommand::Continue)?;
+                self.engine
+                    .debugger()
+                    .write()
+                    .unwrap()
+                    .set_command(mq_lang::DebuggerCommand::Continue);
                 let rsp = req.success(ResponseBody::Continue(ContinueResponse {
                     all_threads_continued: Some(true),
                 }));
@@ -535,7 +539,7 @@ impl MqAdapter {
                 let _ = self.send_debugger_command(DapCommand::Terminate);
 
                 // Deactivate the debugger
-                self.engine.debugger().borrow_mut().deactivate();
+                self.engine.debugger().write().unwrap().deactivate();
                 self.current_program = None;
 
                 let rsp = req.success(ResponseBody::Disconnect);
