@@ -416,7 +416,7 @@ impl From<DebuggerAction> for DebuggerCommand {
     }
 }
 
-pub trait DebuggerHandler: std::fmt::Debug {
+pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     // Called when a breakpoint is hit.
     fn on_breakpoint_hit(
         &mut self,

@@ -403,4 +403,24 @@ mod tests {
         assert_eq!(values.len(), 1);
         assert_eq!(values[0], "hello".to_string().into());
     }
+
+    #[cfg(feature = "sync")]
+    #[test]
+    fn test_engine_thread_usage_with_sync_feature() {
+        use std::sync::{Arc, Mutex};
+
+        let engine = Arc::new(Mutex::new(Engine::default()));
+        let engine_clone = Arc::clone(&engine);
+
+        let handle = std::thread::spawn(move || {
+            let mut engine = engine_clone.lock().unwrap();
+            let result = engine.eval("2 + 3", vec!["".to_string().into()].into_iter());
+            assert!(result.is_ok());
+            let values = result.unwrap();
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], 5.into());
+        });
+
+        handle.join().expect("Threaded engine usage failed");
+    }
 }
