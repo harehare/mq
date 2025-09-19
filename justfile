@@ -83,7 +83,9 @@ test-mq:
 
 # Run formatting, linting and all tests
 test: fmt lint test-mq
+    cargo nextest run --workspace
     cargo nextest run --workspace --all-features
+    cargo test --doc --workspace
 
 # Run tests with code coverage reporting
 test-cov:
