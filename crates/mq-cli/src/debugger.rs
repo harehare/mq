@@ -1,6 +1,6 @@
 use colored::*;
 use miette::IntoDiagnostic;
-use mq_lang::DebugContext;
+use mq_lang::{DebugContext, Shared};
 use rustyline::{
     At, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers,
     Movement, Word,
@@ -10,7 +10,7 @@ use rustyline::{
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cmp::max, fmt, rc::Rc};
+use std::{borrow::Cow, cmp::max, fmt};
 use strum::IntoEnumIterator;
 
 type LineNo = usize;
@@ -60,19 +60,46 @@ impl fmt::Display for Command {
 impl Command {
     pub fn help(&self) -> String {
         match self {
-            Command::Backtrace => "Print the current backtrace".to_string(),
-            Command::Breakpoint(_) => "Set a breakpoint at the specified line".to_string(),
-            Command::Continue => "Continue execution".to_string(),
-            Command::Clear(_) => "Clear breakpoints at a specific identifier".to_string(),
+            Command::Backtrace => {
+                format!("{:<20}{}", "backtrace or bt", "Print the current backtrace")
+            }
+            Command::Breakpoint(_) => format!(
+                "{:<20}{}",
+                "b[reakpoint]", "Set a breakpoint at the specified line"
+            ),
+            Command::Continue => {
+                format!("{:<20}{}", "c[ontinue]", "Continue execution")
+            }
+            Command::Clear(_) => format!(
+                "{:<20}{}",
+                "cl[ear]", "Clear breakpoints at a specific identifier"
+            ),
             Command::Eval(_) | Command::Error(_) => "".to_string(),
-            Command::Finish => "Finish execution and return to the caller".to_string(),
-            Command::Help => "Print command help".to_string(),
-            Command::Info => "Print information about the current context".to_string(),
-            Command::List => "List source code around the current line".to_string(),
-            Command::LongList => "List all source code lines".to_string(),
-            Command::Next => "Step over the next function call".to_string(),
-            Command::Quit => "Quit evaluation and exit".to_string(),
-            Command::Step => "Step into the next function call".to_string(),
+            Command::Finish => format!(
+                "{:<20}{}",
+                "f[inish]", "Finish execution and return to the caller"
+            ),
+            Command::Help => format!("{:<20}{}", "h[elp]", "Print command help"),
+            Command::Info => format!(
+                "{:<20}{}",
+                "i[nfo]", "Print information about the current context"
+            ),
+            Command::List => format!(
+                "{:<20}{}",
+                "l[ist]", "List source code around the current line"
+            ),
+            Command::LongList => {
+                format!("{:<20}{}", "long-list or ll", "List all source code lines")
+            }
+            Command::Next => {
+                format!("{:<20}{}", "n[ext]", "Step over the next function call")
+            }
+            Command::Quit => {
+                format!("{:<20}{}", "q[uit]", "Quit evaluation and exit")
+            }
+            Command::Step => {
+                format!("{:<20}{}", "s[tep]", "Step into the next function call")
+            }
         }
     }
 }
@@ -183,7 +210,7 @@ impl DebuggerHandler {
                         .call_stack
                         .iter()
                         .filter_map(|frame| {
-                            let range = self.engine.token_arena().borrow()[frame.token_id]
+                            let range = self.engine.token_arena().read().unwrap()[frame.token_id]
                                 .range
                                 .clone();
 
@@ -227,11 +254,11 @@ impl DebuggerHandler {
                     Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
                 }
                 Command::Info => {
-                    println!("{}", context.env.borrow());
+                    println!("{}", context.env.read().unwrap());
                 }
                 Command::Eval(expr) => {
                     let value: mq_lang::Value = context.current_value.clone().into();
-                    let mut engine = self.engine.switch_env(Rc::clone(&context.env));
+                    let mut engine = self.engine.switch_env(Shared::clone(&context.env));
                     let values = match engine.eval(&expr, vec![value].into_iter()) {
                         Ok(v) => v,
                         Err(e) => {
@@ -260,7 +287,7 @@ impl DebuggerHandler {
                 Command::Help => {
                     let commands: Vec<String> = Command::iter()
                         .filter_map(|c| {
-                            if matches!(c, Command::Eval(_)) {
+                            if matches!(c, Command::Eval(_) | Command::Error(_)) {
                                 None
                             } else {
                                 Some(c.help().to_string())
@@ -471,7 +498,6 @@ impl Validator for DebuggerLineHelper {
 mod tests {
     use mq_lang::ModuleId;
     use mq_lang::{self, DebugContext};
-    use std::rc::Rc;
 
     use super::*;
 
@@ -602,7 +628,7 @@ mod tests {
     fn test_get_source_code_with_context_basic() {
         let context = DebugContext {
             source_code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
-            token: Rc::new(mq_lang::Token {
+            token: Shared::new(mq_lang::Token {
                 range: mq_lang::Range {
                     start: mq_lang::Position { line: 4, column: 0 },
                     end: mq_lang::Position { line: 4, column: 1 },

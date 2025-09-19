@@ -3,13 +3,16 @@ use thiserror::Error;
 use super::builtin;
 use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
-use crate::arena::Arena;
 use crate::ast::TokenId;
-use crate::{Ident, Token};
+use crate::{Ident, SharedCell, TokenArena, get_token};
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::cell::RefCell;
 use std::fmt::{Debug, Display};
-use std::rc::{Rc, Weak};
+
+#[cfg(not(feature = "sync"))]
+type Weak<T> = std::rc::Weak<T>;
+
+#[cfg(feature = "sync")]
+type Weak<T> = std::sync::Weak<T>;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum EnvError {
@@ -18,14 +21,10 @@ pub enum EnvError {
 }
 
 impl EnvError {
-    pub fn to_eval_error(
-        &self,
-        token_id: TokenId,
-        token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-    ) -> EvalError {
+    pub fn to_eval_error(&self, token_id: TokenId, token_arena: TokenArena) -> EvalError {
         match self {
             EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(
-                (*token_arena.borrow()[token_id]).clone(),
+                (*get_token(token_arena, token_id)).clone(),
                 def.to_string(),
             ),
         }
@@ -35,7 +34,7 @@ impl EnvError {
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     context: FxHashMap<Ident, RuntimeValue>,
-    parent: Option<Weak<RefCell<Env>>>,
+    parent: Option<Weak<SharedCell<Env>>>,
 }
 
 impl PartialEq for Env {
@@ -63,7 +62,7 @@ impl Display for Env {
 }
 
 impl Env {
-    pub fn with_parent(parent: Weak<RefCell<Env>>) -> Self {
+    pub fn with_parent(parent: Weak<SharedCell<Env>>) -> Self {
         Self {
             context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
             parent: Some(parent),
@@ -81,7 +80,11 @@ impl Env {
             Some(o) => Ok(o.clone()),
             None => match self.parent.as_ref().and_then(|parent| parent.upgrade()) {
                 Some(ref parent_env) => {
+                    #[cfg(not(feature = "sync"))]
                     let env = parent_env.borrow();
+                    #[cfg(feature = "sync")]
+                    let env = parent_env.read().unwrap();
+
                     env.resolve(ident)
                 }
                 None => {
@@ -101,6 +104,8 @@ impl Env {
 }
 #[cfg(test)]
 mod tests {
+    use crate::Shared;
+
     use super::*;
 
     #[test]
@@ -116,13 +121,21 @@ mod tests {
 
     #[test]
     fn test_env_resolve_from_parent() {
-        let parent_env = Rc::new(RefCell::new(Env::default()));
-        let mut child_env = Env::with_parent(Rc::downgrade(&parent_env));
+        let parent_env = Shared::new(SharedCell::new(Env::default()));
+        let mut child_env = Env::with_parent(Shared::downgrade(&parent_env));
 
         let parent_ident = Ident::new("parent_var");
         let parent_value = RuntimeValue::Number(100.0.into());
+
+        #[cfg(not(feature = "sync"))]
         parent_env
             .borrow_mut()
+            .define(parent_ident, parent_value.clone());
+
+        #[cfg(feature = "sync")]
+        parent_env
+            .write()
+            .unwrap()
             .define(parent_ident, parent_value.clone());
 
         let child_ident = Ident::new("child_var");
@@ -132,18 +145,26 @@ mod tests {
         assert_eq!(child_env.resolve(child_ident).unwrap(), child_value);
         assert_eq!(child_env.resolve(parent_ident).unwrap(), parent_value);
 
+        #[cfg(not(feature = "sync"))]
         let result = parent_env.borrow().resolve(child_ident);
+        #[cfg(feature = "sync")]
+        let result = parent_env.read().unwrap().resolve(child_ident);
+
         assert!(result.is_err());
     }
 
     #[test]
     fn test_env_shadow_parent_variable() {
-        let parent_env = Rc::new(RefCell::new(Env::default()));
-        let mut child_env = Env::with_parent(Rc::downgrade(&parent_env));
+        let parent_env = Shared::new(SharedCell::new(Env::default()));
+        let mut child_env = Env::with_parent(Shared::downgrade(&parent_env));
 
         let ident = Ident::new("x");
         let parent_value = RuntimeValue::Number(100.0.into());
+
+        #[cfg(not(feature = "sync"))]
         parent_env.borrow_mut().define(ident, parent_value);
+        #[cfg(feature = "sync")]
+        parent_env.write().unwrap().define(ident, parent_value);
 
         let child_value = RuntimeValue::Number(200.0.into());
         child_env.define(ident, child_value.clone());

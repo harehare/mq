@@ -1,27 +1,47 @@
-use std::{cell::RefCell, cmp::Ordering, collections::BTreeMap, rc::Rc};
-
-use crate::{AstParams, Ident, Program, Value, impl_value_formatting, number::Number};
-use mq_markdown::Node;
-
 use super::env::Env;
+use crate::{
+    AstParams, Ident, Program, Shared, SharedCell, Value, impl_value_formatting, number::Number,
+};
+use mq_markdown::Node;
+use std::{cmp::Ordering, collections::BTreeMap};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Selector {
     Index(usize),
 }
 
-#[derive(Clone, PartialEq, Default)]
+#[derive(Clone, Default)]
 pub enum RuntimeValue {
     Number(Number),
     Bool(bool),
     String(String),
     Array(Vec<RuntimeValue>),
     Markdown(Node, Option<Selector>),
-    Function(AstParams, Program, Rc<RefCell<Env>>),
+    Function(AstParams, Program, Shared<SharedCell<Env>>),
     NativeFunction(Ident),
     Dict(BTreeMap<String, RuntimeValue>),
     #[default]
     None,
+}
+
+// Custom PartialEq implementation to avoid comparing Env pointers
+impl PartialEq for RuntimeValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a == b,
+            (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a == b,
+            (RuntimeValue::String(a), RuntimeValue::String(b)) => a == b,
+            (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
+            (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
+            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => {
+                a1 == a2 && b1 == b2
+            }
+            (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
+            (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
+            (RuntimeValue::None, RuntimeValue::None) => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<Node> for RuntimeValue {
@@ -80,9 +100,11 @@ impl From<Value> for RuntimeValue {
             Value::String(s) => RuntimeValue::String(s),
             Value::Array(a) => RuntimeValue::Array(a.into_iter().map(Into::into).collect()),
             Value::Markdown(m) => RuntimeValue::Markdown(m, None),
-            Value::Function(params, program) => {
-                RuntimeValue::Function(params, program, Rc::new(RefCell::new(Env::default())))
-            }
+            Value::Function(params, program) => RuntimeValue::Function(
+                params,
+                program,
+                Shared::new(SharedCell::new(Env::default())),
+            ),
             Value::NativeFunction(ident) => RuntimeValue::NativeFunction(ident),
             Value::Dict(value_map) => RuntimeValue::Dict(
                 value_map
@@ -329,7 +351,7 @@ mod tests {
             RuntimeValue::Function(
                 SmallVec::new(),
                 Vec::new(),
-                Rc::new(RefCell::new(Env::default()))
+                Shared::new(SharedCell::new(Env::default()))
             )
             .name(),
             "function"
@@ -389,7 +411,7 @@ mod tests {
             RuntimeValue::Function(
                 SmallVec::new(),
                 Vec::new(),
-                Rc::new(RefCell::new(Env::default()))
+                Shared::new(SharedCell::new(Env::default()))
             )
             .is_truthy()
         );
@@ -423,14 +445,14 @@ mod tests {
             RuntimeValue::Function(
                 SmallVec::new(),
                 Vec::new(),
-                Rc::new(RefCell::new(Env::default()))
+                Shared::new(SharedCell::new(Env::default()))
             ) < RuntimeValue::Function(
-                smallvec![Rc::new(AstNode {
-                    expr: Rc::new(AstExpr::Ident(IdentWithToken::new("test"))),
+                smallvec![Shared::new(AstNode {
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("test"))),
                     token_id: ArenaId::new(0),
                 })],
                 Vec::new(),
-                Rc::new(RefCell::new(Env::default()))
+                Shared::new(SharedCell::new(Env::default()))
             )
         );
     }
@@ -476,7 +498,7 @@ mod tests {
         let function = RuntimeValue::Function(
             SmallVec::new(),
             Vec::new(),
-            Rc::new(RefCell::new(Env::default())),
+            Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(format!("{:?}", function), "function");
 
@@ -522,7 +544,7 @@ mod tests {
             RuntimeValue::Function(
                 SmallVec::new(),
                 Vec::new(),
-                Rc::new(RefCell::new(Env::default()))
+                Shared::new(SharedCell::new(Env::default()))
             )
         );
 

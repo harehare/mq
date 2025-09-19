@@ -81,9 +81,15 @@ test-mq:
     cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/xml_tests.mq
     cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/fuzzy_tests.mq
 
-# Run formatting, linting and all tests
-test: fmt lint test-mq
+test-doc:
+    cargo test --doc --workspace
+
+test-all-features:
     cargo nextest run --workspace --all-features
+
+# Run formatting, linting and all tests
+test: fmt lint test-mq test-doc test-all-features
+    cargo nextest run --workspace
 
 # Run tests with code coverage reporting
 test-cov:

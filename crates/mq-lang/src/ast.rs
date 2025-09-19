@@ -1,16 +1,14 @@
-use std::rc::Rc;
-
 use node::Node;
 
-use crate::{Token, arena::ArenaId};
+use crate::{Shared, Token, arena::ArenaId};
 
 pub mod constants;
 pub mod error;
 pub mod node;
 pub mod parser;
 
-pub type Program = Vec<Rc<Node>>;
-pub type TokenId = ArenaId<Rc<Token>>;
+pub type Program = Vec<Shared<Node>>;
+pub type TokenId = ArenaId<Shared<Token>>;
 
 /// Serializes an AST `Program` to a JSON string.
 ///
@@ -44,9 +42,9 @@ mod tests {
     fn test_ast_to_json_and_from_json_roundtrip() {
         use crate::{AstExpr, ast::node::IdentWithToken};
 
-        let ident = Rc::new(Node {
+        let ident = Shared::new(Node {
             token_id: TokenId::new(1),
-            expr: Rc::new(AstExpr::Ident(IdentWithToken::new("foo"))),
+            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("foo"))),
         });
         let program = vec![ident.clone()];
 

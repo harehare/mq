@@ -1,13 +1,11 @@
 use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
-use crate::Token;
 use crate::ast::node as ast;
 use crate::eval::Evaluator;
 use crate::eval::env::Env;
+use crate::{Shared, SharedCell, Token};
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::{collections::HashSet, fmt::Debug};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default, Hash)]
@@ -46,13 +44,13 @@ pub struct DebugContext {
     /// Current runtime value being evaluated
     pub current_value: RuntimeValue,
     /// Current AST node being evaluated
-    pub current_node: Rc<ast::Node>,
+    pub current_node: Shared<ast::Node>,
     /// Current token being evaluated
-    pub token: Rc<Token>,
+    pub token: Shared<Token>,
     /// Call stack of AST nodes representing the current execution path
-    pub call_stack: Vec<Rc<ast::Node>>,
+    pub call_stack: Vec<Shared<ast::Node>>,
     /// Current evaluation environment info
-    pub env: Rc<RefCell<Env>>,
+    pub env: Shared<SharedCell<Env>>,
     /// Source code being executed
     pub source_code: String,
 }
@@ -61,17 +59,17 @@ impl Default for DebugContext {
     fn default() -> Self {
         Self {
             current_value: RuntimeValue::NONE,
-            current_node: Rc::new(ast::Node {
+            current_node: Shared::new(ast::Node {
                 token_id: crate::ast::TokenId::new(0),
-                expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(0.0.into()))),
+                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(0.0.into()))),
             }),
-            token: Rc::new(Token {
+            token: Shared::new(Token {
                 kind: crate::TokenKind::Eof,
                 range: crate::Range::default(),
                 module_id: crate::eval::module::ModuleId::new(0),
             }),
             call_stack: Vec::new(),
-            env: Rc::new(RefCell::new(Env::default())),
+            env: Shared::new(SharedCell::new(Env::default())),
             source_code: String::new(),
         }
     }
@@ -83,7 +81,7 @@ pub struct Debugger {
     /// Set of active breakpoints
     breakpoints: HashSet<Breakpoint>,
     /// Call stack of AST nodes representing the current execution path
-    call_stack: Vec<Rc<ast::Node>>,
+    call_stack: Vec<Shared<ast::Node>>,
     /// Next breakpoint ID to assign
     next_breakpoint_id: usize,
     /// Current debugger command
@@ -149,7 +147,7 @@ impl Debugger {
         id
     }
 
-    pub fn push_call_stack(&mut self, node: Rc<ast::Node>) {
+    pub fn push_call_stack(&mut self, node: Shared<ast::Node>) {
         self.call_stack.push(node);
     }
 
@@ -157,7 +155,7 @@ impl Debugger {
         self.call_stack.pop();
     }
 
-    pub fn current_call_stack(&self) -> Vec<Rc<ast::Node>> {
+    pub fn current_call_stack(&self) -> Vec<Shared<ast::Node>> {
         self.call_stack.clone()
     }
 
@@ -192,7 +190,7 @@ impl Debugger {
     pub fn should_break(
         &mut self,
         context: &DebugContext,
-        token: Rc<Token>,
+        token: Shared<Token>,
     ) -> (bool, Option<DebuggerAction>) {
         if !self.active {
             return (false, None);
@@ -418,7 +416,7 @@ impl From<DebuggerAction> for DebuggerCommand {
     }
 }
 
-pub trait DebuggerHandler: std::fmt::Debug {
+pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     // Called when a breakpoint is hit.
     fn on_breakpoint_hit(
         &mut self,
@@ -441,8 +439,8 @@ pub struct DefaultDebuggerHandler;
 impl DebuggerHandler for DefaultDebuggerHandler {}
 
 impl Evaluator {
-    pub fn debugger(&self) -> Rc<RefCell<Debugger>> {
-        Rc::clone(&self.debugger)
+    pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
+        Shared::clone(&self.debugger)
     }
 }
 
@@ -454,8 +452,8 @@ mod tests {
 
     use super::*;
 
-    fn make_token(line: usize, column: usize) -> Rc<Token> {
-        Rc::new(Token {
+    fn make_token(line: usize, column: usize) -> Shared<Token> {
+        Shared::new(Token {
             kind: TokenKind::Ident("dummy".into()),
             range: Range {
                 start: crate::Position {
@@ -471,23 +469,23 @@ mod tests {
         })
     }
 
-    fn make_node(token_id: TokenId) -> Rc<ast::Node> {
-        Rc::new(ast::Node {
+    fn make_node(token_id: TokenId) -> Shared<ast::Node> {
+        Shared::new(ast::Node {
             token_id,
-            expr: Rc::new(ast::Expr::Literal(ast::Literal::Number(42.0.into()))),
+            expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(42.0.into()))),
         })
     }
 
     fn make_debug_context(line: usize, column: usize) -> DebugContext {
         let mut arena = Arena::new(10);
         let token = make_token(line, column);
-        let token_id = arena.alloc(Rc::clone(&token));
+        let token_id = arena.alloc(Shared::clone(&token));
         let node = make_node(token_id);
-        let env = Rc::new(RefCell::new(Env::default()));
+        let env = Shared::new(SharedCell::new(Env::default()));
         DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
-            token: Rc::clone(&token),
+            token: Shared::clone(&token),
             call_stack: Vec::new(),
             env,
             source_code: String::new(),

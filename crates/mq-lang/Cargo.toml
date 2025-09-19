@@ -34,10 +34,11 @@ thiserror.workspace = true
 [features]
 ast-json = ["dep:serde", "dep:serde_json", "smallvec/serde", "smol_str/serde"]
 cst = []
-debugger = []
+debugger = ["sync"]
 default = ["std"]
 file-io = []
 std = []
+sync = []
 
 [dev-dependencies]
 divan = {version = "2.8.1", package = "codspeed-divan-compat"}

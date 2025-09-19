@@ -15,11 +15,11 @@
 //!
 //! // Parse code into AST nodes
 //! use mq_lang::{tokenize, LexerOptions, AstParser, Arena};
-//! use std::rc::Rc;
-//! use std::cell::RefCell;
+//! use std::rc::Shared;
+//! use std::cell::SharedCell;
 //!
 //! let code = "1 + 2";
-//! let token_arena = Rc::new(RefCell::new(Arena::new()));
+//! let token_arena = Shared::new(SharedCell::new(Arena::new()));
 //! let ast = mq_lang::parse(code, token_arena).unwrap();
 //!
 //! assert_eq!(ast.nodes.len(), 1);
@@ -57,10 +57,14 @@ mod value;
 mod value_macros;
 
 use lexer::Lexer;
+#[cfg(not(feature = "sync"))]
 use std::cell::RefCell;
+#[cfg(not(feature = "sync"))]
 use std::rc::Rc;
 #[cfg(feature = "cst")]
 use std::sync::Arc;
+#[cfg(feature = "sync")]
+use std::sync::RwLock;
 
 pub use arena::Arena;
 #[cfg(feature = "ast-json")]
@@ -108,7 +112,23 @@ pub use eval::debugger::{
     Breakpoint, DebugContext, Debugger, DebuggerAction, DebuggerCommand, DebuggerHandler,
 };
 
+use crate::ast::TokenId;
+
 pub type MqResult = Result<Values, Box<Error>>;
+
+/// Type alias for reference-counted pointer, switches between Shared and Arc depending on "sync" feature.
+#[cfg(not(feature = "sync"))]
+pub type Shared<T> = Rc<T>;
+#[cfg(feature = "sync")]
+pub type Shared<T> = Arc<T>;
+
+/// Type alias for interior mutability, switches between SharedCell and RwLock depending on "sync" feature.
+#[cfg(not(feature = "sync"))]
+pub type SharedCell<T> = RefCell<T>;
+#[cfg(feature = "sync")]
+pub type SharedCell<T> = RwLock<T>;
+
+pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
 
 #[cfg(feature = "cst")]
 pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
@@ -132,10 +152,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     (cst_nodes, errors)
 }
 
-pub fn parse(
-    code: &str,
-    token_arena: Rc<RefCell<Arena<Rc<Token>>>>,
-) -> Result<Program, Box<error::Error>> {
+pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
     let tokens = Lexer::new(lexer::Options::default())
         .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
         .map_err(|e| {
@@ -147,7 +164,11 @@ pub fn parse(
         })?;
 
     AstParser::new(
-        tokens.into_iter().map(Rc::new).collect::<Vec<_>>().iter(),
+        tokens
+            .into_iter()
+            .map(Shared::new)
+            .collect::<Vec<_>>()
+            .iter(),
         token_arena,
         Module::TOP_LEVEL_MODULE_ID,
     )
@@ -201,6 +222,32 @@ pub fn raw_input(input: &str) -> Vec<Value> {
     vec![input.to_string().into()]
 }
 
+#[inline(always)]
+pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId {
+    #[cfg(not(feature = "sync"))]
+    {
+        arena.borrow_mut().alloc(Shared::clone(token))
+    }
+
+    #[cfg(feature = "sync")]
+    {
+        arena.write().unwrap().alloc(Shared::clone(token))
+    }
+}
+
+#[inline(always)]
+pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
+    #[cfg(not(feature = "sync"))]
+    {
+        Shared::clone(&arena.borrow()[token_id])
+    }
+
+    #[cfg(feature = "sync")]
+    {
+        Shared::clone(&arena.read().unwrap()[token_id])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,7 +283,7 @@ mod tests {
     #[test]
     fn test_parse_error_syntax() {
         let code = "add(1,";
-        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
         let result = parse(code, token_arena);
 
         assert!(result.is_err());
@@ -245,7 +292,7 @@ mod tests {
     #[test]
     fn test_parse_error_lexer() {
         let code = "add(1, `unclosed string)";
-        let token_arena = Rc::new(RefCell::new(Arena::new(10)));
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
         let result = parse(code, token_arena);
 
         assert!(result.is_err());
