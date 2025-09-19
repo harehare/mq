@@ -2,8 +2,8 @@ use crate::arena::Arena;
 use crate::ast::node::IdentWithToken;
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
-use crate::{Shared, SharedCell, get_token, token_alloc};
-use smallvec::{SmallVec, smallvec};
+use crate::{get_token, token_alloc, Shared, SharedCell};
+use smallvec::{smallvec, SmallVec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
 
@@ -375,7 +375,7 @@ impl<'a> Parser<'a> {
             match self.tokens.peek() {
                 Some(token) if token.kind == TokenKind::Comma => {
                     self.tokens.next(); // Consume Comma
-                    // Check for trailing comma followed by RBrace
+                                        // Check for trailing comma followed by RBrace
                     if let Some(next_token) = self.tokens.peek() {
                         if next_token.kind == TokenKind::RBrace {
                             self.tokens.next(); // Consume RBrace
@@ -1626,7 +1626,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Module, range::Range};
+    use crate::{range::Range, Module};
 
     use super::*;
     use rstest::rstest;
