@@ -61,7 +61,7 @@ use lexer::Lexer;
 use std::cell::RefCell;
 #[cfg(not(feature = "sync"))]
 use std::rc::Rc;
-#[cfg(feature = "cst")]
+#[cfg(any(feature = "sync", feature = "cst"))]
 use std::sync::Arc;
 #[cfg(feature = "sync")]
 use std::sync::RwLock;
