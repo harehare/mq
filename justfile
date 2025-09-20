@@ -54,7 +54,7 @@ build-web: build-wasm
 [working-directory: 'crates/mq-python']
 build-python:
     rm ../../target/wheels/* || true
-    maturin build --release --targettaarch64-unknown-linux-gnu --zig
+    maturin build --release --target aarch64-unknown-linux-gnu --zig
     maturin build --release --target x86_64-unknown-linux-gnu --zig
     maturin build --release --target aarch64-apple-darwin --zig
     maturin build --release --target x86_64-apple-darwin --zig
