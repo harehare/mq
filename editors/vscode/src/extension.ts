@@ -1,6 +1,8 @@
 import * as lc from "vscode-languageclient/node";
 import * as vscode from "vscode";
 import which from "which";
+import { MqDebugConfigurationProvider } from "./providers/debugger";
+import { MqCodeLensProvider } from "./providers/codelens";
 
 const MQ_VERSION_KEY = "mq.version" as const;
 const COMMANDS = ["mq/run"] as const;
@@ -154,6 +156,47 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       }
       await stopLspServer();
       await startLspServer();
+    })
+  );
+}
+
+function registerDebugCommands(context: vscode.ExtensionContext) {
+  const provider = new MqDebugConfigurationProvider(context);
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider("mq", provider)
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.debugCurrentFile", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage("No active editor");
+        return;
+      }
+
+      if (editor.document.languageId !== "mq") {
+        vscode.window.showErrorMessage("Active file is not a .mq file");
+        return;
+      }
+
+      if (editor.document.isDirty) {
+        await editor.document.save();
+      }
+
+      const selectedFile = await selectMarkdownFile();
+      if (!selectedFile) {
+        return;
+      }
+
+      const config: vscode.DebugConfiguration = {
+        type: "mq",
+        name: "Debug Current File",
+        request: "launch",
+        queryFile: editor.document.uri.fsPath,
+        inputFile: selectedFile.document.uri.fsPath,
+      };
+
+      await vscode.debug.startDebugging(undefined, config);
     })
   );
 }
@@ -347,6 +390,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
 export async function activate(context: vscode.ExtensionContext) {
   registerNewCommand(context);
   registerLspCommands(context);
+  registerDebugCommands(context);
   registerMqExecutionCommands(context);
   await initializeLspServer(context);
 }
@@ -510,7 +554,7 @@ const installLspServer = async (
     "Install LSP Server",
     "mq-lsp",
     new vscode.ShellExecution(
-      `cargo install --git https://github.com/harehare/mq.git mq-cli${
+      `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq ${
         force ? " --force" : ""
       }`
     )
@@ -540,103 +584,3 @@ const installLspServer = async (
     return false;
   }
 };
-
-class MqCodeLensProvider implements vscode.CodeLensProvider {
-  async provideCodeLenses(
-    document: vscode.TextDocument
-  ): Promise<vscode.CodeLens[]> {
-    const codeLenses: vscode.CodeLens[] = [];
-    const lines = document.getText().split("\n");
-    let i = 0;
-
-    while (i < lines.length) {
-      const line = lines[i].trim();
-
-      // Skip empty lines and comments
-      if (!line || line.startsWith("#")) {
-        i++;
-        continue;
-      }
-
-      // Handle queries starting with '.'
-      if (line.startsWith(".")) {
-        const { endLine, query } = this.collectQueryBlock(lines, i);
-        if (query) {
-          codeLenses.push(
-            new vscode.CodeLens(
-              new vscode.Range(
-                new vscode.Position(i, 0),
-                new vscode.Position(endLine, lines[endLine].length)
-              ),
-              {
-                title: "▶︎ Run Query",
-                command: "mq.runQueryAndShowInEditor",
-                arguments: [query],
-              }
-            )
-          );
-        }
-        i = endLine + 1;
-        continue;
-      }
-
-      // Handle 'def' function blocks or other queries
-      const matchInfo = this.matchQueryBlock(lines, i);
-      if (matchInfo) {
-        const { matchLines, query } = matchInfo;
-        codeLenses.push(
-          new vscode.CodeLens(
-            new vscode.Range(
-              new vscode.Position(i, 0),
-              new vscode.Position(
-                i + matchLines - 1,
-                lines[i + matchLines - 1].length
-              )
-            ),
-            {
-              title: "▶︎ Run Query",
-              command: "mq.runQueryAndShowInEditor",
-              arguments: [query],
-            }
-          )
-        );
-        i += matchLines;
-      } else {
-        i++;
-      }
-    }
-
-    return codeLenses;
-  }
-
-  private collectQueryBlock(
-    lines: string[],
-    startLine: number
-  ): { endLine: number; query: string } {
-    let endLine = startLine;
-    while (endLine + 1 < lines.length && lines[endLine + 1].trim() !== "") {
-      endLine++;
-    }
-    const query = lines
-      .slice(startLine, endLine + 1)
-      .join("\n")
-      .trim();
-    return { endLine, query };
-  }
-
-  private matchQueryBlock(
-    lines: string[],
-    startLine: number
-  ): { matchLines: number; query: string } | null {
-    const queryRegex = /(^def[\s\S]+?;\s*$)/gm;
-    const remainingText = lines.slice(startLine).join("\n");
-    const match = queryRegex.exec(remainingText);
-
-    if (match && match.index === 0) {
-      const matchLines = match[0].split("\n").length;
-      const query = match[0].trim();
-      return { matchLines, query };
-    }
-    return null;
-  }
-}

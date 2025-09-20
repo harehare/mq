@@ -4,6 +4,7 @@ name = "mq-dap"
 version = "0.1.0"
 
 [dependencies]
+crossbeam-channel = "0.5.15"
 dap = "0.4.1-alpha1"
 miette = {workspace = true, features = ["fancy"]}
 mq-lang = {workspace = true, features = ["debugger"]}

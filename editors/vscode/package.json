@@ -32,7 +32,9 @@
     "Linters",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onDebug"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "snippets": [
@@ -89,6 +91,10 @@
       {
         "command": "mq.runQueryAndShowInEditor",
         "title": "mq: Run query and show result in new editor"
+      },
+      {
+        "command": "mq.debugCurrentFile",
+        "title": "mq: Debug current file"
       }
     ],
     "configuration": {
@@ -114,7 +120,36 @@
           "description": "Enable or disable Code Lens for mq queries"
         }
       }
-    }
+    },
+    "debuggers": [
+      {
+        "type": "mq",
+        "label": "mq debug",
+        "languages": [
+          "mq"
+        ],
+        "runtime": "/Users/harehare/git/mq/target/debug/mq-dap",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "queryFile"
+            ],
+            "properties": {
+              "queryFile": {
+                "type": "string",
+                "description": "Specifies the query to run with mq. Usually, set to the currently edited mq file.",
+                "default": "${file}"
+              },
+              "inputFile": {
+                "type": "string",
+                "description": "Specifies the input Markdown file to process with mq.",
+                "default": null
+              }
+            }
+          }
+        }
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
