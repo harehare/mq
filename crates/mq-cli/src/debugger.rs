@@ -254,7 +254,18 @@ impl DebuggerHandler {
                     Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
                 }
                 Command::Info => {
-                    println!("{}", context.env.read().unwrap());
+                    println!(
+                        "{}",
+                        context
+                            .env
+                            .read()
+                            .unwrap()
+                            .get_local_variables()
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
                 }
                 Command::Eval(expr) => {
                     let value: mq_lang::RuntimeValue = context.current_value.clone();

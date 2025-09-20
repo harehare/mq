@@ -15,4 +15,6 @@ pub enum MqAdapterError {
     FileError(String),
     #[error("Query execution error: {0}")]
     QueryError(String),
+    #[error("Evaluation error: {0}")]
+    EvaluationError(String),
 }

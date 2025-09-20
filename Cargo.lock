@@ -2487,6 +2487,7 @@ dependencies = [
 name = "mq-dap"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "dap",
  "miette",
  "mq-lang",

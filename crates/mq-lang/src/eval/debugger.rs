@@ -481,13 +481,12 @@ mod tests {
         let token = make_token(line, column);
         let token_id = arena.alloc(Shared::clone(&token));
         let node = make_node(token_id);
-        let env = Shared::new(SharedCell::new(Env::default()));
         DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
             token: Shared::clone(&token),
             call_stack: Vec::new(),
-            env,
+            env: Shared::new(SharedCell::new(Env::default())),
             source_code: String::new(),
         }
     }
