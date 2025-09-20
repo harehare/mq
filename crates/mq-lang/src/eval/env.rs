@@ -53,6 +53,59 @@ pub struct Variable {
 }
 
 #[cfg(feature = "debugger")]
+impl Variable {
+    fn from(ident: Ident, value: &RuntimeValue) -> Self {
+        match value {
+            RuntimeValue::Array(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "array".to_string(),
+            },
+            RuntimeValue::Bool(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "bool".to_string(),
+            },
+            RuntimeValue::Dict(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "dict".to_string(),
+            },
+            RuntimeValue::String(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "string".to_string(),
+            },
+            RuntimeValue::Number(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "number".to_string(),
+            },
+            RuntimeValue::Markdown(_, _) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "markdown".to_string(),
+            },
+            RuntimeValue::Function(params, _, _) => Variable {
+                name: ident.to_string(),
+                value: format!("function/{}", params.len()),
+                type_field: "function".to_string(),
+            },
+            RuntimeValue::NativeFunction(_) => Variable {
+                name: ident.to_string(),
+                value: "native function".to_string(),
+                type_field: "native_function".to_string(),
+            },
+            RuntimeValue::None => Variable {
+                name: ident.to_string(),
+                value: "None".to_string(),
+                type_field: "none".to_string(),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "debugger")]
 impl std::fmt::Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -109,54 +162,36 @@ impl Env {
     pub fn get_local_variables(&self) -> Vec<Variable> {
         self.context
             .iter()
-            .map(|(ident, value)| match value {
-                RuntimeValue::Array(_) => Variable {
-                    name: ident.to_string(),
-                    value: value.to_string(),
-                    type_field: "array".to_string(),
-                },
-                RuntimeValue::Bool(_) => Variable {
-                    name: ident.to_string(),
-                    value: value.to_string(),
-                    type_field: "bool".to_string(),
-                },
-                RuntimeValue::Dict(_) => Variable {
-                    name: ident.to_string(),
-                    value: value.to_string(),
-                    type_field: "dict".to_string(),
-                },
-                RuntimeValue::String(_) => Variable {
-                    name: ident.to_string(),
-                    value: value.to_string(),
-                    type_field: "string".to_string(),
-                },
-                RuntimeValue::Number(_) => Variable {
-                    name: ident.to_string(),
-                    value: value.to_string(),
-                    type_field: "number".to_string(),
-                },
-                RuntimeValue::Markdown(_, _) => Variable {
-                    name: ident.to_string(),
-                    value: value.to_string(),
-                    type_field: "markdown".to_string(),
-                },
-                RuntimeValue::Function(params, _, _) => Variable {
-                    name: ident.to_string(),
-                    value: format!("{ident}/{}", params.len()),
-                    type_field: "function".to_string(),
-                },
-                RuntimeValue::NativeFunction(_) => Variable {
-                    name: ident.to_string(),
-                    value: format!("{ident} (native function)"),
-                    type_field: "native_function".to_string(),
-                },
-                RuntimeValue::None => Variable {
-                    name: ident.to_string(),
-                    value: "None".to_string(),
-                    type_field: "none".to_string(),
-                },
-            })
+            .map(|(ident, value)| Variable::from(*ident, value))
             .collect()
+    }
+
+    #[cfg(feature = "debugger")]
+    /// Returns a vector of global variables in the current environment.
+    pub fn get_global_variables(&self) -> Vec<Variable> {
+        match &self.parent {
+            None => self
+                .context
+                .iter()
+                .map(|(ident, value)| Variable::from(*ident, value))
+                .collect(),
+            Some(parent_weak) => {
+                if let Some(parent_env) = parent_weak.upgrade() {
+                    #[cfg(not(feature = "sync"))]
+                    let parent_ref = parent_env.borrow();
+                    #[cfg(feature = "sync")]
+                    let parent_ref = parent_env.read().unwrap();
+
+                    parent_ref.get_global_variables()
+                } else {
+                    // If parent is dropped, treat as root
+                    self.context
+                        .iter()
+                        .map(|(ident, value)| Variable::from(*ident, value))
+                        .collect()
+                }
+            }
+        }
     }
 }
 
