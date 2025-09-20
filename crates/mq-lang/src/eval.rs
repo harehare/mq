@@ -329,6 +329,8 @@ impl Evaluator {
         node: Shared<ast::Node>,
         env: Shared<SharedCell<Env>>,
     ) {
+        use crate::{Module, eval::debugger::Source};
+
         let current_call_stack = self.debugger.read().unwrap().current_call_stack();
         let token = get_token(Shared::clone(&self.token_arena), node.token_id);
         self.debugger.write().unwrap().breakpoint_hit(
@@ -338,16 +340,24 @@ impl Evaluator {
                 token: Shared::clone(&token),
                 call_stack: current_call_stack,
                 env: Shared::clone(&env),
-                source_code: self
-                    .module_loader
-                    .get_source_code_for_debug(token.module_id)
-                    .unwrap_or_default(),
+                source: Source {
+                    name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
+                        None
+                    } else {
+                        Some(self.module_loader.module_name(token.module_id).to_string())
+                    },
+                    code: self
+                        .module_loader
+                        .get_source_code_for_debug(token.module_id)
+                        .unwrap_or_default(),
+                },
             },
             &Breakpoint {
                 id: 0,
                 line: token.range.start.line as usize,
                 column: Some(token.range.start.column),
                 enabled: true,
+                source: None,
             },
         );
     }
@@ -456,6 +466,8 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         #[cfg(feature = "debugger")]
         {
+            use crate::{Module, eval::debugger::Source};
+
             let token = &get_token(Shared::clone(&self.token_arena), node.token_id);
             let call_stack = self.debugger.read().unwrap().current_call_stack();
             let debug_context = DebugContext {
@@ -464,10 +476,17 @@ impl Evaluator {
                 token: Shared::clone(token),
                 call_stack,
                 env: Shared::clone(env),
-                source_code: self
-                    .module_loader
-                    .get_source_code_for_debug(token.module_id)
-                    .unwrap_or_default(),
+                source: Source {
+                    name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
+                        None
+                    } else {
+                        Some(self.module_loader.module_name(token.module_id).to_string())
+                    },
+                    code: self
+                        .module_loader
+                        .get_source_code_for_debug(token.module_id)
+                        .unwrap_or_default(),
+                },
             };
 
             let _ = self.debugger.write().unwrap().should_break(

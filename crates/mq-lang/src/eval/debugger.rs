@@ -36,6 +36,14 @@ pub struct Breakpoint {
     pub column: Option<usize>,
     /// Whether the breakpoint is enabled
     pub enabled: bool,
+    /// Optional source file name for the breakpoint
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Source {
+    pub name: Option<String>,
+    pub code: String,
 }
 
 /// Debugger state and context information
@@ -51,8 +59,8 @@ pub struct DebugContext {
     pub call_stack: Vec<Shared<ast::Node>>,
     /// Current evaluation environment info
     pub env: Shared<SharedCell<Env>>,
-    /// Source code being executed
-    pub source_code: String,
+    /// Optional source
+    pub source: Source,
 }
 
 impl Default for DebugContext {
@@ -70,7 +78,7 @@ impl Default for DebugContext {
             }),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
-            source_code: String::new(),
+            source: Source::default(),
         }
     }
 }
@@ -134,12 +142,18 @@ impl Debugger {
     }
 
     /// Add a breakpoint at the specified line
-    pub fn add_breakpoint(&mut self, line: usize, column: Option<usize>) -> usize {
+    pub fn add_breakpoint(
+        &mut self,
+        line: usize,
+        column: Option<usize>,
+        source: Option<String>,
+    ) -> usize {
         let breakpoint = Breakpoint {
             id: self.next_breakpoint_id,
             line,
             column,
             enabled: true,
+            source,
         };
         let id = breakpoint.id;
         self.breakpoints.insert(breakpoint);
@@ -199,7 +213,7 @@ impl Debugger {
         let line = token.range.start.line as usize;
         let column = token.range.start.column;
 
-        if let Some(breakpoint) = self.find_active_breakpoint(line, column) {
+        if let Some(breakpoint) = self.find_active_breakpoint(line, column, &context.source) {
             return self.breakpoint_hit(context, &breakpoint);
         }
 
@@ -292,7 +306,7 @@ impl Debugger {
     fn handle_debugger_action(&mut self, action: DebuggerAction) {
         match action {
             DebuggerAction::Breakpoint(Some(line_no)) => {
-                self.add_breakpoint(line_no, None);
+                self.add_breakpoint(line_no, None, None);
             }
             DebuggerAction::Breakpoint(None) => {
                 println!(
@@ -333,9 +347,18 @@ impl Debugger {
         }
     }
 
-    fn find_active_breakpoint(&self, line: usize, column: usize) -> Option<Breakpoint> {
+    fn find_active_breakpoint(
+        &self,
+        line: usize,
+        column: usize,
+        source: &Source,
+    ) -> Option<Breakpoint> {
         for breakpoint in &self.breakpoints {
             if !breakpoint.enabled {
+                continue;
+            }
+
+            if breakpoint.source != source.name {
                 continue;
             }
 
@@ -487,7 +510,7 @@ mod tests {
             token: Shared::clone(&token),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
-            source_code: String::new(),
+            source: Source::default(),
         }
     }
 
@@ -507,7 +530,7 @@ mod tests {
     ) {
         let mut dbg = Debugger::new();
         dbg.activate();
-        dbg.add_breakpoint(bp_line, bp_col);
+        dbg.add_breakpoint(bp_line, bp_col, None);
 
         let col = node_col.unwrap_or(0);
         let ctx = make_debug_context(node_line, col);
@@ -621,7 +644,7 @@ mod tests {
     #[test]
     fn test_add_and_remove_breakpoint() {
         let mut dbg = Debugger::new();
-        let id = dbg.add_breakpoint(1, Some(2));
+        let id = dbg.add_breakpoint(1, Some(2), None);
         assert_eq!(dbg.list_breakpoints().len(), 1);
         assert!(dbg.remove_breakpoint(id));
         assert_eq!(dbg.list_breakpoints().len(), 0);
@@ -630,8 +653,8 @@ mod tests {
     #[test]
     fn test_clear_breakpoints() {
         let mut dbg = Debugger::new();
-        dbg.add_breakpoint(1, None);
-        dbg.add_breakpoint(2, Some(3));
+        dbg.add_breakpoint(1, None, None);
+        dbg.add_breakpoint(2, Some(3), None);
         assert_eq!(dbg.list_breakpoints().len(), 2);
         dbg.clear_breakpoints();
         assert_eq!(dbg.list_breakpoints().len(), 0);

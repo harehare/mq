@@ -275,6 +275,11 @@ impl Engine {
     }
 
     #[cfg(feature = "debugger")]
+    pub fn get_module_name(&self, module_id: ModuleId) -> String {
+        self.evaluator.module_loader.module_name(module_id)
+    }
+
+    #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(
         &self,
         module_id: ModuleId,

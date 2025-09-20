@@ -106,11 +106,11 @@ impl ModuleLoader {
     }
 
     #[inline(always)]
-    pub fn module_name(&self, module_id: ModuleId) -> SmolStr {
+    pub fn module_name(&self, module_id: ModuleId) -> String {
         self.loaded_modules
             .get(module_id)
-            .map(|s| s.to_owned())
-            .unwrap_or_else(|| SmolStr::new("<unknown>"))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "<unknown>".to_string())
     }
 
     #[cfg(feature = "debugger")]

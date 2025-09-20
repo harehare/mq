@@ -511,15 +511,21 @@ impl MqAdapter {
     }
 
     #[inline(always)]
-    fn get_source_file_name(&self) -> String {
-        self.query_file
-            .as_ref()
-            .and_then(|query_file| {
-                PathBuf::from(query_file)
-                    .file_name()
-                    .map(|p| p.to_string_lossy().to_string())
-            })
-            .unwrap_or_else(|| "unknown".to_string())
+    fn get_source_file_name(&self, module_id: Option<mq_lang::ModuleId>) -> String {
+        if module_id.unwrap_or(mq_lang::Module::TOP_LEVEL_MODULE_ID)
+            == mq_lang::Module::TOP_LEVEL_MODULE_ID
+        {
+            self.query_file
+                .as_ref()
+                .and_then(|query_file| {
+                    PathBuf::from(query_file)
+                        .file_name()
+                        .map(|p| p.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| "unknown".to_string())
+        } else {
+            format!("{}.mq", self.engine.get_module_name(module_id.unwrap()))
+        }
     }
 
     fn eval(&self, code: &str) -> DynResult<mq_lang::Values> {
@@ -586,28 +592,17 @@ impl MqAdapter {
             Command::SetBreakpoints(args) => {
                 debug!(?args, "Received SetBreakpoints request");
 
-                if let (Some(source_path), Some(query_file)) =
+                let is_query_file = if let (Some(source_path), Some(query_file)) =
                     (args.source.path.as_ref(), self.query_file.as_ref())
                 {
                     let source_abs = std::fs::canonicalize(source_path)
                         .unwrap_or_else(|_| std::path::PathBuf::from(source_path));
                     let query_abs = std::fs::canonicalize(query_file)
                         .unwrap_or_else(|_| std::path::PathBuf::from(query_file));
-                    if source_abs != query_abs {
-                        let rsp =
-                            req.success(ResponseBody::SetBreakpoints(SetBreakpointsResponse {
-                                breakpoints: vec![],
-                            }));
-
-                        server.respond(rsp)?;
-                        return Ok(());
-                    }
+                    source_abs == query_abs
                 } else {
-                    error!(
-                        "SetBreakpoints request for unknown source: {:?}",
-                        args.source.path
-                    );
-                }
+                    false
+                };
 
                 let breakpoints_vec = args.breakpoints.as_ref().cloned().unwrap_or_default();
                 let mut breakpoints_response: Vec<Breakpoint> =
@@ -617,6 +612,11 @@ impl MqAdapter {
                     let id = self.engine.debugger().write().unwrap().add_breakpoint(
                         breakpoint.line as usize,
                         breakpoint.column.map(|bp| bp as usize),
+                        if is_query_file {
+                            None
+                        } else {
+                            args.source.name.clone()
+                        },
                     );
                     breakpoints_response.push(Breakpoint {
                         verified: true,
@@ -673,26 +673,33 @@ impl MqAdapter {
                 };
 
                 let source = self.get_source();
-                let file_name = self.get_source_file_name();
-
                 let stack_frames = if !call_stack.is_empty() {
                     call_stack
                         .iter()
                         .rev()
                         .enumerate()
                         .map(|(i, frame)| {
-                            let token_range = if i == 0 {
+                            let (file_name, token_range) = if i == 0 {
                                 if let Some(context) = self.current_debug_context.as_ref() {
-                                    context.token.range.clone()
+                                    (
+                                        self.get_source_file_name(Some(context.token.module_id)),
+                                        context.token.range.clone(),
+                                    )
                                 } else {
-                                    self.engine.token_arena().read().unwrap()[frame.token_id]
-                                        .range
-                                        .clone()
+                                    (
+                                        self.get_source_file_name(None),
+                                        self.engine.token_arena().read().unwrap()[frame.token_id]
+                                            .range
+                                            .clone(),
+                                    )
                                 }
                             } else {
-                                self.engine.token_arena().read().unwrap()[frame.token_id]
-                                    .range
-                                    .clone()
+                                (
+                                    self.get_source_file_name(None),
+                                    self.engine.token_arena().read().unwrap()[frame.token_id]
+                                        .range
+                                        .clone(),
+                                )
                             };
                             types::StackFrame {
                                 id: i as i64 + 1,
@@ -712,7 +719,9 @@ impl MqAdapter {
                         id: 0,
                         name: format!(
                             "{} ({}:{})",
-                            context.current_node.expr, file_name, context.token.range.start.line
+                            context.current_node.expr,
+                            self.get_source_file_name(Some(context.token.module_id)),
+                            context.token.range.start.line
                         ),
                         line: context.token.range.start.line as i64,
                         column: context.token.range.start.column as i64,
@@ -748,38 +757,17 @@ impl MqAdapter {
             }
             Command::SetVariable(args) => {
                 debug!(?args, "Received SetVariables request");
+                self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
 
-                if let Some(ref context) = self.current_debug_context {
-                    let local_variables = context
-                        .env
-                        .clone()
-                        .read()
-                        .unwrap()
-                        .get_local_variables()
-                        .clone();
-                    let local_var = local_variables.iter().find(|v| v.name == args.name);
-
-                    if let Some(var) = local_var {
-                        // TODO:
-                        let value = args.value.clone();
-                        let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
-                            value,
-                            indexed_variables: None,
-                            named_variables: None,
-                            type_field: None,
-                            variables_reference: None,
-                        }));
-                        server.respond(rsp)?;
-                    } else {
-                        let rsp = req.error("No such variable in the current context");
-                        server.respond(rsp)?;
-                        return Ok(());
-                    }
-                } else {
-                    let rsp = req.error("No active debug context to set variable");
-                    server.respond(rsp)?;
-                    return Ok(());
-                }
+                let value = args.value.clone();
+                let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
+                    value,
+                    indexed_variables: None,
+                    named_variables: None,
+                    type_field: None,
+                    variables_reference: None,
+                }));
+                server.respond(rsp)?;
             }
             Command::Continue(_) => {
                 debug!("Received Continue request");
