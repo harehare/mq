@@ -61,7 +61,7 @@ use lexer::Lexer;
 use std::cell::RefCell;
 #[cfg(not(feature = "sync"))]
 use std::rc::Rc;
-#[cfg(any(feature = "sync", feature = "cst"))]
+#[cfg(feature = "sync")]
 use std::sync::Arc;
 #[cfg(feature = "sync")]
 use std::sync::RwLock;
@@ -131,7 +131,7 @@ pub type SharedCell<T> = RwLock<T>;
 pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
 
 #[cfg(feature = "cst")]
-pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
+pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
     let tokens = Lexer::new(lexer::Options {
         ignore_errors: true,
         include_spaces: true,
@@ -146,8 +146,14 @@ pub fn parse_recovery(code: &str) -> (Vec<Arc<CstNode>>, CstErrorReporter) {
     })
     .unwrap();
 
-    let (cst_nodes, errors) =
-        CstParser::new(tokens.into_iter().map(Arc::new).collect::<Vec<_>>().iter()).parse();
+    let (cst_nodes, errors) = CstParser::new(
+        tokens
+            .into_iter()
+            .map(Shared::new)
+            .collect::<Vec<_>>()
+            .iter(),
+    )
+    .parse();
 
     (cst_nodes, errors)
 }

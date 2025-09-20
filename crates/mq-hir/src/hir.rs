@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use mq_lang::{Token, TokenKind};
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
@@ -239,7 +237,11 @@ impl Hir {
         self.builtin.loaded = true;
     }
 
-    pub fn add_nodes(&mut self, url: Url, nodes: &[Arc<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
+    pub fn add_nodes(
+        &mut self,
+        url: Url,
+        nodes: &[mq_lang::Shared<mq_lang::CstNode>],
+    ) -> (SourceId, ScopeId) {
         self.add_builtin();
 
         let source_id = self
@@ -288,7 +290,7 @@ impl Hir {
 
     fn add_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -361,7 +363,7 @@ impl Hir {
 
     fn add_binary_op_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -388,7 +390,7 @@ impl Hir {
 
     fn add_unary_op_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -415,7 +417,7 @@ impl Hir {
 
     fn add_literal_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -444,7 +446,7 @@ impl Hir {
 
     fn add_interpolated_string(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -488,7 +490,7 @@ impl Hir {
 
     fn add_include_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -519,7 +521,7 @@ impl Hir {
 
     fn add_while_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -551,7 +553,7 @@ impl Hir {
 
     fn add_until_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -583,7 +585,7 @@ impl Hir {
 
     fn add_let_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -621,7 +623,7 @@ impl Hir {
 
     fn add_ident_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -644,7 +646,7 @@ impl Hir {
 
     fn add_selector_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -667,7 +669,7 @@ impl Hir {
 
     fn add_if_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -705,7 +707,7 @@ impl Hir {
 
     fn add_elif_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -738,7 +740,7 @@ impl Hir {
 
     fn add_else_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -770,7 +772,7 @@ impl Hir {
 
     fn add_call_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -810,7 +812,7 @@ impl Hir {
 
     fn add_foreach_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -866,7 +868,7 @@ impl Hir {
 
     fn add_def_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -929,7 +931,7 @@ impl Hir {
 
     fn add_fn_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -1011,7 +1013,7 @@ impl Hir {
 
     fn add_array_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -1037,7 +1039,7 @@ impl Hir {
 
     fn add_dict_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
@@ -1063,7 +1065,7 @@ impl Hir {
 
     fn add_keyword(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,

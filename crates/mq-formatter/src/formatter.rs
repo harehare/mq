@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 #[allow(dead_code)]
 #[cfg(target_os = "windows")]
 const NEW_LINE: &str = "\r\n";
@@ -48,10 +46,10 @@ impl Formatter {
 
     pub fn format_with_cst(
         &mut self,
-        nodes: Vec<Arc<mq_lang::CstNode>>,
+        nodes: Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
         for node in &nodes {
-            self.format_node(Arc::clone(node), 0);
+            self.format_node(mq_lang::Shared::clone(node), 0);
         }
 
         let mut result = String::with_capacity(self.output.len());
@@ -68,7 +66,7 @@ impl Formatter {
         Ok(result)
     }
 
-    fn format_node(&mut self, node: Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_node(&mut self, node: mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         let has_leading_new_line = node.has_new_line();
 
         let indent_level_consider_new_line = if has_leading_new_line {
@@ -147,17 +145,17 @@ impl Formatter {
         }
     }
 
-    fn format_include(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_include(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
         self.append_space();
 
         node.children.iter().for_each(|child| {
-            self.format_node(Arc::clone(child), indent_level);
+            self.format_node(mq_lang::Shared::clone(child), indent_level);
         });
     }
 
-    fn format_array(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_array(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         let len = node.children.len();
 
@@ -174,7 +172,10 @@ impl Formatter {
         let is_multiline = node.children[1].has_new_line();
 
         for child in &node.children[..len.saturating_sub(1)] {
-            self.format_node(Arc::clone(child), indent_level + indent_adjustment + 1);
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                indent_level + indent_adjustment + 1,
+            );
         }
 
         if let Some(last) = node.children.last() {
@@ -183,20 +184,23 @@ impl Formatter {
                 self.append_indent(indent_level + indent_adjustment);
             }
 
-            self.format_node(Arc::clone(last), indent_level + indent_adjustment);
+            self.format_node(
+                mq_lang::Shared::clone(last),
+                indent_level + indent_adjustment,
+            );
         }
     }
 
-    fn format_group(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_group(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
         node.children.iter().for_each(|child| {
-            self.format_node(Arc::clone(child), indent_level);
+            self.format_node(mq_lang::Shared::clone(child), indent_level);
         });
     }
 
-    fn format_dict(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_dict(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         let indent_adjustment = if self.is_let_line() {
             self.current_line_indent()
@@ -211,14 +215,14 @@ impl Formatter {
 
         // Format LBrace
         self.format_node(
-            Arc::clone(&node.children[0]),
+            mq_lang::Shared::clone(&node.children[0]),
             indent_level + indent_adjustment,
         );
 
         // Early return if only braces exist
         if len == 2 {
             self.format_node(
-                Arc::clone(&node.children[1]),
+                mq_lang::Shared::clone(&node.children[1]),
                 indent_level + indent_adjustment,
             );
             return;
@@ -235,16 +239,19 @@ impl Formatter {
             // Defensive: ensure we have key: value
             if let (Some(colon), Some(value)) = (colon, value) {
                 if key.has_new_line() {
-                    self.format_node(Arc::clone(key), indent_level + indent_adjustment + 1);
+                    self.format_node(
+                        mq_lang::Shared::clone(key),
+                        indent_level + indent_adjustment + 1,
+                    );
                 } else {
-                    self.format_node(Arc::clone(key), 0);
+                    self.format_node(mq_lang::Shared::clone(key), 0);
                 }
-                self.format_node(Arc::clone(colon), 0);
+                self.format_node(mq_lang::Shared::clone(colon), 0);
                 self.append_space();
-                self.format_node(Arc::clone(value), 0);
+                self.format_node(mq_lang::Shared::clone(value), 0);
                 i += 3;
             } else {
-                self.format_node(Arc::clone(key), 0);
+                self.format_node(mq_lang::Shared::clone(key), 0);
                 i += 1;
             }
 
@@ -252,7 +259,7 @@ impl Formatter {
             if i < len - 1 {
                 if let Some(token) = node.children[i].token.as_ref() {
                     if matches!(token.kind, mq_lang::TokenKind::Comma) {
-                        self.format_node(Arc::clone(&node.children[i]), 0);
+                        self.format_node(mq_lang::Shared::clone(&node.children[i]), 0);
                         i += 1;
                     }
                 }
@@ -266,11 +273,18 @@ impl Formatter {
                 self.append_indent(indent_level + indent_adjustment);
             }
 
-            self.format_node(Arc::clone(rbrace), indent_level + indent_adjustment);
+            self.format_node(
+                mq_lang::Shared::clone(rbrace),
+                indent_level + indent_adjustment,
+            );
         }
     }
 
-    fn format_binary_op(&mut self, node: &Arc<mq_lang::CstNode>, block_indent_level: usize) {
+    fn format_binary_op(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        block_indent_level: usize,
+    ) {
         match node.binary_op() {
             Some((left, right)) => {
                 self.format_node(left, block_indent_level);
@@ -310,7 +324,7 @@ impl Formatter {
         }
     }
 
-    fn format_unary_op(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_unary_op(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::UnaryOp(op),
             token: Some(token),
@@ -324,7 +338,7 @@ impl Formatter {
 
             match op {
                 mq_lang::CstUnaryOp::Not | mq_lang::CstUnaryOp::Negate => {
-                    self.format_node(Arc::clone(&node.children[0]), indent_level);
+                    self.format_node(mq_lang::Shared::clone(&node.children[0]), indent_level);
                 }
             }
         } else {
@@ -334,7 +348,7 @@ impl Formatter {
 
     fn format_expr(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         indent_level: usize,
         block_indent_level: usize,
         append_space_after_keyword: bool,
@@ -368,7 +382,7 @@ impl Formatter {
 
         node.children.iter().take(expr_index).for_each(|child| {
             self.format_node(
-                Arc::clone(child),
+                mq_lang::Shared::clone(child),
                 if child.has_new_line() {
                     block_indent_level + 1
                 } else {
@@ -380,7 +394,7 @@ impl Formatter {
         let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
         let colon_node = expr_nodes.next().unwrap();
 
-        self.format_node(Arc::clone(colon_node), block_indent_level + 1);
+        self.format_node(mq_lang::Shared::clone(colon_node), block_indent_level + 1);
 
         if !expr_nodes.peek().unwrap().has_new_line() {
             self.append_space();
@@ -393,13 +407,13 @@ impl Formatter {
         } + indent_adjustment;
 
         expr_nodes.for_each(|child| {
-            self.format_node(Arc::clone(child), block_indent_level);
+            self.format_node(mq_lang::Shared::clone(child), block_indent_level);
         });
     }
 
     fn format_let(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         indent_level: usize,
         block_indent_level: usize,
     ) {
@@ -420,11 +434,11 @@ impl Formatter {
                 indent_level
             };
 
-            self.format_node(Arc::clone(child), indent_level);
+            self.format_node(mq_lang::Shared::clone(child), indent_level);
         });
     }
 
-    fn format_call(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_call(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
 
@@ -436,7 +450,7 @@ impl Formatter {
 
         node.children.iter().for_each(|child| {
             self.format_node(
-                Arc::clone(child),
+                mq_lang::Shared::clone(child),
                 if child.has_new_line() {
                     current_line_indent + 1
                 } else {
@@ -448,7 +462,7 @@ impl Formatter {
 
     fn format_if(
         &mut self,
-        node: &Arc<mq_lang::CstNode>,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
         indent_level: usize,
         block_indent_level: usize,
     ) {
@@ -471,10 +485,10 @@ impl Formatter {
 
         if let [l_param, cond, r_param, then_colon, then_expr, rest @ ..] = node.children.as_slice()
         {
-            self.format_node(Arc::clone(l_param), 0);
-            self.format_node(Arc::clone(cond), 0);
-            self.format_node(Arc::clone(r_param), 0);
-            self.format_node(Arc::clone(then_colon), 0);
+            self.format_node(mq_lang::Shared::clone(l_param), 0);
+            self.format_node(mq_lang::Shared::clone(cond), 0);
+            self.format_node(mq_lang::Shared::clone(r_param), 0);
+            self.format_node(mq_lang::Shared::clone(then_colon), 0);
 
             if !then_expr.has_new_line() {
                 self.append_space();
@@ -486,7 +500,7 @@ impl Formatter {
                 indent_level + 1
             } + indent_adjustment;
 
-            self.format_node(Arc::clone(then_expr), block_indent_level);
+            self.format_node(mq_lang::Shared::clone(then_expr), block_indent_level);
 
             let node_indent_level = if is_prev_pipe {
                 indent_level + 1
@@ -495,12 +509,12 @@ impl Formatter {
             } + indent_adjustment;
 
             for child in rest {
-                self.format_node(Arc::clone(child), node_indent_level);
+                self.format_node(mq_lang::Shared::clone(child), node_indent_level);
             }
         }
     }
 
-    fn format_elif(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_elif(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if !node.has_new_line() {
             self.append_space();
         }
@@ -510,20 +524,20 @@ impl Formatter {
         self.append_space();
 
         if let [l_param, cond, r_param, then_colon, then_expr] = node.children.as_slice() {
-            self.format_node(Arc::clone(l_param), 0);
-            self.format_node(Arc::clone(cond), 0);
-            self.format_node(Arc::clone(r_param), 0);
-            self.format_node(Arc::clone(then_colon), 0);
+            self.format_node(mq_lang::Shared::clone(l_param), 0);
+            self.format_node(mq_lang::Shared::clone(cond), 0);
+            self.format_node(mq_lang::Shared::clone(r_param), 0);
+            self.format_node(mq_lang::Shared::clone(then_colon), 0);
 
             if !then_expr.has_new_line() {
                 self.append_space();
             }
 
-            self.format_node(Arc::clone(then_expr), indent_level + 1);
+            self.format_node(mq_lang::Shared::clone(then_expr), indent_level + 1);
         }
     }
 
-    fn format_else(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_else(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if !node.has_new_line() {
             self.append_space();
         }
@@ -532,22 +546,26 @@ impl Formatter {
         self.output.push_str(&node.to_string());
 
         if let [then_colon, then_expr] = node.children.as_slice() {
-            self.format_node(Arc::clone(then_colon), 0);
+            self.format_node(mq_lang::Shared::clone(then_colon), 0);
 
             if !then_expr.has_new_line() {
                 self.append_space();
             }
 
-            self.format_node(Arc::clone(then_expr), indent_level + 1);
+            self.format_node(mq_lang::Shared::clone(then_expr), indent_level + 1);
         }
     }
 
-    fn format_ident(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_ident(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
     }
 
-    fn append_leading_trivia(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn append_leading_trivia(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        indent_level: usize,
+    ) {
         for trivia in &node.leading_trivia {
             match trivia {
                 mq_lang::CstTrivia::Whitespace(_) => {}
@@ -578,7 +596,7 @@ impl Formatter {
             .push_str(&" ".repeat(level * self.config.indent_width));
     }
 
-    fn append_env(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn append_env(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Env,
             token: Some(token),
@@ -590,7 +608,7 @@ impl Formatter {
         }
     }
 
-    fn append_literal(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn append_literal(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Literal,
             token: Some(token),
@@ -611,7 +629,11 @@ impl Formatter {
         }
     }
 
-    fn append_interpolated_string(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn append_interpolated_string(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        indent_level: usize,
+    ) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::InterpolatedString,
             token: Some(token),
@@ -630,7 +652,7 @@ impl Formatter {
         }
     }
 
-    fn format_selector(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_selector(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Selector,
             token: Some(token),
@@ -642,12 +664,12 @@ impl Formatter {
             self.output.push_str(&token.to_string());
 
             children.iter().for_each(|child| {
-                self.format_node(Arc::clone(child), indent_level);
+                self.format_node(mq_lang::Shared::clone(child), indent_level);
             });
         }
     }
 
-    fn format_keyword(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn format_keyword(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             token: Some(token), ..
         } = &**node
@@ -674,7 +696,7 @@ impl Formatter {
         }
     }
 
-    fn append_token(&mut self, node: &Arc<mq_lang::CstNode>, indent_level: usize) {
+    fn append_token(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Token,
             token: Some(token),

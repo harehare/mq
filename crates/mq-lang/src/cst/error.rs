@@ -1,17 +1,15 @@
-use std::sync::Arc;
-
 use thiserror::Error;
 
-use crate::Token;
+use crate::{Shared, Token};
 
 #[derive(Error, Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
 pub enum ParseError {
     #[error("Unexpected token `{0}`")]
-    UnexpectedToken(Arc<Token>),
+    UnexpectedToken(Shared<Token>),
     #[error("Unexpected EOF detected")]
     UnexpectedEOFDetected,
     #[error("Insufficient tokens `{0}`")]
-    InsufficientTokens(Arc<Token>),
+    InsufficientTokens(Shared<Token>),
     #[error("Expected a closing bracket `]` but got `{0}` delimiter")]
-    ExpectedClosingBracket(Arc<Token>),
+    ExpectedClosingBracket(Shared<Token>),
 }

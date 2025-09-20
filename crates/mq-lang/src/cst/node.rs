@@ -1,21 +1,18 @@
-use std::{
-    fmt::{self, Display},
-    sync::Arc,
-};
+use std::fmt::{self, Display};
 
 use smol_str::SmolStr;
 
-use crate::TokenKind;
 use crate::{Range, Token};
+use crate::{Shared, TokenKind};
 
 type Comment = (Range, String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Trivia {
-    Whitespace(Arc<Token>),
+    Whitespace(Shared<Token>),
     NewLine,
-    Tab(Arc<Token>),
-    Comment(Arc<Token>),
+    Tab(Shared<Token>),
+    Comment(Shared<Token>),
 }
 
 impl Display for Trivia {
@@ -69,10 +66,10 @@ impl Trivia {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub kind: NodeKind,
-    pub token: Option<Arc<Token>>,
+    pub token: Option<Shared<Token>>,
     pub leading_trivia: Vec<Trivia>,
     pub trailing_trivia: Vec<Trivia>,
-    pub children: Vec<Arc<Node>>,
+    pub children: Vec<Shared<Node>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -186,7 +183,7 @@ impl Node {
             .collect::<Vec<_>>()
     }
 
-    pub fn children_without_token(&self) -> Vec<Arc<Node>> {
+    pub fn children_without_token(&self) -> Vec<Shared<Node>> {
         self.children
             .iter()
             .filter(|child| !child.is_token())
@@ -194,7 +191,7 @@ impl Node {
             .collect::<Vec<_>>()
     }
 
-    pub fn split_cond_and_program(&self) -> (Vec<Arc<Node>>, Vec<Arc<Node>>) {
+    pub fn split_cond_and_program(&self) -> (Vec<Shared<Node>>, Vec<Shared<Node>>) {
         let expr_index = self
             .children
             .iter()
@@ -223,21 +220,21 @@ impl Node {
         )
     }
 
-    pub fn binary_op(&self) -> Option<(Arc<Node>, Arc<Node>)> {
+    pub fn binary_op(&self) -> Option<(Shared<Node>, Shared<Node>)> {
         if let NodeKind::BinaryOp(_) = self.kind {
             let mut non_token_children = self.children.iter().filter(|child| !child.is_token());
             let left = non_token_children.next()?;
             let right = non_token_children.next()?;
-            Some((Arc::clone(left), Arc::clone(right)))
+            Some((Shared::clone(left), Shared::clone(right)))
         } else {
             None
         }
     }
 
-    pub fn unary_op(&self) -> Option<Arc<Node>> {
+    pub fn unary_op(&self) -> Option<Shared<Node>> {
         if let NodeKind::UnaryOp(_) = self.kind {
             let operand = self.children.iter().find(|child| !child.is_token())?;
-            Some(Arc::clone(operand))
+            Some(Shared::clone(operand))
         } else {
             None
         }
@@ -254,7 +251,7 @@ mod tests {
 
     #[rstest]
     #[case(
-        Trivia::Whitespace(Arc::new(Token {
+        Trivia::Whitespace(Shared::new(Token {
             kind: TokenKind::Whitespace(1),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -263,7 +260,7 @@ mod tests {
     )]
     #[case(Trivia::NewLine, "\n")]
     #[case(
-        Trivia::Tab(Arc::new(Token {
+        Trivia::Tab(Shared::new(Token {
             kind: TokenKind::Tab(1),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -271,7 +268,7 @@ mod tests {
         "\t"
     )]
     #[case(
-        Trivia::Comment(Arc::new(Token {
+        Trivia::Comment(Shared::new(Token {
             kind: TokenKind::Comment("comment".to_string()),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -284,7 +281,7 @@ mod tests {
 
     #[rstest]
     #[case(
-        Trivia::Whitespace(Arc::new(Token {
+        Trivia::Whitespace(Shared::new(Token {
             kind: TokenKind::Whitespace(1),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -293,7 +290,7 @@ mod tests {
     )]
     #[case(Trivia::NewLine, false, true, false, false)]
     #[case(
-        Trivia::Tab(Arc::new(Token {
+        Trivia::Tab(Shared::new(Token {
             kind: TokenKind::Tab(1),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -301,7 +298,7 @@ mod tests {
         false, false, true, false
     )]
     #[case(
-        Trivia::Comment(Arc::new(Token {
+        Trivia::Comment(Shared::new(Token {
             kind: TokenKind::Comment("comment".to_string()),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -323,7 +320,7 @@ mod tests {
 
     #[rstest]
     #[case(
-        Trivia::Comment(Arc::new(Token {
+        Trivia::Comment(Shared::new(Token {
             kind: TokenKind::Comment("test comment".to_string()),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -331,7 +328,7 @@ mod tests {
         "test comment"
     )]
     #[case(
-        Trivia::Whitespace(Arc::new(Token {
+        Trivia::Whitespace(Shared::new(Token {
             kind: TokenKind::Whitespace(1),
             range: Range::default(),
             module_id: ArenaId::new(0),
@@ -380,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_children_without_token() {
-        let token_node = Arc::new(Node {
+        let token_node = Shared::new(Node {
             kind: NodeKind::Token,
             token: None,
             leading_trivia: Vec::new(),
@@ -388,7 +385,7 @@ mod tests {
             children: Vec::new(),
         });
 
-        let call_node = Arc::new(Node {
+        let call_node = Shared::new(Node {
             kind: NodeKind::Call,
             token: None,
             leading_trivia: Vec::new(),
