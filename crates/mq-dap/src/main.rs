@@ -584,8 +584,6 @@ impl MqAdapter {
                     });
                 }
 
-                server.send_event(Event::Initialized)?;
-
                 let rsp = req.success(ResponseBody::Launch);
                 server.respond(rsp)?;
             }
