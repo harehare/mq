@@ -188,13 +188,38 @@ impl DapDebuggerHandler {
 impl mq_lang::DebuggerHandler for DapDebuggerHandler {}
 
 impl MqAdapter {
-    fn get_variables_from_context(&self) -> Vec<types::Variable> {
+    fn get_local_variables_from_context(&self) -> Vec<types::Variable> {
         if let Some(ref context) = self.current_debug_context {
             context
                 .env
                 .read()
                 .unwrap()
                 .get_local_variables()
+                .iter()
+                .map(|v| types::Variable {
+                    name: v.name.to_string(),
+                    value: v.value.to_string(),
+                    type_field: Some(v.type_field.clone()),
+                    variables_reference: 1,
+                    named_variables: None,
+                    indexed_variables: None,
+                    presentation_hint: None,
+                    evaluate_name: Some(v.name.to_string()),
+                    memory_reference: None,
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_global_variables_from_context(&self) -> Vec<types::Variable> {
+        if let Some(ref context) = self.current_debug_context {
+            context
+                .env
+                .read()
+                .unwrap()
+                .get_global_variables()
                 .iter()
                 .map(|v| types::Variable {
                     name: v.name.to_string(),
@@ -746,16 +771,16 @@ impl MqAdapter {
             Command::Variables(args) => {
                 debug!(?args, "Received Variables request");
                 let variables = if args.variables_reference == 1 {
-                    self.get_variables_from_context()
+                    self.get_global_variables_from_context()
                 } else {
-                    vec![]
+                    self.get_local_variables_from_context()
                 };
                 let rsp = req.success(ResponseBody::Variables(VariablesResponse { variables }));
                 server.respond(rsp)?;
             }
             Command::SetVariable(args) => {
                 debug!(?args, "Received SetVariables request");
-                self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
+                // self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
 
                 let value = args.value.clone();
                 let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
@@ -846,22 +871,37 @@ impl MqAdapter {
                 };
                 server.respond(rsp)?
             }
-            Command::Scopes(_) => {
+            Command::Scopes(args) => {
                 debug!("Received Scopes request");
 
-                let scopes = vec![types::Scope {
-                    name: "Local".to_string(),
-                    variables_reference: 1,
-                    expensive: false,
-                    named_variables: None,
-                    indexed_variables: None,
-                    source: None,
-                    line: None,
-                    column: None,
-                    end_line: None,
-                    end_column: None,
-                    presentation_hint: None,
-                }];
+                let scopes = vec![
+                    types::Scope {
+                        name: "GLOBAL".to_string(),
+                        variables_reference: 1,
+                        expensive: false,
+                        named_variables: None,
+                        indexed_variables: None,
+                        source: None,
+                        line: None,
+                        column: None,
+                        end_line: None,
+                        end_column: None,
+                        presentation_hint: None,
+                    },
+                    types::Scope {
+                        name: "LOCAL".to_string(),
+                        variables_reference: args.frame_id + 1,
+                        expensive: false,
+                        named_variables: None,
+                        indexed_variables: None,
+                        source: None,
+                        line: None,
+                        column: None,
+                        end_line: None,
+                        end_column: None,
+                        presentation_hint: None,
+                    },
+                ];
 
                 let rsp = req.success(ResponseBody::Scopes(ScopesResponse { scopes }));
                 server.respond(rsp)?;
