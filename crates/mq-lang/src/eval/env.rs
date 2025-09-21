@@ -177,7 +177,13 @@ impl Env {
             None => self
                 .context
                 .iter()
-                .map(|(ident, value)| Variable::from(*ident, value))
+                .filter_map(|(ident, value)| {
+                    if value.is_function() || value.is_native_function() {
+                        None
+                    } else {
+                        Some(Variable::from(*ident, value))
+                    }
+                })
                 .collect(),
             Some(parent_weak) => {
                 if let Some(parent_env) = parent_weak.upgrade() {
@@ -191,7 +197,13 @@ impl Env {
                     // If parent is dropped, treat as root
                     self.context
                         .iter()
-                        .map(|(ident, value)| Variable::from(*ident, value))
+                        .filter_map(|(ident, value)| {
+                            if value.is_function() || value.is_native_function() {
+                                None
+                            } else {
+                                Some(Variable::from(*ident, value))
+                            }
+                        })
                         .collect()
                 }
             }

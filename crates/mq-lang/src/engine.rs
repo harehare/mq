@@ -26,20 +26,19 @@ pub struct Options {
     pub optimization_level: OptimizationLevel,
 }
 
-#[cfg(not(feature = "debugger"))]
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            optimization_level: OptimizationLevel::Full,
+        #[cfg(not(feature = "debugger"))]
+        {
+            Self {
+                optimization_level: OptimizationLevel::Full,
+            }
         }
-    }
-}
-
-#[cfg(feature = "debugger")]
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            optimization_level: OptimizationLevel::None,
+        #[cfg(feature = "debugger")]
+        {
+            Self {
+                optimization_level: OptimizationLevel::None,
+            }
         }
     }
 }

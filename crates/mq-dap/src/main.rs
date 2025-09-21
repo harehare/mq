@@ -555,19 +555,15 @@ impl MqAdapter {
 
     fn eval(&self, code: &str) -> DynResult<mq_lang::Values> {
         let mut engine = if let Some(ref context) = self.current_debug_context {
-            let eng = mq_lang::Engine::default();
-            debug!(?context.env, "Switching engine environment for evaluation");
-            eng.switch_env(Shared::clone(&context.env));
-            eng
+            mq_lang::Engine::default().switch_env(Shared::clone(&context.env))
         } else {
             return Err(Box::new(MqAdapterError::EvaluationError(
                 "Current context not found".to_string(),
             )) as Box<dyn std::error::Error>);
         };
 
-        engine.load_builtin_module();
         engine
-            .eval(code, mq_lang::null_input().into_iter())
+            .eval(&code, mq_lang::null_input().into_iter())
             .map_err(|e| {
                 let error_msg = format!("Evaluation error: {}", e);
                 error!(error = %error_msg);
