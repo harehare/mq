@@ -54,8 +54,8 @@ pub struct Module {
 
 impl Module {
     pub const TOP_LEVEL_MODULE_ID: ArenaId<ModuleName> = ArenaId::new(0);
-    pub const TOP_LEVEL_MODULE: &str = "<top-level>";
-    pub const BUILTIN_MODULE: &str = "<builtin>";
+    pub const TOP_LEVEL_MODULE: &str = "top-level";
+    pub const BUILTIN_MODULE: &str = "builtin";
 }
 
 pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {

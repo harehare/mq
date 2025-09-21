@@ -200,7 +200,7 @@ impl MqAdapter {
                     name: v.name.to_string(),
                     value: v.value.to_string(),
                     type_field: Some(v.type_field.clone()),
-                    variables_reference: 1,
+                    variables_reference: 0,
                     named_variables: None,
                     indexed_variables: None,
                     presentation_hint: None,
@@ -555,13 +555,17 @@ impl MqAdapter {
 
     fn eval(&self, code: &str) -> DynResult<mq_lang::Values> {
         let mut engine = if let Some(ref context) = self.current_debug_context {
-            let eng = self.engine.clone();
+            let eng = mq_lang::Engine::default();
+            debug!(?context.env, "Switching engine environment for evaluation");
             eng.switch_env(Shared::clone(&context.env));
             eng
         } else {
-            self.engine.clone()
+            return Err(Box::new(MqAdapterError::EvaluationError(
+                "Current context not found".to_string(),
+            )) as Box<dyn std::error::Error>);
         };
 
+        engine.load_builtin_module();
         engine
             .eval(code, mq_lang::null_input().into_iter())
             .map_err(|e| {
@@ -780,7 +784,7 @@ impl MqAdapter {
             }
             Command::SetVariable(args) => {
                 debug!(?args, "Received SetVariables request");
-                // self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
+                self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
 
                 let value = args.value.clone();
                 let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
@@ -841,15 +845,7 @@ impl MqAdapter {
             Command::Evaluate(args) => {
                 debug!(?args, "Received Evaluate request");
 
-                let mut engine = if let Some(ref context) = self.current_debug_context {
-                    let eng = self.engine.clone();
-                    eng.switch_env(Shared::clone(&context.env));
-                    eng
-                } else {
-                    self.engine.clone()
-                };
-
-                let rsp = match engine.eval(&args.expression, mq_lang::null_input().into_iter()) {
+                let rsp = match self.eval(&args.expression) {
                     Ok(values) => {
                         let result = values
                             .values()

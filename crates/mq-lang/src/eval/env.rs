@@ -160,10 +160,14 @@ impl Env {
     #[cfg(feature = "debugger")]
     /// Returns a vector of local variables in the current environment.
     pub fn get_local_variables(&self) -> Vec<Variable> {
-        self.context
-            .iter()
-            .map(|(ident, value)| Variable::from(*ident, value))
-            .collect()
+        match self.parent {
+            None => vec![],
+            Some(_) => self
+                .context
+                .iter()
+                .map(|(ident, value)| Variable::from(*ident, value))
+                .collect(),
+        }
     }
 
     #[cfg(feature = "debugger")]

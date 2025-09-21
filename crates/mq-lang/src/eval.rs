@@ -1,5 +1,8 @@
 #[cfg(feature = "debugger")]
 use crate::ast::constants;
+#[cfg(feature = "debugger")]
+use crate::{Module, eval::debugger::Source};
+
 use crate::{
     Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
@@ -294,7 +297,6 @@ impl Evaluator {
         Ok(value)
     }
 
-    #[cfg(not(feature = "sync"))]
     #[inline(always)]
     fn eval_ident(
         &self,
@@ -302,23 +304,19 @@ impl Evaluator {
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        env.borrow()
-            .resolve(ident)
-            .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
-    }
-
-    #[cfg(feature = "sync")]
-    #[inline(always)]
-    fn eval_ident(
-        &self,
-        ident: Ident,
-        token_id: TokenId,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
-        env.read()
-            .unwrap()
-            .resolve(ident)
-            .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
+        #[cfg(not(feature = "sync"))]
+        {
+            env.borrow()
+                .resolve(ident)
+                .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
+        }
+        #[cfg(feature = "sync")]
+        {
+            env.read()
+                .unwrap()
+                .resolve(ident)
+                .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
+        }
     }
 
     #[inline(never)]
@@ -329,8 +327,6 @@ impl Evaluator {
         node: Shared<ast::Node>,
         env: Shared<SharedCell<Env>>,
     ) {
-        use crate::{Module, eval::debugger::Source};
-
         let current_call_stack = self.debugger.read().unwrap().current_call_stack();
         let token = get_token(Shared::clone(&self.token_arena), node.token_id);
         self.debugger.write().unwrap().breakpoint_hit(
@@ -466,8 +462,6 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         #[cfg(feature = "debugger")]
         {
-            use crate::{Module, eval::debugger::Source};
-
             let token = &get_token(Shared::clone(&self.token_arena), node.token_id);
             let call_stack = self.debugger.read().unwrap().current_call_stack();
             let debug_context = DebugContext {
@@ -854,15 +848,15 @@ impl Evaluator {
 }
 
 #[inline(always)]
-#[cfg(not(feature = "sync"))]
 fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeValue) {
-    env.borrow_mut().define(ident, runtime_value);
-}
-
-#[inline(always)]
-#[cfg(feature = "sync")]
-fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeValue) {
-    env.write().unwrap().define(ident, runtime_value);
+    #[cfg(not(feature = "sync"))]
+    {
+        env.borrow_mut().define(ident, runtime_value);
+    }
+    #[cfg(feature = "sync")]
+    {
+        env.write().unwrap().define(ident, runtime_value);
+    }
 }
 
 #[cfg(test)]

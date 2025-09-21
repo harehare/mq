@@ -250,7 +250,7 @@ impl DebuggerHandler {
                 }
                 Command::LongList => {
                     let lines: Vec<String> =
-                        context.source_code.lines().map(|s| s.to_string()).collect();
+                        context.source.code.lines().map(|s| s.to_string()).collect();
                     Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
                 }
                 Command::Info => {
@@ -352,7 +352,7 @@ impl DebuggerHandler {
         line: usize,
         context_lines: usize,
     ) -> (usize, Vec<String>) {
-        let lines: Vec<&str> = context.source_code.lines().collect();
+        let lines: Vec<&str> = context.source.code.lines().collect();
         if lines.is_empty() {
             return (0, vec![]);
         }
