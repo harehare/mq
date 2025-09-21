@@ -37,6 +37,7 @@ pub fn start() -> DynResult<()> {
         let capabilities = types::Capabilities {
             supports_set_variable: Some(true),
             supports_exception_options: Some(false),
+            supports_exception_filter_options: Some(false),
             ..Default::default()
         };
         let rsp = req.success(ResponseBody::Initialize(capabilities));
