@@ -82,7 +82,11 @@ impl Server {
         let values = engine
             .eval(
                 &query.unwrap_or("identity()".to_string()),
-                markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
+                markdown
+                    .nodes
+                    .clone()
+                    .into_iter()
+                    .map(mq_lang::RuntimeValue::from),
             )
             .map_err(|e| {
                 ErrorData::invalid_request(
@@ -124,7 +128,11 @@ impl Server {
         let values = engine
             .eval(
                 &query,
-                markdown.nodes.clone().into_iter().map(mq_lang::Value::from),
+                markdown
+                    .nodes
+                    .clone()
+                    .into_iter()
+                    .map(mq_lang::RuntimeValue::from),
             )
             .map_err(|e| {
                 ErrorData::invalid_request(

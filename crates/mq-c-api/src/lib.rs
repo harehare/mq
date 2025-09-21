@@ -1,5 +1,5 @@
 use libc::c_void;
-use mq_lang::{Engine, Value};
+use mq_lang::{Engine, RuntimeValue};
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn mq_eval(
         }
     };
 
-    let mq_input_values: Vec<Value> = match input_format_str.as_str() {
+    let mq_input_values: Vec<RuntimeValue> = match input_format_str.as_str() {
         "text" => mq_lang::parse_text_input(input_str).unwrap(),
         "markdown" => match mq_lang::parse_markdown_input(input_str) {
             Ok(v) => v,

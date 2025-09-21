@@ -386,7 +386,7 @@ impl App {
                     let md_nodes = markdown
                         .nodes
                         .into_iter()
-                        .map(mq_lang::Value::from)
+                        .map(mq_lang::RuntimeValue::from)
                         .collect::<Vec<_>>();
 
                     match engine.eval(&self.query, md_nodes.into_iter()) {
@@ -394,7 +394,7 @@ impl App {
                             self.results = results
                                 .into_iter()
                                 .map(|runtime_value| match runtime_value {
-                                    mq_lang::Value::Markdown(node) => node.clone(),
+                                    mq_lang::RuntimeValue::Markdown(node, _) => node.clone(),
                                     _ => runtime_value.to_string().into(),
                                 })
                                 .collect();

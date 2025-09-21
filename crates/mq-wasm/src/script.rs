@@ -202,7 +202,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
         .map(|result_values| {
             let values = if matches!(options.input_format, Some(InputFormat::Markdown)) && is_update
             {
-                let values: mq_lang::Values = input.into();
+                let values: mq_lang::RuntimeValues = input.into();
                 values.update_with(result_values)
             } else {
                 result_values
@@ -212,7 +212,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
                 values
                     .into_iter()
                     .map(|runtime_value| match runtime_value {
-                        mq_lang::Value::Markdown(node) => node.clone(),
+                        mq_lang::RuntimeValue::Markdown(node, _) => node.clone(),
                         _ => runtime_value.to_string().into(),
                     })
                     .collect(),

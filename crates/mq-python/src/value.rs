@@ -98,40 +98,40 @@ pub enum MarkdownType {
     Empty,
 }
 
-impl From<mq_lang::Value> for MQValue {
-    fn from(value: mq_lang::Value) -> Self {
+impl From<mq_lang::RuntimeValue> for MQValue {
+    fn from(value: mq_lang::RuntimeValue) -> Self {
         match value {
-            mq_lang::Value::Array(arr) => MQValue::Array {
+            mq_lang::RuntimeValue::Array(arr) => MQValue::Array {
                 value: arr.into_iter().map(|v| v.into()).collect(),
             },
-            mq_lang::Value::Dict(map) => MQValue::Dict {
+            mq_lang::RuntimeValue::Dict(map) => MQValue::Dict {
                 value: map.into_iter().map(|(k, v)| (k, v.into())).collect(),
             },
-            mq_lang::Value::Markdown(node) => MQValue::Markdown {
+            mq_lang::RuntimeValue::Markdown(node, _) => MQValue::Markdown {
                 value: node.to_string(),
                 markdown_type: node.into(),
             },
-            mq_lang::Value::String(s) => MQValue::Markdown {
+            mq_lang::RuntimeValue::String(s) => MQValue::Markdown {
                 value: s,
                 markdown_type: MarkdownType::Text,
             },
-            mq_lang::Value::Number(n) => MQValue::Markdown {
+            mq_lang::RuntimeValue::Number(n) => MQValue::Markdown {
                 value: n.to_string(),
                 markdown_type: MarkdownType::Text,
             },
-            mq_lang::Value::Bool(b) => MQValue::Markdown {
+            mq_lang::RuntimeValue::Bool(b) => MQValue::Markdown {
                 value: b.to_string(),
                 markdown_type: MarkdownType::Text,
             },
-            mq_lang::Value::Function(..) => MQValue::Markdown {
+            mq_lang::RuntimeValue::Function(..) => MQValue::Markdown {
                 value: "".to_string(),
                 markdown_type: MarkdownType::Empty,
             },
-            mq_lang::Value::NativeFunction(..) => MQValue::Markdown {
+            mq_lang::RuntimeValue::NativeFunction(..) => MQValue::Markdown {
                 value: "".to_string(),
                 markdown_type: MarkdownType::Empty,
             },
-            mq_lang::Value::None => MQValue::Markdown {
+            mq_lang::RuntimeValue::None => MQValue::Markdown {
                 value: "".to_string(),
                 markdown_type: MarkdownType::Empty,
             },

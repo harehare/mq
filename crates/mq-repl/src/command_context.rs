@@ -6,7 +6,7 @@ use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone)]
 pub enum CommandOutput {
-    Value(Vec<mq_lang::Value>),
+    Value(Vec<mq_lang::RuntimeValue>),
     String(Vec<String>),
     None,
 }
@@ -86,14 +86,14 @@ impl From<String> for Command {
 
 pub struct CommandContext {
     pub(crate) engine: mq_lang::Engine,
-    pub(crate) input: Vec<mq_lang::Value>,
+    pub(crate) input: Vec<mq_lang::RuntimeValue>,
     pub(crate) hir: mq_hir::Hir,
     pub(crate) source_id: mq_hir::SourceId,
     pub(crate) scope_id: mq_hir::ScopeId,
 }
 
 impl CommandContext {
-    pub fn new(engine: mq_lang::Engine, input: Vec<mq_lang::Value>) -> Self {
+    pub fn new(engine: mq_lang::Engine, input: Vec<mq_lang::RuntimeValue>) -> Self {
         let mut hir = mq_hir::Hir::new();
         let (source_id, scope_id) = hir.add_new_source(None);
 
@@ -177,7 +177,7 @@ impl CommandContext {
                     self.input = markdown
                         .nodes
                         .into_iter()
-                        .map(mq_lang::Value::from)
+                        .map(mq_lang::RuntimeValue::from)
                         .collect();
                     Ok(CommandOutput::None)
                 }),

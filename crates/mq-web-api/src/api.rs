@@ -76,7 +76,7 @@ pub fn diagnostics(request: ApiRequest) -> DiagnosticsApiResponse {
     }
 }
 
-fn execute_query(request: ApiRequest) -> miette::Result<mq_lang::Values> {
+fn execute_query(request: ApiRequest) -> miette::Result<mq_lang::RuntimeValues> {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
 

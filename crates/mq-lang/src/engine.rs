@@ -7,10 +7,10 @@ use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
-use crate::{MqResult, Shared, SharedCell, token_alloc};
+use crate::{MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
-    ModuleLoader, Token, Value,
+    ModuleLoader, Token,
     arena::Arena,
     error::{self},
     eval::Evaluator,
@@ -175,7 +175,7 @@ impl Engine {
     /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
     ///
-    pub fn eval<I: Iterator<Item = Value>>(&mut self, code: &str, input: I) -> MqResult {
+    pub fn eval<I: Iterator<Item = RuntimeValue>>(&mut self, code: &str, input: I) -> MqResult {
         let mut program = parse(code, Shared::clone(&self.token_arena))?;
         Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
 
@@ -185,14 +185,8 @@ impl Engine {
             .set_source_code(code.to_string());
 
         self.evaluator
-            .eval(&program, input.into_iter().map(|v| v.into()))
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(Into::into)
-                    .collect::<Vec<_>>()
-                    .into()
-            })
+            .eval(&program, input.into_iter())
+            .map(|values| values.into())
             .map_err(|e| {
                 Box::new(error::Error::from_error(
                     code,
@@ -211,7 +205,7 @@ impl Engine {
     ///
     /// ```rust
     /// #[cfg(feature = "ast-json")]
-    /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, Value, Shared};
+    /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, RuntimeValue, Shared};
     ///
     /// let mut engine = Engine::default();
     /// engine.load_builtin_module();
@@ -228,7 +222,7 @@ impl Engine {
     /// assert_eq!(result.unwrap(), vec!["hello".to_string().into()].into());
     /// ```
     #[cfg(feature = "ast-json")]
-    pub fn eval_ast<I: Iterator<Item = Value>>(
+    pub fn eval_ast<I: Iterator<Item = RuntimeValue>>(
         &mut self,
         mut program: crate::ast::Program,
         input: I,
@@ -236,14 +230,8 @@ impl Engine {
         Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
 
         self.evaluator
-            .eval(&program, input.into_iter().map(|v| v.into()))
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(Into::into)
-                    .collect::<Vec<_>>()
-                    .into()
-            })
+            .eval(&program, input.into_iter())
+            .map(|values| values.into())
             .map_err(|e| {
                 Box::new(error::Error::from_error(
                     "",

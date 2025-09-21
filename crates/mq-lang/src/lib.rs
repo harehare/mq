@@ -53,8 +53,6 @@ mod lexer;
 mod number;
 mod optimizer;
 mod range;
-mod value;
-mod value_macros;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
@@ -85,12 +83,12 @@ pub use eval::builtin::{
     INTERNAL_FUNCTION_DOC,
 };
 pub use eval::module::{Module, ModuleId, ModuleLoader};
+pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
-pub use value::{Value, Values};
 
 #[cfg(feature = "cst")]
 pub use cst::node::BinaryOp as CstBinaryOp;
@@ -114,7 +112,7 @@ pub use eval::debugger::{
 
 use crate::ast::TokenId;
 
-pub type MqResult = Result<Values, Box<Error>>;
+pub type MqResult = Result<RuntimeValues, Box<Error>>;
 
 /// Type alias for reference-counted pointer, switches between Shared and Arc depending on "sync" feature.
 #[cfg(not(feature = "sync"))]
@@ -189,42 +187,42 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
-pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<Value>> {
+pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     let mdx = mq_markdown::Markdown::from_mdx_str(input)?;
-    Ok(mdx.nodes.into_iter().map(Value::from).collect())
+    Ok(mdx.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
-pub fn parse_html_input(input: &str) -> miette::Result<Vec<Value>> {
+pub fn parse_html_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     let html = mq_markdown::Markdown::from_html_str(input)?;
-    Ok(html.nodes.into_iter().map(Value::from).collect())
+    Ok(html.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
 pub fn parse_html_input_with_options(
     input: &str,
     options: mq_markdown::ConversionOptions,
-) -> miette::Result<Vec<Value>> {
+) -> miette::Result<Vec<RuntimeValue>> {
     let html = mq_markdown::Markdown::from_html_str_with_options(input, options)?;
-    Ok(html.nodes.into_iter().map(Value::from).collect())
+    Ok(html.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
 /// Parses a Markdown string and returns an iterator over `Value` nodes.
-pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<Value>> {
+pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     let md = mq_markdown::Markdown::from_markdown_str(input)?;
-    Ok(md.nodes.into_iter().map(Value::from).collect())
+    Ok(md.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
 /// Parses a plain text string and returns an iterator over `Value` node.
-pub fn parse_text_input(input: &str) -> miette::Result<Vec<Value>> {
+pub fn parse_text_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     Ok(input.lines().map(|line| line.to_string().into()).collect())
 }
 
 /// Returns a vector containing a single `Value` representing an empty input.
-pub fn null_input() -> Vec<Value> {
+pub fn null_input() -> Vec<RuntimeValue> {
     vec!["".to_string().into()]
 }
 
 /// Parses a raw input string and returns a vector containing a single `Value` node.
-pub fn raw_input(input: &str) -> Vec<Value> {
+pub fn raw_input(input: &str) -> Vec<RuntimeValue> {
     vec![input.to_string().into()]
 }
 
@@ -271,17 +269,18 @@ mod tests {
                     input
                         .nodes
                         .into_iter()
-                        .map(Value::from)
+                        .map(RuntimeValue::from)
                         .collect::<Vec<_>>()
                         .into_iter()
                 )
                 .unwrap(),
-            vec![Value::Markdown(mq_markdown::Node::Text(
-                mq_markdown::Text {
+            vec![RuntimeValue::Markdown(
+                mq_markdown::Node::Text(mq_markdown::Text {
                     value: "Hello,world!".to_string(),
                     position: None
-                }
-            ))]
+                },),
+                None
+            )]
             .into()
         );
     }
@@ -339,7 +338,7 @@ mod tests {
         let input = "# Heading\n\nSome text.";
         let result = parse_markdown_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap();
+        let values: Vec<RuntimeValue> = result.unwrap();
         assert!(!values.is_empty());
     }
 
@@ -348,7 +347,7 @@ mod tests {
         let input = "# Heading\n\nSome text.";
         let result = parse_mdx_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap();
+        let values: Vec<RuntimeValue> = result.unwrap();
         assert!(!values.is_empty());
     }
 
@@ -357,7 +356,7 @@ mod tests {
         let input = "line1\nline2\nline3";
         let result = parse_text_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap();
+        let values: Vec<RuntimeValue> = result.unwrap();
         assert_eq!(values.len(), 3);
     }
 
@@ -366,7 +365,7 @@ mod tests {
         let input = "<h1>Heading</h1><p>Some text.</p>";
         let result = parse_html_input(input);
         assert!(result.is_ok());
-        let values: Vec<Value> = result.unwrap();
+        let values: Vec<RuntimeValue> = result.unwrap();
         assert!(!values.is_empty());
     }
 
@@ -397,7 +396,7 @@ mod tests {
                     .unwrap()
                     .iter()
                     .map(|value| match value {
-                        Value::Markdown(node) => node.clone(),
+                        RuntimeValue::Markdown(node, _) => node.clone(),
                         _ => value.to_string().into(),
                     })
                     .collect()

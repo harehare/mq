@@ -1,9 +1,11 @@
 use super::env::Env;
-use crate::{
-    AstParams, Ident, Program, Shared, SharedCell, Value, impl_value_formatting, number::Number,
-};
+use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
 use mq_markdown::Node;
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{
+    cmp::Ordering,
+    collections::BTreeMap,
+    ops::{Index, IndexMut},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Selector {
@@ -80,6 +82,12 @@ impl From<Number> for RuntimeValue {
     }
 }
 
+impl From<usize> for RuntimeValue {
+    fn from(n: usize) -> Self {
+        RuntimeValue::Number(Number::from(n))
+    }
+}
+
 impl From<Vec<RuntimeValue>> for RuntimeValue {
     fn from(arr: Vec<RuntimeValue>) -> Self {
         RuntimeValue::Array(arr)
@@ -89,31 +97,6 @@ impl From<Vec<RuntimeValue>> for RuntimeValue {
 impl From<BTreeMap<String, RuntimeValue>> for RuntimeValue {
     fn from(map: BTreeMap<String, RuntimeValue>) -> Self {
         RuntimeValue::Dict(map)
-    }
-}
-
-impl From<Value> for RuntimeValue {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::Number(n) => RuntimeValue::Number(n),
-            Value::Bool(b) => RuntimeValue::Bool(b),
-            Value::String(s) => RuntimeValue::String(s),
-            Value::Array(a) => RuntimeValue::Array(a.into_iter().map(Into::into).collect()),
-            Value::Markdown(m) => RuntimeValue::Markdown(m, None),
-            Value::Function(params, program) => RuntimeValue::Function(
-                params,
-                program,
-                Shared::new(SharedCell::new(Env::default())),
-            ),
-            Value::NativeFunction(ident) => RuntimeValue::NativeFunction(ident),
-            Value::Dict(value_map) => RuntimeValue::Dict(
-                value_map
-                    .into_iter()
-                    .map(|(k, v)| (k, RuntimeValue::from(v)))
-                    .collect(),
-            ),
-            Value::None => RuntimeValue::None,
-        }
     }
 }
 
@@ -144,8 +127,34 @@ impl PartialOrd for RuntimeValue {
     }
 }
 
-// Use macro to implement Display and Debug traits
-impl_value_formatting!(RuntimeValue);
+impl std::fmt::Display for RuntimeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let value = match self {
+            Self::Number(n) => n.to_string(),
+            Self::Bool(b) => b.to_string(),
+            Self::String(s) => s.to_string(),
+            Self::Array(_) => self.string(),
+            Self::Markdown(m, ..) => m.to_string(),
+            Self::None => "".to_string(),
+            Self::Function(params, ..) => {
+                format!("function/{}", params.len())
+            }
+            Self::NativeFunction(_) => "native_function".to_string(),
+            Self::Dict(_) => self.string(),
+        };
+        write!(f, "{}", value)
+    }
+}
+
+impl std::fmt::Debug for RuntimeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let v = match self {
+            Self::None => "None".to_string(),
+            a => a.string(),
+        };
+        write!(f, "{}", v)
+    }
+}
 
 impl RuntimeValue {
     pub const NONE: RuntimeValue = Self::None;
@@ -253,6 +262,181 @@ impl RuntimeValue {
             }
             _ => RuntimeValue::NONE,
         }
+    }
+
+    #[inline(always)]
+    pub fn position(&self) -> Option<mq_markdown::Position> {
+        match self {
+            RuntimeValue::Markdown(node, _) => node.position(),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
+        if let RuntimeValue::Markdown(node, _) = self {
+            node.set_position(position);
+        }
+    }
+
+    #[inline(always)]
+    fn string(&self) -> String {
+        match self {
+            Self::Number(n) => n.to_string(),
+            Self::Bool(b) => b.to_string(),
+            Self::String(s) => format!(r#""{}""#, s),
+            Self::Array(a) => format!(
+                "[{}]",
+                a.iter()
+                    .map(|v| format!("{:?}", v))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Markdown(m, ..) => m.to_string(),
+            Self::None => "".to_string(),
+            Self::Function(..) => "function".to_string(),
+            Self::NativeFunction(_) => "native_function".to_string(),
+            Self::Dict(map) => {
+                let items = map
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\": {}", k, v.string()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("{{{}}}", items)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeValues(Vec<RuntimeValue>);
+
+impl From<Vec<RuntimeValue>> for RuntimeValues {
+    fn from(values: Vec<RuntimeValue>) -> Self {
+        Self(values)
+    }
+}
+
+impl Index<usize> for RuntimeValues {
+    type Output = RuntimeValue;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for RuntimeValues {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
+impl IntoIterator for RuntimeValues {
+    type Item = RuntimeValue;
+    type IntoIter = std::vec::IntoIter<RuntimeValue>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl RuntimeValues {
+    pub fn compact(&self) -> Vec<RuntimeValue> {
+        self.0
+            .iter()
+            .filter(|v| !v.is_none() && !v.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    pub fn values(&self) -> &Vec<RuntimeValue> {
+        &self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
+    }
+
+    pub fn update_with(&self, other: Self) -> Self {
+        self.0
+            .clone()
+            .into_iter()
+            .zip(other)
+            .map(|(current_value, mut updated_value)| {
+                updated_value.set_position(current_value.position());
+
+                if let RuntimeValue::Markdown(node, _) = &current_value {
+                    match &updated_value {
+                        RuntimeValue::None
+                        | RuntimeValue::Function(_, _, _)
+                        | RuntimeValue::NativeFunction(_) => current_value.clone(),
+                        RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
+                        RuntimeValue::Markdown(node, _) => {
+                            if node.is_fragment() {
+                                if let RuntimeValue::Markdown(mut current_node, selector) =
+                                    current_value
+                                {
+                                    current_node.apply_fragment(node.clone());
+                                    RuntimeValue::Markdown(current_node, selector)
+                                } else {
+                                    updated_value
+                                }
+                            } else {
+                                updated_value
+                            }
+                        }
+                        RuntimeValue::String(s) => {
+                            RuntimeValue::Markdown(node.clone().with_value(s), None)
+                        }
+                        RuntimeValue::Bool(b) => RuntimeValue::Markdown(
+                            node.clone().with_value(b.to_string().as_str()),
+                            None,
+                        ),
+                        RuntimeValue::Number(n) => RuntimeValue::Markdown(
+                            node.clone().with_value(n.to_string().as_str()),
+                            None,
+                        ),
+                        RuntimeValue::Array(array) => RuntimeValue::Array(
+                            array
+                                .iter()
+                                .filter_map(|o| {
+                                    if !matches!(o, RuntimeValue::None) {
+                                        Some(RuntimeValue::Markdown(
+                                            node.clone().with_value(o.to_string().as_str()),
+                                            None,
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
+                        RuntimeValue::Dict(map) => {
+                            let mut new_dict = BTreeMap::new();
+                            for (k, v) in map {
+                                if !v.is_none() && !v.is_empty() {
+                                    new_dict.insert(
+                                        k.clone(),
+                                        RuntimeValue::Markdown(
+                                            node.clone().with_value(v.to_string().as_str()),
+                                            None,
+                                        ),
+                                    );
+                                }
+                            }
+                            RuntimeValue::Dict(new_dict)
+                        }
+                    }
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect::<Vec<_>>()
+            .into()
     }
 }
 
@@ -509,61 +693,6 @@ mod tests {
         map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
         let map_val = RuntimeValue::Dict(map);
         assert_eq!(format!("{:?}", map_val), r#"{"a": "alpha"}"#);
-    }
-
-    #[test]
-    fn test_runtime_value_from_value() {
-        let num_value = Value::Number(Number::from(42.0));
-        assert_eq!(
-            RuntimeValue::from(num_value),
-            RuntimeValue::Number(Number::from(42.0))
-        );
-
-        let bool_value = Value::Bool(true);
-        assert_eq!(RuntimeValue::from(bool_value), RuntimeValue::Bool(true));
-
-        let string_value = Value::String("test".to_string());
-        assert_eq!(
-            RuntimeValue::from(string_value),
-            RuntimeValue::String("test".to_string())
-        );
-
-        let array_value = Value::Array(vec![Value::Number(Number::from(1.0)), Value::Bool(false)]);
-        let expected_array = RuntimeValue::Array(vec![
-            RuntimeValue::Number(Number::from(1.0)),
-            RuntimeValue::Bool(false),
-        ]);
-        assert_eq!(RuntimeValue::from(array_value), expected_array);
-
-        let none_value = Value::None;
-        assert_eq!(RuntimeValue::from(none_value), RuntimeValue::None);
-
-        let fn_value = Value::Function(SmallVec::new(), Vec::new());
-        assert_eq!(
-            RuntimeValue::from(fn_value),
-            RuntimeValue::Function(
-                SmallVec::new(),
-                Vec::new(),
-                Shared::new(SharedCell::new(Env::default()))
-            )
-        );
-
-        let ident = Ident::new("test_fn");
-        let native_fn_value = Value::NativeFunction(ident);
-        assert_eq!(
-            RuntimeValue::from(native_fn_value),
-            RuntimeValue::NativeFunction(ident)
-        );
-
-        let mut value_map = BTreeMap::new();
-        value_map.insert("key".to_string(), Value::String("val".to_string()));
-        let map_value = Value::Dict(value_map);
-        let mut expected_rt_map = BTreeMap::default();
-        expected_rt_map.insert("key".to_string(), RuntimeValue::String("val".to_string()));
-        assert_eq!(
-            RuntimeValue::from(map_value),
-            RuntimeValue::Dict(expected_rt_map)
-        );
     }
 
     #[test]

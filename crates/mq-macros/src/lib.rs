@@ -68,7 +68,7 @@ pub fn mq_eval(input: TokenStream) -> TokenStream {
                     .unwrap()
                     .nodes
                     .into_iter()
-                    .map(mq_lang::Value::from)
+                    .map(mq_lang::RuntimeValue::from)
                     .collect::<Vec<_>>();
 
                 engine.eval(code, input.into_iter())
