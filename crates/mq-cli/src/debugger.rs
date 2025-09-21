@@ -257,7 +257,7 @@ impl DebuggerHandler {
                     println!("{}", context.env.read().unwrap());
                 }
                 Command::Eval(expr) => {
-                    let value: mq_lang::Value = context.current_value.clone().into();
+                    let value: mq_lang::RuntimeValue = context.current_value.clone();
                     let mut engine = self.engine.switch_env(Shared::clone(&context.env));
                     let values = match engine.eval(&expr, vec![value].into_iter()) {
                         Ok(v) => v,

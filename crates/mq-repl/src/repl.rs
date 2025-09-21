@@ -191,7 +191,7 @@ pub struct Repl {
 }
 
 impl Repl {
-    pub fn new(input: Vec<mq_lang::Value>) -> Self {
+    pub fn new(input: Vec<mq_lang::RuntimeValue>) -> Self {
         let mut engine = mq_lang::Engine::default();
 
         engine.set_optimization_level(mq_lang::OptimizationLevel::None);

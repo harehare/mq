@@ -228,10 +228,10 @@ impl Cli {
 
         match &self.commands {
             Some(Commands::Repl) => {
-                mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
+                mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
             }
             None if self.query.is_none() => {
-                mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]).run()
+                mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
             }
             Some(Commands::Tui { file_path }) => {
                 let mut app = {
@@ -297,7 +297,7 @@ impl Cli {
                             value: Some(value),
                             doc,
                             ..
-                        } if !symbol.is_internal_function() => Some(mq_lang::Value::String(
+                        } if !symbol.is_internal_function() => Some(mq_lang::RuntimeValue::String(
                             [
                                 format!("`{}`", value),
                                 doc.iter().map(|(_, d)| d.to_string()).join("\n"),
@@ -310,7 +310,7 @@ impl Cli {
                     })
                     .collect::<VecDeque<_>>();
 
-                doc_csv.push_front(mq_lang::Value::String(
+                doc_csv.push_front(mq_lang::RuntimeValue::String(
                     ["Function Name", "Description", "Parameters", "Example"]
                         .iter()
                         .join("\t"),
@@ -462,7 +462,7 @@ impl Cli {
             let results = engine
                 .eval(query, input.clone().into_iter())
                 .map_err(|e| *e)?;
-            let current_values: mq_lang::Values = input.clone().into();
+            let current_values: mq_lang::RuntimeValues = input.clone().into();
 
             if current_values.len() != results.len() {
                 return Err(miette!(
@@ -479,7 +479,7 @@ impl Cli {
             let separator = engine
                 .eval(
                     separator,
-                    vec![mq_lang::Value::String("".to_string())].into_iter(),
+                    vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
                 )
                 .map_err(|e| *e)?;
             self.print(separator)?;
@@ -571,7 +571,7 @@ impl Cli {
             })
     }
 
-    fn print(&self, runtime_values: mq_lang::Values) -> miette::Result<()> {
+    fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
             let file = fs::File::create(output_file).into_diagnostic()?;
@@ -586,7 +586,7 @@ impl Cli {
             runtime_values
                 .iter()
                 .map(|runtime_value| match runtime_value {
-                    mq_lang::Value::Markdown(node) => node.clone(),
+                    mq_lang::RuntimeValue::Markdown(node, _) => node.clone(),
                     _ => runtime_value.to_string().into(),
                 })
                 .collect(),
