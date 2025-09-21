@@ -6,16 +6,9 @@ use crate::adapter::MqAdapter;
 use crate::error::MqAdapterError;
 use crate::log::DebugConsoleWriter;
 
-mod adapter;
-mod error;
-mod executor;
-mod handler;
-mod log;
-mod protocol;
-
 type DynResult<T> = miette::Result<T, Box<dyn std::error::Error>>;
 
-fn main() -> DynResult<()> {
+pub fn start() -> DynResult<()> {
     let (debug_writer, log_rx) = DebugConsoleWriter::new();
 
     tracing_subscriber::fmt()
@@ -25,8 +18,7 @@ fn main() -> DynResult<()> {
 
     info!("Starting mq-dap debug adapter");
 
-    let mut adapter = MqAdapter::new();
-
+    let mut adapter = MqAdapter::default();
     let reader = BufReader::new(io::stdin());
     let writer = BufWriter::new(io::stdout());
     let mut server = Server::new(reader, writer);
@@ -96,4 +88,3 @@ fn main() -> DynResult<()> {
 
     Ok(())
 }
-

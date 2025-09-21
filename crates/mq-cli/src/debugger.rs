@@ -638,7 +638,10 @@ mod tests {
     #[test]
     fn test_get_source_code_with_context_basic() {
         let context = DebugContext {
-            source_code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
+            },
             token: Shared::new(mq_lang::Token {
                 range: mq_lang::Range {
                     start: mq_lang::Position { line: 4, column: 0 },
@@ -670,7 +673,10 @@ mod tests {
 
         // Empty source code
         let empty_context = DebugContext {
-            source_code: "".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "".to_string(),
+            },
             ..Default::default()
         };
         let (start, snippet) = handler.get_source_code_with_context(&empty_context, 0, 2);
@@ -679,7 +685,10 @@ mod tests {
 
         // Single line
         let single_line_context = DebugContext {
-            source_code: "single line".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "single line".to_string(),
+            },
             ..Default::default()
         };
         let (start, snippet) = handler.get_source_code_with_context(&single_line_context, 0, 2);
@@ -688,7 +697,10 @@ mod tests {
 
         // Line at beginning
         let context = DebugContext {
-            source_code: "a\nb\nc".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "a\nb\nc".to_string(),
+            },
             ..Default::default()
         };
         let (start, snippet) = handler.get_source_code_with_context(&context, 0, 1);

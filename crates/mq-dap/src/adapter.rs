@@ -12,7 +12,7 @@ use std::thread;
 use tracing::{debug, error};
 
 use crate::error::MqAdapterError;
-use crate::executor::QueryExecutor;
+use crate::executor;
 use crate::handler::{DapDebuggerHandler, DapHandlerWrapper};
 use crate::protocol::{DapCommand, DebuggerMessage, LaunchArgs};
 
@@ -28,8 +28,14 @@ pub struct MqAdapter {
     current_debug_context: Option<mq_lang::DebugContext>,
 }
 
+impl Default for MqAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MqAdapter {
-    pub fn new() -> Self {
+    fn new() -> Self {
         // Create channels for communication between DAP server and debugger handler
         let (message_tx, message_rx) = crossbeam_channel::unbounded::<DebuggerMessage>();
         let (command_tx, command_rx) = crossbeam_channel::unbounded::<DapCommand>();
@@ -252,7 +258,7 @@ impl MqAdapter {
         };
 
         engine
-            .eval(&code, mq_lang::null_input().into_iter())
+            .eval(code, mq_lang::null_input().into_iter())
             .map_err(|e| {
                 let error_msg = format!("Evaluation error: {}", e);
                 error!(error = %error_msg);
@@ -288,7 +294,7 @@ impl MqAdapter {
                     let message_tx_clone = message_tx.clone();
 
                     thread::spawn(move || {
-                        if let Err(e) = QueryExecutor::execute_query_in_thread(
+                        if let Err(e) = executor::execute_query(
                             engine_clone,
                             args.query_file,
                             args.input_file,

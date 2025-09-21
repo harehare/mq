@@ -69,8 +69,8 @@
         "title": "mq: New File"
       },
       {
-        "command": "mq.installLSPServer",
-        "title": "mq: Install LSP Server"
+        "command": "mq.installServers",
+        "title": "mq: Install LSP & DAP Servers"
       },
       {
         "command": "mq.startLSPServer",
@@ -124,11 +124,14 @@
     "debuggers": [
       {
         "type": "mq",
-        "label": "mq debug",
+        "label": "mq: Debug Adapter Protocol",
         "languages": [
           "mq"
         ],
-        "runtime": "/Users/harehare/git/mq/target/debug/mq-dap",
+        "runtime": "mq-dbg",
+        "args": [
+          "dap"
+        ],
         "configurationAttributes": {
           "launch": {
             "required": [

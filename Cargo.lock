@@ -2440,6 +2440,7 @@ dependencies = [
  "colored 3.0.0",
  "itertools 0.14.0",
  "miette",
+ "mq-dap",
  "mq-formatter",
  "mq-hir",
  "mq-lang",

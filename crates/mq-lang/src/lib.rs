@@ -107,7 +107,7 @@ pub use cst::parser::Parser as CstParser;
 
 #[cfg(feature = "debugger")]
 pub use eval::debugger::{
-    Breakpoint, DebugContext, Debugger, DebuggerAction, DebuggerCommand, DebuggerHandler,
+    Breakpoint, DebugContext, Debugger, DebuggerAction, DebuggerCommand, DebuggerHandler, Source,
 };
 
 use crate::ast::TokenId;

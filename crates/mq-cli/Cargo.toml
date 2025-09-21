@@ -23,7 +23,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.2.22"
 
 [features]
-debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite"]
+debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
 default = ["std"]
 std = []
 
@@ -32,6 +32,7 @@ clap.workspace = true
 colored.workspace = true
 itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
+mq-dap = {workspace = true, optional = true}
 mq-formatter.workspace = true
 mq-hir.workspace = true
 mq-lang = {workspace = true, features = ["file-io"]}

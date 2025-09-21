@@ -141,9 +141,9 @@ function registerNewCommand(context: vscode.ExtensionContext) {
 
 function registerLspCommands(context: vscode.ExtensionContext) {
   context.subscriptions.push(
-    vscode.commands.registerCommand("mq.installLSPServer", async () => {
+    vscode.commands.registerCommand("mq.installServers", async () => {
       await stopLspServer();
-      await installLspServer(context, true);
+      await installServers(context, true);
       await startLspServer();
     })
   );
@@ -359,7 +359,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
       );
 
       if (selected === "Yes") {
-        await installLspServer(context, false);
+        await installServers(context, false);
         await startLspServer();
       } else {
         vscode.window.showErrorMessage("mq not found in PATH");
@@ -376,7 +376,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
         );
 
         if (selected === "Yes") {
-          await installLspServer(context, false);
+          await installServers(context, false);
         } else {
           await context.globalState.update(MQ_VERSION_KEY, currentVersion);
         }
@@ -537,7 +537,7 @@ const stopLspServer = async () => {
   client = null;
 };
 
-const installLspServer = async (
+const installServers = async (
   context: vscode.ExtensionContext,
   force: boolean
 ) => {
@@ -549,12 +549,12 @@ const installLspServer = async (
   }
 
   const task = new vscode.Task(
-    { type: "cargo", task: "install-lsp" },
+    { type: "cargo", task: "install-servers" },
     vscode.TaskScope.Workspace,
-    "Install LSP Server",
+    "Install Servers",
     "mq-lsp",
     new vscode.ShellExecution(
-      `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq ${
+      `cargo install --git https://github.com/harehare/mq.git mq-cli ${
         force ? " --force" : ""
       }`
     )

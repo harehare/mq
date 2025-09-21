@@ -214,6 +214,9 @@ enum Commands {
         #[arg(short = 'M', long)]
         module_names: Option<Vec<String>>,
     },
+    /// Start a debug adapter for mq
+    #[cfg(feature = "debugger")]
+    Dap,
 }
 
 impl Cli {
@@ -327,6 +330,8 @@ impl Cli {
 
                 Ok(())
             }
+            #[cfg(feature = "debugger")]
+            Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             None => {
                 if self.input.stream {
                     self.process_streaming()
