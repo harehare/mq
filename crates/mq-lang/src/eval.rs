@@ -83,9 +83,7 @@ impl Default for Evaluator {
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
             #[cfg(feature = "debugger")]
-            debugger_handler: Shared::new(SharedCell::new(Box::new(
-                DefaultDebuggerHandler::default(),
-            ))),
+            debugger_handler: Shared::new(SharedCell::new(Box::new(DefaultDebuggerHandler))),
         }
     }
 }
@@ -505,7 +503,7 @@ impl Evaluator {
                 .debugger
                 .read()
                 .unwrap()
-                .get_hit_breakpoint(&debug_context, Shared::clone(&token));
+                .get_hit_breakpoint(&debug_context, Shared::clone(token));
 
             if let Some(breakpoint) = breakpoint {
                 let next_action = self

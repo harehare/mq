@@ -324,7 +324,7 @@ impl MqAdapter {
                     Vec::with_capacity(breakpoints_vec.len());
 
                 for breakpoint in &breakpoints_vec {
-                    let id = self.engine.debugger().write().unwrap().add_breakpoint(
+                    let id = self.engine.debugger().try_write().unwrap().add_breakpoint(
                         breakpoint.line as usize,
                         breakpoint.column.map(|bp| bp as usize),
                         if is_query_file {

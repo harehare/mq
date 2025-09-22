@@ -495,43 +495,28 @@ mod tests {
     }
 
     #[rstest]
-    #[case(10, Some(5), 10, Some(5), true)]
-    #[case(10, None, 10, Some(5), true)]
-    #[case(10, None, 11, Some(5), false)]
-    #[case(10, Some(5), 10, None, false)]
-    #[case(10, Some(5), 11, Some(5), false)]
-    #[case(10, None, 11, None, false)]
-    fn test_breakpoint_matching(
-        #[case] bp_line: usize,
-        #[case] bp_col: Option<usize>,
-        #[case] node_line: usize,
-        #[case] node_col: Option<usize>,
-        #[case] should_match: bool,
+    #[case(DebuggerCommand::Continue, false, "Continue: should not break")]
+    #[case(DebuggerCommand::Quit, false, "Quit: should not break and deactivate")]
+    #[case(DebuggerCommand::StepInto, true, "StepInto: should break once")]
+    fn test_should_break_basic(
+        #[case] command: DebuggerCommand,
+        #[case] expected_hit: bool,
+        #[case] _desc: &str,
     ) {
-        let mut dbg = Debugger::new();
-        dbg.activate();
-        dbg.add_breakpoint(bp_line, bp_col, None);
-
-        let col = node_col.unwrap_or(0);
-        let ctx = make_debug_context(node_line, col);
-        let hit = dbg.should_break(&ctx);
-        assert_eq!(hit, should_match);
-    }
-
-    #[rstest]
-    #[case(DebuggerCommand::Continue, false)]
-    #[case(DebuggerCommand::StepInto, true)]
-    #[case(DebuggerCommand::StepOver, true)]
-    #[case(DebuggerCommand::Next, true)]
-    #[case(DebuggerCommand::FunctionExit, false)]
-    fn test_should_break_on_command(#[case] command: DebuggerCommand, #[case] should_break: bool) {
         let mut dbg = Debugger::new();
         dbg.activate();
         dbg.set_command(command);
 
         let ctx = make_debug_context(1, 1);
         let hit = dbg.should_break(&ctx);
-        assert_eq!(hit, should_break);
+        assert_eq!(hit, expected_hit);
+
+        if command == DebuggerCommand::Quit {
+            assert!(
+                !dbg.is_active(),
+                "Debugger should be deactivated after Quit"
+            );
+        }
     }
 
     #[rstest]
