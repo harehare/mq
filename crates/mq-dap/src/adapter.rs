@@ -347,22 +347,7 @@ impl MqAdapter {
                     });
                 }
 
-                let breakpoints_response: Vec<Breakpoint> = breakpoints_vec
-                    .iter()
-                    .map(|bp| Breakpoint {
-                        verified: true,
-                        line: Some(bp.line),
-                        column: bp.column,
-                        end_line: None,
-                        end_column: None,
-                        source: Some(args.source.clone()),
-                        message: None,
-                        id: None,
-                        instruction_reference: None,
-                        offset: None,
-                    })
-                    .collect();
-
+                // Use the breakpoints_response vector with IDs for the response
                 let rsp = req.success(ResponseBody::SetBreakpoints(SetBreakpointsResponse {
                     breakpoints: breakpoints_response,
                 }));
