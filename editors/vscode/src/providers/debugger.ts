@@ -17,16 +17,14 @@ export class MqDebugConfigurationProvider
     _token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.DebugConfiguration> {
     // If launch.json is missing or empty
-    if (!config.type && !config.request && !config.name) {
-      const editor = vscode.window.activeTextEditor;
-      if (editor && editor.document.languageId === "mq") {
-        config.type = "mq";
-        config.name = "Debug Current File";
-        config.request = "launch";
-        config.queryFile = "${file}";
-        config.stopOnEntry = true;
-        config.args = ["dap"];
-      }
+    const editor = vscode.window.activeTextEditor;
+    if (editor && editor.document.languageId === "mq") {
+      config.type = "mq";
+      config.name = "Debug Current File";
+      config.request = "launch";
+      config.queryFile = config.query ?? "${file}";
+      config.stopOnEntry = true;
+      config.args = ["dap"];
     }
 
     if (!config.queryFile) {

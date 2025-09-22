@@ -70,7 +70,7 @@
       },
       {
         "command": "mq.installServers",
-        "title": "mq: Install LSP & DAP Servers"
+        "title": "mq: Install Servers"
       },
       {
         "command": "mq.startLSPServer",

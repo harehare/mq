@@ -548,35 +548,24 @@ const installServers = async (
     return false;
   }
 
-  const installLsptask = new vscode.Task(
+  const installLsp = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq ${
+    force ? " --force" : ""
+  }`;
+  const installDap = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger" ${
+    force ? " --force" : ""
+  }`;
+
+  const installTask = new vscode.Task(
     { type: "cargo", task: "install-lsp-server" },
     vscode.TaskScope.Workspace,
     "Install LSP Server",
     "mq-lsp",
-    new vscode.ShellExecution(
-      `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq ${
-        force ? " --force" : ""
-      }`
-    )
-  );
-  const installDaptask = new vscode.Task(
-    { type: "cargo", task: "install-dap-server" },
-    vscode.TaskScope.Workspace,
-    "Install DAP Server",
-    "mq-dap",
-    new vscode.ShellExecution(
-      `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger" ${
-        force ? " --force" : ""
-      }`
-    )
+    new vscode.ShellExecution(`${installLsp} && ${installDap}`)
   );
 
   try {
     // Start both tasks
-    await Promise.all([
-      vscode.tasks.executeTask(installLsptask),
-      vscode.tasks.executeTask(installDaptask),
-    ]);
+    const execution = await vscode.tasks.executeTask(installTask);
     await context.globalState.update(
       MQ_VERSION_KEY,
       context.extension.packageJSON.version
@@ -584,21 +573,10 @@ const installServers = async (
 
     // Track completion of both tasks
     return new Promise<boolean>((resolve) => {
-      let completed = 0;
-      let success = true;
       const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
-        if (
-          e.execution.task.name === "Install LSP Server" ||
-          e.execution.task.name === "Install DAP Server"
-        ) {
-          completed += 1;
-          if (e.exitCode !== 0) {
-            success = false;
-          }
-          if (completed === 2) {
-            disposable.dispose();
-            resolve(success);
-          }
+        if (e.execution === execution) {
+          disposable.dispose();
+          resolve(true);
         }
       });
     });

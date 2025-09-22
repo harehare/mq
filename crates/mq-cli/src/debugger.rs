@@ -365,7 +365,7 @@ impl DebuggerHandler {
 }
 
 /// Highlight mq syntax with keywords and commands
-fn highlight_syntax(line: &str) -> Cow<str> {
+fn highlight_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
     let commands_pattern =
