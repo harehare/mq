@@ -22,7 +22,7 @@ export class MqDebugConfigurationProvider
       config.type = "mq";
       config.name = "Debug Current File";
       config.request = "launch";
-      config.queryFile = config.query ?? "${file}";
+      config.queryFile = "${file}";
       config.stopOnEntry = true;
       config.args = ["dap"];
     }
