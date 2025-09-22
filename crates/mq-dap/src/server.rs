@@ -36,6 +36,8 @@ pub fn start() -> DynResult<()> {
     if let Command::Initialize(_) = &req.command {
         let capabilities = types::Capabilities {
             supports_set_variable: Some(true),
+            supports_set_expression: Some(true),
+            supports_evaluate_for_hovers: Some(true),
             supports_exception_options: Some(false),
             supports_exception_filter_options: Some(false),
             ..Default::default()
