@@ -6,7 +6,7 @@ use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
 use crate::{Ident, SharedCell, TokenArena, get_token};
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 #[cfg(not(feature = "sync"))]
 type Weak<T> = std::rc::Weak<T>;
@@ -44,20 +44,75 @@ impl PartialEq for Env {
     }
 }
 
-impl Display for Env {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let values = self
-            .context
-            .iter()
-            .map(|(ident, v)| match v {
-                RuntimeValue::Function(params, _, _) => format!("{ident}/{}", params.len()),
-                RuntimeValue::NativeFunction(_) => format!("{ident} (native function)"),
-                _ => format!("{ident} = {v}"),
-            })
-            .collect::<Vec<String>>()
-            .join("\n");
+#[cfg(feature = "debugger")]
+#[derive(Debug, Clone)]
+pub struct Variable {
+    pub name: String,
+    pub value: String,
+    pub type_field: String,
+}
 
-        write!(f, "{}", values)
+#[cfg(feature = "debugger")]
+impl Variable {
+    fn from(ident: Ident, value: &RuntimeValue) -> Self {
+        match value {
+            RuntimeValue::Array(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "array".to_string(),
+            },
+            RuntimeValue::Bool(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "bool".to_string(),
+            },
+            RuntimeValue::Dict(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "dict".to_string(),
+            },
+            RuntimeValue::String(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "string".to_string(),
+            },
+            RuntimeValue::Number(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "number".to_string(),
+            },
+            RuntimeValue::Markdown(_, _) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "markdown".to_string(),
+            },
+            RuntimeValue::Function(params, _, _) => Variable {
+                name: ident.to_string(),
+                value: format!("function/{}", params.len()),
+                type_field: "function".to_string(),
+            },
+            RuntimeValue::NativeFunction(_) => Variable {
+                name: ident.to_string(),
+                value: "native function".to_string(),
+                type_field: "native_function".to_string(),
+            },
+            RuntimeValue::None => Variable {
+                name: ident.to_string(),
+                value: "None".to_string(),
+                type_field: "none".to_string(),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "debugger")]
+impl std::fmt::Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} = {}, type: {}",
+            self.name, self.value, self.type_field
+        )
     }
 }
 
@@ -101,7 +156,61 @@ impl Env {
             },
         }
     }
+
+    #[cfg(feature = "debugger")]
+    /// Returns a vector of local variables in the current environment.
+    pub fn get_local_variables(&self) -> Vec<Variable> {
+        match self.parent {
+            None => vec![],
+            Some(_) => self
+                .context
+                .iter()
+                .map(|(ident, value)| Variable::from(*ident, value))
+                .collect(),
+        }
+    }
+
+    #[cfg(feature = "debugger")]
+    /// Returns a vector of global variables in the current environment.
+    pub fn get_global_variables(&self) -> Vec<Variable> {
+        match &self.parent {
+            None => self
+                .context
+                .iter()
+                .filter_map(|(ident, value)| {
+                    if value.is_function() || value.is_native_function() {
+                        None
+                    } else {
+                        Some(Variable::from(*ident, value))
+                    }
+                })
+                .collect(),
+            Some(parent_weak) => {
+                if let Some(parent_env) = parent_weak.upgrade() {
+                    #[cfg(not(feature = "sync"))]
+                    let parent_ref = parent_env.borrow();
+                    #[cfg(feature = "sync")]
+                    let parent_ref = parent_env.read().unwrap();
+
+                    parent_ref.get_global_variables()
+                } else {
+                    // If parent is dropped, treat as root
+                    self.context
+                        .iter()
+                        .filter_map(|(ident, value)| {
+                            if value.is_function() || value.is_native_function() {
+                                None
+                            } else {
+                                Some(Variable::from(*ident, value))
+                            }
+                        })
+                        .collect()
+                }
+            }
+        }
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::Shared;

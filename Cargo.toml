@@ -16,6 +16,7 @@ members = [
   "crates/mq-mcp",
   "crates/mq-python",
   "crates/mq-web-api",
+  "crates/mq-dap",
   "crates/mq-crawler",
 ]
 resolver = "3"
@@ -27,6 +28,7 @@ colored = "3.0.0"
 dirs = "6.0.0"
 itertools = "0.14.0"
 miette = {version = "7.6.0"}
+mq-dap = {path = "./crates/mq-dap"}
 mq-formatter = {path = "./crates/mq-formatter"}
 mq-hir = {path = "./crates/mq-hir"}
 mq-lang = {path = "./crates/mq-lang"}

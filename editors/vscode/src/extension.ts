@@ -1,6 +1,8 @@
 import * as lc from "vscode-languageclient/node";
 import * as vscode from "vscode";
 import which from "which";
+import { MqDebugConfigurationProvider } from "./providers/debugger";
+import { MqCodeLensProvider } from "./providers/codelens";
 
 const MQ_VERSION_KEY = "mq.version" as const;
 const COMMANDS = ["mq/run"] as const;
@@ -139,9 +141,9 @@ function registerNewCommand(context: vscode.ExtensionContext) {
 
 function registerLspCommands(context: vscode.ExtensionContext) {
   context.subscriptions.push(
-    vscode.commands.registerCommand("mq.installLSPServer", async () => {
+    vscode.commands.registerCommand("mq.installServers", async () => {
       await stopLspServer();
-      await installLspServer(context, true);
+      await installServers(context, true);
       await startLspServer();
     })
   );
@@ -154,6 +156,47 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       }
       await stopLspServer();
       await startLspServer();
+    })
+  );
+}
+
+function registerDebugCommands(context: vscode.ExtensionContext) {
+  const provider = new MqDebugConfigurationProvider(context);
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider("mq", provider)
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.debugCurrentFile", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage("No active editor");
+        return;
+      }
+
+      if (editor.document.languageId !== "mq") {
+        vscode.window.showErrorMessage("Active file is not a .mq file");
+        return;
+      }
+
+      if (editor.document.isDirty) {
+        await editor.document.save();
+      }
+
+      const selectedFile = await selectMarkdownFile();
+      if (!selectedFile) {
+        return;
+      }
+
+      const config: vscode.DebugConfiguration = {
+        type: "mq",
+        name: "Debug Current File",
+        request: "launch",
+        queryFile: editor.document.uri.fsPath,
+        inputFile: selectedFile.document.uri.fsPath,
+      };
+
+      await vscode.debug.startDebugging(undefined, config);
     })
   );
 }
@@ -316,7 +359,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
       );
 
       if (selected === "Yes") {
-        await installLspServer(context, false);
+        await installServers(context, false);
         await startLspServer();
       } else {
         vscode.window.showErrorMessage("mq not found in PATH");
@@ -333,7 +376,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
         );
 
         if (selected === "Yes") {
-          await installLspServer(context, false);
+          await installServers(context, false);
         } else {
           await context.globalState.update(MQ_VERSION_KEY, currentVersion);
         }
@@ -347,6 +390,7 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
 export async function activate(context: vscode.ExtensionContext) {
   registerNewCommand(context);
   registerLspCommands(context);
+  registerDebugCommands(context);
   registerMqExecutionCommands(context);
   await initializeLspServer(context);
 }
@@ -493,7 +537,7 @@ const stopLspServer = async () => {
   client = null;
 };
 
-const installLspServer = async (
+const installServers = async (
   context: vscode.ExtensionContext,
   force: boolean
 ) => {
@@ -504,30 +548,35 @@ const installLspServer = async (
     return false;
   }
 
-  const task = new vscode.Task(
-    { type: "cargo", task: "install-lsp" },
+  const installLsp = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq ${
+    force ? " --force" : ""
+  }`;
+  const installDap = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger" ${
+    force ? " --force" : ""
+  }`;
+
+  const installTask = new vscode.Task(
+    { type: "cargo", task: "install-lsp-server" },
     vscode.TaskScope.Workspace,
     "Install LSP Server",
     "mq-lsp",
-    new vscode.ShellExecution(
-      `cargo install --git https://github.com/harehare/mq.git mq-cli${
-        force ? " --force" : ""
-      }`
-    )
+    new vscode.ShellExecution(`${installLsp} && ${installDap}`)
   );
 
   try {
-    const execution = await vscode.tasks.executeTask(task);
+    // Start both tasks
+    const execution = await vscode.tasks.executeTask(installTask);
     await context.globalState.update(
       MQ_VERSION_KEY,
       context.extension.packageJSON.version
     );
 
+    // Track completion of both tasks
     return new Promise<boolean>((resolve) => {
       const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
         if (e.execution === execution) {
           disposable.dispose();
-          resolve(e.exitCode === 0);
+          resolve(true);
         }
       });
     });
@@ -540,103 +589,3 @@ const installLspServer = async (
     return false;
   }
 };
-
-class MqCodeLensProvider implements vscode.CodeLensProvider {
-  async provideCodeLenses(
-    document: vscode.TextDocument
-  ): Promise<vscode.CodeLens[]> {
-    const codeLenses: vscode.CodeLens[] = [];
-    const lines = document.getText().split("\n");
-    let i = 0;
-
-    while (i < lines.length) {
-      const line = lines[i].trim();
-
-      // Skip empty lines and comments
-      if (!line || line.startsWith("#")) {
-        i++;
-        continue;
-      }
-
-      // Handle queries starting with '.'
-      if (line.startsWith(".")) {
-        const { endLine, query } = this.collectQueryBlock(lines, i);
-        if (query) {
-          codeLenses.push(
-            new vscode.CodeLens(
-              new vscode.Range(
-                new vscode.Position(i, 0),
-                new vscode.Position(endLine, lines[endLine].length)
-              ),
-              {
-                title: "▶︎ Run Query",
-                command: "mq.runQueryAndShowInEditor",
-                arguments: [query],
-              }
-            )
-          );
-        }
-        i = endLine + 1;
-        continue;
-      }
-
-      // Handle 'def' function blocks or other queries
-      const matchInfo = this.matchQueryBlock(lines, i);
-      if (matchInfo) {
-        const { matchLines, query } = matchInfo;
-        codeLenses.push(
-          new vscode.CodeLens(
-            new vscode.Range(
-              new vscode.Position(i, 0),
-              new vscode.Position(
-                i + matchLines - 1,
-                lines[i + matchLines - 1].length
-              )
-            ),
-            {
-              title: "▶︎ Run Query",
-              command: "mq.runQueryAndShowInEditor",
-              arguments: [query],
-            }
-          )
-        );
-        i += matchLines;
-      } else {
-        i++;
-      }
-    }
-
-    return codeLenses;
-  }
-
-  private collectQueryBlock(
-    lines: string[],
-    startLine: number
-  ): { endLine: number; query: string } {
-    let endLine = startLine;
-    while (endLine + 1 < lines.length && lines[endLine + 1].trim() !== "") {
-      endLine++;
-    }
-    const query = lines
-      .slice(startLine, endLine + 1)
-      .join("\n")
-      .trim();
-    return { endLine, query };
-  }
-
-  private matchQueryBlock(
-    lines: string[],
-    startLine: number
-  ): { matchLines: number; query: string } | null {
-    const queryRegex = /(^def[\s\S]+?;\s*$)/gm;
-    const remainingText = lines.slice(startLine).join("\n");
-    const match = queryRegex.exec(remainingText);
-
-    if (match && match.index === 0) {
-      const matchLines = match[0].split("\n").length;
-      const query = match[0].trim();
-      return { matchLines, query };
-    }
-    return null;
-  }
-}

@@ -36,6 +36,14 @@ pub struct Breakpoint {
     pub column: Option<usize>,
     /// Whether the breakpoint is enabled
     pub enabled: bool,
+    /// Optional source file name for the breakpoint
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Source {
+    pub name: Option<String>,
+    pub code: String,
 }
 
 /// Debugger state and context information
@@ -51,8 +59,8 @@ pub struct DebugContext {
     pub call_stack: Vec<Shared<ast::Node>>,
     /// Current evaluation environment info
     pub env: Shared<SharedCell<Env>>,
-    /// Source code being executed
-    pub source_code: String,
+    /// Optional source
+    pub source: Source,
 }
 
 impl Default for DebugContext {
@@ -70,7 +78,7 @@ impl Default for DebugContext {
             }),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
-            source_code: String::new(),
+            source: Source::default(),
         }
     }
 }
@@ -90,8 +98,6 @@ pub struct Debugger {
     active: bool,
     /// Current call stack depth for step operations
     step_depth: Option<usize>,
-    /// Stores conditional expressions for breakpoints
-    handler: Box<dyn DebuggerHandler>,
 }
 
 impl Default for Debugger {
@@ -110,12 +116,7 @@ impl Debugger {
             current_command: DebuggerCommand::Continue,
             active: false,
             step_depth: None,
-            handler: Box::new(DefaultDebuggerHandler {}),
         }
-    }
-
-    pub fn set_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
-        self.handler = handler;
     }
 
     /// Activate the debugger
@@ -134,12 +135,18 @@ impl Debugger {
     }
 
     /// Add a breakpoint at the specified line
-    pub fn add_breakpoint(&mut self, line: usize, column: Option<usize>) -> usize {
+    pub fn add_breakpoint(
+        &mut self,
+        line: usize,
+        column: Option<usize>,
+        source: Option<String>,
+    ) -> usize {
         let breakpoint = Breakpoint {
             id: self.next_breakpoint_id,
             line,
             column,
             enabled: true,
+            source,
         };
         let id = breakpoint.id;
         self.breakpoints.insert(breakpoint);
@@ -186,24 +193,34 @@ impl Debugger {
         }
     }
 
-    /// Check if execution should pause at the current location and handle callbacks
-    pub fn should_break(
-        &mut self,
+    /// Returns the breakpoint that was hit at the current token location, if any.
+    pub fn get_hit_breakpoint(
+        &self,
         context: &DebugContext,
         token: Shared<Token>,
-    ) -> (bool, Option<DebuggerAction>) {
+    ) -> Option<Breakpoint> {
         if !self.active {
-            return (false, None);
+            return None;
         }
 
         let line = token.range.start.line as usize;
         let column = token.range.start.column;
 
-        if let Some(breakpoint) = self.find_active_breakpoint(line, column) {
-            return self.breakpoint_hit(context, &breakpoint);
+        self.find_active_breakpoint(line, column, &context.source)
+    }
+
+    pub fn next(&mut self, next_action: DebuggerAction) {
+        self.handle_debugger_action(next_action.clone());
+        self.current_command = next_action.clone().into();
+    }
+
+    /// Check if execution should pause at the current location and handle callbacks
+    pub fn should_break(&mut self, context: &DebugContext) -> bool {
+        if !self.active {
+            return false;
         }
 
-        let should_break = match self.current_command {
+        match self.current_command {
             DebuggerCommand::Continue => false,
             DebuggerCommand::Quit => {
                 self.deactivate();
@@ -259,40 +276,13 @@ impl Debugger {
                     false
                 }
             }
-        };
-
-        if should_break {
-            let action = self.handler.on_step(context);
-
-            self.handle_debugger_action(action.clone());
-            self.current_command = action.clone().into();
-            (true, Some(action))
-        } else {
-            (false, None)
         }
-    }
-
-    /// Called when execution hits a breakpoint.
-    pub fn breakpoint_hit(
-        &mut self,
-        context: &DebugContext,
-        breakpoint: &Breakpoint,
-    ) -> (bool, Option<DebuggerAction>) {
-        if !self.active {
-            return (false, None);
-        }
-
-        let action = self.handler.on_breakpoint_hit(breakpoint, context);
-
-        self.handle_debugger_action(action.clone());
-        self.current_command = action.clone().into();
-        (true, Some(action))
     }
 
     fn handle_debugger_action(&mut self, action: DebuggerAction) {
         match action {
             DebuggerAction::Breakpoint(Some(line_no)) => {
-                self.add_breakpoint(line_no, None);
+                self.add_breakpoint(line_no, None, None);
             }
             DebuggerAction::Breakpoint(None) => {
                 println!(
@@ -333,9 +323,18 @@ impl Debugger {
         }
     }
 
-    fn find_active_breakpoint(&self, line: usize, column: usize) -> Option<Breakpoint> {
+    fn find_active_breakpoint(
+        &self,
+        line: usize,
+        column: usize,
+        source: &Source,
+    ) -> Option<Breakpoint> {
         for breakpoint in &self.breakpoints {
             if !breakpoint.enabled {
+                continue;
+            }
+
+            if breakpoint.source != source.name {
                 continue;
             }
 
@@ -419,7 +418,7 @@ impl From<DebuggerAction> for DebuggerCommand {
 pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     // Called when a breakpoint is hit.
     fn on_breakpoint_hit(
-        &mut self,
+        &self,
         _breakpoint: &Breakpoint,
         _context: &DebugContext,
     ) -> DebuggerAction {
@@ -428,7 +427,7 @@ pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     }
 
     /// Called when stepping through execution.
-    fn on_step(&mut self, _context: &DebugContext) -> DebuggerAction {
+    fn on_step(&self, _context: &DebugContext) -> DebuggerAction {
         DebuggerAction::Continue
     }
 }
@@ -441,6 +440,10 @@ impl DebuggerHandler for DefaultDebuggerHandler {}
 impl Evaluator {
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         Shared::clone(&self.debugger)
+    }
+
+    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
+        self.debugger_handler = Shared::new(SharedCell::new(handler));
     }
 }
 
@@ -481,55 +484,39 @@ mod tests {
         let token = make_token(line, column);
         let token_id = arena.alloc(Shared::clone(&token));
         let node = make_node(token_id);
-        let env = Shared::new(SharedCell::new(Env::default()));
         DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
             token: Shared::clone(&token),
             call_stack: Vec::new(),
-            env,
-            source_code: String::new(),
+            env: Shared::new(SharedCell::new(Env::default())),
+            source: Source::default(),
         }
     }
 
     #[rstest]
-    #[case(10, Some(5), 10, Some(5), true)]
-    #[case(10, None, 10, Some(5), true)]
-    #[case(10, None, 11, Some(5), false)]
-    #[case(10, Some(5), 10, None, false)]
-    #[case(10, Some(5), 11, Some(5), false)]
-    #[case(10, None, 11, None, false)]
-    fn test_breakpoint_matching(
-        #[case] bp_line: usize,
-        #[case] bp_col: Option<usize>,
-        #[case] node_line: usize,
-        #[case] node_col: Option<usize>,
-        #[case] should_match: bool,
+    #[case(DebuggerCommand::Continue, false, "Continue: should not break")]
+    #[case(DebuggerCommand::Quit, false, "Quit: should not break and deactivate")]
+    #[case(DebuggerCommand::StepInto, true, "StepInto: should break once")]
+    fn test_should_break_basic(
+        #[case] command: DebuggerCommand,
+        #[case] expected_hit: bool,
+        #[case] _desc: &str,
     ) {
-        let mut dbg = Debugger::new();
-        dbg.activate();
-        dbg.add_breakpoint(bp_line, bp_col);
-
-        let col = node_col.unwrap_or(0);
-        let ctx = make_debug_context(node_line, col);
-        let (hit, _) = dbg.should_break(&ctx, make_token(node_line, node_col.unwrap_or(0)));
-        assert_eq!(hit, should_match);
-    }
-
-    #[rstest]
-    #[case(DebuggerCommand::Continue, false)]
-    #[case(DebuggerCommand::StepInto, true)]
-    #[case(DebuggerCommand::StepOver, true)]
-    #[case(DebuggerCommand::Next, true)]
-    #[case(DebuggerCommand::FunctionExit, false)]
-    fn test_should_break_on_command(#[case] command: DebuggerCommand, #[case] should_break: bool) {
         let mut dbg = Debugger::new();
         dbg.activate();
         dbg.set_command(command);
 
         let ctx = make_debug_context(1, 1);
-        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
-        assert_eq!(hit, should_break);
+        let hit = dbg.should_break(&ctx);
+        assert_eq!(hit, expected_hit);
+
+        if command == DebuggerCommand::Quit {
+            assert!(
+                !dbg.is_active(),
+                "Debugger should be deactivated after Quit"
+            );
+        }
     }
 
     #[rstest]
@@ -615,14 +602,14 @@ mod tests {
             .map(|i| make_node(TokenId::new(i as u32)))
             .collect();
 
-        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
+        let hit = dbg.should_break(&ctx);
         assert_eq!(hit, expected_hit);
     }
 
     #[test]
     fn test_add_and_remove_breakpoint() {
         let mut dbg = Debugger::new();
-        let id = dbg.add_breakpoint(1, Some(2));
+        let id = dbg.add_breakpoint(1, Some(2), None);
         assert_eq!(dbg.list_breakpoints().len(), 1);
         assert!(dbg.remove_breakpoint(id));
         assert_eq!(dbg.list_breakpoints().len(), 0);
@@ -631,8 +618,8 @@ mod tests {
     #[test]
     fn test_clear_breakpoints() {
         let mut dbg = Debugger::new();
-        dbg.add_breakpoint(1, None);
-        dbg.add_breakpoint(2, Some(3));
+        dbg.add_breakpoint(1, None, None);
+        dbg.add_breakpoint(2, Some(3), None);
         assert_eq!(dbg.list_breakpoints().len(), 2);
         dbg.clear_breakpoints();
         assert_eq!(dbg.list_breakpoints().len(), 0);

@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
-use crate::Debugger;
-#[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
+#[cfg(feature = "debugger")]
+use crate::{Debugger, DebuggerHandler};
 use crate::{MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
@@ -26,20 +26,19 @@ pub struct Options {
     pub optimization_level: OptimizationLevel,
 }
 
-#[cfg(not(feature = "debugger"))]
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            optimization_level: OptimizationLevel::Full,
+        #[cfg(not(feature = "debugger"))]
+        {
+            Self {
+                optimization_level: OptimizationLevel::Full,
+            }
         }
-    }
-}
-
-#[cfg(feature = "debugger")]
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            optimization_level: OptimizationLevel::None,
+        #[cfg(feature = "debugger")]
+        {
+            Self {
+                optimization_level: OptimizationLevel::None,
+            }
         }
     }
 }
@@ -252,6 +251,11 @@ impl Engine {
     }
 
     #[cfg(feature = "debugger")]
+    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
+        self.evaluator.set_debugger_handler(handler);
+    }
+
+    #[cfg(feature = "debugger")]
     pub fn token_arena(&self) -> Shared<SharedCell<Arena<Shared<Token>>>> {
         Shared::clone(&self.token_arena)
     }
@@ -272,6 +276,11 @@ impl Engine {
             options: self.options.clone(),
             token_arena: Shared::clone(&token_arena),
         }
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn get_module_name(&self, module_id: ModuleId) -> String {
+        self.evaluator.module_loader.module_name(module_id)
     }
 
     #[cfg(feature = "debugger")]

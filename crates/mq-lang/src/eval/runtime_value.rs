@@ -193,6 +193,11 @@ impl RuntimeValue {
     }
 
     #[inline(always)]
+    pub fn is_native_function(&self) -> bool {
+        matches!(self, RuntimeValue::NativeFunction(_))
+    }
+
+    #[inline(always)]
     pub fn is_array(&self) -> bool {
         matches!(self, RuntimeValue::Array(_))
     }

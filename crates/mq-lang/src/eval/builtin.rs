@@ -2735,7 +2735,7 @@ pub struct BuiltinFunctionDoc {
 
 pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>> = LazyLock::new(
     || {
-        let mut map = FxHashMap::with_capacity_and_hasher(100, FxBuildHasher);
+        let mut map = FxHashMap::with_capacity_and_hasher(110, FxBuildHasher);
 
         map.insert(
             SmolStr::new("halt"),

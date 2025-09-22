@@ -252,6 +252,26 @@ pub enum Expr {
     Break,
     Continue,
 }
+
+#[cfg(feature = "debugger")]
+impl Display for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Call(ident, args) => {
+                write!(f, "{}(", ident)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg.expr)?;
+                }
+                write!(f, ")")
+            }
+            _ => write!(f, ""),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -149,7 +149,7 @@ pub struct DebuggerHandler {
 impl mq_lang::DebuggerHandler for DebuggerHandler {
     // Called when a breakpoint is hit.
     fn on_breakpoint_hit(
-        &mut self,
+        &self,
         _breakpoint: &mq_lang::Breakpoint,
         context: &mq_lang::DebugContext,
     ) -> mq_lang::DebuggerAction {
@@ -158,7 +158,7 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
     }
 
     /// Called when stepping through execution.
-    fn on_step(&mut self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
+    fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         self.run_debug(context)
             .unwrap_or(mq_lang::DebuggerAction::Continue)
     }
@@ -170,7 +170,7 @@ impl DebuggerHandler {
     }
 
     pub fn run_debug(
-        &mut self,
+        &self,
         context: &mq_lang::DebugContext,
     ) -> miette::Result<mq_lang::DebuggerAction> {
         let config = Config::builder()
@@ -250,11 +250,22 @@ impl DebuggerHandler {
                 }
                 Command::LongList => {
                     let lines: Vec<String> =
-                        context.source_code.lines().map(|s| s.to_string()).collect();
+                        context.source.code.lines().map(|s| s.to_string()).collect();
                     Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
                 }
                 Command::Info => {
-                    println!("{}", context.env.read().unwrap());
+                    println!(
+                        "{}",
+                        context
+                            .env
+                            .read()
+                            .unwrap()
+                            .get_local_variables()
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
                 }
                 Command::Eval(expr) => {
                     let value: mq_lang::RuntimeValue = context.current_value.clone();
@@ -341,7 +352,7 @@ impl DebuggerHandler {
         line: usize,
         context_lines: usize,
     ) -> (usize, Vec<String>) {
-        let lines: Vec<&str> = context.source_code.lines().collect();
+        let lines: Vec<&str> = context.source.code.lines().collect();
         if lines.is_empty() {
             return (0, vec![]);
         }
@@ -354,7 +365,7 @@ impl DebuggerHandler {
 }
 
 /// Highlight mq syntax with keywords and commands
-fn highlight_syntax(line: &str) -> Cow<str> {
+fn highlight_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
     let commands_pattern =
@@ -627,7 +638,10 @@ mod tests {
     #[test]
     fn test_get_source_code_with_context_basic() {
         let context = DebugContext {
-            source_code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
+            },
             token: Shared::new(mq_lang::Token {
                 range: mq_lang::Range {
                     start: mq_lang::Position { line: 4, column: 0 },
@@ -659,7 +673,10 @@ mod tests {
 
         // Empty source code
         let empty_context = DebugContext {
-            source_code: "".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "".to_string(),
+            },
             ..Default::default()
         };
         let (start, snippet) = handler.get_source_code_with_context(&empty_context, 0, 2);
@@ -668,7 +685,10 @@ mod tests {
 
         // Single line
         let single_line_context = DebugContext {
-            source_code: "single line".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "single line".to_string(),
+            },
             ..Default::default()
         };
         let (start, snippet) = handler.get_source_code_with_context(&single_line_context, 0, 2);
@@ -677,7 +697,10 @@ mod tests {
 
         // Line at beginning
         let context = DebugContext {
-            source_code: "a\nb\nc".to_string(),
+            source: mq_lang::Source {
+                name: None,
+                code: "a\nb\nc".to_string(),
+            },
             ..Default::default()
         };
         let (start, snippet) = handler.get_source_code_with_context(&context, 0, 1);

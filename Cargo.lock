@@ -907,6 +907,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dap"
+version = "0.4.1-alpha1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35c7fc89d334ab745ba679f94c7314c9b17ecdcd923c111df6206e9fd7729fa9"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2429,6 +2440,7 @@ dependencies = [
  "colored 3.0.0",
  "itertools 0.14.0",
  "miette",
+ "mq-dap",
  "mq-formatter",
  "mq-hir",
  "mq-lang",
@@ -2470,6 +2482,22 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "mq-dap"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "dap",
+ "miette",
+ "mq-lang",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
