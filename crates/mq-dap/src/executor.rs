@@ -64,7 +64,7 @@ pub fn execute_query(
 }
 
 /// Parse input data based on file extension
-fn parse_input_data(file_path: &str, input: &str) -> DynResult<Vec<mq_lang::Value>> {
+fn parse_input_data(file_path: &str, input: &str) -> DynResult<Vec<mq_lang::RuntimeValue>> {
     match PathBuf::from(file_path)
         .extension()
         .unwrap_or_default()

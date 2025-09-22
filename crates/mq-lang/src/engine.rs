@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
-use crate::Debugger;
-#[cfg(feature = "debugger")]
 use crate::eval::env::Env;
 #[cfg(feature = "debugger")]
 use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
+#[cfg(feature = "debugger")]
+use crate::{Debugger, DebuggerHandler};
 use crate::{MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
@@ -248,6 +248,11 @@ impl Engine {
     #[cfg(feature = "debugger")]
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         self.evaluator.debugger()
+    }
+
+    #[cfg(feature = "debugger")]
+    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
+        self.evaluator.set_debugger_handler(handler);
     }
 
     #[cfg(feature = "debugger")]

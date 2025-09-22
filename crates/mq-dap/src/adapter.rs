@@ -41,16 +41,12 @@ impl MqAdapter {
         let (command_tx, command_rx) = crossbeam_channel::unbounded::<DapCommand>();
 
         let dap_handler = DapDebuggerHandler::new(message_tx.clone());
-        let engine = mq_lang::Engine::default();
+        let mut engine = mq_lang::Engine::default();
 
         // Set up the debugger handler
         {
             let handler_boxed = Box::new(DapHandlerWrapper::new(dap_handler, command_rx));
-            engine
-                .debugger()
-                .write()
-                .unwrap()
-                .set_handler(handler_boxed);
+            engine.set_debugger_handler(handler_boxed);
         }
 
         Self {
@@ -248,7 +244,7 @@ impl MqAdapter {
     }
 
     /// Evaluate code in the current debug context
-    fn eval(&self, code: &str) -> DynResult<mq_lang::Values> {
+    fn eval(&self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
         let mut engine = if let Some(ref context) = self.current_debug_context {
             mq_lang::Engine::default().switch_env(Shared::clone(&context.env))
         } else {
@@ -328,7 +324,7 @@ impl MqAdapter {
                     Vec::with_capacity(breakpoints_vec.len());
 
                 for breakpoint in &breakpoints_vec {
-                    let id = self.engine.debugger().try_write().unwrap().add_breakpoint(
+                    let id = self.engine.debugger().write().unwrap().add_breakpoint(
                         breakpoint.line as usize,
                         breakpoint.column.map(|bp| bp as usize),
                         if is_query_file {

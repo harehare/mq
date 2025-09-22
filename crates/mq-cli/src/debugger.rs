@@ -149,7 +149,7 @@ pub struct DebuggerHandler {
 impl mq_lang::DebuggerHandler for DebuggerHandler {
     // Called when a breakpoint is hit.
     fn on_breakpoint_hit(
-        &mut self,
+        &self,
         _breakpoint: &mq_lang::Breakpoint,
         context: &mq_lang::DebugContext,
     ) -> mq_lang::DebuggerAction {
@@ -158,7 +158,7 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
     }
 
     /// Called when stepping through execution.
-    fn on_step(&mut self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
+    fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         self.run_debug(context)
             .unwrap_or(mq_lang::DebuggerAction::Continue)
     }
@@ -170,7 +170,7 @@ impl DebuggerHandler {
     }
 
     pub fn run_debug(
-        &mut self,
+        &self,
         context: &mq_lang::DebugContext,
     ) -> miette::Result<mq_lang::DebuggerAction> {
         let config = Config::builder()

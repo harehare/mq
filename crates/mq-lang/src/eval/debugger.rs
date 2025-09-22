@@ -98,8 +98,6 @@ pub struct Debugger {
     active: bool,
     /// Current call stack depth for step operations
     step_depth: Option<usize>,
-    /// Stores conditional expressions for breakpoints
-    handler: Box<dyn DebuggerHandler>,
 }
 
 impl Default for Debugger {
@@ -118,12 +116,7 @@ impl Debugger {
             current_command: DebuggerCommand::Continue,
             active: false,
             step_depth: None,
-            handler: Box::new(DefaultDebuggerHandler {}),
         }
-    }
-
-    pub fn set_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
-        self.handler = handler;
     }
 
     /// Activate the debugger
@@ -200,24 +193,34 @@ impl Debugger {
         }
     }
 
-    /// Check if execution should pause at the current location and handle callbacks
-    pub fn should_break(
-        &mut self,
+    /// Returns the breakpoint that was hit at the current token location, if any.
+    pub fn get_hit_breakpoint(
+        &self,
         context: &DebugContext,
         token: Shared<Token>,
-    ) -> (bool, Option<DebuggerAction>) {
+    ) -> Option<Breakpoint> {
         if !self.active {
-            return (false, None);
+            return None;
         }
 
         let line = token.range.start.line as usize;
         let column = token.range.start.column;
 
-        if let Some(breakpoint) = self.find_active_breakpoint(line, column, &context.source) {
-            return self.breakpoint_hit(context, &breakpoint);
+        self.find_active_breakpoint(line, column, &context.source)
+    }
+
+    pub fn next(&mut self, next_action: DebuggerAction) {
+        self.handle_debugger_action(next_action.clone());
+        self.current_command = next_action.clone().into();
+    }
+
+    /// Check if execution should pause at the current location and handle callbacks
+    pub fn should_break(&mut self, context: &DebugContext) -> bool {
+        if !self.active {
+            return false;
         }
 
-        let should_break = match self.current_command {
+        match self.current_command {
             DebuggerCommand::Continue => false,
             DebuggerCommand::Quit => {
                 self.deactivate();
@@ -273,34 +276,7 @@ impl Debugger {
                     false
                 }
             }
-        };
-
-        if should_break {
-            let action = self.handler.on_step(context);
-
-            self.handle_debugger_action(action.clone());
-            self.current_command = action.clone().into();
-            (true, Some(action))
-        } else {
-            (false, None)
         }
-    }
-
-    /// Called when execution hits a breakpoint.
-    pub fn breakpoint_hit(
-        &mut self,
-        context: &DebugContext,
-        breakpoint: &Breakpoint,
-    ) -> (bool, Option<DebuggerAction>) {
-        if !self.active {
-            return (false, None);
-        }
-
-        let action = self.handler.on_breakpoint_hit(breakpoint, context);
-
-        self.handle_debugger_action(action.clone());
-        self.current_command = action.clone().into();
-        (true, Some(action))
     }
 
     fn handle_debugger_action(&mut self, action: DebuggerAction) {
@@ -442,7 +418,7 @@ impl From<DebuggerAction> for DebuggerCommand {
 pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     // Called when a breakpoint is hit.
     fn on_breakpoint_hit(
-        &mut self,
+        &self,
         _breakpoint: &Breakpoint,
         _context: &DebugContext,
     ) -> DebuggerAction {
@@ -451,7 +427,7 @@ pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     }
 
     /// Called when stepping through execution.
-    fn on_step(&mut self, _context: &DebugContext) -> DebuggerAction {
+    fn on_step(&self, _context: &DebugContext) -> DebuggerAction {
         DebuggerAction::Continue
     }
 }
@@ -464,6 +440,10 @@ impl DebuggerHandler for DefaultDebuggerHandler {}
 impl Evaluator {
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         Shared::clone(&self.debugger)
+    }
+
+    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
+        self.debugger_handler = Shared::new(SharedCell::new(handler));
     }
 }
 
@@ -534,7 +514,7 @@ mod tests {
 
         let col = node_col.unwrap_or(0);
         let ctx = make_debug_context(node_line, col);
-        let (hit, _) = dbg.should_break(&ctx, make_token(node_line, node_col.unwrap_or(0)));
+        let hit = dbg.should_break(&ctx);
         assert_eq!(hit, should_match);
     }
 
@@ -550,7 +530,7 @@ mod tests {
         dbg.set_command(command);
 
         let ctx = make_debug_context(1, 1);
-        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
+        let hit = dbg.should_break(&ctx);
         assert_eq!(hit, should_break);
     }
 
@@ -637,7 +617,7 @@ mod tests {
             .map(|i| make_node(TokenId::new(i as u32)))
             .collect();
 
-        let (hit, _) = dbg.should_break(&ctx, make_token(1, 1));
+        let hit = dbg.should_break(&ctx);
         assert_eq!(hit, expected_hit);
     }
 

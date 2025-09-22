@@ -5,7 +5,6 @@ use crate::protocol::{DapCommand, DebuggerMessage};
 
 /// DAP debugger handler that communicates with the DAP server
 pub struct DapDebuggerHandler {
-    current_context: Option<mq_lang::DebugContext>,
     message_tx: Sender<DebuggerMessage>,
     thread_id: i64,
 }
@@ -13,7 +12,6 @@ pub struct DapDebuggerHandler {
 impl std::fmt::Debug for DapDebuggerHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DapDebuggerHandler")
-            .field("current_context", &self.current_context)
             .field("thread_id", &self.thread_id)
             .finish()
     }
@@ -22,14 +20,9 @@ impl std::fmt::Debug for DapDebuggerHandler {
 impl DapDebuggerHandler {
     pub fn new(message_tx: Sender<DebuggerMessage>) -> Self {
         Self {
-            current_context: None,
             message_tx,
             thread_id: 1, // Main thread ID
         }
-    }
-
-    pub fn set_context(&mut self, context: mq_lang::DebugContext) {
-        self.current_context = Some(context);
     }
 }
 
@@ -53,11 +46,10 @@ impl DapHandlerWrapper {
 
 impl mq_lang::DebuggerHandler for DapHandlerWrapper {
     fn on_breakpoint_hit(
-        &mut self,
+        &self,
         breakpoint: &mq_lang::Breakpoint,
         context: &mq_lang::DebugContext,
     ) -> mq_lang::DebuggerAction {
-        self.handler.set_context(context.clone());
         debug!(line = breakpoint.line, "Breakpoint hit");
 
         // Send breakpoint hit message to DAP server
@@ -87,8 +79,7 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
         }
     }
 
-    fn on_step(&mut self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
-        self.handler.set_context(context.clone());
+    fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         debug!(line = context.token.range.start.line + 1, "Step event");
 
         // Send step completed message to DAP server

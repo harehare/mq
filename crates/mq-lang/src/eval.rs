@@ -1,5 +1,9 @@
 #[cfg(feature = "debugger")]
+use crate::DebuggerHandler;
+#[cfg(feature = "debugger")]
 use crate::ast::constants;
+#[cfg(feature = "debugger")]
+use crate::eval::debugger::DefaultDebuggerHandler;
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
 
@@ -63,6 +67,8 @@ pub struct Evaluator {
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
+    #[cfg(feature = "debugger")]
+    pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
 
 impl Default for Evaluator {
@@ -76,6 +82,10 @@ impl Default for Evaluator {
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
+            #[cfg(feature = "debugger")]
+            debugger_handler: Shared::new(SharedCell::new(Box::new(
+                DefaultDebuggerHandler::default(),
+            ))),
         }
     }
 }
@@ -90,6 +100,8 @@ impl Clone for Evaluator {
             module_loader: self.module_loader.clone(),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
+            #[cfg(feature = "debugger")]
+            debugger_handler: Shared::clone(&self.debugger_handler),
         }
     }
 }
@@ -329,33 +341,39 @@ impl Evaluator {
     ) {
         let current_call_stack = self.debugger.read().unwrap().current_call_stack();
         let token = get_token(Shared::clone(&self.token_arena), node.token_id);
-        self.debugger.write().unwrap().breakpoint_hit(
-            &DebugContext {
-                current_value: runtime_value.clone(),
-                current_node: Shared::clone(&node),
-                token: Shared::clone(&token),
-                call_stack: current_call_stack,
-                env: Shared::clone(&env),
-                source: Source {
-                    name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
-                        None
-                    } else {
-                        Some(self.module_loader.module_name(token.module_id).to_string())
-                    },
-                    code: self
-                        .module_loader
-                        .get_source_code_for_debug(token.module_id)
-                        .unwrap_or_default(),
+
+        let debug_context = DebugContext {
+            current_value: runtime_value.clone(),
+            current_node: Shared::clone(&node),
+            token: Shared::clone(&token),
+            call_stack: current_call_stack,
+            env: Shared::clone(&env),
+            source: Source {
+                name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
+                    None
+                } else {
+                    Some(self.module_loader.module_name(token.module_id).to_string())
                 },
+                code: self
+                    .module_loader
+                    .get_source_code_for_debug(token.module_id)
+                    .unwrap_or_default(),
             },
-            &Breakpoint {
-                id: 0,
-                line: token.range.start.line as usize,
-                column: Some(token.range.start.column),
-                enabled: true,
-                source: None,
-            },
-        );
+        };
+        let breakpoint = Breakpoint {
+            id: 0,
+            line: token.range.start.line as usize,
+            column: Some(token.range.start.column),
+            enabled: true,
+            source: None,
+        };
+
+        let next_action = self
+            .debugger_handler
+            .read()
+            .unwrap()
+            .on_breakpoint_hit(&breakpoint, &debug_context);
+        self.debugger.write().unwrap().next(next_action);
     }
 
     #[inline(always)]
@@ -483,10 +501,27 @@ impl Evaluator {
                 },
             };
 
-            let _ = self.debugger.write().unwrap().should_break(
-                &debug_context,
-                get_token(Shared::clone(&self.token_arena), node.token_id),
-            );
+            let breakpoint = self
+                .debugger
+                .read()
+                .unwrap()
+                .get_hit_breakpoint(&debug_context, Shared::clone(&token));
+
+            if let Some(breakpoint) = breakpoint {
+                let next_action = self
+                    .debugger_handler
+                    .read()
+                    .unwrap()
+                    .on_breakpoint_hit(&breakpoint, &debug_context);
+                self.debugger.write().unwrap().next(next_action);
+            } else if self.debugger.write().unwrap().should_break(&debug_context) {
+                let next_action = self
+                    .debugger_handler
+                    .read()
+                    .unwrap()
+                    .on_step(&debug_context);
+                self.debugger.write().unwrap().next(next_action);
+            }
         }
 
         match &*node.expr {
