@@ -16,7 +16,9 @@ let mut engine = mq_lang::Engine::default();
 assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
 
 // Parse code into AST nodes
-use mq_lang::{tokenize, LexerOptions, AstParser, Arena, Shared, SharedCell};
+use mq_lang::{tokenize, LexerOptions, AstParser, Arena};
+use std::rc::Shared;
+use std::cell::SharedCell;
 
 let code = "1 + 2";
 let token_arena = Shared::new(SharedCell::new(Arena::new()));

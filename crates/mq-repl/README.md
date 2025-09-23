@@ -12,6 +12,6 @@ The REPL supports:
 ```rust
 use mq_repl::Repl;
 
-let repl = mq_repl::Repl::new(vec![mq_lang::Value::String("".to_string())]);
+let repl = mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]);
 repl.run().unwrap();
 ```

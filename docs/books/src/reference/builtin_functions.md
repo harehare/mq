@@ -96,6 +96,7 @@
 | `mod` | Calculates the remainder of the division of the first value by the second value. | `value1`, `value2` | mod(value1, value2) |
 | `mul` | Multiplies two values. | `value1`, `value2` | mul(value1, value2) |
 | `ne` | Checks if two values are not equal. | `value1`, `value2` | ne(value1, value2) |
+| `negate` | Returns the negation of the given number. | `number` | negate(number) |
 | `not` | Performs a logical NOT operation on a boolean value. | `value` | not(value) |
 | `now` | Returns the current timestamp. |  | now() |
 | `numbers` |  Returns number if input is number, None otherwise | `n` | numbers(n) |
