@@ -1,6 +1,5 @@
 # mq Development Guide
 
-
 ## Project Overview
 
 `mq` is a jq-like command-line tool for Markdown processing. Written in Rust, it allows you to easily slice, filter, map, and transform Markdown files.
@@ -23,6 +22,7 @@ The mq project follows this main directory structure:
   - `mq-c-api` - C API for integrating mq functionality into C applications
   - `mq-cli` - Implementation of the mq command-line interface
   - `mq-crawler` - Tool for crawling directories and collecting Markdown files for batch processing
+  - `mq-dap` - Debug Adapter Protocol implementation
   - `mq-formatter` - Code formatter
   - `mq-hir` - High-level Internal Representation (HIR)
   - `mq-lang` - Implementation of the mq
@@ -45,6 +45,7 @@ The mq project follows this main directory structure:
 - `/packages` - Contains various packages for different functionalities
   - `mq-web` - npm package for using mq in web applications and JavaScript environments
   - `playground` - A playground for developing and testing for mq
+  - `tools` - Additional development tools and utilities
 
 ## Pull Request Review Criteria
 
