@@ -4621,6 +4621,109 @@ mod tests {
                 name: "negate".to_string(),
                 args: vec!["test".to_string().into()]
             })))]
+    #[case::and_true_last_value(
+                vec![RuntimeValue::Bool(true)],
+                vec![
+                    ast_call("and", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("last".to_string())])
+            )]
+    #[case::and_false_first_value(
+                vec![RuntimeValue::Bool(false)],
+                vec![
+                    ast_call("and", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("should_not_evaluate".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Bool(false)])
+            )]
+    #[case::and_mixed_values(
+                vec![RuntimeValue::Bool(true)],
+                vec![
+                    ast_call("and", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(42.into()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Number(42.into())])
+            )]
+    #[case::and_multiple_true(
+                vec![RuntimeValue::Bool(true)],
+                vec![
+                    ast_call("and", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("final".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("final".to_string())])
+            )]
+    #[case::and_first_false(
+                vec![RuntimeValue::Bool(false)],
+                vec![
+                    ast_call("and", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("should_not_evaluate".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Bool(false)])
+            )]
+    #[case::or_true_first_value(
+                vec![RuntimeValue::Bool(true)],
+                vec![
+                    ast_call("or", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("should_not_evaluate".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Bool(true)])
+            )]
+    #[case::or_false_last_value(
+                vec![RuntimeValue::Bool(false)],
+                vec![
+                    ast_call("or", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::String("last".to_string())])
+            )]
+    #[case::or_multiple_false_then_true(
+                vec![RuntimeValue::Bool(false)],
+                vec![
+                    ast_call("or", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(123.into()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Number(123.into())])
+            )]
+    #[case::or_all_false(
+                vec![RuntimeValue::Bool(false)],
+                vec![
+                    ast_call("or", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Bool(false)])
+            )]
+    #[case::or_first_true(
+                vec![RuntimeValue::Bool(true)],
+                vec![
+                    ast_call("or", smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(999.into()))),
+                    ])
+                ],
+                Ok(vec![RuntimeValue::Bool(true)])
+            )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

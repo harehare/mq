@@ -1384,15 +1384,27 @@ define_builtin!(
     }
 );
 
-define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args| Ok(args
-    .iter()
-    .all(|arg| arg.is_truthy())
-    .into()));
+define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args| {
+    let mut last_truthy = None;
+    for arg in args {
+        if !arg.is_truthy() {
+            return Ok(RuntimeValue::Bool(false));
+        }
+        let mut arg = arg;
+        last_truthy = Some(std::mem::take(&mut arg));
+    }
+    Ok(last_truthy.unwrap_or(RuntimeValue::Bool(true)))
+});
 
-define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| Ok(args
-    .iter()
-    .any(|arg| arg.is_truthy())
-    .into()));
+define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| {
+    for arg in args {
+        let mut arg = arg;
+        if arg.is_truthy() {
+            return Ok(std::mem::take(&mut arg));
+        }
+    }
+    Ok(RuntimeValue::Bool(false))
+});
 
 define_builtin!(
     NOT,
