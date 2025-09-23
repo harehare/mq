@@ -133,6 +133,10 @@ struct InputArgs {
     #[arg(long = "csv", default_value_t = false)]
     include_csv: bool,
 
+    /// Include the built-in Fuzzy module
+    #[arg(long = "fuzzy", default_value_t = false)]
+    include_fuzzy: bool,
+
     /// Include the built-in YAML module
     #[arg(long = "yaml", default_value_t = false)]
     include_yaml: bool,
@@ -398,6 +402,7 @@ impl Cli {
 
         let includes = [
             ("csv", self.input.include_csv),
+            ("fuzzy", self.input.include_fuzzy),
             ("json", self.input.include_json),
             ("toml", self.input.include_toml),
             ("yaml", self.input.include_yaml),

@@ -154,7 +154,7 @@ def jaro_winkler(s1, s2):
 end
 
 # Performs fuzzy matching on an array of strings using Jaro-Winkler distance.
-def fuzzy_match(query, candidates):
+def fuzzy_match(candidates, query):
   let candidates = if (is_array(candidates)):
     candidates
   else:
@@ -164,7 +164,7 @@ def fuzzy_match(query, candidates):
 end
 
 # Performs fuzzy matching using Levenshtein distance.
-def fuzzy_match_levenshtein(query, candidates):
+def fuzzy_match_levenshtein(candidates, query):
   let candidates = if (is_array(candidates)):
     candidates
   else:
@@ -174,20 +174,20 @@ def fuzzy_match_levenshtein(query, candidates):
 end
 
 # Performs fuzzy matching using Jaro distance.
-def fuzzy_match_jaro(query, candidates):
+def fuzzy_match_jaro(candidates, query):
   _fuzzy_match_with_algorithm(query, candidates, jaro)
   | sort_by(fn(item): 1 - item["score"];)
 end
 
 # Filters candidates by minimum fuzzy match score using Jaro-Winkler.
-def fuzzy_filter(query, candidates, threshold):
-  let matches = fuzzy_match(query, candidates)
+def fuzzy_filter(candidates, query, threshold):
+  let matches = fuzzy_match(candidates, query)
   | filter(matches, fn(match): match["score"] >= threshold;)
 end
 
 # Finds the best fuzzy match from candidates.
-def fuzzy_best_match(query, candidates):
-  let matches = fuzzy_match(query, candidates)
+def fuzzy_best_match(candidates, query):
+  let matches = fuzzy_match(candidates, query)
   | if (is_empty(matches)):
       None
     else:
