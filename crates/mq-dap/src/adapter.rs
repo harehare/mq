@@ -1021,12 +1021,12 @@ mod tests {
             },
         ];
 
+        #[allow(deprecated)]
         let req = Request {
             seq: 1,
             command: Command::SetBreakpoints(dap::requests::SetBreakpointsArguments {
                 source,
                 breakpoints: Some(breakpoints),
-                #[allow(deprecated)]
                 lines: None,
                 source_modified: None,
             }),
