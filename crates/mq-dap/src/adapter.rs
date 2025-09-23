@@ -1026,6 +1026,7 @@ mod tests {
             command: Command::SetBreakpoints(dap::requests::SetBreakpointsArguments {
                 source,
                 breakpoints: Some(breakpoints),
+                #[allow(deprecated)]
                 lines: None,
                 source_modified: None,
             }),

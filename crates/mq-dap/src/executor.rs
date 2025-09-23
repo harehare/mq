@@ -110,7 +110,6 @@ mod tests {
         let input = r#"{"key": "value"}"#;
         let result = parse_input_data("test.json", input).unwrap();
         assert!(!result.is_empty(), "Should parse JSON input as raw");
-        assert!(!result.is_empty());
     }
 
     #[test]
