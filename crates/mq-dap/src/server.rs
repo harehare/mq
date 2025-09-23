@@ -11,8 +11,13 @@ type DynResult<T> = miette::Result<T, Box<dyn std::error::Error>>;
 pub fn start() -> DynResult<()> {
     let (debug_writer, log_rx) = DebugConsoleWriter::new();
 
+    #[cfg(debug_assertions)]
+    let log_level = tracing::Level::DEBUG;
+    #[cfg(not(debug_assertions))]
+    let log_level = tracing::Level::INFO;
+
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(log_level)
         .with_writer(debug_writer)
         .init();
 
