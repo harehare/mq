@@ -26,7 +26,7 @@ pub enum DebuggerCommand {
 }
 
 /// Represents a breakpoint in the debugger.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Breakpoint {
     /// Unique identifier for the breakpoint
     pub id: usize,

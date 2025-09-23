@@ -91,3 +91,28 @@ pub fn start() -> DynResult<()> {
 
     Ok(())
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_server_start_initialize_success() {
+        // Prepare a fake initialize request from the client
+        let initialize_request = b"Content-Length: 80\r\n\r\n{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\",\"arguments\":{\"adapterID\":\"mq\"}}";
+        let input = Cursor::new(initialize_request);
+        let output = Cursor::new(Vec::new());
+
+        let reader = BufReader::new(input);
+        let writer = BufWriter::new(output);
+        let mut server = Server::new(reader, writer);
+
+        // Simulate receiving the initialize request
+        let req = server.poll_request().unwrap().unwrap();
+        assert!(matches!(req.command, Command::Initialize(_)));
+
+        let rsp = req.success(ResponseBody::Initialize(Default::default()));
+        assert!(server.respond(rsp).is_ok());
+        assert!(server.send_event(Event::Initialized).is_ok());
+    }
+}

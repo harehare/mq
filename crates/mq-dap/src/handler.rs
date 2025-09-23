@@ -1,4 +1,7 @@
+use std::fmt::Debug;
+
 use crossbeam_channel::{Receiver, Sender};
+use mq_lang::DebuggerAction;
 use tracing::{debug, error};
 
 use crate::protocol::{DapCommand, DebuggerMessage};
@@ -42,6 +45,16 @@ impl DapHandlerWrapper {
             command_rx,
         }
     }
+
+    fn next_action(&self, command: DapCommand) -> DebuggerAction {
+        match command {
+            DapCommand::Continue => mq_lang::DebuggerAction::Continue,
+            DapCommand::Next => mq_lang::DebuggerAction::Next,
+            DapCommand::StepIn => mq_lang::DebuggerAction::StepInto,
+            DapCommand::StepOut => mq_lang::DebuggerAction::FunctionExit,
+            DapCommand::Terminate => mq_lang::DebuggerAction::Quit,
+        }
+    }
 }
 
 impl mq_lang::DebuggerHandler for DapHandlerWrapper {
@@ -67,11 +80,7 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
 
         // Wait for command from DAP server
         match self.command_rx.recv() {
-            Ok(DapCommand::Continue) => mq_lang::DebuggerAction::Continue,
-            Ok(DapCommand::Next) => mq_lang::DebuggerAction::Next,
-            Ok(DapCommand::StepIn) => mq_lang::DebuggerAction::StepInto,
-            Ok(DapCommand::StepOut) => mq_lang::DebuggerAction::FunctionExit,
-            Ok(DapCommand::Terminate) => mq_lang::DebuggerAction::Quit,
+            Ok(command) => self.next_action(command),
             Err(e) => {
                 error!(error = %e, "Failed to receive command from DAP server");
                 mq_lang::DebuggerAction::Continue
@@ -96,11 +105,7 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
 
         // Wait for command from DAP server
         match self.command_rx.recv() {
-            Ok(DapCommand::Continue) => mq_lang::DebuggerAction::Continue,
-            Ok(DapCommand::Next) => mq_lang::DebuggerAction::Next,
-            Ok(DapCommand::StepIn) => mq_lang::DebuggerAction::StepInto,
-            Ok(DapCommand::StepOut) => mq_lang::DebuggerAction::FunctionExit,
-            Ok(DapCommand::Terminate) => mq_lang::DebuggerAction::Quit,
+            Ok(command) => self.next_action(command),
             Err(e) => {
                 error!(error = %e, "Failed to receive command from DAP server");
                 mq_lang::DebuggerAction::Continue
