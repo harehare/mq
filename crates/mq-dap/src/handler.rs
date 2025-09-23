@@ -113,3 +113,267 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossbeam_channel::unbounded;
+    use mq_lang::DebuggerHandler;
+
+    #[test]
+    fn test_dap_debugger_handler_new() {
+        let (tx, _rx) = unbounded::<DebuggerMessage>();
+        let handler = DapDebuggerHandler::new(tx);
+
+        assert_eq!(handler.thread_id, 1);
+    }
+
+    #[test]
+    fn test_dap_debugger_handler_debug_format() {
+        let (tx, _rx) = unbounded::<DebuggerMessage>();
+        let handler = DapDebuggerHandler::new(tx);
+
+        let debug_str = format!("{:?}", handler);
+        assert!(debug_str.contains("DapDebuggerHandler"));
+        assert!(debug_str.contains("thread_id"));
+    }
+
+    #[test]
+    fn test_dap_handler_wrapper_new() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (_command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let debug_str = format!("{:?}", wrapper);
+        assert!(debug_str.contains("DapHandlerWrapper"));
+    }
+
+    #[test]
+    fn test_on_breakpoint_hit_continue() {
+        let (message_tx, message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+        };
+        let context = mq_lang::DebugContext::default();
+
+        // Send continue command before calling on_breakpoint_hit
+        command_tx.send(DapCommand::Continue).unwrap();
+
+        let action = wrapper.on_breakpoint_hit(&breakpoint, &context);
+
+        // Verify the correct action is returned
+        assert!(matches!(action, mq_lang::DebuggerAction::Continue));
+
+        // Verify message was sent
+        let received_message = message_rx.try_recv().unwrap();
+        match received_message {
+            DebuggerMessage::BreakpointHit {
+                thread_id, line, ..
+            } => {
+                assert_eq!(thread_id, 1);
+                assert_eq!(line, 10);
+            }
+            _ => panic!("Expected BreakpointHit message"),
+        }
+    }
+
+    #[test]
+    fn test_on_breakpoint_hit_next() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+        };
+        let context = mq_lang::DebugContext::default();
+
+        command_tx.send(DapCommand::Next).unwrap();
+
+        let action = wrapper.on_breakpoint_hit(&breakpoint, &context);
+        assert!(matches!(action, mq_lang::DebuggerAction::Next));
+    }
+
+    #[test]
+    fn test_on_breakpoint_hit_step_in() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+        };
+        let context = mq_lang::DebugContext::default();
+
+        command_tx.send(DapCommand::StepIn).unwrap();
+
+        let action = wrapper.on_breakpoint_hit(&breakpoint, &context);
+        assert!(matches!(action, mq_lang::DebuggerAction::StepInto));
+    }
+
+    #[test]
+    fn test_on_breakpoint_hit_step_out() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+        };
+        let context = mq_lang::DebugContext::default();
+
+        command_tx.send(DapCommand::StepOut).unwrap();
+
+        let action = wrapper.on_breakpoint_hit(&breakpoint, &context);
+        assert!(matches!(action, mq_lang::DebuggerAction::FunctionExit));
+    }
+
+    #[test]
+    fn test_on_breakpoint_hit_terminate() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+        };
+        let context = mq_lang::DebugContext::default();
+
+        command_tx.send(DapCommand::Terminate).unwrap();
+
+        let action = wrapper.on_breakpoint_hit(&breakpoint, &context);
+        assert!(matches!(action, mq_lang::DebuggerAction::Quit));
+    }
+
+    #[test]
+    fn test_on_breakpoint_hit_recv_error() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (_command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 10,
+            column: Some(5),
+            enabled: true,
+            source: None,
+        };
+        let context = mq_lang::DebugContext::default();
+
+        // Don't send any command, so recv will fail when command_tx is dropped
+        drop(_command_tx);
+
+        let action = wrapper.on_breakpoint_hit(&breakpoint, &context);
+        assert!(matches!(action, mq_lang::DebuggerAction::Continue));
+    }
+
+    #[test]
+    fn test_on_step_continue() {
+        let (message_tx, message_rx) = unbounded::<DebuggerMessage>();
+        let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let context = mq_lang::DebugContext::default();
+
+        command_tx.send(DapCommand::Continue).unwrap();
+
+        let action = wrapper.on_step(&context);
+        assert!(matches!(action, mq_lang::DebuggerAction::Continue));
+
+        // Verify message was sent
+        let received_message = message_rx.try_recv().unwrap();
+        match received_message {
+            DebuggerMessage::StepCompleted {
+                thread_id, line, ..
+            } => {
+                assert_eq!(thread_id, 1);
+                assert_eq!(line, 2); // context.token.range.start.line is 1, so +1 = 2
+            }
+            _ => panic!("Expected StepCompleted message"),
+        }
+    }
+
+    #[test]
+    fn test_on_step_all_commands() {
+        let commands_and_actions = vec![
+            (DapCommand::Continue, mq_lang::DebuggerAction::Continue),
+            (DapCommand::Next, mq_lang::DebuggerAction::Next),
+            (DapCommand::StepIn, mq_lang::DebuggerAction::StepInto),
+            (DapCommand::StepOut, mq_lang::DebuggerAction::FunctionExit),
+            (DapCommand::Terminate, mq_lang::DebuggerAction::Quit),
+        ];
+
+        for (command, expected_action) in commands_and_actions {
+            let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+            let (command_tx, command_rx) = unbounded::<DapCommand>();
+
+            let handler = DapDebuggerHandler::new(message_tx);
+            let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+            let context = mq_lang::DebugContext::default();
+
+            command_tx.send(command).unwrap();
+
+            let action = wrapper.on_step(&context);
+
+            // Compare debug strings since DebuggerAction doesn't implement PartialEq
+            assert_eq!(format!("{:?}", action), format!("{:?}", expected_action));
+        }
+    }
+
+    #[test]
+    fn test_on_step_recv_error() {
+        let (message_tx, _message_rx) = unbounded::<DebuggerMessage>();
+        let (_command_tx, command_rx) = unbounded::<DapCommand>();
+
+        let handler = DapDebuggerHandler::new(message_tx);
+        let wrapper = DapHandlerWrapper::new(handler, command_rx);
+
+        let context = mq_lang::DebugContext::default();
+
+        // Don't send any command, so recv will fail when command_tx is dropped
+        drop(_command_tx);
+
+        let action = wrapper.on_step(&context);
+        assert!(matches!(action, mq_lang::DebuggerAction::Continue));
+    }
+}
