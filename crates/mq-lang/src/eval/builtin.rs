@@ -1398,8 +1398,8 @@ define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args| {
 
 define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| {
     for arg in args {
-        let mut arg = arg;
         if arg.is_truthy() {
+            let mut arg = arg;
             return Ok(std::mem::take(&mut arg));
         }
     }
@@ -3568,18 +3568,18 @@ pub fn eval_builtin(
 
 pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool {
     match selector {
-        ast::Selector::Code(lang) if node.is_code(lang.clone()) => true,
-        ast::Selector::InlineCode if node.is_inline_code() => true,
-        ast::Selector::InlineMath if node.is_inline_math() => true,
-        ast::Selector::Strong if node.is_strong() => true,
-        ast::Selector::Emphasis if node.is_emphasis() => true,
-        ast::Selector::Delete if node.is_delete() => true,
-        ast::Selector::Link if node.is_link() => true,
-        ast::Selector::LinkRef if node.is_link_ref() => true,
-        ast::Selector::Image if node.is_image() => true,
-        ast::Selector::Heading(depth) if node.is_heading(*depth) => true,
-        ast::Selector::HorizontalRule if node.is_horizontal_rule() => true,
-        ast::Selector::Blockquote if node.is_blockquote() => true,
+        ast::Selector::Code(lang) => node.is_code(lang.clone()),
+        ast::Selector::InlineCode => node.is_inline_code(),
+        ast::Selector::InlineMath => node.is_inline_math(),
+        ast::Selector::Strong => node.is_strong(),
+        ast::Selector::Emphasis => node.is_emphasis(),
+        ast::Selector::Delete => node.is_delete(),
+        ast::Selector::Link => node.is_link(),
+        ast::Selector::LinkRef => node.is_link_ref(),
+        ast::Selector::Image => node.is_image(),
+        ast::Selector::Heading(depth) => node.is_heading(*depth),
+        ast::Selector::HorizontalRule => node.is_horizontal_rule(),
+        ast::Selector::Blockquote => node.is_blockquote(),
         ast::Selector::Table(row, column) => match (row, column, node.clone()) {
             (
                 Some(row1),
@@ -3607,9 +3607,9 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool
             (None, None, mq_markdown::Node::TableCell(_)) => true,
             _ => false,
         },
-        ast::Selector::Html if node.is_html() => true,
-        ast::Selector::Footnote if node.is_footnote() => true,
-        ast::Selector::MdxJsxFlowElement if node.is_mdx_jsx_flow_element() => true,
+        ast::Selector::Html => node.is_html(),
+        ast::Selector::Footnote => node.is_footnote(),
+        ast::Selector::MdxJsxFlowElement => node.is_mdx_jsx_flow_element(),
         ast::Selector::List(index, checked) => match (index, node.clone()) {
             (
                 Some(index),
@@ -3622,19 +3622,18 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool
             (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
             _ => false,
         },
-        ast::Selector::MdxJsEsm if node.is_msx_js_esm() => true,
-        ast::Selector::Text if node.is_text() => true,
-        ast::Selector::Toml if node.is_toml() => true,
-        ast::Selector::Yaml if node.is_yaml() => true,
-        ast::Selector::Break if node.is_break() => true,
-        ast::Selector::MdxTextExpression if node.is_mdx_text_expression() => true,
-        ast::Selector::FootnoteRef if node.is_footnote_ref() => true,
-        ast::Selector::ImageRef if node.is_image_ref() => true,
-        ast::Selector::MdxJsxTextElement if node.is_mdx_jsx_text_element() => true,
-        ast::Selector::Math if node.is_math() => true,
-        ast::Selector::MdxFlowExpression if node.is_mdx_flow_expression() => true,
-        ast::Selector::Definition if node.is_definition() => true,
-        _ => false,
+        ast::Selector::MdxJsEsm => node.is_msx_js_esm(),
+        ast::Selector::Text => node.is_text(),
+        ast::Selector::Toml => node.is_toml(),
+        ast::Selector::Yaml => node.is_yaml(),
+        ast::Selector::Break => node.is_break(),
+        ast::Selector::MdxTextExpression => node.is_mdx_text_expression(),
+        ast::Selector::FootnoteRef => node.is_footnote_ref(),
+        ast::Selector::ImageRef => node.is_image_ref(),
+        ast::Selector::MdxJsxTextElement => node.is_mdx_jsx_text_element(),
+        ast::Selector::Math => node.is_math(),
+        ast::Selector::MdxFlowExpression => node.is_mdx_flow_expression(),
+        ast::Selector::Definition => node.is_definition(),
     }
 }
 
