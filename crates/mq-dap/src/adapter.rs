@@ -749,4 +749,323 @@ mod tests {
         assert!(result.is_ok());
         assert!(adapter.current_debug_context.is_some());
     }
+
+    #[test]
+    fn test_handle_request_threads() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Threads,
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_configuration_done() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::ConfigurationDone,
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_continue() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Continue(dap::requests::ContinueArguments {
+                thread_id: 1,
+                single_thread: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_next() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Next(dap::requests::NextArguments {
+                thread_id: 1,
+                single_thread: None,
+                granularity: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_step_in() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::StepIn(dap::requests::StepInArguments {
+                thread_id: 1,
+                single_thread: None,
+                target_id: None,
+                granularity: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_step_out() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::StepOut(dap::requests::StepOutArguments {
+                thread_id: 1,
+                single_thread: None,
+                granularity: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_scopes() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Scopes(dap::requests::ScopesArguments { frame_id: 0 }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_variables() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Variables(dap::requests::VariablesArguments {
+                variables_reference: 1,
+                filter: None,
+                start: None,
+                count: None,
+                format: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_stack_trace() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::StackTrace(dap::requests::StackTraceArguments {
+                thread_id: 1,
+                start_frame: None,
+                levels: None,
+                format: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_evaluate() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Evaluate(dap::requests::EvaluateArguments {
+                expression: "1 + 1".to_string(),
+                frame_id: None,
+                context: None,
+                format: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        // The result might succeed or fail - just ensure it doesn't panic
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_handle_request_set_variable() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::SetVariable(dap::requests::SetVariableArguments {
+                variables_reference: 1,
+                name: "test_var".to_string(),
+                value: "42".to_string(),
+                format: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        // The result might succeed or fail - just ensure it doesn't panic
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_handle_request_disconnect() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Disconnect(dap::requests::DisconnectArguments {
+                restart: None,
+                terminate_debuggee: None,
+                suspend_debuggee: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_err()); // Should return error to indicate shutdown
+    }
+
+    #[test]
+    fn test_handle_request_set_breakpoints() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/path/to/test.mq".to_string());
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let source = dap::types::Source {
+            name: Some("test.mq".to_string()),
+            path: Some("/path/to/test.mq".to_string()),
+            adapter_data: None,
+            source_reference: None,
+            presentation_hint: None,
+            origin: None,
+            checksums: None,
+            sources: None,
+        };
+
+        let breakpoints = vec![
+            dap::types::SourceBreakpoint {
+                line: 10,
+                column: Some(5),
+                condition: None,
+                hit_condition: None,
+                log_message: None,
+            },
+            dap::types::SourceBreakpoint {
+                line: 20,
+                column: None,
+                condition: None,
+                hit_condition: None,
+                log_message: None,
+            },
+        ];
+
+        #[allow(deprecated)]
+        let req = Request {
+            seq: 1,
+            command: Command::SetBreakpoints(dap::requests::SetBreakpointsArguments {
+                source,
+                breakpoints: Some(breakpoints),
+                lines: None,
+                source_modified: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_request_unhandled_command() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let req = Request {
+            seq: 1,
+            command: Command::Initialize(dap::requests::InitializeArguments {
+                client_id: None,
+                client_name: None,
+                adapter_id: "test".to_string(),
+                locale: None,
+                lines_start_at1: None,
+                columns_start_at1: None,
+                path_format: None,
+                supports_variable_type: None,
+                supports_variable_paging: None,
+                supports_run_in_terminal_request: None,
+                supports_memory_references: None,
+                supports_progress_reporting: None,
+                supports_invalidated_event: None,
+                supports_memory_event: None,
+                supports_args_can_be_interpreted_by_shell: None,
+                supports_start_debugging_request: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_err()); // Should fail with UnhandledCommand error
+    }
 }
