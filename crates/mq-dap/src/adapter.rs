@@ -323,15 +323,23 @@ impl MqAdapter {
                 let mut breakpoints_response: Vec<Breakpoint> =
                     Vec::with_capacity(breakpoints_vec.len());
 
+                let source = if is_query_file {
+                    None
+                } else {
+                    args.source.name.clone()
+                };
+
+                self.engine
+                    .debugger()
+                    .write()
+                    .unwrap()
+                    .remove_breakpoints(&source);
+
                 for breakpoint in &breakpoints_vec {
                     let id = self.engine.debugger().write().unwrap().add_breakpoint(
                         breakpoint.line as usize,
                         breakpoint.column.map(|bp| bp as usize),
-                        if is_query_file {
-                            None
-                        } else {
-                            args.source.name.clone()
-                        },
+                        source.clone(),
                     );
                     breakpoints_response.push(Breakpoint {
                         verified: true,
@@ -580,5 +588,165 @@ impl MqAdapter {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dap::server::Server;
+    use std::io::{BufReader, BufWriter, Cursor};
+
+    #[test]
+    fn test_adapter_new_and_default() {
+        let adapter = MqAdapter::new();
+        assert!(adapter.debugger_message_rx.is_some());
+        assert!(adapter.debugger_message_tx.is_some());
+        assert!(adapter.dap_command_tx.is_some());
+        assert!(adapter.query_file.is_none());
+        assert!(adapter.current_debug_context.is_none());
+
+        let adapter_default = MqAdapter::default();
+        assert!(adapter_default.debugger_message_rx.is_some());
+    }
+
+    #[test]
+    fn test_get_local_variables_from_context_empty() {
+        let adapter = MqAdapter::new();
+        let variables = adapter.get_local_variables_from_context();
+        assert!(variables.is_empty());
+    }
+
+    #[test]
+    fn test_get_global_variables_from_context_empty() {
+        let adapter = MqAdapter::new();
+        let variables = adapter.get_global_variables_from_context();
+        assert!(variables.is_empty());
+    }
+
+    #[test]
+    fn test_get_source_with_query_file() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/path/to/test.mq".to_string());
+
+        let source = adapter.get_source();
+        assert!(source.is_some());
+        let source = source.unwrap();
+        assert_eq!(source.name, Some("test.mq".to_string()));
+        assert_eq!(source.path, Some("/path/to/test.mq".to_string()));
+    }
+
+    #[test]
+    fn test_get_source_without_query_file() {
+        let adapter = MqAdapter::new();
+        let source = adapter.get_source();
+        assert!(source.is_none());
+    }
+
+    #[test]
+    fn test_get_source_file_name_with_query_file() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/path/to/test.mq".to_string());
+
+        let name = adapter.get_source_file_name(Some(mq_lang::Module::TOP_LEVEL_MODULE_ID));
+        assert_eq!(name, "test.mq");
+    }
+
+    #[test]
+    fn test_get_source_file_name_without_query_file() {
+        let adapter = MqAdapter::new();
+        let name = adapter.get_source_file_name(Some(mq_lang::Module::TOP_LEVEL_MODULE_ID));
+        assert_eq!(name, "unknown");
+    }
+
+    #[test]
+    fn test_send_debugger_command() {
+        let adapter = MqAdapter::new();
+        let result = adapter.send_debugger_command(DapCommand::Continue);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_eval_without_context() {
+        let adapter = MqAdapter::new();
+        let result = adapter.eval("1 + 1");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Current context not found")
+        );
+    }
+
+    #[test]
+    fn test_send_log_output() {
+        let adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let result = adapter.send_log_output("Test message", &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_debugger_message_terminated() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let message = DebuggerMessage::Terminated;
+        let result = adapter.handle_debugger_message(message, &mut server);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_debugger_message_breakpoint_hit() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let context = mq_lang::DebugContext::default();
+        let breakpoint = mq_lang::Breakpoint {
+            id: 1,
+            line: 1,
+            column: None,
+            enabled: true,
+            source: None,
+        };
+
+        let message = DebuggerMessage::BreakpointHit {
+            thread_id: 1,
+            line: 1,
+            context,
+            breakpoint,
+        };
+
+        let result = adapter.handle_debugger_message(message, &mut server);
+        assert!(result.is_ok());
+        assert!(adapter.current_debug_context.is_some());
+    }
+
+    #[test]
+    fn test_handle_debugger_message_step_completed() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let context = mq_lang::DebugContext::default();
+
+        let message = DebuggerMessage::StepCompleted {
+            thread_id: 1,
+            line: 1,
+            context,
+        };
+
+        let result = adapter.handle_debugger_message(message, &mut server);
+        assert!(result.is_ok());
+        assert!(adapter.current_debug_context.is_some());
     }
 }

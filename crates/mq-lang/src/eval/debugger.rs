@@ -172,6 +172,12 @@ impl Debugger {
         true
     }
 
+    /// Remove a breakpoints by source
+    pub fn remove_breakpoints(&mut self, source: &Option<String>) -> bool {
+        self.breakpoints.retain(|bp| bp.source != *source);
+        true
+    }
+
     /// List all breakpoints
     pub fn list_breakpoints(&self) -> Vec<&Breakpoint> {
         self.breakpoints.iter().collect()

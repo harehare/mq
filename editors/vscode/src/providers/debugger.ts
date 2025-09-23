@@ -39,7 +39,7 @@ export class MqDebugConfigurationProvider
       if (!mqDapPath) {
         return undefined;
       }
-      config.runtime = mqDapPath;
+      config.runtime = process.env._MQ_DBG_DEBUG_BIN ?? mqDapPath;
 
       return config;
     });
