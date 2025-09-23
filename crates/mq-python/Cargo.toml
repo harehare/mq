@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "mq-python"
-version = "0.2.22"
+version = "0.2.23"
 
 [lib]
 crate-type = ["cdylib"]

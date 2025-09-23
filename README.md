@@ -56,7 +56,7 @@ Since LLM inputs are primarily in Markdown format, mq provides efficient tools f
 ### Cargo
 
 ```sh
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.22
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.23
 # Latest Development Version
 $ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
 # Install the debugger
@@ -94,7 +94,7 @@ $ brew install harehare/tap/mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.2.22
+$ docker run --rm ghcr.io/harehare/mq:0.2.23
 ```
 
 ### Visual Studio Code Extension

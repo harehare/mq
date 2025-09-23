@@ -2423,7 +2423,7 @@ dependencies = [
 
 [[package]]
 name = "mq-c-api"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "cbindgen",
  "libc",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "mq-cli"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2461,7 +2461,7 @@ dependencies = [
 
 [[package]]
 name = "mq-crawler"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "clap",
  "crossbeam",
@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "mq-dap"
-version = "0.1.0"
+version = "0.2.23"
 dependencies = [
  "crossbeam-channel",
  "dap",
@@ -2503,7 +2503,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "mq-lang",
  "rstest",
@@ -2512,7 +2512,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "itertools 0.14.0",
  "mq-lang",
@@ -2527,7 +2527,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2563,7 +2563,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lsp"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "bimap",
  "dashmap 6.1.0",
@@ -2581,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "mq-macros"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "mq-lang",
  "mq-markdown",
@@ -2591,7 +2591,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "ego-tree",
  "itertools 0.14.0",
@@ -2608,7 +2608,7 @@ dependencies = [
 
 [[package]]
 name = "mq-mcp"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "miette",
  "mq-hir",
@@ -2624,7 +2624,7 @@ dependencies = [
 
 [[package]]
 name = "mq-python"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "mq-lang",
  "mq-markdown",
@@ -2633,7 +2633,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "arboard",
  "colored 3.0.0",
@@ -2652,14 +2652,14 @@ dependencies = [
 
 [[package]]
 name = "mq-test"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "scopeguard",
 ]
 
 [[package]]
 name = "mq-tui"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "arboard",
  "crossterm 0.29.0",
@@ -2674,7 +2674,7 @@ dependencies = [
 
 [[package]]
 name = "mq-wasm"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "itertools 0.14.0",
  "js-sys",
@@ -2691,7 +2691,7 @@ dependencies = [
 
 [[package]]
 name = "mq-web-api"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "miette",
  "mq-lang",

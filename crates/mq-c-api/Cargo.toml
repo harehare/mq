@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "mq-c-api"
-version = "0.2.22"
+version = "0.2.23"
 
 [dependencies]
 libc = "0.2"
