@@ -30,6 +30,7 @@ This extension provides essential coding assistance for `.mq` files, helping you
 - `mq: Run selected text`: Executes the currently selected text in the editor as an mq
 - `mq: Execute mq file`: Executes the selected mq file to the text in active editor
 - `mq: Execute query`: Executes the input mq query on the text in the active editor
+- `mq: Debug current file`: Launches the mq debugger for the currently open file, allowing you to step through mq code, inspect variables, and analyze execution flow directly within the editor.
 
 ## Configuration
 

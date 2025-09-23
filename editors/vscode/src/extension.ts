@@ -548,19 +548,16 @@ const installServers = async (
     return false;
   }
 
-  const installLsp = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq ${
-    force ? " --force" : ""
-  }`;
-  const installDap = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger" ${
-    force ? " --force" : ""
-  }`;
-
   const installTask = new vscode.Task(
     { type: "cargo", task: "install-lsp-server" },
     vscode.TaskScope.Workspace,
     "Install LSP Server",
     "mq-lsp",
-    new vscode.ShellExecution(`${installLsp} && ${installDap}`)
+    new vscode.ShellExecution(
+      `cargo install --git https://github.com/harehare/mq.git mq-cli ${
+        force ? " --force" : ""
+      }`
+    )
   );
 
   try {
