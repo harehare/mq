@@ -595,6 +595,7 @@ impl MqAdapter {
 mod tests {
     use super::*;
     use dap::server::Server;
+    use mq_lang::ArenaId;
     use std::io::{BufReader, BufWriter, Cursor};
 
     #[test]
@@ -1067,5 +1068,70 @@ mod tests {
 
         let result = adapter.handle_request(req, &mut server);
         assert!(result.is_err()); // Should fail with UnhandledCommand error
+    }
+
+    #[test]
+    fn test_handle_request_launch_success() {
+        let mut adapter = MqAdapter::new();
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let launch_args = LaunchArgs {
+            query_file: "/tmp/test_query.mq".to_string(),
+            input_file: None,
+        };
+
+        let mut additional_data = serde_json::Map::new();
+        let value = serde_json::to_value(&launch_args).unwrap();
+        if let serde_json::Value::Object(map) = value {
+            for (k, v) in map {
+                additional_data.insert(k, v);
+            }
+        }
+
+        let req = Request {
+            seq: 1,
+            command: Command::Launch(dap::requests::LaunchRequestArguments {
+                no_debug: None,
+                restart_data: None,
+                additional_data: Some(serde_json::Value::Object(additional_data)),
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
+        assert_eq!(adapter.query_file, Some("/tmp/test_query.mq".to_string()));
+    }
+
+    #[test]
+    fn test_handle_request_stack_trace_with_context() {
+        let mut adapter = MqAdapter::new();
+        let input = std::io::BufReader::new(std::io::Cursor::new(Vec::new()));
+        let output = std::io::BufWriter::new(std::io::Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+
+        let mut context = mq_lang::DebugContext::default();
+
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: Shared::new(mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(
+                42.into(),
+            ))),
+            token_id: ArenaId::new(0),
+        }));
+        adapter.current_debug_context = Some(context);
+
+        let req = Request {
+            seq: 1,
+            command: Command::StackTrace(dap::requests::StackTraceArguments {
+                thread_id: 1,
+                start_frame: None,
+                levels: None,
+                format: None,
+            }),
+        };
+
+        let result = adapter.handle_request(req, &mut server);
+        assert!(result.is_ok());
     }
 }
