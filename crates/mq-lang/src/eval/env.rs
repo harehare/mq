@@ -217,9 +217,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::Shared;
-    use rstest::rstest;
 
     use super::*;
+
+    #[cfg(feature = "debugger")]
+    use rstest::rstest;
 
     #[test]
     fn test_env_define_and_resolve() {
