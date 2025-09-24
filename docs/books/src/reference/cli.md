@@ -38,6 +38,8 @@ Options:
           
       --csv
           Include the built-in CSV module
+      --fuzzy
+          Include the built-in Fuzzy module
       --yaml
           Include the built-in YAML module
       --toml
