@@ -45,7 +45,7 @@ impl PartialEq for Env {
 }
 
 #[cfg(feature = "debugger")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     pub name: String,
     pub value: String,
@@ -213,7 +213,11 @@ impl Env {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "debugger")]
+    use std::collections::BTreeMap;
+
     use crate::Shared;
+    use rstest::rstest;
 
     use super::*;
 
@@ -279,5 +283,140 @@ mod tests {
         child_env.define(ident, child_value.clone());
 
         assert_eq!(child_env.resolve(ident).unwrap(), child_value);
+    }
+
+    #[cfg(feature = "debugger")]
+    #[rstest]
+    #[case(
+        vec![("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Bool(true))],
+        vec![
+            Variable { name: "a".to_string(), value: "1".to_string(), type_field: "number".to_string() },
+            Variable { name: "b".to_string(), value: "true".to_string(), type_field: "bool".to_string() }
+        ]
+    )]
+    #[case(
+        vec![("x", RuntimeValue::String("hello".into())), ("y", RuntimeValue::None)],
+        vec![
+            Variable { name: "x".to_string(), value: "hello".to_string(), type_field: "string".to_string() },
+            Variable { name: "y".to_string(), value: "None".to_string(), type_field: "none".to_string() }
+        ]
+    )]
+    #[case(
+        vec![("x", RuntimeValue::Bool(true)), ("y", RuntimeValue::None)],
+        vec![
+            Variable { name: "x".to_string(), value: "true".to_string(), type_field: "bool".to_string() },
+            Variable { name: "y".to_string(), value: "None".to_string(), type_field: "none".to_string() }
+        ]
+    )]
+    #[case(
+        vec![
+            ("arr", RuntimeValue::Array(vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())])),
+            ("dict", {
+                let mut map = BTreeMap::new();
+
+                map.insert("k1".to_string(), RuntimeValue::String("v1".into()));
+                map.insert("k2".to_string(), RuntimeValue::Number(3.0.into()));
+
+                RuntimeValue::Dict(map)
+            })
+        ],
+        vec![
+            Variable { name: "arr".to_string(), value: "[1, 2]".to_string(), type_field: "array".to_string() },
+            Variable { name: "dict".to_string(), value: "{\"k1\": \"v1\", \"k2\": 3}".to_string(), type_field: "dict".to_string() }
+        ]
+    )]
+    fn test_variable_from_and_display(
+        #[case] vars: Vec<(&str, RuntimeValue)>,
+        #[case] expected: Vec<Variable>,
+    ) {
+        for (i, (name, value)) in vars.iter().enumerate() {
+            let ident = Ident::new(name);
+            let var = Variable::from(ident, value);
+            assert_eq!(var, expected[i]);
+
+            let display = format!("{}", var);
+            assert!(display.contains(&var.name));
+            assert!(display.contains(&var.value));
+            assert!(display.contains(&var.type_field));
+        }
+    }
+
+    #[cfg(feature = "debugger")]
+    #[rstest]
+    fn test_get_local_variables() {
+        let mut env = Env::default();
+        env.define(Ident::new("foo"), RuntimeValue::Number(10.0.into()));
+        env.define(Ident::new("bar"), RuntimeValue::Bool(false));
+        // No parent: should return empty
+        assert_eq!(env.get_local_variables().len(), 0);
+
+        // With parent: should return local variables
+        let parent_env = Shared::new(SharedCell::new(Env::default()));
+        let mut child_env = Env::with_parent(Shared::downgrade(&parent_env));
+        child_env.define(Ident::new("baz"), RuntimeValue::String("abc".into()));
+        let locals = child_env.get_local_variables();
+        assert_eq!(locals.len(), 1);
+        assert_eq!(locals[0].name, "baz");
+        assert_eq!(locals[0].type_field, "string");
+    }
+
+    #[cfg(feature = "debugger")]
+    #[rstest]
+    fn test_get_global_variables() {
+        use smallvec::smallvec;
+
+        let mut env = Env::default();
+        env.define(Ident::new("foo"), RuntimeValue::Number(1.0.into()));
+        env.define(Ident::new("bar"), RuntimeValue::Bool(true));
+        env.define(
+            Ident::new("func"),
+            RuntimeValue::Function(
+                smallvec![],
+                vec![],
+                Shared::new(SharedCell::new(Env::default())),
+            ),
+        );
+        env.define(
+            Ident::new("native"),
+            RuntimeValue::NativeFunction(Ident::new("native")),
+        );
+        // Only non-function, non-native should be returned
+        let globals = env.get_global_variables();
+        assert!(
+            globals
+                .iter()
+                .any(|v| v.name == "foo" && v.type_field == "number")
+        );
+        assert!(
+            globals
+                .iter()
+                .any(|v| v.name == "bar" && v.type_field == "bool")
+        );
+        assert!(!globals.iter().any(|v| v.name == "func"));
+        assert!(!globals.iter().any(|v| v.name == "native"));
+
+        // With parent: should return parent's globals
+        let parent_env = Shared::new(SharedCell::new(Env::default()));
+        #[cfg(not(feature = "sync"))]
+        {
+            parent_env
+                .borrow_mut()
+                .define(Ident::new("p"), RuntimeValue::Number(99.0.into()));
+        }
+        #[cfg(feature = "sync")]
+        {
+            parent_env
+                .write()
+                .unwrap()
+                .define(Ident::new("p"), RuntimeValue::Number(99.0.into()));
+        }
+        let child_env = Env::with_parent(Shared::downgrade(&parent_env));
+        let globals = child_env.get_global_variables();
+
+        assert!(
+            globals
+                .iter()
+                .any(|v| v.name == "p" && v.type_field == "number")
+        );
     }
 }

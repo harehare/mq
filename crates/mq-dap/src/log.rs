@@ -47,3 +47,42 @@ impl<'a> MakeWriter<'a> for DebugConsoleWriter {
         self.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_debug_console_writer_send_and_receive() {
+        let (mut writer, rx) = DebugConsoleWriter::new();
+        let msg = "Hello, mq!";
+        let bytes_written = writer.write(msg.as_bytes()).unwrap();
+        assert_eq!(bytes_written, msg.len());
+        let received = rx.try_recv().unwrap();
+        assert_eq!(received, msg);
+    }
+
+    #[test]
+    fn test_debug_console_writer_flush() {
+        let (mut writer, _rx) = DebugConsoleWriter::new();
+        assert!(writer.flush().is_ok());
+    }
+
+    #[test]
+    fn test_debug_console_writer_channel_closed() {
+        let (mut writer, rx) = DebugConsoleWriter::new();
+        drop(rx); // Close the receiver
+        let msg = "Should not panic";
+        // Should not panic or return error even if channel is closed
+        let bytes_written = writer.write(msg.as_bytes()).unwrap();
+        assert_eq!(bytes_written, msg.len());
+    }
+
+    #[test]
+    fn test_make_writer_returns_clone() {
+        let (writer, _rx) = DebugConsoleWriter::new();
+        let clone = writer.make_writer();
+        // Ensure the clone is equal (sender is Some)
+        assert!(clone.sender.is_some());
+    }
+}

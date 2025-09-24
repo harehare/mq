@@ -420,4 +420,41 @@ mod tests {
 
         handle.join().expect("Threaded engine usage failed");
     }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_switch_env() {
+        use crate::eval::env::Env;
+        use crate::{SharedCell, null_input};
+
+        let engine = Engine::default();
+        let env = Shared::new(SharedCell::new(Env::default()));
+
+        env.write()
+            .unwrap()
+            .define("runtime".into(), RuntimeValue::NONE);
+
+        let mut new_engine = engine.switch_env(env);
+
+        assert_eq!(
+            new_engine
+                .eval("runtime", null_input().into_iter())
+                .unwrap()[0],
+            RuntimeValue::NONE
+        );
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_get_source_code_for_debug() {
+        use crate::eval::module::ModuleId;
+
+        let mut engine = Engine::default();
+        engine.load_builtin_module();
+
+        let module_id = ModuleId::new(0);
+        let result = engine.get_source_code_for_debug(module_id);
+
+        assert!(result.is_ok());
+    }
 }

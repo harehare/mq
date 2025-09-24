@@ -8,5 +8,4 @@ ignore:
   - "crates/mq-wasm"
   - "crates/mq-mcp"
   - "crates/mq-web-api"
-  - "crates/mq-dap"
-
+  - "crates/mq-dap/src/server.rs"

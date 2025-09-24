@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Messages sent from the debugger handler to the DAP server
 #[derive(Debug, Clone)]
@@ -36,7 +36,7 @@ pub enum DapCommand {
 }
 
 /// Launch arguments for DAP launch configuration
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchArgs {
     pub query_file: String,
