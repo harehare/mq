@@ -99,13 +99,13 @@ include "fuzzy"
 # Returns: 1.0
 ```
 
-### `fuzzy_match(query, candidates)`
+### `fuzzy_match(candidates, query)`
 
 Performs fuzzy matching on an array of strings using the Jaro-Winkler distance algorithm. Returns results sorted by similarity score in descending order.
 
 **Parameters:**
-- `query`: String to search for
 - `candidates`: Array of strings to search within, or a single string
+- `query`: String to search for
 
 **Returns:**
 - Array of objects with `text` and `score` properties, sorted by best match first
@@ -115,7 +115,7 @@ Performs fuzzy matching on an array of strings using the Jaro-Winkler distance a
 include "fuzzy"
 
 # Fuzzy match with multiple candidates
-| fuzzy_match("hello", ["hallo", "hello", "hi", "help"])
+| fuzzy_match(["hallo", "hello", "hi", "help"], "hello")
 # Returns: [
 #   {"text": "hello", "score": 1},
 #   {"text": "hallo", "score": 0.88},
@@ -124,17 +124,17 @@ include "fuzzy"
 # ]
 
 # Fuzzy match with single candidate
-| fuzzy_match("test", "testing")
+| "testing" | fuzzy_match("test")
 # Returns: [{"text": "testing", "score": 0.8095238095238095}]
 ```
 
-### `fuzzy_match_levenshtein(query, candidates)`
+### `fuzzy_match_levenshtein(candidates, query)`
 
 Performs fuzzy matching using Levenshtein distance. Returns results sorted by distance (lower distance means better match).
 
 **Parameters:**
-- `query`: String to search for
 - `candidates`: Array of strings to search within
+- `query`: String to search for
 
 **Returns:**
 - Array of objects with `text` and `score` properties, sorted by lowest distance first
@@ -144,7 +144,7 @@ Performs fuzzy matching using Levenshtein distance. Returns results sorted by di
 include "fuzzy"
 
 # Fuzzy match using Levenshtein distance
-| fuzzy_match_levenshtein("hello", ["hallo", "hello", "hi", "help"])
+| fuzzy_match_levenshtein(["hallo", "hello", "hi", "help"], "hello")
 # Returns: [
 #   {"text": "hello", "score": 0},
 #   {"text": "hallo", "score": 1},
@@ -153,13 +153,13 @@ include "fuzzy"
 # ]
 ```
 
-### `fuzzy_match_jaro(query, candidates)`
+### `fuzzy_match_jaro(candidates, query)`
 
 Performs fuzzy matching using the Jaro distance algorithm. Returns results sorted by similarity score in descending order.
 
 **Parameters:**
-- `query`: String to search for
 - `candidates`: Array of strings to search within
+- `query`: String to search for
 
 **Returns:**
 - Array of objects with `text` and `score` properties, sorted by best match first
@@ -169,7 +169,7 @@ Performs fuzzy matching using the Jaro distance algorithm. Returns results sorte
 include "fuzzy"
 
 # Fuzzy match using Jaro distance
-| fuzzy_match_jaro("hello", ["hallo", "hello", "hi", "help"])
+| fuzzy_match_jaro(["hallo", "hello", "hi", "help"], "hello")
 # Returns: [
 #   {"text": "hello", "score": 1.0},
 #   {"text": "hallo", "score": 0.8666666666666667},
@@ -178,13 +178,13 @@ include "fuzzy"
 # ]
 ```
 
-### `fuzzy_filter(query, candidates, threshold)`
+### `fuzzy_filter(candidates, query, threshold)`
 
 Filters candidates by minimum fuzzy match score using Jaro-Winkler distance. Only returns matches that meet or exceed the specified threshold.
 
 **Parameters:**
-- `query`: String to search for
 - `candidates`: Array of strings to search within
+- `query`: String to search for
 - `threshold`: Minimum score threshold (0.0 to 1.0)
 
 **Returns:**
@@ -195,7 +195,7 @@ Filters candidates by minimum fuzzy match score using Jaro-Winkler distance. Onl
 include "fuzzy"
 
 # Filter matches with minimum threshold
-| fuzzy_filter("hello", ["hallo", "hello", "hi", "help"], 0.7)
+| fuzzy_filter(["hallo", "hello", "hi", "help"], "hello", 0.7)
 # Returns: [
 #   {"text": "hello", "score": 1.0},
 #   {"text": "hallo", "score": 0.8666666666666667},
@@ -203,19 +203,19 @@ include "fuzzy"
 # ]
 
 # Filter with high threshold
-| fuzzy_filter("hello", ["hallo", "hello", "hi", "help"], 0.9)
+| fuzzy_filter(["hallo", "hello", "hi", "help"], "hello", 0.9)
 # Returns: [
 #   {"text": "hello", "score": 1.0}
 # ]
 ```
 
-### `fuzzy_best_match(query, candidates)`
+### `fuzzy_best_match(candidates, query)`
 
 Finds the best fuzzy match from candidates using Jaro-Winkler distance.
 
 **Parameters:**
-- `query`: String to search for
 - `candidates`: Array of strings to search within
+- `query`: String to search for
 
 **Returns:**
 - Object with `text` and `score` properties for the best match, or `None` if no matches found
@@ -225,10 +225,10 @@ Finds the best fuzzy match from candidates using Jaro-Winkler distance.
 include "fuzzy"
 
 # Find best match
-| fuzzy_best_match("hello", ["hallo", "hi", "help"])
+| fuzzy_best_match(["hallo", "hi", "help"], "hello")
 # Returns: {"text": "hallo", "score": 0.88}
 
 # No matches case
-| fuzzy_best_match("xyz", [])
+| fuzzy_best_match([], "xyz")
 # Returns: None
 ```
