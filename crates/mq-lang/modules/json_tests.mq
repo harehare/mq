@@ -10,13 +10,13 @@ include "json"
 
 | def test_json_stringify():
     let result = json_stringify(json_parse(input))
-    | assert_eq(result, "{\"meta\": {\"count\": 3, \"generated_at\": \"2024-06-01T12:00:00Z\"}, \"users\": [{\"email\": \"alice@example.com\", \"id\": 1, \"name\": \"Alice\", \"roles\": [\"admin\", \"user\"]}, {\"email\": \"bob@example.com\", \"id\": 2, \"name\": \"Bob\", \"roles\": [\"user\"]}, {\"email\": \"charlie@example.com\", \"id\": 3, \"name\": \"Charlie\", \"roles\": [\"editor\", \"user\"]}]}")
+    | assert_eq(result, "{\"users\": [{\"name\": \"Alice\", \"id\": 1, \"email\": \"alice@example.com\", \"roles\": [\"admin\", \"user\"]}, {\"name\": \"Bob\", \"id\": 2, \"email\": \"bob@example.com\", \"roles\": [\"user\"]}, {\"name\": \"Charlie\", \"id\": 3, \"email\": \"charlie@example.com\", \"roles\": [\"editor\", \"user\"]}], \"meta\": {\"count\": 3, \"generated_at\": \"2024-06-01T12:00:00Z\"}}")
   end
 
 | def test_json_to_markdown_table():
     let result = json_parse(input)
     | let result = json_to_markdown_table(result["users"])
-    | assert_eq(result, "| email | id | name | roles |\n| --- | --- | --- | --- |\n| alice@example.com | 1 | Alice | [\"admin\", \"user\"] |\n| bob@example.com | 2 | Bob | [\"user\"] |\n| charlie@example.com | 3 | Charlie | [\"editor\", \"user\"] |")
+    | assert_eq(result, "| name | id | email | roles |\n| --- | --- | --- | --- |\n| Alice | 1 | alice@example.com | [\"admin\", \"user\"] |\n| Bob | 2 | bob@example.com | [\"user\"] |\n| Charlie | 3 | charlie@example.com | [\"editor\", \"user\"] |")
   end
 
 |

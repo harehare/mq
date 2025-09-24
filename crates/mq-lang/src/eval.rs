@@ -3688,9 +3688,9 @@ mod tests {
                              name: "set".to_string(),
                              args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
     #[case::del_dict_valid_key(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
-            ("key3".to_string(), RuntimeValue::String("value3".to_string())),
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
+            (Ident::new("key3"), RuntimeValue::String("value3".to_string())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3698,12 +3698,12 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key3".to_string(), RuntimeValue::String("value3".to_string())),
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("key3"), RuntimeValue::String("value3".to_string())),
         ].into_iter().collect())]))]
     #[case::del_dict_nonexistent_key(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3711,8 +3711,8 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
         ].into_iter().collect())]))]
     #[case::del_dict_empty(vec![RuntimeValue::new_dict()],
         vec![
@@ -3722,7 +3722,7 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::new_dict()]))]
     #[case::del_dict_single_key(vec![RuntimeValue::Dict(vec![
-            ("only_key".to_string(), RuntimeValue::String("only_value".to_string())),
+            (Ident::new("only_key"), RuntimeValue::String("only_value".to_string())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3731,10 +3731,10 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::new_dict()]))]
     #[case::del_dict_mixed_value_types(vec![RuntimeValue::Dict(vec![
-            ("str_key".to_string(), RuntimeValue::String("string_value".to_string())),
-            ("num_key".to_string(), RuntimeValue::Number(42.into())),
-            ("bool_key".to_string(), RuntimeValue::Bool(true)),
-            ("array_key".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
+            (Ident::new("str_key"), RuntimeValue::String("string_value".to_string())),
+            (Ident::new("num_key"), RuntimeValue::Number(42.into())),
+            (Ident::new("bool_key"), RuntimeValue::Bool(true)),
+            (Ident::new("array_key"), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3742,13 +3742,13 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("str_key".to_string(), RuntimeValue::String("string_value".to_string())),
-            ("bool_key".to_string(), RuntimeValue::Bool(true)),
-            ("array_key".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
+            (Ident::new("str_key"), RuntimeValue::String("string_value".to_string())),
+            (Ident::new("bool_key"), RuntimeValue::Bool(true)),
+            (Ident::new("array_key"), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
         ].into_iter().collect())]))]
     #[case::del_dict_with_number_key_as_string(vec![RuntimeValue::Dict(vec![
-            ("1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("2".to_string(), RuntimeValue::String("value2".to_string())),
+            (Ident::new("1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("2"), RuntimeValue::String("value2".to_string())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -3756,11 +3756,11 @@ mod tests {
               ]),
         ],
         Ok(vec![RuntimeValue::Dict(vec![
-            ("2".to_string(), RuntimeValue::String("value2".to_string())),
+            (Ident::new("2"), RuntimeValue::String("value2".to_string())),
         ].into_iter().collect())]))]
     #[case::del_dict_with_number_index_error(vec![RuntimeValue::Dict(vec![
-            ("key1".to_string(), RuntimeValue::String("value1".to_string())),
-            ("key2".to_string(), RuntimeValue::String("value2".to_string())),
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
         ].into_iter().collect())],
         vec![
               ast_call("del", smallvec![
@@ -4325,13 +4325,13 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Array(Vec::new())]))]
     #[case::to_array_dict(vec![RuntimeValue::Dict(vec![
-            ("key".to_string(), RuntimeValue::String("value".to_string())),
+            (Ident::new("key"), RuntimeValue::String("value".to_string())),
         ].into_iter().collect())],
         vec![
             ast_call("to_array", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Dict(vec![
-            ("key".to_string(), RuntimeValue::String("value".to_string())),
+            (Ident::new("key"), RuntimeValue::String("value".to_string())),
         ].into_iter().collect())])]))]
     #[case::type_none(vec![RuntimeValue::NONE],
        vec![

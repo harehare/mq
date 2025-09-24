@@ -946,7 +946,7 @@ define_builtin!(
         [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
             let mut dict = std::mem::take(dict);
-            dict.remove(key);
+            dict.remove(&Ident::new(key));
             Ok(RuntimeValue::Dict(dict))
         }
         [a, b] => Err(Error::InvalidTypes(
@@ -1939,7 +1939,7 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
         for entry in entries {
             if let RuntimeValue::Array(arr) = entry {
                 if arr.len() >= 2 {
-                    dict.insert(arr[0].to_string(), arr[1].clone());
+                    dict.insert(Ident::new(&arr[0].to_string()), arr[1].clone());
                 } else {
                     return Err(Error::InvalidTypes("dict".to_string(), arr.clone()));
                 }
@@ -1957,7 +1957,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |ident, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map
-            .get_mut(key)
+            .get_mut(&Ident::new(key))
             .map(std::mem::take)
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(array
@@ -1995,7 +1995,7 @@ define_builtin!(
             value_val,
         ] => {
             let mut new_dict = std::mem::take(map_val);
-            new_dict.insert(std::mem::take(key_val), std::mem::take(value_val));
+            new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
             Ok(RuntimeValue::Dict(new_dict))
         }
         [
@@ -2036,7 +2036,7 @@ define_builtin!(
         [RuntimeValue::Dict(map)] => {
             let keys = map
                 .keys()
-                .map(|k| RuntimeValue::String(k.to_owned()))
+                .map(|k| RuntimeValue::String(k.as_str()))
                 .collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(keys))
         }
@@ -2074,7 +2074,7 @@ define_builtin!(
             let entries = map
                 .iter()
                 .map(|(k, v)| {
-                    RuntimeValue::Array(vec![RuntimeValue::String(k.to_owned()), v.to_owned()])
+                    RuntimeValue::Array(vec![RuntimeValue::String(k.as_str()), v.to_owned()])
                 })
                 .collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(entries))
@@ -2127,7 +2127,7 @@ define_builtin!(
             value_val,
         ] => {
             let mut new_dict = std::mem::take(map_val);
-            new_dict.insert(std::mem::take(key_val), std::mem::take(value_val));
+            new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
             Ok(RuntimeValue::Dict(new_dict))
         }
         [a, b, c] => Err(Error::InvalidTypes(
@@ -4257,7 +4257,10 @@ mod tests {
         match &map_val1 {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 1);
-                assert_eq!(map.get("name"), Some(&RuntimeValue::String("Jules".into())));
+                assert_eq!(
+                    map.get(&Ident::new("name")),
+                    Some(&RuntimeValue::String("Jules".into()))
+                );
             }
             _ => panic!("Expected Dict, got {:?}", map_val1),
         }
@@ -4273,8 +4276,14 @@ mod tests {
         match &map_val2 {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 2);
-                assert_eq!(map.get("name"), Some(&RuntimeValue::String("Jules".into())));
-                assert_eq!(map.get("age"), Some(&RuntimeValue::Number(30.into())));
+                assert_eq!(
+                    map.get(&Ident::new("name")),
+                    Some(&RuntimeValue::String("Jules".into()))
+                );
+                assert_eq!(
+                    map.get(&Ident::new("age")),
+                    Some(&RuntimeValue::Number(30.into()))
+                );
             }
             _ => panic!("Expected Dict, got {:?}", map_val2),
         }
@@ -4291,16 +4300,19 @@ mod tests {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 2);
                 assert_eq!(
-                    map.get("name"),
+                    map.get(&Ident::new("name")),
                     Some(&RuntimeValue::String("Vincent".into()))
                 );
-                assert_eq!(map.get("age"), Some(&RuntimeValue::Number(30.into())));
+                assert_eq!(
+                    map.get(&Ident::new("age")),
+                    Some(&RuntimeValue::Number(30.into()))
+                );
             }
             _ => panic!("Expected Dict, got {:?}", map_val3),
         }
 
         let mut nested_map_data = BTreeMap::default();
-        nested_map_data.insert("level".into(), RuntimeValue::Number(2.into()));
+        nested_map_data.insert(Ident::new("level"), RuntimeValue::Number(2.into()));
         let nested_map: RuntimeValue = nested_map_data.into();
         let args4 = vec![
             map_val3.clone(),
@@ -4312,7 +4324,7 @@ mod tests {
         match result4.unwrap() {
             RuntimeValue::Dict(map) => {
                 assert_eq!(map.len(), 3);
-                assert_eq!(map.get("nested"), Some(&nested_map));
+                assert_eq!(map.get(&Ident::new("nested")), Some(&nested_map));
             }
             _ => panic!("Expected Dict"),
         }
@@ -4422,7 +4434,7 @@ mod tests {
                         _ => panic!("Expected string key"),
                     })
                     .collect();
-                assert_eq!(keys_str, vec!["age".to_string(), "name".to_string()]);
+                assert_eq!(keys_str, vec!["name".to_string(), "age".to_string()]);
             }
             _ => panic!("Expected Array of keys"),
         }
