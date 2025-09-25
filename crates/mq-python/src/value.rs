@@ -105,7 +105,10 @@ impl From<mq_lang::RuntimeValue> for MQValue {
                 value: arr.into_iter().map(|v| v.into()).collect(),
             },
             mq_lang::RuntimeValue::Dict(map) => MQValue::Dict {
-                value: map.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                value: map
+                    .into_iter()
+                    .map(|(k, v)| (k.as_str(), v.into()))
+                    .collect(),
             },
             mq_lang::RuntimeValue::Markdown(node, _) => MQValue::Markdown {
                 value: node.to_string(),

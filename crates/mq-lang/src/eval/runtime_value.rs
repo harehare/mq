@@ -21,7 +21,7 @@ pub enum RuntimeValue {
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Shared<SharedCell<Env>>),
     NativeFunction(Ident),
-    Dict(BTreeMap<String, RuntimeValue>),
+    Dict(BTreeMap<Ident, RuntimeValue>),
     #[default]
     None,
 }
@@ -94,8 +94,8 @@ impl From<Vec<RuntimeValue>> for RuntimeValue {
     }
 }
 
-impl From<BTreeMap<String, RuntimeValue>> for RuntimeValue {
-    fn from(map: BTreeMap<String, RuntimeValue>) -> Self {
+impl From<BTreeMap<Ident, RuntimeValue>> for RuntimeValue {
+    fn from(map: BTreeMap<Ident, RuntimeValue>) -> Self {
         RuntimeValue::Dict(map)
     }
 }
@@ -425,7 +425,7 @@ impl RuntimeValues {
                             for (k, v) in map {
                                 if !v.is_none() && !v.is_empty() {
                                     new_dict.insert(
-                                        k.clone(),
+                                        *k,
                                         RuntimeValue::Markdown(
                                             node.clone().with_value(v.to_string().as_str()),
                                             None,
@@ -479,8 +479,8 @@ mod tests {
         ]), r#"[1, "test"]"#)]
     #[case(RuntimeValue::Dict({
             let mut map = BTreeMap::new();
-            map.insert("key1".to_string(), RuntimeValue::String("value1".to_string()));
-            map.insert("key2".to_string(), RuntimeValue::Number(Number::from(42.0)));
+            map.insert(Ident::new("key1"), RuntimeValue::String("value1".to_string()));
+            map.insert(Ident::new("key2"), RuntimeValue::Number(Number::from(42.0)));
             map
         }), r#"{"key1": "value1", "key2": 42}"#)]
     fn test_string_method(#[case] value: RuntimeValue, #[case] expected: &str) {
@@ -517,9 +517,9 @@ mod tests {
         assert_eq!(format!("{:?}", RuntimeValue::None), "None");
 
         let mut map = BTreeMap::default();
-        map.insert("name".to_string(), RuntimeValue::String("MQ".to_string()));
+        map.insert(Ident::new("name"), RuntimeValue::String("MQ".to_string()));
         map.insert(
-            "version".to_string(),
+            Ident::new("version"),
             RuntimeValue::Number(Number::from(1.0)),
         );
         let map_val = RuntimeValue::Dict(map);
@@ -664,8 +664,8 @@ mod tests {
             1
         );
         let mut map = BTreeMap::default();
-        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
-        map.insert("b".to_string(), RuntimeValue::String("beta".to_string()));
+        map.insert(Ident::new("a"), RuntimeValue::String("alpha".to_string()));
+        map.insert(Ident::new("b"), RuntimeValue::String("beta".to_string()));
         assert_eq!(RuntimeValue::Dict(map).len(), 2);
     }
 
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(format!("{:?}", native_fn), "native_function");
 
         let mut map = BTreeMap::default();
-        map.insert("a".to_string(), RuntimeValue::String("alpha".to_string()));
+        map.insert(Ident::new("a"), RuntimeValue::String("alpha".to_string()));
         let map_val = RuntimeValue::Dict(map);
         assert_eq!(format!("{:?}", map_val), r#"{"a": "alpha"}"#);
     }
@@ -771,18 +771,18 @@ mod tests {
     #[test]
     fn test_runtime_value_map_creation_and_equality() {
         let mut map1_data = BTreeMap::default();
-        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
-        map1_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        map1_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
+        map1_data.insert(Ident::new("b"), RuntimeValue::String("hello".to_string()));
         let map1 = RuntimeValue::Dict(map1_data);
 
         let mut map2_data = BTreeMap::default();
-        map2_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
-        map2_data.insert("b".to_string(), RuntimeValue::String("hello".to_string()));
+        map2_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
+        map2_data.insert(Ident::new("b"), RuntimeValue::String("hello".to_string()));
         let map2 = RuntimeValue::Dict(map2_data);
 
         let mut map3_data = BTreeMap::default();
-        map3_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
-        map3_data.insert("c".to_string(), RuntimeValue::String("world".to_string()));
+        map3_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
+        map3_data.insert(Ident::new("c"), RuntimeValue::String("world".to_string()));
         let map3 = RuntimeValue::Dict(map3_data);
 
         assert_eq!(map1, map2);
@@ -795,7 +795,7 @@ mod tests {
         assert!(empty_map.is_empty());
 
         let mut map_data = BTreeMap::default();
-        map_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
         let non_empty_map = RuntimeValue::Dict(map_data);
         assert!(!non_empty_map.is_empty());
     }
@@ -803,11 +803,11 @@ mod tests {
     #[test]
     fn test_runtime_value_map_partial_ord() {
         let mut map1_data = BTreeMap::default();
-        map1_data.insert("a".to_string(), RuntimeValue::Number(Number::from(1.0)));
+        map1_data.insert(Ident::new("a"), RuntimeValue::Number(Number::from(1.0)));
         let map1 = RuntimeValue::Dict(map1_data);
 
         let mut map2_data = BTreeMap::default();
-        map2_data.insert("b".to_string(), RuntimeValue::Number(Number::from(2.0)));
+        map2_data.insert(Ident::new("b"), RuntimeValue::Number(Number::from(2.0)));
         let map2 = RuntimeValue::Dict(map2_data);
 
         assert_eq!(map1.partial_cmp(&map2), None);

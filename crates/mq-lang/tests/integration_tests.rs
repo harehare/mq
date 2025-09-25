@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use mq_lang::{Engine, MqResult, RuntimeValue};
+use mq_lang::{Engine, Ident, MqResult, RuntimeValue};
 use rstest::{fixture, rstest};
 
 #[fixture]
@@ -675,8 +675,8 @@ fn engine_with_opt() -> Engine {
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
           let mut dict = BTreeMap::new();
-          dict.insert("a".to_string(), RuntimeValue::Number(1.into()));
-          dict.insert("b".to_string(), RuntimeValue::Number(2.into()));
+          dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+          dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
           dict.into()
         }].into()))]
 #[case::dict_map_transform_values("
@@ -688,8 +688,8 @@ fn engine_with_opt() -> Engine {
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![{
             let mut dict = BTreeMap::new();
-            dict.insert("x".to_string(), RuntimeValue::Number(10.into()));
-            dict.insert("y".to_string(), RuntimeValue::Number(20.into()));
+            dict.insert(Ident::new("x"), RuntimeValue::Number(10.into()));
+            dict.insert(Ident::new("y"), RuntimeValue::Number(20.into()));
             dict.into()
           }].into()))]
 #[case::dict_map_transform_keys(r#"
@@ -701,8 +701,8 @@ fn engine_with_opt() -> Engine {
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("prefix_a".to_string(), RuntimeValue::Number(1.into()));
-              dict.insert("prefix_b".to_string(), RuntimeValue::Number(2.into()));
+              dict.insert(Ident::new("prefix_a"), RuntimeValue::Number(1.into()));
+              dict.insert(Ident::new("prefix_b"), RuntimeValue::Number(2.into()));
               dict.into()
             }].into()))]
 #[case::dict_map_empty("map(dict(), fn(kv): kv;)",
@@ -719,8 +719,8 @@ fn engine_with_opt() -> Engine {
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("num1_transformed".to_string(), RuntimeValue::Number(101.into()));
-              dict.insert("num2_transformed".to_string(), RuntimeValue::Number(102.into()));
+              dict.insert(Ident::new("num1_transformed"), RuntimeValue::Number(101.into()));
+              dict.insert(Ident::new("num2_transformed"), RuntimeValue::Number(102.into()));
               dict.into()
             }].into()))]
 #[case::dict_filter_even_values(r#"
@@ -732,8 +732,8 @@ fn engine_with_opt() -> Engine {
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("b".to_string(), RuntimeValue::Number(2.into()));
-              dict.insert("c".to_string(), RuntimeValue::Number(4.into()));
+              dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+              dict.insert(Ident::new("c"), RuntimeValue::Number(4.into()));
               dict.into()
             }].into()))]
 #[case::dict_filter_empty("filter(dict(), fn(kv): true;)",
@@ -747,9 +747,9 @@ fn engine_with_opt() -> Engine {
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(7.into()), RuntimeValue::Number(8.into()), RuntimeValue::Number(9.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("0".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(9.into())]));
-                dict.insert("1".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(7.into())]));
-                dict.insert("2".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(8.into())]));
+                dict.insert(Ident::new("0"), RuntimeValue::Array(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(9.into())]));
+                dict.insert(Ident::new("1"), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(7.into())]));
+                dict.insert(Ident::new("2"), RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(8.into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_strings(r#"
@@ -760,9 +760,9 @@ fn engine_with_opt() -> Engine {
               vec![RuntimeValue::Array(vec![RuntimeValue::String("cat".to_string()), RuntimeValue::String("dog".to_string()), RuntimeValue::String("bird".to_string()), RuntimeValue::String("fish".to_string()), RuntimeValue::String("elephant".to_string())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("3".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("cat".to_string()), RuntimeValue::String("dog".to_string())]));
-                dict.insert("4".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("bird".to_string()), RuntimeValue::String("fish".to_string())]));
-                dict.insert("8".to_string(), RuntimeValue::Array(vec![RuntimeValue::String("elephant".to_string())]));
+                dict.insert(Ident::new("3"), RuntimeValue::Array(vec![RuntimeValue::String("cat".to_string()), RuntimeValue::String("dog".to_string())]));
+                dict.insert(Ident::new("4"), RuntimeValue::Array(vec![RuntimeValue::String("bird".to_string()), RuntimeValue::String("fish".to_string())]));
+                dict.insert(Ident::new("8"), RuntimeValue::Array(vec![RuntimeValue::String("elephant".to_string())]));
                 dict.into()
               }].into()))]
 #[case::group_by_empty_array("
@@ -780,7 +780,7 @@ fn engine_with_opt() -> Engine {
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("42".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(42.into())]));
+                dict.insert(Ident::new("42"), RuntimeValue::Array(vec![RuntimeValue::Number(42.into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_all_same_key(r#"
@@ -791,7 +791,7 @@ fn engine_with_opt() -> Engine {
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("same".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())]));
+                dict.insert(Ident::new("same"), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())]));
                 dict.into()
               }].into()))]
 #[case::group_by_boolean_result("
@@ -802,8 +802,8 @@ fn engine_with_opt() -> Engine {
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(6.into())])],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("false".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(5.into())]));
-                dict.insert("true".to_string(), RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())]));
+                dict.insert(Ident::new("false"), RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(5.into())]));
+                dict.insert(Ident::new("true"), RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())]));
                 dict.into()
               }].into()))]
 #[case::is_h_true("is_h()",
@@ -1260,16 +1260,16 @@ fn engine_with_opt() -> Engine {
 #[case::any_dict_true(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 2;)"#,
               vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("a".to_string(), RuntimeValue::Number(1.into()));
-                dict.insert("b".to_string(), RuntimeValue::Number(2.into()));
+                dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+                dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 dict.into()
               }],
               Ok(vec![RuntimeValue::Bool(true)].into()))]
 #[case::any_dict_false(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 3;)"#,
               vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("a".to_string(), RuntimeValue::Number(1.into()));
-                dict.insert("b".to_string(), RuntimeValue::Number(2.into()));
+                dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+                dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 dict.into()
               }],
               Ok(vec![RuntimeValue::Bool(false)].into()))]
@@ -1288,16 +1288,16 @@ fn engine_with_opt() -> Engine {
 #[case::all_dict_true(r#"all(dict(["a", 2], ["b", 4]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("a".to_string(), RuntimeValue::Number(2.into()));
-              dict.insert("b".to_string(), RuntimeValue::Number(4.into()));
+              dict.insert(Ident::new("a"), RuntimeValue::Number(2.into()));
+              dict.insert(Ident::new("b"), RuntimeValue::Number(4.into()));
               dict.into()
               }],
               Ok(vec![RuntimeValue::Bool(true)].into()))]
 #[case::all_dict_false(r#"all(dict(["a", 2], ["b", 3]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
               let mut dict = BTreeMap::new();
-              dict.insert("a".to_string(), RuntimeValue::Number(2.into()));
-              dict.insert("b".to_string(), RuntimeValue::Number(3.into()));
+              dict.insert(Ident::new("a"), RuntimeValue::Number(2.into()));
+              dict.insert(Ident::new("b"), RuntimeValue::Number(3.into()));
               dict.into()
               }],
               Ok(vec![RuntimeValue::Bool(false)].into()))]
@@ -1401,8 +1401,8 @@ fn engine_with_opt() -> Engine {
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert("a".to_string(), RuntimeValue::Number(1.into()));
-                dict.insert("b".to_string(), RuntimeValue::String("two".to_string()));
+                dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+                dict.insert(Ident::new("b"), RuntimeValue::String("two".to_string()));
                 dict.into()
             }].into()))]
 #[case::dict_literal_access_after_creation(r#"let d = {"name": "Jules", "occupation": "Philosopher"} | get(d, "name")"#,

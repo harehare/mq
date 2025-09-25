@@ -316,8 +316,8 @@ mod tests {
             ("dict", {
                 let mut map = BTreeMap::new();
 
-                map.insert("k1".to_string(), RuntimeValue::String("v1".into()));
-                map.insert("k2".to_string(), RuntimeValue::Number(3.0.into()));
+                map.insert("k1".into(), RuntimeValue::String("v1".into()));
+                map.insert("k2".into(), RuntimeValue::Number(3.0.into()));
 
                 RuntimeValue::Dict(map)
             })
