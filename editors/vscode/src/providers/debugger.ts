@@ -16,7 +16,6 @@ export class MqDebugConfigurationProvider
     config: vscode.DebugConfiguration,
     _token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.DebugConfiguration> {
-    // If launch.json is missing or empty
     const editor = vscode.window.activeTextEditor;
     if (editor && editor.document.languageId === "mq") {
       config.type = "mq";
