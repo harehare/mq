@@ -2151,6 +2151,20 @@ define_builtin!(
     }
 );
 
+define_builtin!(
+    INTERN,
+    ParamNum::Fixed(1),
+    |_, _, mut args| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            Ok(RuntimeValue::String(Ident::new(s).as_str()))
+        }
+        [a] => {
+            Ok(RuntimeValue::String(Ident::new(&a.to_string()).as_str()))
+        }
+        _ => unreachable!(),
+    }
+);
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2286,6 +2300,7 @@ const HASH_UPCASE: u64 = fnv1a_hash_64("upcase");
 const HASH_URL_ENCODE: u64 = fnv1a_hash_64("url_encode");
 const HASH_UTF8BYTELEN: u64 = fnv1a_hash_64("utf8bytelen");
 const HASH_VALUES: u64 = fnv1a_hash_64("values");
+const HASH_INTERN: u64 = fnv1a_hash_64("intern");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2395,6 +2410,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_URL_ENCODE => Some(&URL_ENCODE),
         HASH_UTF8BYTELEN => Some(&UTF8BYTELEN),
         HASH_VALUES => Some(&VALUES),
+        HASH_INTERN => Some(&INTERN),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
@@ -3443,7 +3459,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["path"],
             },
         );
-
         map.insert(
             SmolStr::new(constants::BREAKPOINT),
             BuiltinFunctionDoc {
@@ -3451,12 +3466,18 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &[],
             },
         );
-
         map.insert(
             SmolStr::new("negate"),
             BuiltinFunctionDoc {
                 description: "Returns the negation of the given number.",
                 params: &["number"],
+            },
+        );
+        map.insert(
+            SmolStr::new("intern"),
+            BuiltinFunctionDoc {
+                description: "Interns the given string, returning a canonical reference for efficient comparison.",
+                params: &["string"],
             },
         );
         map

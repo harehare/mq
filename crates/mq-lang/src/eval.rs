@@ -4724,6 +4724,43 @@ mod tests {
                 ],
                 Ok(vec![RuntimeValue::Bool(true)])
             )]
+    #[case::intern_string(
+                vec![RuntimeValue::String("hello".to_string())],
+                vec![
+                    ast_call("intern", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::String("hello".to_string())])
+            )]
+    #[case::intern_same_string_twice(
+                vec![RuntimeValue::String("repeat".to_string()), RuntimeValue::String("repeat".to_string())],
+                vec![
+                    ast_call("intern", SmallVec::new()),
+                    ast_call("intern", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::String("repeat".to_string()), RuntimeValue::String("repeat".to_string())])
+            )]
+    #[case::intern_different_strings(
+                vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())],
+                vec![
+                    ast_call("intern", SmallVec::new()),
+                    ast_call("intern", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())])
+            )]
+    #[case::intern_number(
+                vec![RuntimeValue::Number(42.into())],
+                vec![
+                    ast_call("intern", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::String("42".to_string())])
+            )]
+    #[case::intern_none(
+                vec![RuntimeValue::NONE],
+                vec![
+                    ast_call("intern", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::String("".to_string())])
+            )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
