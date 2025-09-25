@@ -4,18 +4,23 @@ name = "mq-web-api"
 version = "0.2.23"
 
 [dependencies]
+axum = "0.7.9"
+libsql = "0.9.24"
 miette = {workspace = true}
 mq-lang = {workspace = true, features = ["cst"]}
 mq-markdown = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
 serde_json.workspace = true
+sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid", "macros"]}
+thiserror = "2.0"
+tokio = {version = "1.0", features = ["full"]}
+tower = "0.4"
+tower-http = {version = "0.5", features = ["cors", "trace"]}
+tracing = "0.1"
+tracing-subscriber = {version = "0.3", features = ["env-filter", "json"]}
 url = {workspace = true}
 utoipa = {version = "5.4", features = ["preserve_order"]}
-worker = "0.6.1"
-# https://github.com/rustwasm/wasm-pack/issues/1247
 
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
-
-[lib]
-crate-type = ["cdylib"]
+[[bin]]
+name = "mq-web-api"
+path = "src/main.rs"

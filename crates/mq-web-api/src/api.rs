@@ -32,6 +32,10 @@ pub enum InputFormat {
     Text,
     #[serde(rename = "html")]
     Html,
+    #[serde(rename = "raw")]
+    Raw,
+    #[serde(rename = "null")]
+    Null,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
@@ -85,6 +89,8 @@ fn execute_query(request: ApiRequest) -> miette::Result<mq_lang::RuntimeValues> 
         InputFormat::Mdx => mq_lang::parse_mdx_input(&request.input.unwrap_or_default())?,
         InputFormat::Text => mq_lang::parse_text_input(&request.input.unwrap_or_default())?,
         InputFormat::Html => mq_lang::parse_html_input(&request.input.unwrap_or_default())?,
+        InputFormat::Raw => mq_lang::raw_input(&request.input.unwrap_or_default()),
+        InputFormat::Null => mq_lang::null_input(),
     };
 
     engine
