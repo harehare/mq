@@ -1,6 +1,6 @@
-use deadpool::managed;
-use libsql::{Builder, Connection, Database};
-use std::sync::Arc;
+use deadpool_libsql::{Config, Pool, Runtime};
+use libsql::params;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::{debug, error, info};
@@ -12,11 +12,13 @@ pub enum RateLimitError {
     #[error("Database error: {0}")]
     Database(#[from] libsql::Error),
     #[error("Pool error: {0}")]
-    Pool(#[from] deadpool::managed::PoolError<libsql::Error>),
+    Pool(#[from] deadpool_libsql::PoolError),
     #[error("Rate limit exceeded: {requests} requests in window, limit is {limit}")]
     LimitExceeded { requests: i64, limit: i64 },
     #[error("Configuration error: {0}")]
     Configuration(String),
+    #[error("Pool creation error: {0}")]
+    PoolCreation(#[from] deadpool_libsql::CreatePoolError),
 }
 
 #[derive(Debug, Clone)]
@@ -44,63 +46,33 @@ impl Default for RateLimitConfig {
     }
 }
 
-type ConnectionPool = deadpool::managed::Pool<ConnectionManager>;
-
-#[derive(Debug)]
-pub struct ConnectionManager {
-    database: Arc<Database>,
-}
-
-impl ConnectionManager {
-    pub fn new(database: Database) -> Self {
-        Self {
-            database: Arc::new(database),
-        }
-    }
-}
-
-impl managed::Manager for ConnectionManager {
-    type Type = Connection;
-    type Error = libsql::Error;
-
-    fn create(&self) -> impl std::future::Future<Output = Result<Self::Type, Self::Error>> + Send {
-        let database = Arc::clone(&self.database);
-        async move { database.connect() }
-    }
-
-    #[allow(clippy::manual_async_fn)]
-    fn recycle(
-        &self,
-        _conn: &mut Self::Type,
-        _metrics: &managed::Metrics,
-    ) -> impl std::future::Future<Output = managed::RecycleResult<Self::Error>> + Send {
-        async move { Ok(()) }
-    }
-}
-
 #[derive(Debug)]
 pub struct RateLimiter {
-    pool: ConnectionPool,
+    pool: Pool,
     config: RateLimitConfig,
 }
 
 impl RateLimiter {
     pub async fn new(config: RateLimitConfig) -> Result<Self, RateLimitError> {
-        let db = match config.clone().database_auth_token {
+        // Create deadpool config based on database type
+        let database = match config.database_auth_token.as_ref() {
             Some(token) => {
-                Builder::new_remote(config.clone().database_url, token)
-                    .build()
-                    .await?
+                deadpool_libsql::config::Database::Remote(deadpool_libsql::config::Remote {
+                    url: config.database_url.clone(),
+                    auth_token: token.clone(),
+                    namespace: None,
+                    remote_encryption: None,
+                })
             }
-            None => Builder::new_local(&config.database_url).build().await?,
+            None => deadpool_libsql::config::Database::Local(deadpool_libsql::config::Local {
+                path: PathBuf::from(&config.database_url),
+                encryption_config: None,
+                flags: None,
+            }),
         };
 
-        let manager = ConnectionManager::new(db);
-        let pool_config = deadpool::managed::PoolConfig::new(config.pool_max_size);
-        let pool = deadpool::managed::Pool::builder(manager)
-            .config(pool_config)
-            .build()
-            .map_err(|e| RateLimitError::Configuration(format!("Failed to create pool: {}", e)))?;
+        let pool_config = Config::new(database);
+        let pool = pool_config.create_pool(Some(Runtime::Tokio1)).await?;
 
         let rate_limiter = Self { pool, config };
 
@@ -111,9 +83,7 @@ impl RateLimiter {
     }
 
     #[cfg(test)]
-    pub async fn get_connection(
-        &self,
-    ) -> Result<deadpool::managed::Object<ConnectionManager>, RateLimitError> {
+    pub async fn get_connection(&self) -> Result<deadpool_libsql::Connection, RateLimitError> {
         Ok(self.pool.get().await?)
     }
 
@@ -130,7 +100,7 @@ impl RateLimiter {
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 expires_at INTEGER NOT NULL
             )",
-            (),
+            params![],
         )
         .await?;
 
@@ -138,14 +108,14 @@ impl RateLimiter {
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier_window
              ON rate_limits(identifier, window_start)",
-            (),
+            params![],
         )
         .await?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_rate_limits_expires_at
              ON rate_limits(expires_at)",
-            (),
+            params![],
         )
         .await?;
 
@@ -166,7 +136,7 @@ impl RateLimiter {
                 "UPDATE rate_limits
              SET request_count = request_count + 1
              WHERE identifier = ? AND window_start = ?",
-                [identifier, window_start.to_string().as_str()],
+                params![identifier, window_start],
             )
             .await?;
 
@@ -175,11 +145,7 @@ impl RateLimiter {
             conn.execute(
                 "INSERT INTO rate_limits (identifier, window_start, request_count, expires_at)
                  VALUES (?, ?, 1, ?)",
-                [
-                    identifier,
-                    window_start.to_string().as_str(),
-                    expires_at.to_string().as_str(),
-                ],
+                params![identifier, window_start, expires_at],
             )
             .await?;
             1
@@ -189,7 +155,7 @@ impl RateLimiter {
                 .query(
                     "SELECT request_count FROM rate_limits
                  WHERE identifier = ? AND window_start = ?",
-                    [identifier, window_start.to_string().as_str()],
+                    params![identifier, window_start],
                 )
                 .await?;
 
@@ -220,10 +186,7 @@ impl RateLimiter {
         let conn = self.pool.get().await?;
 
         let deleted_rows = conn
-            .execute(
-                "DELETE FROM rate_limits WHERE expires_at < ?",
-                [now.to_string().as_str()],
-            )
+            .execute("DELETE FROM rate_limits WHERE expires_at < ?", params![now])
             .await?;
 
         if deleted_rows > 0 {
@@ -242,7 +205,7 @@ impl RateLimiter {
             .query(
                 "SELECT request_count FROM rate_limits
              WHERE identifier = ? AND window_start = ?",
-                [identifier, window_start.to_string().as_str()],
+                params![identifier, window_start],
             )
             .await?;
 
@@ -260,7 +223,7 @@ impl RateLimiter {
 
         conn.execute(
             "DELETE FROM rate_limits WHERE identifier = ? AND window_start = ?",
-            [identifier, window_start.to_string().as_str()],
+            params![identifier, window_start],
         )
         .await?;
 
@@ -374,12 +337,7 @@ mod tests {
         conn.execute(
             "INSERT INTO rate_limits (identifier, window_start, request_count, expires_at)
              VALUES (?, ?, ?, ?)",
-            [
-                "expired_user",
-                (expired_time - 60).to_string().as_str(),
-                "1",
-                expired_time.to_string().as_str(),
-            ],
+            params!["expired_user", expired_time - 60, 1, expired_time],
         )
         .await
         .unwrap();

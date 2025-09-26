@@ -1116,10 +1116,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "deadpool-libsql"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b1ed531cd2e64228b35cea49544cb56eaff56b74cc083f5a385e9da4b8c0d2f"
+dependencies = [
+ "bytes",
+ "deadpool",
+ "libsql",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "deadpool-runtime"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+dependencies = [
+ "tokio",
+]
 
 [[package]]
 name = "deranged"
@@ -3038,7 +3053,7 @@ version = "0.2.23"
 dependencies = [
  "async-trait",
  "axum 0.8.4",
- "deadpool",
+ "deadpool-libsql",
  "libsql",
  "miette",
  "mq-lang",

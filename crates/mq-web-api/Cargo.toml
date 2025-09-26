@@ -6,7 +6,7 @@ version = "0.2.23"
 [dependencies]
 async-trait = "0.1.83"
 axum = "0.8.4"
-deadpool = "0.12.3"
+deadpool-libsql = "0.1.0"
 libsql = "0.9.24"
 miette = {workspace = true}
 mq-lang = {workspace = true, features = ["cst"]}
