@@ -34,16 +34,16 @@ impl Config {
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
-        if let Ok(host) = env::var("MQ_HOST") {
+        if let Ok(host) = env::var("HOST") {
             config.host = host;
         }
 
-        if let Ok(port_str) = env::var("MQ_PORT") {
+        if let Ok(port_str) = env::var("PORT") {
             if let Ok(port) = port_str.parse::<u16>() {
                 config.port = port;
             } else {
                 eprintln!(
-                    "Warning: Invalid MQ_PORT value '{}', using default {}",
+                    "Warning: Invalid PORT value '{}', using default {}",
                     port_str, config.port
                 );
             }
@@ -51,11 +51,9 @@ impl Config {
 
         if let Ok(log_level) = env::var("RUST_LOG") {
             config.log_level = log_level;
-        } else if let Ok(log_level) = env::var("MQ_LOG_LEVEL") {
-            config.log_level = log_level;
         }
 
-        if let Ok(log_format) = env::var("MQ_LOG_FORMAT") {
+        if let Ok(log_format) = env::var("LOG_FORMAT") {
             config.log_format = match log_format.to_lowercase().as_str() {
                 "text" | "plain" => LogFormat::Text,
                 "json" => LogFormat::Json,
@@ -69,7 +67,7 @@ impl Config {
             };
         }
 
-        if let Ok(cors_origins) = env::var("MQ_CORS_ORIGINS") {
+        if let Ok(cors_origins) = env::var("CORS_ORIGINS") {
             config.cors_origins = cors_origins
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -80,39 +78,63 @@ impl Config {
         // Rate limiting configuration
         if let Ok(database_url) = env::var("DATABASE_URL") {
             config.rate_limit.database_url = database_url;
-        } else if let Ok(database_url) = env::var("MQ_RATE_LIMIT_DATABASE_URL") {
-            config.rate_limit.database_url = database_url;
         }
 
-        if let Ok(requests_str) = env::var("MQ_RATE_LIMIT_REQUESTS_PER_WINDOW") {
+        if let Ok(database_token) = env::var("DATABASE_TOKEN") {
+            config.rate_limit.database_auth_token = Some(database_token);
+        }
+
+        if let Ok(requests_str) = env::var("RATE_LIMIT_REQUESTS_PER_WINDOW") {
             if let Ok(requests) = requests_str.parse::<i64>() {
                 config.rate_limit.requests_per_window = requests;
             } else {
                 eprintln!(
-                    "Warning: Invalid MQ_RATE_LIMIT_REQUESTS_PER_WINDOW value '{}', using default {}",
+                    "Warning: Invalid RATE_LIMIT_REQUESTS_PER_WINDOW value '{}', using default {}",
                     requests_str, config.rate_limit.requests_per_window
                 );
             }
         }
 
-        if let Ok(window_str) = env::var("MQ_RATE_LIMIT_WINDOW_SIZE_SECONDS") {
+        if let Ok(window_str) = env::var("RATE_LIMIT_WINDOW_SIZE_SECONDS") {
             if let Ok(window) = window_str.parse::<i64>() {
                 config.rate_limit.window_size_seconds = window;
             } else {
                 eprintln!(
-                    "Warning: Invalid MQ_RATE_LIMIT_WINDOW_SIZE_SECONDS value '{}', using default {}",
+                    "Warning: Invalid RATE_LIMIT_WINDOW_SIZE_SECONDS value '{}', using default {}",
                     window_str, config.rate_limit.window_size_seconds
                 );
             }
         }
 
-        if let Ok(cleanup_str) = env::var("MQ_RATE_LIMIT_CLEANUP_INTERVAL_SECONDS") {
+        if let Ok(cleanup_str) = env::var("RATE_LIMIT_CLEANUP_INTERVAL_SECONDS") {
             if let Ok(cleanup) = cleanup_str.parse::<i64>() {
                 config.rate_limit.cleanup_interval_seconds = cleanup;
             } else {
                 eprintln!(
-                    "Warning: Invalid MQ_RATE_LIMIT_CLEANUP_INTERVAL_SECONDS value '{}', using default {}",
+                    "Warning: Invalid RATE_LIMIT_CLEANUP_INTERVAL_SECONDS value '{}', using default {}",
                     cleanup_str, config.rate_limit.cleanup_interval_seconds
+                );
+            }
+        }
+
+        if let Ok(pool_size_str) = env::var("RATE_LIMIT_POOL_MAX_SIZE") {
+            if let Ok(pool_size) = pool_size_str.parse::<usize>() {
+                config.rate_limit.pool_max_size = pool_size;
+            } else {
+                eprintln!(
+                    "Warning: Invalid RATE_LIMIT_POOL_MAX_SIZE value '{}', using default {}",
+                    pool_size_str, config.rate_limit.pool_max_size
+                );
+            }
+        }
+
+        if let Ok(timeout_str) = env::var("RATE_LIMIT_POOL_TIMEOUT_SECONDS") {
+            if let Ok(timeout) = timeout_str.parse::<u64>() {
+                config.rate_limit.pool_timeout_seconds = timeout;
+            } else {
+                eprintln!(
+                    "Warning: Invalid RATE_LIMIT_POOL_TIMEOUT_SECONDS value '{}', using default {}",
+                    timeout_str, config.rate_limit.pool_timeout_seconds
                 );
             }
         }
@@ -187,19 +209,19 @@ mod tests {
     #[test]
     fn test_config_from_env() {
         // Save original values
-        let original_host = env::var("MQ_HOST").ok();
-        let original_port = env::var("MQ_PORT").ok();
-        let original_log = env::var("MQ_LOG_LEVEL").ok();
-        let original_log_format = env::var("MQ_LOG_FORMAT").ok();
-        let original_cors = env::var("MQ_CORS_ORIGINS").ok();
+        let original_host = env::var("HOST").ok();
+        let original_port = env::var("PORT").ok();
+        let original_log = env::var("LOG_LEVEL").ok();
+        let original_log_format = env::var("LOG_FORMAT").ok();
+        let original_cors = env::var("CORS_ORIGINS").ok();
 
         unsafe {
             // Set test values
-            env::set_var("MQ_HOST", "test.example.com");
-            env::set_var("MQ_PORT", "9000");
-            env::set_var("MQ_LOG_LEVEL", "info");
-            env::set_var("MQ_LOG_FORMAT", "text");
-            env::set_var("MQ_CORS_ORIGINS", "https://example.com,https://test.com");
+            env::set_var("HOST", "test.example.com");
+            env::set_var("PORT", "9000");
+            env::set_var("LOG_LEVEL", "info");
+            env::set_var("LOG_FORMAT", "text");
+            env::set_var("CORS_ORIGINS", "https://example.com,https://test.com");
         }
 
         let config = Config::from_env();
@@ -216,24 +238,24 @@ mod tests {
         unsafe {
             // Restore original values
             match original_host {
-                Some(val) => env::set_var("MQ_HOST", val),
-                None => env::remove_var("MQ_HOST"),
+                Some(val) => env::set_var("HOST", val),
+                None => env::remove_var("HOST"),
             }
             match original_port {
-                Some(val) => env::set_var("MQ_PORT", val),
-                None => env::remove_var("MQ_PORT"),
+                Some(val) => env::set_var("PORT", val),
+                None => env::remove_var("PORT"),
             }
             match original_log {
-                Some(val) => env::set_var("MQ_LOG_LEVEL", val),
-                None => env::remove_var("MQ_LOG_LEVEL"),
+                Some(val) => env::set_var("LOG_LEVEL", val),
+                None => env::remove_var("LOG_LEVEL"),
             }
             match original_log_format {
-                Some(val) => env::set_var("MQ_LOG_FORMAT", val),
-                None => env::remove_var("MQ_LOG_FORMAT"),
+                Some(val) => env::set_var("LOG_FORMAT", val),
+                None => env::remove_var("LOG_FORMAT"),
             }
             match original_cors {
-                Some(val) => env::set_var("MQ_CORS_ORIGINS", val),
-                None => env::remove_var("MQ_CORS_ORIGINS"),
+                Some(val) => env::set_var("CORS_ORIGINS", val),
+                None => env::remove_var("CORS_ORIGINS"),
             }
         }
     }

@@ -1,14 +1,18 @@
-use sqlx::SqlitePool;
+use deadpool::managed;
+use libsql::{Builder, Connection, Database};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
+
+const MEMORY_DB_URL: &str = ":memory:";
 
 #[derive(Debug, Error)]
 pub enum RateLimitError {
     #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
-    #[error("Migration error: {0}")]
-    Migration(#[from] sqlx::migrate::MigrateError),
+    Database(#[from] libsql::Error),
+    #[error("Pool error: {0}")]
+    Pool(#[from] deadpool::managed::PoolError<libsql::Error>),
     #[error("Rate limit exceeded: {requests} requests in window, limit is {limit}")]
     LimitExceeded { requests: i64, limit: i64 },
     #[error("Configuration error: {0}")]
@@ -18,33 +22,85 @@ pub enum RateLimitError {
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     pub database_url: String,
+    pub database_auth_token: Option<String>,
     pub requests_per_window: i64,
     pub window_size_seconds: i64,
     pub cleanup_interval_seconds: i64,
+    pub pool_max_size: usize,
+    pub pool_timeout_seconds: u64,
 }
 
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            database_url: ":memory:".to_string(),
+            database_url: MEMORY_DB_URL.to_string(),
+            database_auth_token: None,
             requests_per_window: 100,
             window_size_seconds: 3600,      // 1 hour
             cleanup_interval_seconds: 3600, // Cleanup every hour
+            pool_max_size: 10,
+            pool_timeout_seconds: 30,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+type ConnectionPool = deadpool::managed::Pool<ConnectionManager>;
+
+#[derive(Debug)]
+pub struct ConnectionManager {
+    database: Arc<Database>,
+}
+
+impl ConnectionManager {
+    pub fn new(database: Database) -> Self {
+        Self {
+            database: Arc::new(database),
+        }
+    }
+}
+
+impl managed::Manager for ConnectionManager {
+    type Type = Connection;
+    type Error = libsql::Error;
+
+    fn create(&self) -> impl std::future::Future<Output = Result<Self::Type, Self::Error>> + Send {
+        let database = Arc::clone(&self.database);
+        async move { database.connect() }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn recycle(
+        &self,
+        _conn: &mut Self::Type,
+        _metrics: &managed::Metrics,
+    ) -> impl std::future::Future<Output = managed::RecycleResult<Self::Error>> + Send {
+        async move { Ok(()) }
+    }
+}
+
+#[derive(Debug)]
 pub struct RateLimiter {
-    pool: SqlitePool,
+    pool: ConnectionPool,
     config: RateLimitConfig,
 }
 
 impl RateLimiter {
     pub async fn new(config: RateLimitConfig) -> Result<Self, RateLimitError> {
-        let pool = SqlitePool::connect(&config.database_url)
-            .await
-            .map_err(RateLimitError::Database)?;
+        let db = match config.clone().database_auth_token {
+            Some(token) => {
+                Builder::new_remote(config.clone().database_url, token)
+                    .build()
+                    .await?
+            }
+            None => Builder::new_local(&config.database_url).build().await?,
+        };
+
+        let manager = ConnectionManager::new(db);
+        let pool_config = deadpool::managed::PoolConfig::new(config.pool_max_size);
+        let pool = deadpool::managed::Pool::builder(manager)
+            .config(pool_config)
+            .build()
+            .map_err(|e| RateLimitError::Configuration(format!("Failed to create pool: {}", e)))?;
 
         let rate_limiter = Self { pool, config };
 
@@ -55,13 +111,45 @@ impl RateLimiter {
     }
 
     #[cfg(test)]
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
+    pub async fn get_connection(
+        &self,
+    ) -> Result<deadpool::managed::Object<ConnectionManager>, RateLimitError> {
+        Ok(self.pool.get().await?)
     }
 
     async fn run_migrations(&self) -> Result<(), RateLimitError> {
-        sqlx::migrate!("./migrations").run(&self.pool).await?;
-        debug!("Rate limiter database migrations completed");
+        let conn = self.pool.get().await?;
+
+        // Create rate_limits table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                identifier TEXT NOT NULL,
+                window_start INTEGER NOT NULL,
+                request_count INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                expires_at INTEGER NOT NULL
+            )",
+            (),
+        )
+        .await?;
+
+        // Create indexes
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier_window
+             ON rate_limits(identifier, window_start)",
+            (),
+        )
+        .await?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rate_limits_expires_at
+             ON rate_limits(expires_at)",
+            (),
+        )
+        .await?;
+
+        info!("Rate limiter database migrations completed");
         Ok(())
     }
 
@@ -70,41 +158,46 @@ impl RateLimiter {
         let window_start = self.get_window_start(now);
         let expires_at = window_start + self.config.window_size_seconds;
 
+        let conn = self.pool.get().await?;
+
         // First, try to increment existing record
-        let result = sqlx::query(
-            "UPDATE rate_limits
+        let result = conn
+            .execute(
+                "UPDATE rate_limits
              SET request_count = request_count + 1
              WHERE identifier = ? AND window_start = ?",
-        )
-        .bind(identifier)
-        .bind(window_start)
-        .execute(&self.pool)
-        .await
-        .map_err(RateLimitError::Database)?;
+                [identifier, window_start.to_string().as_str()],
+            )
+            .await?;
 
-        let current_count = if result.rows_affected() == 0 {
+        let current_count = if result == 0 {
             // No existing record, create new one
-            sqlx::query(
+            conn.execute(
                 "INSERT INTO rate_limits (identifier, window_start, request_count, expires_at)
                  VALUES (?, ?, 1, ?)",
+                [
+                    identifier,
+                    window_start.to_string().as_str(),
+                    expires_at.to_string().as_str(),
+                ],
             )
-            .bind(identifier)
-            .bind(window_start)
-            .bind(expires_at)
-            .execute(&self.pool)
-            .await
-            .map_err(RateLimitError::Database)?;
+            .await?;
             1
         } else {
-            sqlx::query_scalar::<_, i64>(
-                "SELECT request_count FROM rate_limits
+            // Get current count
+            let mut rows = conn
+                .query(
+                    "SELECT request_count FROM rate_limits
                  WHERE identifier = ? AND window_start = ?",
-            )
-            .bind(identifier)
-            .bind(window_start)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(RateLimitError::Database)?
+                    [identifier, window_start.to_string().as_str()],
+                )
+                .await?;
+
+            if let Some(row) = rows.next().await? {
+                row.get::<i64>(0)?
+            } else {
+                1
+            }
         };
 
         debug!(
@@ -124,14 +217,14 @@ impl RateLimiter {
 
     pub async fn cleanup_expired(&self) -> Result<u64, RateLimitError> {
         let now = current_timestamp();
+        let conn = self.pool.get().await?;
 
-        let result = sqlx::query("DELETE FROM rate_limits WHERE expires_at < ?")
-            .bind(now)
-            .execute(&self.pool)
-            .await
-            .map_err(RateLimitError::Database)?;
-
-        let deleted_rows = result.rows_affected();
+        let deleted_rows = conn
+            .execute(
+                "DELETE FROM rate_limits WHERE expires_at < ?",
+                [now.to_string().as_str()],
+            )
+            .await?;
 
         if deleted_rows > 0 {
             debug!("Cleaned up {} expired rate limit records", deleted_rows);
@@ -143,30 +236,33 @@ impl RateLimiter {
     pub async fn get_current_usage(&self, identifier: &str) -> Result<Option<i64>, RateLimitError> {
         let now = current_timestamp();
         let window_start = self.get_window_start(now);
+        let conn = self.pool.get().await?;
 
-        let result = sqlx::query_scalar::<_, i64>(
-            "SELECT request_count FROM rate_limits
+        let mut rows = conn
+            .query(
+                "SELECT request_count FROM rate_limits
              WHERE identifier = ? AND window_start = ?",
-        )
-        .bind(identifier)
-        .bind(window_start)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(RateLimitError::Database)?;
+                [identifier, window_start.to_string().as_str()],
+            )
+            .await?;
 
-        Ok(result)
+        if let Some(row) = rows.next().await? {
+            Ok(Some(row.get::<i64>(0)?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn reset_limit(&self, identifier: &str) -> Result<(), RateLimitError> {
         let now = current_timestamp();
         let window_start = self.get_window_start(now);
+        let conn = self.pool.get().await?;
 
-        sqlx::query("DELETE FROM rate_limits WHERE identifier = ? AND window_start = ?")
-            .bind(identifier)
-            .bind(window_start)
-            .execute(&self.pool)
-            .await
-            .map_err(RateLimitError::Database)?;
+        conn.execute(
+            "DELETE FROM rate_limits WHERE identifier = ? AND window_start = ?",
+            [identifier, window_start.to_string().as_str()],
+        )
+        .await?;
 
         debug!("Reset rate limit for identifier '{}'", identifier);
         Ok(())
@@ -196,19 +292,9 @@ pub fn current_timestamp() -> i64 {
 mod tests {
     use super::*;
 
-    async fn create_test_limiter() -> RateLimiter {
-        let config = RateLimitConfig {
-            database_url: ":memory:".to_string(),
-            requests_per_window: 5,
-            window_size_seconds: 60,
-            cleanup_interval_seconds: 60,
-        };
-        RateLimiter::new(config).await.unwrap()
-    }
-
     #[tokio::test]
     async fn test_rate_limit_allows_requests_within_limit() {
-        let limiter = create_test_limiter().await;
+        let limiter = RateLimiter::new(RateLimitConfig::default()).await.unwrap();
         let identifier = "test_user";
 
         for i in 1..=5 {
@@ -219,7 +305,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_blocks_excess_requests() {
-        let limiter = create_test_limiter().await;
+        let config = RateLimitConfig {
+            requests_per_window: 5,
+            ..RateLimitConfig::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
         let identifier = "test_user";
 
         // Fill up the limit
@@ -234,7 +324,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_current_usage() {
-        let limiter = create_test_limiter().await;
+        let limiter = RateLimiter::new(RateLimitConfig::default()).await.unwrap();
+        // setup_table(&limiter).await;
         let identifier = "test_user";
 
         // Initially no usage
@@ -252,7 +343,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_limit() {
-        let limiter = create_test_limiter().await;
+        let config = RateLimitConfig {
+            requests_per_window: 5,
+            ..RateLimitConfig::default()
+        };
+        let limiter = RateLimiter::new(config).await.unwrap();
         let identifier = "test_user";
 
         // Fill up the limit
@@ -270,23 +365,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_expired() {
-        let limiter = create_test_limiter().await;
-
+        let limiter = RateLimiter::new(RateLimitConfig::default()).await.unwrap();
         // Insert some expired records manually
         let now = current_timestamp();
         let expired_time = now - 3600; // 1 hour ago
 
-        sqlx::query(
+        let conn = limiter.pool.get().await.unwrap();
+        conn.execute(
             "INSERT INTO rate_limits (identifier, window_start, request_count, expires_at)
              VALUES (?, ?, ?, ?)",
+            [
+                "expired_user",
+                (expired_time - 60).to_string().as_str(),
+                "1",
+                expired_time.to_string().as_str(),
+            ],
         )
-        .bind("expired_user")
-        .bind(expired_time - 60)
-        .bind(1)
-        .bind(expired_time)
-        .execute(&limiter.pool)
         .await
         .unwrap();
+        drop(conn); // Release the connection before calling cleanup_expired
 
         let deleted = limiter.cleanup_expired().await.unwrap();
         assert_eq!(deleted, 1);

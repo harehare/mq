@@ -87,19 +87,9 @@ mod tests {
     use crate::rate_limiter::{RateLimitConfig, RateLimiter, current_timestamp};
     use tokio::time::{Duration, sleep};
 
-    async fn create_test_limiter() -> Arc<RateLimiter> {
-        let config = RateLimitConfig {
-            database_url: ":memory:".to_string(),
-            requests_per_window: 10,
-            window_size_seconds: 60,
-            cleanup_interval_seconds: 1,
-        };
-        Arc::new(RateLimiter::new(config).await.unwrap())
-    }
-
     #[tokio::test]
     async fn test_cleanup_service_lifecycle() {
-        let rate_limiter = create_test_limiter().await;
+        let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()).await.unwrap());
         let mut cleanup_service = CleanupService::new(rate_limiter, 1);
 
         // Service should not be running initially
@@ -127,23 +117,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_removes_expired_records() {
-        let rate_limiter = create_test_limiter().await;
+        let rate_limiter = Arc::new(RateLimiter::new(RateLimitConfig::default()).await.unwrap());
 
         // Insert some expired records manually
         let now = current_timestamp();
         let expired_time = now - 3600; // 1 hour ago
 
-        sqlx::query(
-            "INSERT INTO rate_limits (identifier, window_start, request_count, expires_at)
-             VALUES (?, ?, ?, ?)",
-        )
-        .bind("expired_user")
-        .bind(expired_time - 60)
-        .bind(1)
-        .bind(expired_time)
-        .execute(rate_limiter.pool())
-        .await
-        .unwrap();
+        {
+            let conn = rate_limiter.get_connection().await.unwrap();
+            conn.execute(
+                "INSERT INTO rate_limits (identifier, window_start, request_count, expires_at)
+                 VALUES (?, ?, ?, ?)",
+                [
+                    "expired_user",
+                    (expired_time - 60).to_string().as_str(),
+                    "1",
+                    expired_time.to_string().as_str(),
+                ],
+            )
+            .await
+            .unwrap();
+        }
 
         // Create cleanup service with very short interval for testing
         let mut cleanup_service = CleanupService::new(Arc::clone(&rate_limiter), 1);
@@ -153,12 +147,21 @@ mod tests {
         sleep(Duration::from_secs(2)).await;
 
         // Check that expired records were cleaned up
-        let count =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rate_limits WHERE identifier = ?")
-                .bind("expired_user")
-                .fetch_one(rate_limiter.pool())
-                .await
-                .unwrap();
+        let mut rows = {
+            let conn = rate_limiter.get_connection().await.unwrap();
+            conn.query(
+                "SELECT COUNT(*) FROM rate_limits WHERE identifier = ?",
+                ["expired_user"],
+            )
+            .await
+            .unwrap()
+        };
+
+        let count = if let Some(row) = rows.next().await.unwrap() {
+            row.get::<i64>(0).unwrap()
+        } else {
+            0
+        };
 
         assert_eq!(count, 0, "Expired records should have been cleaned up");
 
