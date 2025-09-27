@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    borrow::Cow,
+    fmt::{self, Display},
+};
 
 use itertools::Itertools;
 use markdown::mdast::{self};
@@ -60,11 +63,11 @@ impl Url {
         &self.0
     }
 
-    pub fn to_string_with(&self, options: &RenderOptions) -> String {
+    pub fn to_string_with(&self, options: &RenderOptions) -> Cow<'_, str> {
         match options.link_url_style {
-            UrlSurroundStyle::None if self.0.is_empty() => "".to_string(),
-            UrlSurroundStyle::None => self.0.clone(),
-            UrlSurroundStyle::Angle => format!("<{}>", self.0),
+            UrlSurroundStyle::None if self.0.is_empty() => Cow::Borrowed(""),
+            UrlSurroundStyle::None => Cow::Borrowed(&self.0),
+            UrlSurroundStyle::Angle => Cow::Owned(format!("<{}>", self.0)),
         }
     }
 }
@@ -100,11 +103,11 @@ impl Title {
         self.0.clone()
     }
 
-    pub fn to_string_with(&self, options: &RenderOptions) -> String {
+    pub fn to_string_with(&self, options: &RenderOptions) -> Cow<'_, str> {
         match options.link_title_style {
-            TitleSurroundStyle::Double => format!("\"{}\"", self),
-            TitleSurroundStyle::Single => format!("'{}'", self),
-            TitleSurroundStyle::Paren => format!("({})", self),
+            TitleSurroundStyle::Double => Cow::Owned(format!("\"{}\"", self)),
+            TitleSurroundStyle::Single => Cow::Owned(format!("'{}'", self)),
+            TitleSurroundStyle::Paren => Cow::Owned(format!("({})", self)),
         }
     }
 }

@@ -252,14 +252,24 @@ impl ModuleLoader {
                     })
                     .unwrap_or_else(|| home.clone());
 
-                PathBuf::from(path).join(Self::module_id(name))
+                PathBuf::from(path).join(Self::module_id(name).as_ref())
             })
             .find(|p| p.is_file())
             .ok_or_else(|| ModuleError::NotFound(Self::module_id(name).to_string()))
     }
 
-    fn module_id(name: &str) -> String {
-        format!("{}.mq", name)
+    fn module_id(name: &str) -> Cow<'static, str> {
+        // For common module names, use static strings to avoid allocation
+        match name {
+            "csv" => Cow::Borrowed("csv.mq"),
+            "json" => Cow::Borrowed("json.mq"),
+            "yaml" => Cow::Borrowed("yaml.mq"),
+            "xml" => Cow::Borrowed("xml.mq"),
+            "toml" => Cow::Borrowed("toml.mq"),
+            "test" => Cow::Borrowed("test.mq"),
+            "fuzzy" => Cow::Borrowed("fuzzy.mq"),
+            _ => Cow::Owned(format!("{}.mq", name)),
+        }
     }
 
     fn parse_program(
