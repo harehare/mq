@@ -1,5 +1,4 @@
 use crate::rate_limiter::RateLimiter;
-use libsql::params;
 use std::{sync::Arc, time::Duration};
 use tokio::{task::JoinHandle, time::interval};
 use tracing::{debug, error, info, warn};
@@ -85,6 +84,7 @@ impl Drop for CleanupService {
 mod tests {
     use super::*;
     use crate::rate_limiter::{RateLimitConfig, RateLimiter, current_timestamp};
+    use libsql::params;
     use tokio::time::{Duration, sleep};
 
     #[tokio::test]
