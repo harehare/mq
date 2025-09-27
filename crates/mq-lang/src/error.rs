@@ -1,4 +1,5 @@
 use miette::{Diagnostic, SourceOffset, SourceSpan};
+use std::borrow::Cow;
 
 use crate::{
     Module, ModuleLoader,
@@ -140,18 +141,21 @@ impl Error {
                 };
 
                 let source_code = module_id
-                    .map(
-                        |module_id| match module_loader.module_name(*module_id).as_str() {
-                            Module::TOP_LEVEL_MODULE => source_code.to_owned(),
-                            Module::BUILTIN_MODULE => ModuleLoader::BUILTIN_FILE.to_string(),
-                            module_name => module_loader
-                                .clone()
-                                .read_file(module_name)
-                                .unwrap_or_default()
-                                .clone(),
-                        },
-                    )
-                    .unwrap_or(source_code.to_owned());
+                    .map(|module_id| match module_loader.module_name(*module_id) {
+                        Cow::Borrowed(Module::TOP_LEVEL_MODULE) => source_code.clone(),
+                        Cow::Borrowed(Module::BUILTIN_MODULE) => {
+                            ModuleLoader::BUILTIN_FILE.to_string()
+                        }
+                        Cow::Borrowed(module_name) => module_loader
+                            .clone()
+                            .read_file(module_name)
+                            .unwrap_or_default(),
+                        Cow::Owned(module_name) => module_loader
+                            .clone()
+                            .read_file(&module_name)
+                            .unwrap_or_default(),
+                    })
+                    .unwrap_or(source_code);
 
                 let location = if is_eof {
                     let lines = source_code.lines();
@@ -177,102 +181,110 @@ impl Error {
 
 impl Diagnostic for Error {
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        let c = match self.cause {
+        let c: Cow<'static, str> = match self.cause {
             InnerError::Lexer(LexerError::UnexpectedToken(_)) => {
-                "LexerError::UnexpectedToken".to_string()
+                Cow::Borrowed("LexerError::UnexpectedToken")
             }
             InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => {
-                "LexerError::UnexpectedEOFDetected".to_string()
+                Cow::Borrowed("LexerError::UnexpectedEOFDetected")
             }
             InnerError::Parse(ParseError::EnvNotFound(_, _)) => {
-                "ParseError::EnvNotFound".to_string()
+                Cow::Borrowed("ParseError::EnvNotFound")
             }
             InnerError::Parse(ParseError::UnexpectedToken(_)) => {
-                "ParseError::UnexpectedToken".to_string()
+                Cow::Borrowed("ParseError::UnexpectedToken")
             }
             InnerError::Parse(ParseError::UnexpectedEOFDetected(_)) => {
-                "ParseError::UnexpectedEOFDetected".to_string()
+                Cow::Borrowed("ParseError::UnexpectedEOFDetected")
             }
             InnerError::Parse(ParseError::InsufficientTokens(_)) => {
-                "ParseError::InsufficientTokens".to_string()
+                Cow::Borrowed("ParseError::InsufficientTokens")
             }
             InnerError::Parse(ParseError::ExpectedClosingParen(_)) => {
-                "ParseError::ExpectedClosingParen".to_string()
+                Cow::Borrowed("ParseError::ExpectedClosingParen")
             }
             InnerError::Parse(ParseError::ExpectedClosingBrace(_)) => {
-                "ParseError::ExpectedClosingBrace".to_string()
+                Cow::Borrowed("ParseError::ExpectedClosingBrace")
             }
             InnerError::Parse(ParseError::ExpectedClosingBracket(_)) => {
-                "ParseError::ExpectedClosingBracket".to_string()
+                Cow::Borrowed("ParseError::ExpectedClosingBracket")
             }
             InnerError::Eval(EvalError::RecursionError(_)) => {
-                "EvalError::RecursionError".to_string()
+                Cow::Borrowed("EvalError::RecursionError")
             }
             InnerError::Eval(EvalError::ModuleLoadError(_)) => {
-                "EvalError::ModuleLoadError".to_string()
+                Cow::Borrowed("EvalError::ModuleLoadError")
             }
-            InnerError::Eval(EvalError::UserDefined { .. }) => "EvalError::UserDefined".to_string(),
+            InnerError::Eval(EvalError::UserDefined { .. }) => {
+                Cow::Borrowed("EvalError::UserDefined")
+            }
             InnerError::Eval(EvalError::InvalidBase64String(_, _)) => {
-                "EvalError::InvalidBase64String".to_string()
+                Cow::Borrowed("EvalError::InvalidBase64String")
             }
-            InnerError::Eval(EvalError::NotDefined(_, _)) => "EvalError::NotDefined".to_string(),
+            InnerError::Eval(EvalError::NotDefined(_, _)) => Cow::Borrowed("EvalError::NotDefined"),
             InnerError::Eval(EvalError::DateTimeFormatError(_, _)) => {
-                "EvalError::DateTimeFormatError".to_string()
+                Cow::Borrowed("EvalError::DateTimeFormatError")
             }
             InnerError::Eval(EvalError::IndexOutOfBounds(_, _)) => {
-                "EvalError::IndexOutOfBounds".to_string()
+                Cow::Borrowed("EvalError::IndexOutOfBounds")
             }
             InnerError::Eval(EvalError::InvalidDefinition(_, _)) => {
-                "EvalError::InvalidDefinition".to_string()
+                Cow::Borrowed("EvalError::InvalidDefinition")
             }
             InnerError::Eval(EvalError::InvalidTypes { .. }) => {
-                "EvalError::InvalidTypes".to_string()
+                Cow::Borrowed("EvalError::InvalidTypes")
             }
             InnerError::Eval(EvalError::InvalidNumberOfArguments(_, _, _, _)) => {
-                "EvalError::InvalidNumberOfArguments".to_string()
+                Cow::Borrowed("EvalError::InvalidNumberOfArguments")
             }
             InnerError::Eval(EvalError::InvalidRegularExpression(_, _)) => {
-                "EvalError::InvalidRegularExpression".to_string()
+                Cow::Borrowed("EvalError::InvalidRegularExpression")
             }
-            InnerError::Eval(EvalError::InternalError(_)) => "EvalError::InternalError".to_string(),
+            InnerError::Eval(EvalError::InternalError(_)) => {
+                Cow::Borrowed("EvalError::InternalError")
+            }
             InnerError::Eval(EvalError::RuntimeError(_, _)) => {
-                "EvalError::RuntimeError".to_string()
+                Cow::Borrowed("EvalError::RuntimeError")
             }
-            InnerError::Eval(EvalError::ZeroDivision(_)) => "EvalError::ZeroDivision".to_string(),
-            InnerError::Eval(EvalError::Break(_)) => "EvalError::Break".to_string(),
-            InnerError::Eval(EvalError::Continue(_)) => "EvalError::Continue".to_string(),
-            InnerError::Eval(EvalError::EnvNotFound(_, _)) => "EvalError::EnvNotFound".to_string(),
-            InnerError::Module(ModuleError::NotFound(_)) => "ModuleError::NotFound".to_string(),
-            InnerError::Module(ModuleError::IOError(_)) => "ModuleError::IOError".to_string(),
+            InnerError::Eval(EvalError::ZeroDivision(_)) => {
+                Cow::Borrowed("EvalError::ZeroDivision")
+            }
+            InnerError::Eval(EvalError::Break(_)) => Cow::Borrowed("EvalError::Break"),
+            InnerError::Eval(EvalError::Continue(_)) => Cow::Borrowed("EvalError::Continue"),
+            InnerError::Eval(EvalError::EnvNotFound(_, _)) => {
+                Cow::Borrowed("EvalError::EnvNotFound")
+            }
+            InnerError::Module(ModuleError::NotFound(_)) => Cow::Borrowed("ModuleError::NotFound"),
+            InnerError::Module(ModuleError::IOError(_)) => Cow::Borrowed("ModuleError::IOError"),
             InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {
-                "ModuleError::LexerError::UnexpectedToken".to_string()
+                Cow::Borrowed("ModuleError::LexerError::UnexpectedToken")
             }
             InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_))) => {
-                "ModuleError::LexerError::UnexpectedEOFDetected".to_string()
+                Cow::Borrowed("ModuleError::LexerError::UnexpectedEOFDetected")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(_, _))) => {
-                "ModuleError::ParseError::EnvNotFound".to_string()
+                Cow::Borrowed("ModuleError::ParseError::EnvNotFound")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(_))) => {
-                "ModuleError::ParseError::UnexpectedToken".to_string()
+                Cow::Borrowed("ModuleError::ParseError::UnexpectedToken")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(_))) => {
-                "ModuleError::ParseError::UnexpectedEOFDetected".to_string()
+                Cow::Borrowed("ModuleError::ParseError::UnexpectedEOFDetected")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
-                "ModuleError::ParseError::InsufficientTokens".to_string()
+                Cow::Borrowed("ModuleError::ParseError::InsufficientTokens")
             }
             InnerError::Module(ModuleError::InvalidModule) => {
-                "ModuleError::InvalidModule".to_string()
+                Cow::Borrowed("ModuleError::InvalidModule")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingParen(_))) => {
-                "ModuleError::ExpectedClosingParen".to_string()
+                Cow::Borrowed("ModuleError::ExpectedClosingParen")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(_))) => {
-                "ModuleError::ExpectedClosingBrace".to_string()
+                Cow::Borrowed("ModuleError::ExpectedClosingBrace")
             }
             InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(_))) => {
-                "ModuleError::ExpectedClosingBracket".to_string()
+                Cow::Borrowed("ModuleError::ExpectedClosingBracket")
             }
         };
 
@@ -290,89 +302,93 @@ impl Diagnostic for Error {
     }
 
     fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        let msg = match &self.cause {
-            InnerError::Lexer(LexerError::UnexpectedToken(_)) => {
-                Some("Check for unexpected or misplaced tokens in your input.".to_string())
-            }
-            InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => {
-                Some("Input ended unexpectedly. Make sure all expressions are complete.".to_string())
-            }
-            InnerError::Parse(ParseError::EnvNotFound(_, env)) => {
-                Some(format!("Environment variable '{env}' not found. Did you forget to set it?"))
-            }
-            InnerError::Parse(ParseError::UnexpectedToken(_)) => {
-                Some("Check for syntax errors or misplaced tokens.".to_string())
-            }
-            InnerError::Parse(ParseError::UnexpectedEOFDetected(_)) => {
-                Some("Input ended unexpectedly. Check for missing closing brackets or incomplete expressions.".to_string())
-            }
-            InnerError::Parse(ParseError::InsufficientTokens(_)) => {
-                Some("Not enough tokens to complete parsing. Check for missing arguments or delimiters.".to_string())
-            }
-            InnerError::Eval(EvalError::UserDefined { .. }) => {
-                Some("A user-defined error occurred during evaluation.".to_string())
-            }
-            InnerError::Eval(EvalError::InvalidBase64String(_, _)) => {
-                Some("The provided string is not valid Base64. Check your input.".to_string())
-            }
-            InnerError::Eval(EvalError::NotDefined(_, name)) => {
-                Some(format!("'{name}' is not defined. Did you forget to declare it?"))
-            }
-            InnerError::Eval(EvalError::DateTimeFormatError(_, _)) => {
-                Some("Invalid date/time format. Please check your format string.".to_string())
-            }
-            InnerError::Eval(EvalError::IndexOutOfBounds(_, _)) => {
-                Some("Index out of bounds. Check your array or string indices.".to_string())
-            }
-            InnerError::Eval(EvalError::InvalidDefinition(_, _)) => {
-                Some("Invalid definition. Please check your function or variable declaration.".to_string())
-            }
-            InnerError::Eval(EvalError::InvalidTypes { .. }) => {
-                Some("Type mismatch. Check the types of your operands.".to_string())
-            }
+        let msg: Option<Cow<'static, str>> = match &self.cause {
+            InnerError::Lexer(LexerError::UnexpectedToken(_)) => Some(Cow::Borrowed(
+                "Check for unexpected or misplaced tokens in your input.",
+            )),
+            InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => Some(Cow::Borrowed(
+                "Input ended unexpectedly. Make sure all expressions are complete.",
+            )),
+            InnerError::Parse(ParseError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
+                "Environment variable '{env}' not found. Did you forget to set it?"
+            ))),
+            InnerError::Parse(ParseError::UnexpectedToken(_)) => Some(Cow::Borrowed(
+                "Check for syntax errors or misplaced tokens.",
+            )),
+            InnerError::Parse(ParseError::UnexpectedEOFDetected(_)) => Some(Cow::Borrowed(
+                "Input ended unexpectedly. Check for missing closing brackets or incomplete expressions.",
+            )),
+            InnerError::Parse(ParseError::InsufficientTokens(_)) => Some(Cow::Borrowed(
+                "Not enough tokens to complete parsing. Check for missing arguments or delimiters.",
+            )),
+            InnerError::Eval(EvalError::UserDefined { .. }) => Some(Cow::Borrowed(
+                "A user-defined error occurred during evaluation.",
+            )),
+            InnerError::Eval(EvalError::InvalidBase64String(_, _)) => Some(Cow::Borrowed(
+                "The provided string is not valid Base64. Check your input.",
+            )),
+            InnerError::Eval(EvalError::NotDefined(_, name)) => Some(Cow::Owned(format!(
+                "'{name}' is not defined. Did you forget to declare it?"
+            ))),
+            InnerError::Eval(EvalError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
+                "Invalid date/time format. Please check your format string.",
+            )),
+            InnerError::Eval(EvalError::IndexOutOfBounds(_, _)) => Some(Cow::Borrowed(
+                "Index out of bounds. Check your array or string indices.",
+            )),
+            InnerError::Eval(EvalError::InvalidDefinition(_, _)) => Some(Cow::Borrowed(
+                "Invalid definition. Please check your function or variable declaration.",
+            )),
+            InnerError::Eval(EvalError::InvalidTypes { .. }) => Some(Cow::Borrowed(
+                "Type mismatch. Check the types of your operands.",
+            )),
             InnerError::Eval(EvalError::InvalidNumberOfArguments(_, _, expected, actual)) => {
-                Some(format!(
+                Some(Cow::Owned(format!(
                     "Invalid number of arguments: expected {expected}, got {actual}."
-                ))
+                )))
             }
-            InnerError::Eval(EvalError::InvalidRegularExpression(_, _)) => {
-                Some("Invalid regular expression. Please check your regex syntax.".to_string())
-            }
-            InnerError::Eval(EvalError::InternalError(_)) => {
-                Some("An internal error occurred. Please report this if it persists.".to_string())
-            }
+            InnerError::Eval(EvalError::InvalidRegularExpression(_, _)) => Some(Cow::Borrowed(
+                "Invalid regular expression. Please check your regex syntax.",
+            )),
+            InnerError::Eval(EvalError::InternalError(_)) => Some(Cow::Borrowed(
+                "An internal error occurred. Please report this if it persists.",
+            )),
             InnerError::Eval(EvalError::RuntimeError(_, _)) => {
-                Some("A runtime error occurred during evaluation.".to_string())
+                Some(Cow::Borrowed("A runtime error occurred during evaluation."))
             }
             InnerError::Eval(EvalError::ZeroDivision(_)) => {
-                Some("Division by zero is not allowed.".to_string())
+                Some(Cow::Borrowed("Division by zero is not allowed."))
             }
-            InnerError::Module(ModuleError::NotFound(name)) => {
-                Some(format!("Module '{name}' not found. Check the module name or path."))
-            }
-            InnerError::Module(ModuleError::IOError(_)) => {
-                Some("An I/O error occurred while loading a module. Check file permissions and paths.".to_string())
-            }
+            InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
+                "Module '{name}' not found. Check the module name or path."
+            ))),
+            InnerError::Module(ModuleError::IOError(_)) => Some(Cow::Borrowed(
+                "An I/O error occurred while loading a module. Check file permissions and paths.",
+            )),
             InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {
-                Some("Lexer error in module: unexpected token.".to_string())
+                Some(Cow::Borrowed("Lexer error in module: unexpected token."))
             }
             InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_))) => {
-                Some("Lexer error in module: unexpected end of file.".to_string())
+                Some(Cow::Borrowed(
+                    "Lexer error in module: unexpected end of file.",
+                ))
             }
-            InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(_, env))) => {
-                Some(format!("Environment variable '{env}' not found in module."))
-            }
+            InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(_, env))) => Some(
+                Cow::Owned(format!("Environment variable '{env}' not found in module.")),
+            ),
             InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(_))) => {
-                Some("Parse error in module: unexpected token.".to_string())
+                Some(Cow::Borrowed("Parse error in module: unexpected token."))
             }
             InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(_))) => {
-                Some("Parse error in module: unexpected end of file.".to_string())
+                Some(Cow::Borrowed(
+                    "Parse error in module: unexpected end of file.",
+                ))
             }
             InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
-                Some("Parse error in module: insufficient tokens.".to_string())
+                Some(Cow::Borrowed("Parse error in module: insufficient tokens."))
             }
             InnerError::Module(ModuleError::InvalidModule) => {
-                Some("Invalid module format or content.".to_string())
+                Some(Cow::Borrowed("Invalid module format or content."))
             }
             _ => None,
         };

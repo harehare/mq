@@ -7,7 +7,7 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
-use std::{fs, path::PathBuf, sync::LazyLock};
+use std::{borrow::Cow, fs, path::PathBuf, sync::LazyLock};
 use thiserror::Error;
 
 const DEFAULT_PATHS: [&str; 4] = [
@@ -106,11 +106,15 @@ impl ModuleLoader {
     }
 
     #[inline(always)]
-    pub fn module_name(&self, module_id: ModuleId) -> String {
-        self.loaded_modules
-            .get(module_id)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "<unknown>".to_string())
+    pub fn module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
+        match module_id {
+            Module::TOP_LEVEL_MODULE_ID => Cow::Borrowed(Module::TOP_LEVEL_MODULE),
+            _ => self
+                .loaded_modules
+                .get(module_id)
+                .map(|s| Cow::Owned(s.to_string()))
+                .unwrap_or_else(|| Cow::Borrowed("<unknown>")),
+        }
     }
 
     #[cfg(feature = "debugger")]
@@ -193,10 +197,13 @@ impl ModuleLoader {
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
-        match self.module_name(module_id).as_str() {
-            Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
-            Module::BUILTIN_MODULE => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
-            module_name => self.read_file(module_name),
+        match self.module_name(module_id) {
+            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => {
+                Ok(self.source_code.clone().unwrap_or_default())
+            }
+            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
+            Cow::Borrowed(module_name) => self.read_file(module_name),
+            Cow::Owned(module_name) => self.read_file(&module_name),
         }
     }
 
@@ -205,10 +212,11 @@ impl ModuleLoader {
         module_id: ModuleId,
         source_code: String,
     ) -> Result<String, ModuleError> {
-        match self.module_name(module_id).as_str() {
-            Module::TOP_LEVEL_MODULE => Ok(source_code),
-            Module::BUILTIN_MODULE => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
-            module_name => self.read_file(module_name),
+        match self.module_name(module_id) {
+            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(source_code),
+            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
+            Cow::Borrowed(module_name) => self.read_file(module_name),
+            Cow::Owned(module_name) => self.read_file(&module_name),
         }
     }
 

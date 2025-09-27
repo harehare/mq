@@ -2,6 +2,7 @@ use super::env::Env;
 use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
 use mq_markdown::Node;
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     collections::BTreeMap,
     ops::{Index, IndexMut},
@@ -129,17 +130,15 @@ impl PartialOrd for RuntimeValue {
 
 impl std::fmt::Display for RuntimeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let value = match self {
-            Self::Number(n) => n.to_string(),
-            Self::Bool(b) => b.to_string(),
-            Self::String(s) => s.to_string(),
+        let value: Cow<'_, str> = match self {
+            Self::Number(n) => Cow::Owned(n.to_string()),
+            Self::Bool(b) => Cow::Owned(b.to_string()),
+            Self::String(s) => Cow::Borrowed(s),
             Self::Array(_) => self.string(),
-            Self::Markdown(m, ..) => m.to_string(),
-            Self::None => "".to_string(),
-            Self::Function(params, ..) => {
-                format!("function/{}", params.len())
-            }
-            Self::NativeFunction(_) => "native_function".to_string(),
+            Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
+            Self::None => Cow::Borrowed(""),
+            Self::Function(params, ..) => Cow::Owned(format!("function/{}", params.len())),
+            Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Dict(_) => self.string(),
         };
         write!(f, "{}", value)
@@ -148,8 +147,8 @@ impl std::fmt::Display for RuntimeValue {
 
 impl std::fmt::Debug for RuntimeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let v = match self {
-            Self::None => "None".to_string(),
+        let v: Cow<'_, str> = match self {
+            Self::None => Cow::Borrowed("None"),
             a => a.string(),
         };
         write!(f, "{}", v)
@@ -285,29 +284,29 @@ impl RuntimeValue {
     }
 
     #[inline(always)]
-    fn string(&self) -> String {
+    fn string(&self) -> Cow<'_, str> {
         match self {
-            Self::Number(n) => n.to_string(),
-            Self::Bool(b) => b.to_string(),
-            Self::String(s) => format!(r#""{}""#, s),
-            Self::Array(a) => format!(
+            Self::Number(n) => Cow::Owned(n.to_string()),
+            Self::Bool(b) => Cow::Owned(b.to_string()),
+            Self::String(s) => Cow::Owned(format!(r#""{}""#, s)),
+            Self::Array(a) => Cow::Owned(format!(
                 "[{}]",
                 a.iter()
-                    .map(|v| format!("{:?}", v))
-                    .collect::<Vec<String>>()
+                    .map(|v| v.string())
+                    .collect::<Vec<Cow<str>>>()
                     .join(", ")
-            ),
-            Self::Markdown(m, ..) => m.to_string(),
-            Self::None => "".to_string(),
-            Self::Function(..) => "function".to_string(),
-            Self::NativeFunction(_) => "native_function".to_string(),
+            )),
+            Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
+            Self::None => Cow::Borrowed(""),
+            Self::Function(..) => Cow::Borrowed("function"),
+            Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Dict(map) => {
                 let items = map
                     .iter()
                     .map(|(k, v)| format!("\"{}\": {}", k, v.string()))
                     .collect::<Vec<String>>()
                     .join(", ");
-                format!("{{{}}}", items)
+                Cow::Owned(format!("{{{}}}", items))
             }
         }
     }
