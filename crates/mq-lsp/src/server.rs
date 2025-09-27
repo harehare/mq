@@ -369,6 +369,14 @@ pub struct LspConfig {
 }
 
 impl LspConfig {
+    /// Creates a new LspConfig.
+    ///
+    /// # Arguments
+    ///
+    /// * `module_paths` - A vector of paths to modules that should be loaded and made available
+    ///   to the LSP server. These paths are used to initialize the language server's environment,
+    ///   allowing it to provide features such as code completion, diagnostics, and navigation
+    ///   based on the specified modules.
     pub fn new(module_paths: Vec<PathBuf>) -> Self {
         Self { module_paths }
     }
