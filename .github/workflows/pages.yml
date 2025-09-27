@@ -43,6 +43,8 @@ jobs:
       - name: Build tools
         run: npm run build
         working-directory: ./packages/tools
+      - name: Copy install script
+        run: cp ./scripts/install.sh ./docs
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:

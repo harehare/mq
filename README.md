@@ -53,6 +53,17 @@ Since LLM inputs are primarily in Markdown format, mq provides efficient tools f
 
 ## Installation
 
+### Quick Install
+
+```bash
+curl -sSL https://mqlang.org/install.sh | bash
+```
+
+The installer will:
+- Download the latest mq binary for your platform
+- Install it to `~/.mq/bin/`
+- Update your shell profile to add mq to your PATH
+
 ### Cargo
 
 ```sh
@@ -150,8 +161,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -f, --from-file
@@ -169,7 +180,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+
       --csv
           Include the built-in CSV module
       --fuzzy
