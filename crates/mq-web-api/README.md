@@ -6,39 +6,68 @@ Web API server for the mq markdown query language.
 
 The server can be configured using environment variables:
 
-| Environment Variable | Description | Default Value |
-|---------------------|-------------|---------------|
-| `MQ_HOST` | Host to bind to | `0.0.0.0` |
-| `MQ_PORT` | Port to bind to | `8080` |
-| `RUST_LOG` or `MQ_LOG_LEVEL` | Log level | `mq_web_api=debug,tower_http=debug` |
-| `MQ_LOG_FORMAT` | Log format: `json` or `text` | `json` |
-| `MQ_CORS_ORIGINS` | Comma-separated CORS origins | `*` |
+### Basic Configuration
+
+| Environment Variable | Description                  | Default Value                       |
+| -------------------- | ---------------------------- | ----------------------------------- |
+| `HOST`               | Host to bind to              | `0.0.0.0`                           |
+| `PORT`               | Port to bind to              | `8080`                              |
+| `RUST_LOG`           | Log level                    | `mq_web_api=debug,tower_http=debug` |
+| `LOG_FORMAT`         | Log format: `json` or `text` | `json`                              |
+| `CORS_ORIGINS`       | Comma-separated CORS origins | `*`                                 |
+
+### Rate Limiting Configuration
+
+| Environment Variable                  | Description                                    | Default Value |
+| ------------------------------------- | ---------------------------------------------- | ------------- |
+| `DATABASE_URL`                        | Database URL for rate limiting (libsql format) | `:memory:`    |
+| `DATABASE_TOKEN`                      | Database authentication token (for remote DB)  | None          |
+| `RATE_LIMIT_REQUESTS_PER_WINDOW`      | Maximum requests per time window               | `100`         |
+| `RATE_LIMIT_WINDOW_SIZE_SECONDS`      | Time window size in seconds                    | `3600`        |
+| `RATE_LIMIT_CLEANUP_INTERVAL_SECONDS` | Cleanup interval for expired records           | `3600`        |
+| `RATE_LIMIT_POOL_MAX_SIZE`            | Maximum database connection pool size          | `10`          |
+| `RATE_LIMIT_POOL_TIMEOUT_SECONDS`     | Database connection timeout in seconds         | `30`          |
 
 ## Usage
 
 ### Running with default settings
+
 ```bash
 cargo run --bin mq-web-api
 ```
 
 ### Running with custom configuration
+
 ```bash
-MQ_HOST=localhost MQ_PORT=3000 RUST_LOG=info cargo run --bin mq-web-api
+HOST=localhost PORT=3000 RUST_LOG=info cargo run --bin mq-web-api
 ```
 
 ### Running with specific CORS origins
+
 ```bash
-MQ_CORS_ORIGINS="https://example.com,https://app.example.com" cargo run --bin mq-web-api
+CORS_ORIGINS="https://example.com,https://app.example.com" cargo run --bin mq-web-api
 ```
 
 ### Running with text-format logs
+
 ```bash
-MQ_LOG_FORMAT=text cargo run --bin mq-web-api
+LOG_FORMAT=text cargo run --bin mq-web-api
 ```
 
 ### Running with JSON logs (default)
+
 ```bash
-MQ_LOG_FORMAT=json cargo run --bin mq-web-api
+LOG_FORMAT=json cargo run --bin mq-web-api
+```
+
+### Running with rate limiting using Turso database
+
+```bash
+DATABASE_URL="libsql://your-database.turso.io" \
+DATABASE_TOKEN="your-auth-token" \
+RATE_LIMIT_REQUESTS_PER_WINDOW=50 \
+RATE_LIMIT_WINDOW_SIZE_SECONDS=3600 \
+cargo run --bin mq-web-api
 ```
 
 ## API Endpoints
@@ -70,3 +99,12 @@ curl -X POST http://localhost:8080/api/query \
 ```bash
 curl "http://localhost:8080/api/query/diagnostics?query=invalid%20query"
 ```
+
+## Features
+
+- **Axum-based HTTP server** - Fast and reliable web framework
+- **Rate limiting** - Built-in rate limiting with libsql/SQLite backend support
+- **CORS support** - Configurable CORS origins for web applications
+- **Structured logging** - JSON and text format logging with tracing
+- **OpenAPI documentation** - Auto-generated API documentation
+- **Database connection pooling** - Efficient database connections with deadpool-libsql
