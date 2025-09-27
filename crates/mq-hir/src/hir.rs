@@ -31,6 +31,12 @@ impl Default for Hir {
 }
 
 impl Hir {
+    /// Creates a new `Hir` instance.
+    ///
+    /// # Parameters
+    /// - `module_paths`: A list of filesystem paths to search for modules when resolving imports.
+    ///   These paths are used by the module loader to locate and load external modules.
+    ///   Providing additional paths can affect how and where modules are resolved during compilation.
     pub fn new(module_paths: Vec<PathBuf>) -> Self {
         let mut sources = SlotMap::default();
         let mut scopes = SlotMap::default();
