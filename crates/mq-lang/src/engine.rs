@@ -1,3 +1,5 @@
+#[cfg(feature = "debugger")]
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
@@ -279,7 +281,7 @@ impl Engine {
     }
 
     #[cfg(feature = "debugger")]
-    pub fn get_module_name(&self, module_id: ModuleId) -> String {
+    pub fn get_module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
         self.evaluator.module_loader.module_name(module_id)
     }
 
