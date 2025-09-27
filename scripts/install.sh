@@ -370,13 +370,6 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --help, -h    Show this help message"
             echo "  --version, -v Show version and exit"
-            echo ""
-            echo "Environment variables:"
-            echo "  MQ_VERSION    Install specific version (default: latest)"
-            echo ""
-            echo "Examples:"
-            echo "  $0                    # Install latest version"
-            echo "  MQ_VERSION=v0.2.23 $0  # Install specific version"
             exit 0
             ;;
         --version|-v)
