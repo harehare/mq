@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_goto_definition_not_found() {
-        let hir = Arc::new(RwLock::new(mq_hir::Hir::new()));
+        let hir = Arc::new(RwLock::new(mq_hir::Hir::default()));
         let url = Url::parse("file:///test.mq").unwrap();
 
         let result = response(hir, url, Position::new(0, 0));
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_goto_definition_no_text_range() {
-        let mut hir = mq_hir::Hir::new();
+        let mut hir = mq_hir::Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
         hir.add_code(Some(url.clone()), "let x = 42;");
 

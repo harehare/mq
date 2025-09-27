@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
@@ -362,12 +363,31 @@ impl Backend {
     }
 }
 
-pub async fn start() {
+#[derive(Debug, Clone, Default)]
+pub struct LspConfig {
+    module_paths: Vec<PathBuf>,
+}
+
+impl LspConfig {
+    /// Creates a new LspConfig.
+    ///
+    /// # Arguments
+    ///
+    /// * `module_paths` - A vector of paths to modules that should be loaded and made available
+    ///   to the LSP server. These paths are used to initialize the language server's environment,
+    ///   allowing it to provide features such as code completion, diagnostics, and navigation
+    ///   based on the specified modules.
+    pub fn new(module_paths: Vec<PathBuf>) -> Self {
+        Self { module_paths }
+    }
+}
+
+pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+        hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths))),
         source_map: RwLock::new(BiMap::new()),
         error_map: DashMap::new(),
         cst_nodes_map: DashMap::new(),
@@ -386,7 +406,7 @@ mod tests {
     async fn test_did_open() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -435,7 +455,7 @@ mod tests {
     async fn test_formatting() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -473,7 +493,7 @@ mod tests {
     async fn test_completion() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -501,7 +521,7 @@ mod tests {
     async fn test_goto_definition() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -528,7 +548,7 @@ mod tests {
     async fn test_hover() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -554,7 +574,7 @@ mod tests {
     async fn test_semantic_tokens() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -612,7 +632,7 @@ mod tests {
     async fn test_references() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -654,7 +674,7 @@ mod tests {
     async fn test_document_symbol() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -700,7 +720,7 @@ mod tests {
     async fn test_did_change() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -743,7 +763,7 @@ mod tests {
     async fn test_did_close() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -800,7 +820,7 @@ mod tests {
     async fn test_did_save() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -839,7 +859,7 @@ mod tests {
     async fn test_initialize_shutdown() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -865,7 +885,7 @@ mod tests {
     async fn test_semantic_tokens_range() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -906,7 +926,7 @@ mod tests {
     async fn test_diagnostics_with_errors() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -932,7 +952,7 @@ mod tests {
     async fn test_unused_function_warnings() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -973,7 +993,7 @@ mod tests {
     async fn test_formatting_with_errors() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),
@@ -1021,7 +1041,7 @@ mod tests {
     async fn test_unreachable_code_warnings() {
         let (service, _) = LspService::new(|client| Backend {
             client,
-            hir: Arc::new(RwLock::new(mq_hir::Hir::new())),
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
             cst_nodes_map: DashMap::new(),

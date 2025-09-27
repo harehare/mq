@@ -8,11 +8,6 @@ const MQ_VERSION_KEY = "mq.version" as const;
 const COMMANDS = ["mq/run"] as const;
 
 const EXAMPLES = `# To hide these examples, set mq.showExamplesInNewFile to false in settings
-# Hello world
-def hello_world():
-  add(" Hello World")?;
-select(or(.[], .code, .h)) | upcase() | hello_world();
-
 # Extract js code
 .code("js")
 
@@ -38,8 +33,11 @@ def snake_to_camel(x):
 # Markdown Toc
 .h
 | let link = to_link("#" + to_text(self), to_text(self), "")
-| let level = .h.level
-| if (not(is_none(level))): to_md_list(link, to_number(level))
+| let level = .h.depth
+| if (!is_none(level)): to_md_list(link, to_number(level))
+
+# CSV parse
+include "csv" | csv_parse("a,b,c\n1,2,3\n4,5,6", true) | csv_to_markdown_table()
 `;
 
 let client: lc.LanguageClient | null = null;
@@ -497,12 +495,16 @@ const startLspServer = async () => {
     }
   }
 
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  const cwd =
+    workspaceFolders && workspaceFolders.length > 0
+      ? workspaceFolders[0].uri.fsPath
+      : process.cwd();
+
   const run: lc.Executable = {
     command: lspPath,
-    args: ["lsp"],
-    options: {
-      cwd: ".",
-    },
+    args: ["lsp", "-M", cwd],
+    options: {},
   };
 
   const serverOptions: lc.ServerOptions = {

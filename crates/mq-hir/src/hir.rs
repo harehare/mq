@@ -1,3 +1,5 @@
+use std::{path::PathBuf, vec};
+
 use mq_lang::{Token, TokenKind};
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
@@ -24,12 +26,18 @@ pub struct Hir {
 
 impl Default for Hir {
     fn default() -> Self {
-        Self::new()
+        Self::new(vec![])
     }
 }
 
 impl Hir {
-    pub fn new() -> Self {
+    /// Creates a new `Hir` instance.
+    ///
+    /// # Parameters
+    /// - `module_paths`: A list of filesystem paths to search for modules when resolving imports.
+    ///   These paths are used by the module loader to locate and load external modules.
+    ///   Providing additional paths can affect how and where modules are resolved during compilation.
+    pub fn new(module_paths: Vec<PathBuf>) -> Self {
         let mut sources = SlotMap::default();
         let mut scopes = SlotMap::default();
 
@@ -48,7 +56,7 @@ impl Hir {
             symbols: SlotMap::default(),
             sources,
             scopes,
-            module_loader: mq_lang::ModuleLoader::default(),
+            module_loader: mq_lang::ModuleLoader::new(Some(module_paths)),
             source_scopes,
             references: FxHashMap::default(),
         }
@@ -1095,7 +1103,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_doc: Vec<String>,
         #[case] expected_kind: Vec<SymbolKind>,
     ) {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
 
         hir.builtin.disabled = true;
         hir.add_code(None, code);
@@ -1171,7 +1179,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_name: &str,
         #[case] expected_kind: SymbolKind,
     ) {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         hir.builtin.loaded = true;
         hir.add_code(None, code);
 
@@ -1227,7 +1235,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_name: &str,
         #[case] expected_kind: SymbolKind,
     ) {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         let (source_id, _) = hir.add_code(None, code);
 
         let (_, symbol) = hir.find_symbol_in_position(source_id, pos).unwrap();
@@ -1237,14 +1245,14 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
 
     #[test]
     fn test_builtin() {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         hir.add_builtin();
         assert!(hir.builtin.loaded);
     }
 
     #[test]
     fn test_include_function_resolves() {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         hir.builtin.loaded = false; // Ensure builtins are loaded by add_code
         let code = r#"include "csv"
 | def test_csv():
@@ -1272,7 +1280,7 @@ end"#;
 
     #[test]
     fn test_unused_functions() {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         hir.builtin.disabled = true; // Disable builtins for cleaner test
 
         let code = "def used_function(): 1; def unused_function(): 2; def another_unused(): 3; | used_function()";
@@ -1295,7 +1303,7 @@ end"#;
 
     #[test]
     fn test_unused_functions_empty_when_all_used() {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         hir.builtin.disabled = true;
 
         let code = "def func1(): 1; def func2(): 2; | func1() | func2()";

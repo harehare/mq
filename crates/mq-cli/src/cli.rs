@@ -3,6 +3,7 @@ use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::Engine;
+use mq_lsp::server::LspConfig;
 use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::BufRead;
@@ -194,7 +195,11 @@ enum Commands {
     /// Start a REPL session for interactive query execution
     Repl,
     /// Start a language server for mq
-    Lsp,
+    Lsp {
+        /// Specify module file paths to load for the LSP server
+        #[clap(short = 'M', long)]
+        module_paths: Option<Vec<PathBuf>>,
+    },
     /// Start an MCP server for mq
     Mcp,
     /// Start a TUI for mq
@@ -250,10 +255,13 @@ impl Cli {
 
                 Ok(())
             }
-            Some(Commands::Lsp) => {
+            Some(Commands::Lsp { module_paths }) => {
                 tokio::runtime::Runtime::new()
                     .into_diagnostic()?
-                    .block_on(async { mq_lsp::start().await });
+                    .block_on(async {
+                        mq_lsp::start(LspConfig::new(module_paths.clone().unwrap_or_default()))
+                            .await
+                    });
                 Ok(())
             }
             Some(Commands::Mcp) => {

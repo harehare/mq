@@ -94,7 +94,7 @@ pub struct CommandContext {
 
 impl CommandContext {
     pub fn new(engine: mq_lang::Engine, input: Vec<mq_lang::RuntimeValue>) -> Self {
-        let mut hir = mq_hir::Hir::new();
+        let mut hir = mq_hir::Hir::default();
         let (source_id, scope_id) = hir.add_new_source(None);
 
         hir.add_builtin();

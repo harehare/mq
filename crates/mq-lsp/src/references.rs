@@ -61,7 +61,7 @@ mod tests {
     use super::*;
 
     fn setup() -> (Arc<RwLock<Hir>>, BiMap<String, SourceId>) {
-        let hir = Arc::new(RwLock::new(Hir::new()));
+        let hir = Arc::new(RwLock::new(Hir::default()));
         let source_map = BiMap::new();
         (hir, source_map)
     }
