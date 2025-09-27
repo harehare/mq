@@ -139,8 +139,8 @@ verify_checksum() {
     local binary_name="$3"
 
     if [[ ! -f "$checksums_file" ]]; then
-        warn "Checksums file not available, skipping verification"
-        return 0
+        warn "Checksums file not available"
+        return 1
     fi
 
     log "Verifying checksum for $binary_name..."
@@ -152,8 +152,8 @@ verify_checksum() {
     elif command -v shasum &> /dev/null; then
         calculated_checksum=$(shasum -a 256 "$binary_file" | cut -d' ' -f1)
     else
-        warn "No SHA256 utility found, skipping checksum verification"
-        return 0
+        warn "No SHA256 utility found"
+        return 1
     fi
 
     # Find the expected checksum from the checksums file
@@ -161,8 +161,8 @@ verify_checksum() {
     expected_checksum=$(grep "$binary_name/$binary_name" "$checksums_file" | cut -d' ' -f1)
 
     if [[ -z "$expected_checksum" ]]; then
-        warn "No checksum found for $binary_name, skipping verification"
-        return 0
+        warn "No checksum found for $binary_name"
+        return 1
     fi
 
     # Compare checksums
@@ -227,7 +227,7 @@ install_mq() {
         fi
         rm -f "$checksums_file"
     else
-        warn "Skipping checksum verification (checksums file not available)"
+        error "Checksums file not available"
     fi
 
     # Move and make executable
