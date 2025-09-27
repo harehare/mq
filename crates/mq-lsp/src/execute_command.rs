@@ -7,7 +7,7 @@ pub fn response(
     if params.arguments.is_empty() {
         return Err(tower_lsp::jsonrpc::Error {
             code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
-            message: Cow::Owned("No arguments provided".to_string()),
+            message: Cow::Borrowed("No arguments provided"),
             data: None,
         });
     }
@@ -26,7 +26,7 @@ pub fn response(
             [Some(code), Some(input)] => execute(code, input, None),
             _ => Err(tower_lsp::jsonrpc::Error {
                 code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
-                message: Cow::Owned("Invalid arguments".to_string()),
+                message: Cow::Borrowed("Invalid arguments"),
                 data: None,
             }),
         },
@@ -56,13 +56,13 @@ pub fn response(
             }
             _ => Err(tower_lsp::jsonrpc::Error {
                 code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
-                message: Cow::Owned("Invalid arguments".to_string()),
+                message: Cow::Borrowed("Invalid arguments"),
                 data: None,
             }),
         },
         _ => Err(tower_lsp::jsonrpc::Error {
             code: tower_lsp::jsonrpc::ErrorCode::InvalidParams,
-            message: Cow::Owned("Invalid arguments".to_string()),
+            message: Cow::Borrowed("Invalid arguments"),
             data: None,
         }),
     }

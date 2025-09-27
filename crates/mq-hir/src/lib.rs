@@ -10,7 +10,7 @@
 //! use url::Url;
 //!
 //! // Create a new HIR instance
-//! let mut hir = Hir::new();
+//! let mut hir = Hir::default();
 //!
 //! // Add some code to the HIR
 //! let code = r#"
