@@ -3,8 +3,6 @@
 set -e
 
 # mq installation script
-# Based on the Turso CLI installer
-# Usage: curl -sSL https://raw.githubusercontent.com/harehare/mq/main/scripts/install.sh | bash
 
 readonly MQ_REPO="harehare/mq"
 readonly MQ_INSTALL_DIR="$HOME/.mq"
@@ -22,11 +20,11 @@ readonly NC='\033[0m' # No Color
 
 # Utility functions
 log() {
-    echo -e "${GREEN}ℹ${NC}  $*"
+    echo -e "${GREEN}ℹ${NC}  $*" >&2
 }
 
 warn() {
-    echo -e "${YELLOW}⚠${NC}  $*"
+    echo -e "${YELLOW}⚠${NC}  $*" >&2
 }
 
 error() {
@@ -118,6 +116,67 @@ get_download_url() {
     echo "https://github.com/$MQ_REPO/releases/download/$version/mq-${target}${ext}"
 }
 
+# Download checksums file
+download_checksums() {
+    local version="$1"
+    local checksums_url="https://github.com/$MQ_REPO/releases/download/$version/checksums.txt"
+    local checksums_file
+    checksums_file=$(mktemp)
+
+    log "Downloading checksums file..."
+    if ! curl -L --progress-bar "$checksums_url" -o "$checksums_file"; then
+        warn "Failed to download checksums file, skipping verification"
+        return 1
+    fi
+
+    echo "$checksums_file"
+}
+
+# Verify binary checksum
+verify_checksum() {
+    local binary_file="$1"
+    local checksums_file="$2"
+    local binary_name="$3"
+
+    if [[ ! -f "$checksums_file" ]]; then
+        warn "Checksums file not available, skipping verification"
+        return 0
+    fi
+
+    log "Verifying checksum for $binary_name..."
+
+    # Calculate the SHA256 of the downloaded binary
+    local calculated_checksum
+    if command -v sha256sum &> /dev/null; then
+        calculated_checksum=$(sha256sum "$binary_file" | cut -d' ' -f1)
+    elif command -v shasum &> /dev/null; then
+        calculated_checksum=$(shasum -a 256 "$binary_file" | cut -d' ' -f1)
+    else
+        warn "No SHA256 utility found, skipping checksum verification"
+        return 0
+    fi
+
+    # Find the expected checksum from the checksums file
+    local expected_checksum
+    expected_checksum=$(grep "$binary_name/$binary_name" "$checksums_file" | cut -d' ' -f1)
+
+    if [[ -z "$expected_checksum" ]]; then
+        warn "No checksum found for $binary_name, skipping verification"
+        return 0
+    fi
+
+    # Compare checksums
+    if [[ "$calculated_checksum" == "$expected_checksum" ]]; then
+        log "✓ Checksum verification successful"
+        return 0
+    else
+        echo -e "${RED}✗${NC}  Checksum verification failed" >&2
+        echo -e "${RED}Expected: $expected_checksum${NC}" >&2
+        echo -e "${RED}Got:      $calculated_checksum${NC}" >&2
+        return 1
+    fi
+}
+
 # Download and install mq
 install_mq() {
     local version="$1"
@@ -126,16 +185,26 @@ install_mq() {
     local download_url
     local binary_name="mq"
     local ext=""
+    local target=""
 
     if [[ "$os" == "windows" ]]; then
         ext=".exe"
         binary_name="mq.exe"
+        target="${arch}-pc-windows-msvc"
+    elif [[ "$os" == "darwin" ]]; then
+        target="${arch}-apple-darwin"
+    else
+        target="${arch}-unknown-linux-gnu"
     fi
 
     download_url=$(get_download_url "$version" "$os" "$arch")
 
     log "Downloading mq $version for $os/$arch..."
     log "Download URL: $download_url"
+
+    # Download checksums file
+    local checksums_file
+    checksums_file=$(download_checksums "$version")
 
     # Create installation directory
     mkdir -p "$MQ_BIN_DIR"
@@ -146,6 +215,19 @@ install_mq() {
 
     if ! curl -L --progress-bar "$download_url" -o "$temp_file"; then
         error "Failed to download mq binary"
+    fi
+
+    # Verify checksum
+    local release_binary_name="mq-${target}${ext}"
+    if [[ -n "$checksums_file" && -f "$checksums_file" ]]; then
+        if ! verify_checksum "$temp_file" "$checksums_file" "$release_binary_name"; then
+            rm -f "$checksums_file"
+            rm -f "$temp_file"
+            error "Checksum verification failed, aborting installation"
+        fi
+        rm -f "$checksums_file"
+    else
+        warn "Skipping checksum verification (checksums file not available)"
     fi
 
     # Move and make executable
