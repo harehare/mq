@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_response_with_empty_symbols() {
-        let hir = Arc::new(RwLock::new(mq_hir::Hir::new()));
+        let hir = Arc::new(RwLock::new(mq_hir::Hir::default()));
         let url = Url::parse("file:///test.mq").unwrap();
         let source_map = BiMap::new();
         let res = response(hir.clone(), url.clone(), source_map.clone());
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_response_with_various_symbols() {
-        let mut hir = mq_hir::Hir::new();
+        let mut hir = mq_hir::Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
 
         let (source_id, _) = hir.add_code(Some(url.clone()), "def func1(): 1; let var1 = 2");

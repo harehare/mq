@@ -1,3 +1,5 @@
+use crate::server::LspConfig;
+
 pub mod capabilities;
 pub mod completions;
 pub mod document_symbol;
@@ -10,5 +12,5 @@ pub mod server;
 
 #[tokio::main]
 async fn main() {
-    server::start().await;
+    server::start(LspConfig::default()).await;
 }

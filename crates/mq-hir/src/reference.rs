@@ -21,7 +21,7 @@ mod tests {
 
     #[test]
     fn test_references() {
-        let mut hir = Hir::new();
+        let mut hir = Hir::default();
         let _ = hir.add_code(None, "def func1(): 1; let val1 = func1()");
 
         assert_eq!(
