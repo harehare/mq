@@ -364,7 +364,6 @@ impl Backend {
 }
 
 #[derive(Debug, Clone, Default)]
-
 pub struct LspConfig {
     module_paths: Vec<PathBuf>,
 }
