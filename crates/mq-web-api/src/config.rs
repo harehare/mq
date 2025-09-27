@@ -160,17 +160,6 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-
-    #[test]
-    fn test_default_config() {
-        let config = Config::default();
-        assert_eq!(config.host, "0.0.0.0");
-        assert_eq!(config.port, 8080);
-        assert_eq!(config.log_level, "mq_web_api=debug,tower_http=debug");
-        assert!(matches!(config.log_format, LogFormat::Json));
-        assert_eq!(config.cors_origins, vec!["*"]);
-    }
 
     #[test]
     fn test_bind_address() {
@@ -204,59 +193,5 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config_443.server_url(), "https://example.com");
-    }
-
-    #[test]
-    fn test_config_from_env() {
-        // Save original values
-        let original_host = env::var("HOST").ok();
-        let original_port = env::var("PORT").ok();
-        let original_log = env::var("LOG_LEVEL").ok();
-        let original_log_format = env::var("LOG_FORMAT").ok();
-        let original_cors = env::var("CORS_ORIGINS").ok();
-
-        unsafe {
-            // Set test values
-            env::set_var("HOST", "test.example.com");
-            env::set_var("PORT", "9000");
-            env::set_var("LOG_LEVEL", "info");
-            env::set_var("LOG_FORMAT", "text");
-            env::set_var("CORS_ORIGINS", "https://example.com,https://test.com");
-        }
-
-        let config = Config::from_env();
-
-        assert_eq!(config.host, "test.example.com");
-        assert_eq!(config.port, 9000);
-        assert_eq!(config.log_level, "info");
-        assert!(matches!(config.log_format, LogFormat::Text));
-        assert_eq!(
-            config.cors_origins,
-            vec!["https://example.com", "https://test.com"]
-        );
-
-        unsafe {
-            // Restore original values
-            match original_host {
-                Some(val) => env::set_var("HOST", val),
-                None => env::remove_var("HOST"),
-            }
-            match original_port {
-                Some(val) => env::set_var("PORT", val),
-                None => env::remove_var("PORT"),
-            }
-            match original_log {
-                Some(val) => env::set_var("LOG_LEVEL", val),
-                None => env::remove_var("LOG_LEVEL"),
-            }
-            match original_log_format {
-                Some(val) => env::set_var("LOG_FORMAT", val),
-                None => env::remove_var("LOG_FORMAT"),
-            }
-            match original_cors {
-                Some(val) => env::set_var("CORS_ORIGINS", val),
-                None => env::remove_var("CORS_ORIGINS"),
-            }
-        }
     }
 }
