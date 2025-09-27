@@ -151,7 +151,7 @@ mod tests {
             let conn = rate_limiter.get_connection().await.unwrap();
             conn.query(
                 "SELECT COUNT(*) FROM rate_limits WHERE identifier = ?",
-                ["expired_user"],
+                params!["expired_user"],
             )
             .await
             .unwrap()
