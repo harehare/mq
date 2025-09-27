@@ -41,7 +41,7 @@ std = []
 sync = []
 
 [dev-dependencies]
-divan = {version = "2.8.1", package = "codspeed-divan-compat"}
+divan = {version = "3.0.5", package = "codspeed-divan-compat"}
 mq-test = {path = "../../crates/mq-test", version = "0.2.8"}
 rstest.workspace = true
 
