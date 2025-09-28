@@ -76,6 +76,7 @@ pub struct Node {
 pub enum NodeKind {
     Array,
     BinaryOp(BinaryOp),
+    Block,
     Break,
     Call,
     Continue,

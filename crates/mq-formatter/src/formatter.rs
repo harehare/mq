@@ -101,7 +101,8 @@ impl Formatter {
                 self.format_group(&node, indent_level_consider_new_line);
             }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Def
+            mq_lang::CstNodeKind::Block
+            | mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
             | mq_lang::CstNodeKind::Until
@@ -109,7 +110,10 @@ impl Formatter {
                 &node,
                 indent_level_consider_new_line,
                 indent_level,
-                !matches!(node.kind, mq_lang::CstNodeKind::Fn),
+                !matches!(
+                    node.kind,
+                    mq_lang::CstNodeKind::Fn | mq_lang::CstNodeKind::Block
+                ),
             ),
             mq_lang::CstNodeKind::Eof => {}
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),

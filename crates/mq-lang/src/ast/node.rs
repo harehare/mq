@@ -48,7 +48,8 @@ impl Node {
 
     pub fn range(&self, arena: Shared<Arena<Shared<Token>>>) -> Range {
         match &*self.expr {
-            Expr::Def(_, _, program)
+            Expr::Block(program)
+            | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Until(_, program)
@@ -233,6 +234,7 @@ impl Display for Literal {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
+    Block(Program),
     Call(IdentWithToken, Args),
     Def(IdentWithToken, Params, Program),
     Fn(Params, Program),

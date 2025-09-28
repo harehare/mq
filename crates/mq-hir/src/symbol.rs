@@ -25,6 +25,7 @@ pub enum SymbolKind {
     Argument,
     Array,
     BinaryOp,
+    Block,
     Boolean,
     Call,
     Dict,

@@ -125,7 +125,9 @@ impl Optimizer {
             ast::Expr::Let(_, value_node) => {
                 Self::collect_used_identifiers_in_node(value_node, used_idents);
             }
-            ast::Expr::Def(_, _, program_nodes) | ast::Expr::Fn(_, program_nodes) => {
+            ast::Expr::Block(program_nodes)
+            | ast::Expr::Def(_, _, program_nodes)
+            | ast::Expr::Fn(_, program_nodes) => {
                 for stmt in program_nodes {
                     Self::collect_used_identifiers_in_node(stmt, used_idents);
                 }

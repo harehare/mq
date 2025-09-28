@@ -417,6 +417,11 @@ impl<'a> Parser<'a> {
                 } => self.parse_def(leading_trivia),
                 Token {
                     range: _,
+                    kind: TokenKind::Do,
+                    ..
+                } => self.parse_block(leading_trivia, in_loop),
+                Token {
+                    range: _,
                     kind: TokenKind::Fn,
                     ..
                 } => self.parse_fn(leading_trivia, in_loop),
@@ -913,6 +918,30 @@ impl<'a> Parser<'a> {
 
         let (mut program, _) = self.parse_program(false, in_loop);
 
+        children.append(&mut program);
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
+    fn parse_block(
+        &mut self,
+        leading_trivia: Vec<Trivia>,
+        in_loop: bool,
+    ) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+
+        let mut node = Node {
+            kind: NodeKind::Block,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        let (mut program, _) = self.parse_program(false, in_loop);
         children.append(&mut program);
 
         node.children = children;

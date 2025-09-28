@@ -204,6 +204,7 @@ fn spaces(input: Span) -> IResult<Span, Token> {
 define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(comma, ",", TokenKind::Comma);
 define_keyword_parser!(def, "def", TokenKind::Def);
+define_keyword_parser!(do_, "do", TokenKind::Do);
 define_keyword_parser!(elif, "elif", TokenKind::Elif);
 define_keyword_parser!(else_, "else", TokenKind::Else);
 define_keyword_parser!(end, "end", TokenKind::End);
@@ -270,8 +271,8 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        nodes, def, let_, self_, while_, until, if_, elif, else_, end, none, include, foreach, fn_,
-        break_, continue_,
+        nodes, def, do_, let_, self_, while_, until, if_, elif, else_, end, none, include, foreach,
+        fn_, break_, continue_,
     ))
     .parse(input)
 }
