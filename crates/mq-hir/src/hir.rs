@@ -1370,17 +1370,17 @@ end"#;
 
         let code = r#"do "hello" end"#;
         let (nodes, errors) = mq_lang::parse_recovery(code);
-        println!("Has parse errors: {:?}", errors.has_errors());
-        println!("Parsed {} nodes", nodes.len());
-        for (i, node) in nodes.iter().enumerate() {
-            println!("Node {}: {:?}", i, node.kind);
+        // Removed debug print statements
+        // Removed debug print statements
+        for (_i, _node) in nodes.iter().enumerate() {
+            // Removed debug print statements
         }
         let (_, _) = hir.add_code(None, code);
 
         // Debug: Print all symbols
-        println!("All symbols:");
-        for (_, symbol) in hir.symbols.iter() {
-            println!("  {:?}: {:?}", symbol.value, symbol.kind);
+        // Removed debug print statements
+        for (_, _symbol) in hir.symbols.iter() {
+            // Removed debug print statements
         }
 
         // Check if Block symbol exists
