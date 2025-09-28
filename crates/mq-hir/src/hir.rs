@@ -1369,21 +1369,8 @@ end"#;
         hir.builtin.disabled = true;
 
         let code = r#"do "hello" end"#;
-        let (nodes, errors) = mq_lang::parse_recovery(code);
-        // Removed debug print statements
-        // Removed debug print statements
-        for (_i, _node) in nodes.iter().enumerate() {
-            // Removed debug print statements
-        }
-        let (_, _) = hir.add_code(None, code);
-
-        // Debug: Print all symbols
-        // Removed debug print statements
-        for (_, _symbol) in hir.symbols.iter() {
-            // Removed debug print statements
-        }
-
-        // Check if Block symbol exists
+        let _ = mq_lang::parse_recovery(code);
+        let _ = hir.add_code(None, code);
         let block_symbol = hir
             .symbols
             .iter()
@@ -1392,7 +1379,6 @@ end"#;
 
         assert!(block_symbol.is_some(), "Block symbol should exist");
 
-        // Check if string literal symbol exists
         let string_symbol = hir
             .symbols
             .iter()
