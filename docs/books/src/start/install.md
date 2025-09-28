@@ -14,7 +14,7 @@ The installer will:
 ## Cargo
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.11
+cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.23
 ```
 
 ## Binaries
