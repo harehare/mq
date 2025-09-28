@@ -309,6 +309,9 @@ impl Hir {
             mq_lang::CstNodeKind::BinaryOp(_) => {
                 self.add_binary_op_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Block => {
+                self.add_block_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::UnaryOp(_) => {
                 self.add_unary_op_expr(node, source_id, scope_id, parent);
             }
@@ -366,6 +369,41 @@ impl Hir {
             }
 
             _ => {}
+        }
+    }
+
+    fn add_block_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Block,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Block,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Create a new scope for the block
+            let block_scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Block(symbol_id),
+                Some(scope_id),
+            ));
+
+            // Process all child nodes within the block scope
+            node.children.iter().for_each(|child| {
+                self.add_expr(child, source_id, block_scope_id, Some(symbol_id));
+            });
         }
     }
 
@@ -1174,6 +1212,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::not_variable("self", "self", SymbolKind::Keyword)]
     #[case::break_("while (true): break;", "break", SymbolKind::Keyword)]
     #[case::continue_("while (true): continue;", "continue", SymbolKind::Keyword)]
+    #[case::block("do \"hello\" end", "hello", SymbolKind::String)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
@@ -1312,5 +1351,37 @@ end"#;
         let unused = hir.unused_functions(source_id);
 
         assert_eq!(unused.len(), 0);
+    }
+
+    #[test]
+    fn test_block_symbol() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"do "hello" end"#;
+        let _ = mq_lang::parse_recovery(code);
+        let _ = hir.add_code(None, code);
+        let block_symbol = hir
+            .symbols
+            .iter()
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Block))
+            .map(|(_, symbol)| symbol);
+
+        assert!(block_symbol.is_some(), "Block symbol should exist");
+
+        let string_symbol = hir
+            .symbols
+            .iter()
+            .find(|(_, symbol)| symbol.value == Some("hello".into()))
+            .map(|(_, symbol)| symbol);
+
+        assert!(
+            string_symbol.is_some(),
+            "String literal symbol should exist"
+        );
+
+        if let Some(string_sym) = string_symbol {
+            assert!(matches!(string_sym.kind, SymbolKind::String));
+        }
     }
 }

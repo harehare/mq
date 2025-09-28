@@ -523,6 +523,9 @@ impl Evaluator {
         }
 
         match &*node.expr {
+            ast::Expr::Block(program) => {
+                self.eval_program(program, runtime_value.clone(), Shared::clone(env))
+            }
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]

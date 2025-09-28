@@ -222,6 +222,8 @@ impl<'a> Parser<'a> {
             TokenKind::Let => self.parse_expr_let(Shared::clone(&token)),
             // Delegate parsing of 'def' (function definition) expressions.
             TokenKind::Def => self.parse_expr_def(Shared::clone(&token)),
+            // Delegate parsing of 'do' (block) expressions.
+            TokenKind::Do => self.parse_expr_block(Shared::clone(&token)),
             TokenKind::Fn => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Until => self.parse_until(token),
@@ -753,6 +755,20 @@ impl<'a> Parser<'a> {
                 args,
                 program,
             )),
+        }))
+    }
+
+    fn parse_expr_block(&mut self, do_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        let do_token_id = token_alloc(&self.token_arena, &do_token);
+
+        let program = self.parse_program(false)?;
+
+        // The End token is already consumed by parse_program when it encounters it
+        // No need to expect another End token here
+
+        Ok(Shared::new(Node {
+            token_id: do_token_id,
+            expr: Shared::new(Expr::Block(program)),
         }))
     }
 

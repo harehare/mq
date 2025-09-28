@@ -13,7 +13,18 @@ The if expression evaluates a condition and executes code based on the result:
    "other"
 ```
 
-```python
+```js
+ if (eq(x, 1)):
+   do "one" | upcase();
+ elif (eq(x, 2)):
+   do "TWO" | downcase();
+ else:
+   do
+    "other" | upcase()
+   end
+```
+
+```js
  if (eq(x, 1)):
    "one"
 ```

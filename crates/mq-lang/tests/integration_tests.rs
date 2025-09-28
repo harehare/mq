@@ -1419,6 +1419,125 @@ fn engine_with_opt() -> Engine {
               value: "rust".to_string(),
               position: None,
             }), None)].into()))]
+#[case::do_block_simple("
+    do
+      \"hello world\"
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+#[case::do_block_multiple_statements("
+    do
+      let x = 5
+      | let y = 10
+      | add(x, y)
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(15.into())].into()))]
+#[case::do_block_with_input("
+    do
+      add(\"processed: \", self)
+    end
+    ",
+      vec![RuntimeValue::String("input".to_string())],
+      Ok(vec![RuntimeValue::String("processed: input".to_string())].into()))]
+#[case::do_block_nested("
+    do
+      let x = 5
+      | do
+          let y = 10
+          | add(x, y)
+        end
+      | add(x, 100)
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(105.into())].into()))]
+#[case::do_block_with_function("
+    def double(x):
+      mul(x, 2);
+    | do
+        let value = 21
+        | double(value)
+      end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::if_no_end("
+    def test_fn(x):
+      if (eq(x, 1)):
+        \"one\"
+      elif (eq(x, 2)):
+        \"two\"
+      else:
+        \"other\";
+    | test_fn(1)
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("one".to_string())].into()))]
+#[case::if_elif_no_end("
+    def test_fn(x):
+      if (eq(x, 1)):
+        \"one\"
+      elif (eq(x, 2)):
+        \"two\"
+      else:
+        \"other\";
+    | test_fn(2)
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("two".to_string())].into()))]
+#[case::if_else_no_end("
+    def test_fn(x):
+      if (eq(x, 1)):
+        \"one\"
+      elif (eq(x, 2)):
+        \"two\"
+      else:
+        \"other\";
+    | test_fn(3)
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::nested_if_no_end("
+    def test_nested(x, y):
+      if (gt(x, 0)):
+        if (gt(y, 0)):
+          \"both positive\"
+        else:
+          \"x positive, y non-positive\"
+      else:
+        \"x non-positive\";
+    | test_nested(1, 1)
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("both positive".to_string())].into()))]
+#[case::if_in_do_block("
+    do
+      let x = 5
+      | if (gt(x, 3)):
+          \"greater than 3\"
+        else:
+          \"not greater than 3\"
+    end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("greater than 3".to_string())].into()))]
+#[case::if_do_block_simple("
+    let v = 1
+    | if (v > 0):
+      do
+        \"hello world\" | upcase()
+      end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
+#[case::let_do_block_simple("
+    let v = do \"hello world\" | upcase() end | v
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,
