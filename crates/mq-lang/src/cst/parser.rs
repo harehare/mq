@@ -931,7 +931,6 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
 
         let mut node = Node {
             kind: NodeKind::Block,
@@ -941,10 +940,9 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        let (mut program, _) = self.parse_program(false, in_loop);
-        children.append(&mut program);
+        let (program, _) = self.parse_program(false, in_loop);
 
-        node.children = children;
+        node.children = program;
         Ok(Shared::new(node))
     }
 

@@ -384,16 +384,6 @@ impl Hir {
             ..
         } = &**node
         {
-            // Add the 'do' keyword symbol
-            self.symbols.insert(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
                 kind: SymbolKind::Block,
