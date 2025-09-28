@@ -1524,6 +1524,20 @@ fn engine_with_opt() -> Engine {
     ",
       vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::String("greater than 3".to_string())].into()))]
+#[case::if_do_block_simple("
+    let v = 1
+    | if (v > 0):
+      do
+        \"hello world\" | upcase()
+      end
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
+#[case::let_do_block_simple("
+    let v = do \"hello world\" | upcase() end | v
+    ",
+      vec![RuntimeValue::Number(0.into())],
+      Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,
