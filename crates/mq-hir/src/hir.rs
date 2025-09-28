@@ -270,8 +270,7 @@ impl Hir {
 
         self.source_scopes.insert(source_id, scope_id);
 
-        nodes.iter().for_each(|node| {
-            println!("Processing node kind: {:?}", node.kind);
+        nodes.iter().for_each(|node| 
             self.add_expr(node, source_id, scope_id, None);
         });
         self.resolve();
