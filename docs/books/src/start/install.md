@@ -1,5 +1,16 @@
 # Install
 
+### Quick Install
+
+```bash
+curl -sSL https://mqlang.org/install.sh | bash
+```
+
+The installer will:
+- Download the latest mq binary for your platform
+- Install it to `~/.mq/bin/`
+- Update your shell profile to add mq to your PATH
+
 ## Cargo
 
 ```sh
