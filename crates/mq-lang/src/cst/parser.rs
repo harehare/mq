@@ -5211,6 +5211,266 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::do_block_simple(
+        vec![
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::Ident("test".into()))),
+            Shared::new(token(TokenKind::End)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Do))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("test".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::do_block_with_whitespace(
+        vec![
+            Shared::new(token(TokenKind::Whitespace(2))),
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::NewLine)),
+            Shared::new(token(TokenKind::Tab(1))),
+            Shared::new(token(TokenKind::Ident("expression".into()))),
+            Shared::new(token(TokenKind::NewLine)),
+            Shared::new(token(TokenKind::End)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Do))),
+                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("expression".into())))),
+                            leading_trivia: vec![Trivia::NewLine, Trivia::Tab(Shared::new(token(TokenKind::Tab(1))))],
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: vec![Trivia::NewLine],
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::do_block_with_multiple_statements(
+        vec![
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::Let)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::Equal)),
+            Shared::new(token(TokenKind::NumberLiteral(42.into()))),
+            Shared::new(token(TokenKind::SemiColon)),
+            Shared::new(token(TokenKind::Ident("x".into()))),
+            Shared::new(token(TokenKind::SemiColon)),
+            Shared::new(token(TokenKind::End)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Do))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Let,
+                            token: Some(Shared::new(token(TokenKind::Let))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::new(token(TokenKind::Equal))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Literal,
+                                    token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::SemiColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::do_block_with_comment(
+        vec![
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::Comment("inside block".into()))),
+            Shared::new(token(TokenKind::NewLine)),
+            Shared::new(token(TokenKind::Ident("value".into()))),
+            Shared::new(token(TokenKind::End)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Do))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("value".into())))),
+                            leading_trivia: vec![Trivia::Comment(Shared::new(token(TokenKind::Comment("inside block".into())))), Trivia::NewLine],
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::do_block_empty(
+        vec![
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::End)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Do))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::do_block_nested(
+        vec![
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::Do)),
+            Shared::new(token(TokenKind::Ident("inner".into()))),
+            Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::End)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Block,
+                    token: Some(Shared::new(token(TokenKind::Do))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Block,
+                            token: Some(Shared::new(token(TokenKind::Do))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: vec![
+                                Shared::new(Node {
+                                    kind: NodeKind::Ident,
+                                    token: Some(Shared::new(token(TokenKind::Ident("inner".into())))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                                Shared::new(Node {
+                                    kind: NodeKind::End,
+                                    token: Some(Shared::new(token(TokenKind::End))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
+                            ],
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
     fn test_parse(
         #[case] input: Vec<Shared<Token>>,
         #[case] expected: (Vec<Shared<Node>>, ErrorReporter),
