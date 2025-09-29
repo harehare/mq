@@ -4,6 +4,8 @@
 
 ```bash
 curl -sSL https://mqlang.org/install.sh | bash
+# Install the debugger
+curl_-sSL https://mqlang.org/install.sh | bash -s -- --with-debug
 ```
 
 The installer will:
@@ -15,6 +17,10 @@ The installer will:
 
 ```sh
 cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.23
+# Latest Development Version
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
+# Install the debugger
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger"
 ```
 
 ## Binaries

@@ -4,7 +4,17 @@ The `mq` debugger allows you to step through execution, set breakpoints, and ins
 
 ## Installation
 
-To use the debugger, you need to install `mq` with the debugger feature enabled. You can do this by building from source:
+To use the debugger, you need to install `mq` with the debugger feature enabled.
+
+### Quick Install
+
+```bash
+curl_-sSL https://mqlang.org/install.sh | bash -s -- --with-debug
+```
+
+### Cargo
+
+You can do this by building from source:
 
 ```bash
 cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg
@@ -99,7 +109,7 @@ Breakpoints:
 
 You can also set breakpoints directly in your mq code using the `breakpoint()` function:
 
-```mq
+```python
 def process_data(items) {
    breakpoint()  # Execution will pause here when debugger is attached
    | items | filter(fn(item): item == "test")
