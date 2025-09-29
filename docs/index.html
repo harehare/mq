@@ -222,10 +222,14 @@
       }
       .title {
         animation: fadeIn 0.8s ease-out;
-        color: var(--text-primary);
+        background: linear-gradient(to right, #2b5773, #61afef);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: #61afef; /* Fallback for browsers that don't support background-clip */
         display: inline-block;
-        font-size: 4.5rem;
-        font-weight: 700;
+        font-size: 5rem;
+        font-weight: 800;
         letter-spacing: -2px;
         line-height: 1;
         margin: 0;
