@@ -44,7 +44,7 @@ rustc-hash = "2.1.1"
 serde = "1.0"
 serde_json = "1.0"
 smol_str = "0.3.2"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 url = "2.5.7"
 
 [profile.release]
