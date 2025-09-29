@@ -10,7 +10,7 @@
   <a href="https://mqlang.org/playground">Playground 🎮</a>
 </div>
 
-# mq
+<h1 align="center">mq</h1>
 
 [![ci](https://github.com/harehare/mq/actions/workflows/ci.yml/badge.svg)](https://github.com/harehare/mq/actions/workflows/ci.yml)
 ![GitHub Release](https://img.shields.io/github/v/release/harehare/mq)
