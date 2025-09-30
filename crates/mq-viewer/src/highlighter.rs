@@ -89,6 +89,10 @@ impl SyntaxHighlighter {
                 tree_sitter_elm::LANGUAGE.into(),
                 tree_sitter_elm::HIGHLIGHTS_QUERY,
             ),
+            "mq" => (
+                tree_sitter_mq::LANGUAGE.into(),
+                tree_sitter_mq::HIGHLIGHTS_QUERY,
+            ),
             _ => return None,
         };
 

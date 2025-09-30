@@ -1,0 +1,36 @@
+{
+  "name": "tree-sitter-mq",
+  "version": "0.1.0",
+  "description": "mq grammar for tree-sitter",
+  "main": "bindings/node",
+  "keywords": [
+    "parser",
+    "lexer",
+    "mq"
+  ],
+  "author": "harehare",
+  "license": "MIT",
+  "dependencies": {
+    "node-addon-api": "^8.0.0",
+    "node-gyp-build": "^4.8.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.6",
+    "prebuildify": "^6.0.0"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "tree-sitter": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "install": "node-gyp-build",
+    "prebuildify": "prebuildify --napi --strip",
+    "build": "tree-sitter build --wasm",
+    "test": "tree-sitter test && tree-sitter parse examples/* --quiet --time",
+    "generate": "tree-sitter generate"
+  }
+}
