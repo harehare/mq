@@ -30,7 +30,7 @@ tree-sitter-html = "0.23"
 tree-sitter-java = "0.23"
 tree-sitter-javascript = "0.23"
 tree-sitter-json = "0.24"
-tree-sitter-mq = {path = "../tree-sitter-mq"}
+tree-sitter-mq = {git = "https://github.com/harehare/tree-sitter-mq.git"}
 tree-sitter-python = "0.23"
 tree-sitter-rust = "0.23"
 tree-sitter-typescript = "0.23"

@@ -19,7 +19,6 @@ members = [
   "crates/mq-dap",
   "crates/mq-crawler",
   "crates/mq-viewer",
-  "crates/tree-sitter-mq",
 ]
 resolver = "3"
 
