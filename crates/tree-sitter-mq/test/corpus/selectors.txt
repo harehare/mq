@@ -1,0 +1,76 @@
+==================
+Simple property selector
+==================
+
+.property
+
+---
+
+(source_file
+  (selector_expression
+    property: (identifier)))
+
+==================
+Chained property selector
+==================
+
+.h.level
+
+---
+
+(source_file
+  (selector_expression
+    base: (selector_expression
+      property: (identifier))
+    property: (identifier)))
+
+==================
+Array iterator selector
+==================
+
+.[]
+
+---
+
+(source_file
+  (selector_expression))
+
+==================
+Double array iterator selector
+==================
+
+.[][]
+
+---
+
+(source_file
+  (selector_expression
+    base: (selector_expression)))
+
+==================
+Chained selector with base
+==================
+
+x.h.level
+
+---
+
+(source_file
+  (selector_expression
+    base: (selector_expression
+      base: (identifier)
+      property: (identifier))
+    property: (identifier)))
+
+==================
+Array index selector
+==================
+
+x[0]
+
+---
+
+(source_file
+  (selector_expression
+    base: (identifier)
+    index: (number)))
