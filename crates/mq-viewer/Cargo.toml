@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 colored.workspace = true
+image = "0.25"
 itertools.workspace = true
 miette = {workspace = true}
 mq-markdown = {workspace = true}
@@ -34,3 +35,4 @@ tree-sitter-mq = {git = "https://github.com/harehare/tree-sitter-mq.git"}
 tree-sitter-python = "0.23"
 tree-sitter-rust = "0.23"
 tree-sitter-typescript = "0.23"
+viuer = {version = "0.8", features = ["sixel"]}

@@ -2,6 +2,7 @@ use crate::highlighter::SyntaxHighlighter;
 use colored::*;
 use mq_markdown::{Markdown, Node};
 use std::io::{self, Write};
+use std::path::Path;
 
 /// Unicode header symbols (①②③④⑤⑥)
 const HEADER_SYMBOLS: &[&str] = &["①", "②", "③", "④", "⑤", "⑥"];
@@ -248,15 +249,20 @@ fn render_node_inline<W: Write>(
         Node::Image(image) => {
             let alt = image.alt.as_str();
             let url = image.url.as_str();
+
+            // Try to render the image inline
+            render_image_to_terminal(url)?;
+
+            // Always show the text description as well
             if alt.trim().is_empty() {
-                write!(
+                writeln!(
                     writer,
                     "{} {}",
                     "🖼️ ".bright_green(),
                     url.underline().bright_green()
                 )?;
             } else {
-                write!(
+                writeln!(
                     writer,
                     "{} {} ({})",
                     "🖼️ ".bright_green(),
@@ -574,4 +580,35 @@ fn get_node_children(node: &Node) -> Option<&Vec<Node>> {
         Node::TableCell(cell) => Some(&cell.values),
         _ => None,
     }
+}
+
+/// Render an image to the terminal if possible
+fn render_image_to_terminal(path: &str) -> io::Result<()> {
+    // Check if the path is a local file
+    if path.starts_with("http://") || path.starts_with("https://") {
+        // For remote images, we would need to download them first
+        // For now, skip rendering remote images
+        return Ok(());
+    }
+
+    let image_path = Path::new(path);
+    if !image_path.exists() {
+        return Ok(());
+    }
+
+    // Use viuer to display the image with default configuration
+    // This will auto-detect the best protocol (Kitty, iTerm2, Sixel, or blocks)
+    let conf = viuer::Config {
+        width: Some(60),
+        height: None,
+        absolute_offset: false,
+        ..Default::default()
+    };
+
+    // Try to open and display the image
+    if let Ok(img) = image::open(path) {
+        let _ = viuer::print(&img, &conf);
+    }
+
+    Ok(())
 }
