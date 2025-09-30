@@ -3031,6 +3031,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-viewer"
+version = "0.2.23"
+dependencies = [
+ "clap",
+ "colored 3.0.0",
+ "itertools 0.14.0",
+ "miette",
+ "mq-markdown",
+]
+
+[[package]]
 name = "mq-wasm"
 version = "0.2.23"
 dependencies = [

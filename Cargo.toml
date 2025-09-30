@@ -18,6 +18,7 @@ members = [
   "crates/mq-web-api",
   "crates/mq-dap",
   "crates/mq-crawler",
+  "crates/mq-viewer",
 ]
 resolver = "3"
 

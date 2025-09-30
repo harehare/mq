@@ -1,0 +1,11 @@
+[package]
+edition = "2024"
+name = "mq-viewer"
+version = "0.2.23"
+
+[dependencies]
+clap.workspace = true
+colored.workspace = true
+itertools.workspace = true
+miette = {workspace = true}
+mq-markdown = {workspace = true}
