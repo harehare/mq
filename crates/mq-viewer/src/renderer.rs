@@ -251,7 +251,9 @@ fn render_node_inline<W: Write>(
             let url = image.url.as_str();
 
             // Try to render the image inline
-            render_image_to_terminal(url)?;
+            if let Err(_e) = render_image_to_terminal(url) {
+                // Optionally log the error, or ignore it to continue rendering
+            }
 
             // Always show the text description as well
             if alt.trim().is_empty() {
