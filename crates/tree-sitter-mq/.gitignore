@@ -1,5 +1,0 @@
-node_modules/
-target/
-*.log
-Cargo.lock
-build

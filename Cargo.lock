@@ -5560,9 +5560,9 @@ checksum = "c4013970217383f67b18aef68f6fb2e8d409bc5755227092d32efb0422ba24b8"
 [[package]]
 name = "tree-sitter-mq"
 version = "0.1.0"
+source = "git+https://github.com/harehare/tree-sitter-mq.git#94974d5cd5de481b51a3e0c0711f8fd32c1f3516"
 dependencies = [
  "cc",
- "tree-sitter",
  "tree-sitter-language",
 ]
 
