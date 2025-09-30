@@ -609,7 +609,7 @@ fn render_image_to_terminal(path: &str) -> io::Result<()> {
 
     // Try to open and display the image
     if let Ok(img) = image::open(path) {
-        let _ = viuer::print(&img, &conf);
+        viuer::print(&img, &conf).map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to render image: {}", e)))?;
     }
 
     Ok(())
