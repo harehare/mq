@@ -35,4 +35,4 @@ tree-sitter-mq = {git = "https://github.com/harehare/tree-sitter-mq.git"}
 tree-sitter-python = "0.23"
 tree-sitter-rust = "0.23"
 tree-sitter-typescript = "0.23"
-viuer = {version = "0.8", features = ["sixel"]}
+viuer = {version = "0.9", features = ["sixel"]}
