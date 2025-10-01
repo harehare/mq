@@ -175,28 +175,52 @@ fn render_node_inline<W: Write>(
                 .unwrap_or(&"⑥");
 
             let text = render_inline_content(&heading.values);
+
+            // Fallback: Use decorative elements to simulate size differences
             match heading.depth {
-                1 => writeln!(
-                    writer,
-                    "{} {}",
-                    symbol.bold().bright_blue(),
-                    text.bold().bright_blue()
-                )?,
-                2 => writeln!(writer, "{} {}", symbol.bold().cyan(), text.bold().cyan())?,
-                3 => writeln!(
-                    writer,
-                    "{} {}",
-                    symbol.bold().yellow(),
-                    text.bold().yellow()
-                )?,
-                4 => writeln!(writer, "{} {}", symbol.bold().green(), text.bold().green())?,
-                5 => writeln!(
-                    writer,
-                    "{} {}",
-                    symbol.bold().magenta(),
-                    text.bold().magenta()
-                )?,
-                _ => writeln!(writer, "{} {}", symbol.bold().white(), text.bold().white())?,
+                1 => {
+                    // h1: Largest - double lines above and below with large text
+                    let line = "═".repeat(text.chars().count() + 4);
+                    writeln!(writer, "{}", line.bright_blue())?;
+                    writeln!(
+                        writer,
+                        "{} {} {}",
+                        symbol.bold().bright_blue(),
+                        text.bold().bright_blue(),
+                        symbol.bold().bright_blue()
+                    )?;
+                    writeln!(writer, "{}", line.bright_blue())?;
+                }
+                2 => {
+                    // h2: Large - single line below
+                    writeln!(writer, "{} {}", symbol.bold().cyan(), text.bold().cyan())?;
+                    let line = "─".repeat(text.chars().count() + 4);
+                    writeln!(writer, "{}", line.cyan())?;
+                }
+                3 => {
+                    // h3: Medium - double symbol
+                    writeln!(
+                        writer,
+                        "{} {}",
+                        symbol.bold().yellow(),
+                        text.bold().yellow()
+                    )?;
+                }
+                4 => {
+                    // h4: Regular with extra spacing
+                    writeln!(writer, "{} {}", symbol.bold().green(), text.bold().green())?;
+                }
+                5 => {
+                    writeln!(
+                        writer,
+                        "{} {}",
+                        symbol.bold().magenta(),
+                        text.bold().magenta()
+                    )?;
+                }
+                _ => {
+                    writeln!(writer, "{} {}", symbol.bold().white(), text.bold().white())?;
+                }
             }
             writeln!(writer)?;
         }
