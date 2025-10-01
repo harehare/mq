@@ -1,0 +1,38 @@
+[package]
+edition = "2024"
+name = "mq-viewer"
+version = "0.2.23"
+
+[lib]
+name = "mq_viewer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mqv"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+colored.workspace = true
+image = "0.25"
+itertools.workspace = true
+miette = {workspace = true}
+mq-markdown = {workspace = true}
+tree-sitter = "0.24"
+tree-sitter-bash = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+tree-sitter-css = "0.23"
+tree-sitter-elm = "5.8.0"
+tree-sitter-go = "0.23"
+tree-sitter-haskell = "0.23.1"
+tree-sitter-highlight = "0.24"
+tree-sitter-html = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-mq = {git = "https://github.com/harehare/tree-sitter-mq.git"}
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-typescript = "0.23"
+viuer = {version = "0.8", features = ["sixel"]}
