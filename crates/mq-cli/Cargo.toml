@@ -63,7 +63,3 @@ required-features = ["std"]
 name = "mq-dbg"
 path = "src/bin/dbg.rs"
 required-features = ["debugger"]
-
-[[bin]]
-name = "mqv"
-path = "src/bin/viewer.rs"
