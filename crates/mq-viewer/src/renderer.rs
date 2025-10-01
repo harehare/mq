@@ -250,8 +250,7 @@ fn render_node_inline<W: Write>(
             let alt = image.alt.as_str();
             let url = image.url.as_str();
 
-            // Try to render the image inline
-            render_image_to_terminal(url)?;
+            let _ = render_image_to_terminal(url);
 
             // Always show the text description as well
             if alt.trim().is_empty() {
