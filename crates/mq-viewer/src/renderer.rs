@@ -86,8 +86,30 @@ fn make_clickable_link(url: &str, display_text: &str) -> String {
 /// ```
 pub fn render_markdown<W: Write>(markdown: &Markdown, writer: &mut W) -> io::Result<()> {
     let mut highlighter = SyntaxHighlighter::new();
-    for node in &markdown.nodes {
-        render_node(node, 0, &mut highlighter, writer)?;
+    let mut i = 0;
+    while i < markdown.nodes.len() {
+        let node = &markdown.nodes[i];
+        // Check if this is the start of a table (TableCell nodes)
+        if matches!(node, Node::TableCell(_)) {
+            // Collect all table nodes (cells + header)
+            let mut table_nodes = Vec::new();
+            let mut j = i;
+            while j < markdown.nodes.len() {
+                match &markdown.nodes[j] {
+                    Node::TableCell(_) | Node::TableHeader(_) | Node::TableRow(_) => {
+                        table_nodes.push(&markdown.nodes[j]);
+                        j += 1;
+                    }
+                    _ => break,
+                }
+            }
+            // Render the complete table
+            render_table(&table_nodes, &mut highlighter, writer)?;
+            i = j;
+        } else {
+            render_node(node, 0, &mut highlighter, writer)?;
+            i += 1;
+        }
     }
     Ok(())
 }
@@ -346,6 +368,18 @@ fn render_node_inline<W: Write>(
             }
         }
 
+        Node::TableHeader(_) | Node::TableRow(_) => {
+            // These should be handled by render_table in render_markdown
+            // If we encounter them here, skip them
+        }
+
+        Node::TableCell(cell) => {
+            // Individual table cells outside of tables
+            // Calculate column widths for this cell
+            let column_widths = calculate_column_widths(&[Node::TableCell(cell.clone())]);
+            render_table_cell(cell, &column_widths, highlighter, writer)?;
+        }
+
         // Handle other node types recursively if they have children
         _ => {
             if let Some(children) = get_node_children(node) {
@@ -579,6 +613,252 @@ fn get_node_children(node: &Node) -> Option<&Vec<Node>> {
         Node::TableCell(cell) => Some(&cell.values),
         _ => None,
     }
+}
+
+/// Render a complete table with proper column alignment
+fn render_table<W: Write>(
+    table_nodes: &[&Node],
+    highlighter: &mut SyntaxHighlighter,
+    writer: &mut W,
+) -> io::Result<()> {
+    if table_nodes.is_empty() {
+        return Ok(());
+    }
+
+    // Calculate column widths from all cells
+    let all_nodes: Vec<Node> = table_nodes.iter().map(|n| (*n).clone()).collect();
+    let column_widths = calculate_column_widths(&all_nodes);
+
+    // Find table header to determine column count
+    let col_count = table_nodes
+        .iter()
+        .find_map(|node| {
+            if let Node::TableHeader(header) = node {
+                Some(header.align.len())
+            } else {
+                None
+            }
+        })
+        .unwrap_or(column_widths.len());
+
+    writeln!(writer)?;
+
+    // Render top border
+    render_table_top_border(&column_widths, col_count, writer)?;
+
+    // Render cells row by row
+    write!(writer, "{}", "│ ".bright_cyan())?;
+
+    for (i, node) in table_nodes.iter().enumerate() {
+        match node {
+            Node::TableCell(cell) => {
+                let content = render_inline_content(&cell.values);
+                let width = column_widths.get(cell.column).copied().unwrap_or(0);
+
+                for value in &cell.values {
+                    render_node_inline(value, 0, true, highlighter, writer)?;
+                }
+
+                // Pad with spaces to align columns
+                let content_width = content.chars().count();
+                if content_width < width {
+                    write!(writer, "{}", " ".repeat(width - content_width))?;
+                }
+
+                write!(writer, " {}", "│ ".bright_cyan())?;
+
+                if cell.last_cell_in_row {
+                    writeln!(writer)?;
+                    // Check if next node is the header separator or another cell
+                    if i + 1 < table_nodes.len() {
+                        if let Some(Node::TableHeader(header)) = table_nodes.get(i + 1) {
+                            render_table_header(header, &column_widths, writer)?;
+                            // After header, if there's another cell, start a new row
+                            if i + 2 < table_nodes.len()
+                                && matches!(table_nodes.get(i + 2), Some(Node::TableCell(_)))
+                            {
+                                write!(writer, "{}", "│ ".bright_cyan())?;
+                            }
+                        } else if matches!(table_nodes.get(i + 1), Some(Node::TableCell(_))) {
+                            // Start new row
+                            write!(writer, "{}", "│ ".bright_cyan())?;
+                        }
+                    }
+                }
+            }
+            Node::TableHeader(_) => {
+                // Already handled in the TableCell last_cell_in_row logic
+            }
+            Node::TableRow(row) => {
+                render_table_row(row, &column_widths, highlighter, writer)?;
+            }
+            _ => {}
+        }
+    }
+
+    // Render bottom border
+    render_table_bottom_border(&column_widths, col_count, writer)?;
+
+    writeln!(writer)?;
+    Ok(())
+}
+
+/// Calculate column widths for a table
+fn calculate_column_widths(nodes: &[Node]) -> Vec<usize> {
+    let mut column_widths: Vec<usize> = Vec::new();
+
+    for node in nodes {
+        match node {
+            Node::TableRow(row) => {
+                for (col_idx, cell_node) in row.values.iter().enumerate() {
+                    if let Node::TableCell(cell) = cell_node {
+                        let content = render_inline_content(&cell.values);
+                        let width = content.chars().count();
+
+                        if col_idx >= column_widths.len() {
+                            column_widths.resize(col_idx + 1, 0);
+                        }
+                        column_widths[col_idx] = column_widths[col_idx].max(width);
+                    }
+                }
+            }
+            Node::TableCell(cell) => {
+                let content = render_inline_content(&cell.values);
+                let width = content.chars().count();
+
+                if cell.column >= column_widths.len() {
+                    column_widths.resize(cell.column + 1, 0);
+                }
+                column_widths[cell.column] = column_widths[cell.column].max(width);
+            }
+            _ => {}
+        }
+    }
+
+    column_widths
+}
+
+/// Render table top border
+fn render_table_top_border<W: Write>(
+    column_widths: &[usize],
+    col_count: usize,
+    writer: &mut W,
+) -> io::Result<()> {
+    write!(writer, "{}", "┌".bright_black())?;
+    for i in 0..col_count {
+        let width = column_widths.get(i).copied().unwrap_or(4);
+        write!(writer, "{}", "─".repeat(width + 2).bright_black())?;
+        if i < col_count - 1 {
+            write!(writer, "{}", "┬".bright_black())?;
+        }
+    }
+    writeln!(writer, "{}", "┐".bright_black())?;
+    Ok(())
+}
+
+/// Render table bottom border
+fn render_table_bottom_border<W: Write>(
+    column_widths: &[usize],
+    col_count: usize,
+    writer: &mut W,
+) -> io::Result<()> {
+    write!(writer, "{}", "└".bright_black())?;
+    for i in 0..col_count {
+        let width = column_widths.get(i).copied().unwrap_or(4);
+        write!(writer, "{}", "─".repeat(width + 2).bright_black())?;
+        if i < col_count - 1 {
+            write!(writer, "{}", "┴".bright_black())?;
+        }
+    }
+    writeln!(writer, "{}", "┘".bright_black())?;
+    Ok(())
+}
+
+/// Render table header with alignment and column widths
+fn render_table_header<W: Write>(
+    header: &mq_markdown::TableHeader,
+    column_widths: &[usize],
+    writer: &mut W,
+) -> io::Result<()> {
+    write!(writer, "{}", "├".bright_black())?;
+    for (i, align) in header.align.iter().enumerate() {
+        let width = column_widths.get(i).copied().unwrap_or(4);
+        let (left, right) = match align {
+            mq_markdown::TableAlignKind::Left => (":", "─"),
+            mq_markdown::TableAlignKind::Right => ("─", ":"),
+            mq_markdown::TableAlignKind::Center => (":", ":"),
+            mq_markdown::TableAlignKind::None => ("─", "─"),
+        };
+
+        write!(writer, "{}", left.bright_black())?;
+        write!(writer, "{}", "─".repeat(width).bright_black())?;
+        write!(writer, "{}", right.bright_black())?;
+
+        if i < header.align.len() - 1 {
+            write!(writer, "{}", "┼".bright_black())?;
+        }
+    }
+    writeln!(writer, "{}", "┤".bright_black())?;
+    Ok(())
+}
+
+/// Render table row with column widths
+fn render_table_row<W: Write>(
+    row: &mq_markdown::TableRow,
+    column_widths: &[usize],
+    highlighter: &mut SyntaxHighlighter,
+    writer: &mut W,
+) -> io::Result<()> {
+    write!(writer, "{}", "│ ".bright_cyan())?;
+    for (col_idx, cell_node) in row.values.iter().enumerate() {
+        if let Node::TableCell(cell) = cell_node {
+            let content = render_inline_content(&cell.values);
+            let width = column_widths.get(col_idx).copied().unwrap_or(0);
+
+            for value in &cell.values {
+                render_node_inline(value, 0, true, highlighter, writer)?;
+            }
+
+            // Pad with spaces to align columns
+            let content_width = content.chars().count();
+            if content_width < width {
+                write!(writer, "{}", " ".repeat(width - content_width))?;
+            }
+
+            write!(writer, " {}", "│ ".bright_cyan())?;
+        }
+    }
+    writeln!(writer)?;
+    Ok(())
+}
+
+/// Render table cell with column width
+fn render_table_cell<W: Write>(
+    cell: &mq_markdown::TableCell,
+    column_widths: &[usize],
+    highlighter: &mut SyntaxHighlighter,
+    writer: &mut W,
+) -> io::Result<()> {
+    write!(writer, "{}", "│ ".bright_cyan())?;
+
+    let content = render_inline_content(&cell.values);
+    let width = column_widths.get(cell.column).copied().unwrap_or(0);
+
+    for value in &cell.values {
+        render_node_inline(value, 0, true, highlighter, writer)?;
+    }
+
+    // Pad with spaces to align columns
+    let content_width = content.chars().count();
+    if content_width < width {
+        write!(writer, "{}", " ".repeat(width - content_width))?;
+    }
+
+    write!(writer, " ")?;
+    if cell.last_cell_in_row {
+        writeln!(writer, "{}", "│".bright_cyan())?;
+    }
+    Ok(())
 }
 
 /// Render an image to the terminal if possible
