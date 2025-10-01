@@ -70,6 +70,10 @@ fn make_clickable_link(url: &str, display_text: &str) -> String {
 
 /// Render a Markdown document to a writer with syntax highlighting and rich text formatting.
 ///
+/// # Errors
+///
+/// Returns an `io::Error` if writing to the output fails.
+///
 /// # Examples
 ///
 /// ```rust
@@ -87,25 +91,23 @@ fn make_clickable_link(url: &str, display_text: &str) -> String {
 pub fn render_markdown<W: Write>(markdown: &Markdown, writer: &mut W) -> io::Result<()> {
     let mut highlighter = SyntaxHighlighter::new();
     let mut i = 0;
-    while i < markdown.nodes.len() {
+    let len = markdown.nodes.len();
+
+    while i < len {
         let node = &markdown.nodes[i];
-        // Check if this is the start of a table (TableCell nodes)
         if matches!(node, Node::TableCell(_)) {
-            // Collect all table nodes (cells + header)
-            let mut table_nodes = Vec::new();
-            let mut j = i;
-            while j < markdown.nodes.len() {
-                match &markdown.nodes[j] {
-                    Node::TableCell(_) | Node::TableHeader(_) | Node::TableRow(_) => {
-                        table_nodes.push(&markdown.nodes[j]);
-                        j += 1;
-                    }
-                    _ => break,
-                }
-            }
-            // Render the complete table
+            // Collect consecutive table-related nodes
+            let table_nodes: Vec<&Node> = markdown.nodes[i..]
+                .iter()
+                .take_while(|n| {
+                    matches!(
+                        n,
+                        Node::TableCell(_) | Node::TableHeader(_) | Node::TableRow(_)
+                    )
+                })
+                .collect();
             render_table(&table_nodes, &mut highlighter, writer)?;
-            i = j;
+            i += table_nodes.len();
         } else {
             render_node(node, 0, &mut highlighter, writer)?;
             i += 1;
