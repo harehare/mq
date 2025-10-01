@@ -19,7 +19,7 @@ itertools.workspace = true
 miette = {workspace = true}
 mq-markdown = {workspace = true}
 tree-sitter = "0.24"
-tree-sitter-bash = "0.23"
+tree-sitter-bash = "0.25"
 tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
 tree-sitter-css = "0.25"
