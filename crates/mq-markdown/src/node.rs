@@ -1334,7 +1334,7 @@ impl Node {
         matches!(self, Self::MdxJsxFlowElement(MdxJsxFlowElement { .. }))
     }
 
-    pub fn is_msx_js_esm(&self) -> bool {
+    pub fn is_mdx_js_esm(&self) -> bool {
         matches!(self, Self::MdxJsEsm(MdxJsEsm { .. }))
     }
 
@@ -3212,7 +3212,7 @@ mod tests {
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_msx_js_esm(#[case] node: Node, #[case] expected: bool) {
-        assert_eq!(node.is_msx_js_esm(), expected);
+        assert_eq!(node.is_mdx_js_esm(), expected);
     }
 
     #[rstest]

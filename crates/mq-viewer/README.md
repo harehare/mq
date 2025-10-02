@@ -2,6 +2,8 @@
 
 A library and CLI tool for rendering Markdown documents with syntax highlighting and rich text formatting.
 
+![demo](assets/demo.gif)
+
 ## Features
 
 - 🎨 **Syntax Highlighting**: Tree-sitter powered syntax highlighting for 13+ programming languages

@@ -184,10 +184,9 @@ fn render_node_inline<W: Write>(
                     writeln!(writer, "{}", line.bright_blue())?;
                     writeln!(
                         writer,
-                        "{} {} {}",
+                        "{} {}",
                         symbol.bold().bright_blue(),
                         text.bold().bright_blue(),
-                        symbol.bold().bright_blue()
                     )?;
                     writeln!(writer, "{}", line.bright_blue())?;
                 }
@@ -916,4 +915,277 @@ fn render_image_to_terminal(path: &str) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mq_markdown::{Markdown, Node};
+
+    #[test]
+    fn test_render_markdown_to_string_simple_text() {
+        let markdown: Markdown = "Hello World".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Hello World"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_heading() {
+        let markdown: Markdown = "# Heading 1\n## Heading 2".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Heading 1"));
+        assert!(result.contains("Heading 2"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_list() {
+        let markdown: Markdown = "- Item 1\n- Item 2\n- Item 3".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Item 1"));
+        assert!(result.contains("Item 2"));
+        assert!(result.contains("Item 3"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_code_block() {
+        let markdown: Markdown = "```rust\nfn main() {}\n```".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        // Code blocks may be syntax highlighted, so just check for the function name
+        assert!(result.contains("main"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_inline_code() {
+        let markdown: Markdown = "This is `inline code` text".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("inline code"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_bold() {
+        let markdown: Markdown = "This is **bold** text".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("bold"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_italic() {
+        let markdown: Markdown = "This is *italic* text".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("italic"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_link() {
+        let markdown: Markdown = "[Link Text](https://example.com)".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Link Text"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_blockquote() {
+        let markdown: Markdown = "> This is a quote".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("This is a quote"));
+    }
+
+    #[test]
+    fn test_render_markdown_to_string_horizontal_rule() {
+        let markdown: Markdown = "---".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        // Check that some separator is rendered
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_detect_callout_note() {
+        assert!(detect_callout("[!NOTE] Test").is_some());
+    }
+
+    #[test]
+    fn test_detect_callout_tip() {
+        assert!(detect_callout("[!TIP] Test").is_some());
+    }
+
+    #[test]
+    fn test_detect_callout_important() {
+        assert!(detect_callout("[!IMPORTANT] Test").is_some());
+    }
+
+    #[test]
+    fn test_detect_callout_warning() {
+        assert!(detect_callout("[!WARNING] Test").is_some());
+    }
+
+    #[test]
+    fn test_detect_callout_caution() {
+        assert!(detect_callout("[!CAUTION] Test").is_some());
+    }
+
+    #[test]
+    fn test_detect_callout_case_insensitive() {
+        assert!(detect_callout("[!note] Test").is_some());
+        assert!(detect_callout("[!Note] Test").is_some());
+    }
+
+    #[test]
+    fn test_detect_callout_none() {
+        assert!(detect_callout("Regular text").is_none());
+        assert!(detect_callout("[NOTE] No exclamation").is_none());
+    }
+
+    #[test]
+    fn test_make_clickable_link() {
+        let link = make_clickable_link("https://example.com", "Example");
+        assert!(link.contains("https://example.com"));
+        assert!(link.contains("Example"));
+    }
+
+    #[test]
+    fn test_render_inline_content_text() {
+        let nodes = vec![Node::Text(mq_markdown::Text {
+            value: "Hello".to_string(),
+            position: None,
+        })];
+        let result = render_inline_content(&nodes);
+        assert_eq!(result, "Hello");
+    }
+
+    #[test]
+    fn test_render_inline_content_inline_code() {
+        let nodes = vec![Node::CodeInline(mq_markdown::CodeInline {
+            value: "code".into(),
+            position: None,
+        })];
+        let result = render_inline_content(&nodes);
+        assert_eq!(result, "`code`");
+    }
+
+    #[test]
+    fn test_render_inline_content_strong() {
+        let nodes = vec![Node::Strong(mq_markdown::Strong {
+            values: vec![Node::Text(mq_markdown::Text {
+                value: "bold".to_string(),
+                position: None,
+            })],
+            position: None,
+        })];
+        let result = render_inline_content(&nodes);
+        assert_eq!(result, "bold");
+    }
+
+    #[test]
+    fn test_render_inline_content_emphasis() {
+        let nodes = vec![Node::Emphasis(mq_markdown::Emphasis {
+            values: vec![Node::Text(mq_markdown::Text {
+                value: "italic".to_string(),
+                position: None,
+            })],
+            position: None,
+        })];
+        let result = render_inline_content(&nodes);
+        assert_eq!(result, "italic");
+    }
+
+    #[test]
+    fn test_needs_space_before() {
+        // Test with actual parsed markdown to avoid manual construction
+        let markdown: Markdown = "[link](url) **bold** *italic* `code` text".parse().unwrap();
+
+        // Extract nodes from parsed markdown
+        if let Some(Node::Fragment(fragment)) = markdown.nodes.first() {
+            for node in &fragment.values {
+                match node {
+                    Node::Link(_) => assert!(needs_space_before(node)),
+                    Node::Strong(_) => assert!(needs_space_before(node)),
+                    Node::Emphasis(_) => assert!(needs_space_before(node)),
+                    Node::CodeInline(_) => assert!(needs_space_before(node)),
+                    Node::Text(_) => assert!(!needs_space_before(node)),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_calculate_column_widths() {
+        let nodes = vec![
+            Node::TableCell(mq_markdown::TableCell {
+                values: vec![Node::Text(mq_markdown::Text {
+                    value: "Short".to_string(),
+                    position: None,
+                })],
+                column: 0,
+                row: 0,
+                last_cell_in_row: false,
+                last_cell_of_in_table: false,
+                position: None,
+            }),
+            Node::TableCell(mq_markdown::TableCell {
+                values: vec![Node::Text(mq_markdown::Text {
+                    value: "Very Long Text".to_string(),
+                    position: None,
+                })],
+                column: 1,
+                row: 0,
+                last_cell_in_row: true,
+                last_cell_of_in_table: true,
+                position: None,
+            }),
+        ];
+        let widths = calculate_column_widths(&nodes);
+        assert_eq!(widths[0], 5); // "Short"
+        assert_eq!(widths[1], 14); // "Very Long Text"
+    }
+
+    #[test]
+    fn test_render_markdown_ordered_list() {
+        let markdown: Markdown = "1. First\n2. Second\n3. Third".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("First"));
+        assert!(result.contains("Second"));
+        assert!(result.contains("Third"));
+    }
+
+    #[test]
+    fn test_render_markdown_checkbox_list() {
+        let markdown: Markdown = "- [x] Done\n- [ ] Todo".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Done"));
+        assert!(result.contains("Todo"));
+    }
+
+    #[test]
+    fn test_render_markdown_table() {
+        let markdown: Markdown =
+            "| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |"
+                .parse()
+                .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Header 1"));
+        assert!(result.contains("Header 2"));
+        assert!(result.contains("Cell 1"));
+        assert!(result.contains("Cell 2"));
+    }
+
+    #[test]
+    fn test_render_markdown_nested_list() {
+        let markdown: Markdown = "- Item 1\n  - Nested 1\n  - Nested 2\n- Item 2"
+            .parse()
+            .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Item 1"));
+        assert!(result.contains("Nested 1"));
+        assert!(result.contains("Nested 2"));
+        assert!(result.contains("Item 2"));
+    }
+
+    #[test]
+    fn test_render_markdown_mixed_formatting() {
+        let markdown: Markdown = "**Bold** and *italic* with `code`".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Bold"));
+        assert!(result.contains("italic"));
+        assert!(result.contains("code"));
+    }
 }
