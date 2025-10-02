@@ -2176,4 +2176,170 @@ mod tests {
 
         assert!(!Optimizer::contains_function_call(func_name, &if_node));
     }
+
+    #[rstest]
+    #[case::simple(
+    vec![
+        Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(AstExpr::Let(
+                IdentWithToken::new("x"),
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                }),
+            )),
+        }),
+        Shared::new(Node {
+            token_id: 2.into(),
+            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
+        }),
+        Shared::new(Node {
+            token_id: 3.into(),
+            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("y"))),
+        }),
+    ],
+    vec!["x", "y"],
+    vec!["z"]
+)]
+    #[case::call_and_let(
+    vec![
+        Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(AstExpr::Let(
+                IdentWithToken::new("a"),
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
+                }),
+            )),
+        }),
+        Shared::new(Node {
+            token_id: 2.into(),
+            expr: Shared::new(AstExpr::Call(
+                IdentWithToken::new("foo"),
+                smallvec![
+                    Shared::new(Node {
+                        token_id: 3.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("a"))),
+                    }),
+                    Shared::new(Node {
+                        token_id: 4.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("b"))),
+                    }),
+                ],
+            )),
+        }),
+    ],
+    vec!["foo", "a", "b"],
+    vec![]
+)]
+    #[case::if_and_while(
+    vec![
+        Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(AstExpr::If(smallvec![
+                (
+                    Some(Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("cond_var"))),
+                    })),
+                    Shared::new(Node {
+                        token_id: 2.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("body_var"))),
+                    }),
+                ),
+            ])),
+        }),
+        Shared::new(Node {
+            token_id: 3.into(),
+            expr: Shared::new(AstExpr::While(
+                Shared::new(Node {
+                    token_id: 4.into(),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("while_cond"))),
+                }),
+                vec![Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("while_body"))),
+                })],
+            )),
+        }),
+    ],
+    vec!["cond_var", "body_var", "while_cond", "while_body"],
+    vec![]
+)]
+    #[case::foreach_and_interpolated_string(
+    vec![
+        Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(AstExpr::Foreach(
+                IdentWithToken::new("item"),
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("collection"))),
+                }),
+                vec![Shared::new(Node {
+                    token_id: 2.into(),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("item"))),
+                })],
+            )),
+        }),
+        Shared::new(Node {
+            token_id: 3.into(),
+            expr: Shared::new(AstExpr::InterpolatedString(vec![
+                ast::StringSegment::Text("Hello ".to_string()),
+                ast::StringSegment::Ident(Ident::new("name")),
+            ])),
+        }),
+    ],
+    vec!["collection", "item", "name"],
+    vec![]
+)]
+    #[case::nested_blocks(
+    vec![
+        Shared::new(Node {
+            token_id: 0.into(),
+            expr: Shared::new(AstExpr::Block(vec![
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(AstExpr::Let(
+                        IdentWithToken::new("x"),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
+                        }),
+                    )),
+                }),
+                Shared::new(Node {
+                    token_id: 3.into(),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("x"))),
+                }),
+            ])),
+        }),
+    ],
+    vec!["x"],
+    vec![]
+)]
+    fn test_collect_used_identifiers_param(
+        #[case] program: Program,
+        #[case] expected_present: Vec<&str>,
+        #[case] expected_absent: Vec<&str>,
+    ) {
+        let mut optimizer = Optimizer::default();
+        let used = optimizer.collect_used_identifiers(&program);
+        for ident in expected_present {
+            assert!(
+                used.contains(&Ident::new(ident)),
+                "Expected identifier '{}' to be present",
+                ident
+            );
+        }
+        for ident in expected_absent {
+            assert!(
+                !used.contains(&Ident::new(ident)),
+                "Expected identifier '{}' to be absent",
+                ident
+            );
+        }
+    }
 }
