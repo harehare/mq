@@ -46,6 +46,10 @@
     "languages": [
       {
         "id": "mq",
+        "aliases": [
+          "mq",
+          "MQ"
+        ],
         "extensions": [
           ".mq"
         ],
@@ -61,6 +65,16 @@
         "language": "mq",
         "scopeName": "source.mq",
         "path": "./mq.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.mq.codeblock",
+        "path": "./mq.markdown.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.mq": "mq"
+        }
       }
     ],
     "commands": [
