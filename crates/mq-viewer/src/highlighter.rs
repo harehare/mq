@@ -226,44 +226,66 @@ impl Default for SyntaxHighlighter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::rust("rust", r#"fn main() { println!("Hello, world!"); }"#)]
+    #[case::python("python", r#"def main(): print("Hello, world!")"#)]
+    #[case::js("javascript", r#"function main() { console.log('Hello, world!'); }"#)]
+    #[case::ts(
+        "typescript",
+        r#"function main(): void { console.log('Hello, world!'); }"#
+    )]
+    #[case::go("go", r#"func main() { fmt.Println("Hello, world!") }"#)]
+    #[case::html("html", r#"<h1>Hello</h1>"#)]
+    #[case::css("css", r#"body { color: red; }"#)]
+    #[case::json("json", r#"{ "hello": "world" }"#)]
+    #[case::bash("bash", r#"echo 'Hello, world!'"#)]
+    #[case::c("c", r#"int main() { printf("Hello, world!"); }"#)]
+    #[case::java("java", r#"public class Main { public static void main(String[] args) { System.out.println("Hello, world!"); } }"#)]
+    #[case::haskell("haskell", r#"main = putStrLn "Hello, world!""#)]
+    #[case::elm("elm", r#"main = text "Hello, world!""#)]
+    #[case::mq("mq", r#"fn(): "Hello, world!""#)]
+    #[case::bool("mq", r#"fn(): true"#)]
+    #[case::number("mq", r#"fn(): 42"#)]
+    fn test_highlighting_for_supported_languages(#[case] lang: &str, #[case] code: &str) {
+        let mut highlighter = SyntaxHighlighter::new();
+        let result = highlighter.highlight(code, Some(lang));
+        dbg!(&result);
+        assert!(
+            result.contains("\x1b["),
+            "Expected ANSI escape codes for language: {}",
+            lang
+        );
+    }
+
+    #[rstest]
+    #[case("unknown", "some code")]
+    #[case("unsupported", "another code")]
+    fn test_highlighting_for_unsupported_languages(#[case] lang: &str, #[case] code: &str) {
+        let mut highlighter = SyntaxHighlighter::new();
+        let result = highlighter.highlight(code, Some(lang));
+        assert_eq!(
+            result, code,
+            "Should return original code for unsupported language: {}",
+            lang
+        );
+    }
 
     #[test]
-    fn test_rust_highlighting() {
+    fn test_highlighting_empty_code() {
         let mut highlighter = SyntaxHighlighter::new();
-        let code = r#"fn main() {
-    println!("Hello, world!");
-}"#;
+        let result = highlighter.highlight("", Some("rust"));
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_highlighting_with_invalid_code() {
+        let mut highlighter = SyntaxHighlighter::new();
+        // Intentionally malformed code for rust
+        let code = "fn {";
         let result = highlighter.highlight(code, Some("rust"));
-        // Basic test - should contain ANSI escape codes
-        assert!(result.contains("\x1b["));
-    }
-
-    #[test]
-    fn test_unknown_language() {
-        let mut highlighter = SyntaxHighlighter::new();
-        let code = "some code";
-        let result = highlighter.highlight(code, Some("unknown"));
-        // Should return original code
-        assert_eq!(result, code);
-    }
-
-    #[test]
-    fn test_no_language() {
-        let mut highlighter = SyntaxHighlighter::new();
-        let code = "some code";
-        let result = highlighter.highlight(code, None);
-        // Should return original code
-        assert_eq!(result, code);
-    }
-
-    #[test]
-    fn test_html_highlighting() {
-        let mut highlighter = SyntaxHighlighter::new();
-        let code = r#"<div class="container">
-    <h1>Hello</h1>
-</div>"#;
-        let result = highlighter.highlight(code, Some("html"));
-        // Basic test - should contain ANSI escape codes
-        assert!(result.contains("\x1b["));
+        // Should not panic, may or may not contain ANSI codes
+        assert!(!result.is_empty());
     }
 }

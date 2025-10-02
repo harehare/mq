@@ -931,10 +931,14 @@ mod tests {
 
     #[test]
     fn test_render_markdown_to_string_heading() {
-        let markdown: Markdown = "# Heading 1\n## Heading 2".parse().unwrap();
+        let markdown: Markdown = "# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6\n".parse().unwrap();
         let result = render_markdown_to_string(&markdown).unwrap();
         assert!(result.contains("Heading 1"));
         assert!(result.contains("Heading 2"));
+        assert!(result.contains("Heading 3"));
+        assert!(result.contains("Heading 4"));
+        assert!(result.contains("Heading 5"));
+        assert!(result.contains("Heading 6"));
     }
 
     #[test]
@@ -1187,5 +1191,238 @@ mod tests {
         assert!(result.contains("Bold"));
         assert!(result.contains("italic"));
         assert!(result.contains("code"));
+    }
+
+    #[test]
+    fn test_render_callout_blockquote_note() {
+        let markdown: Markdown = "> [!NOTE] This is a note callout\n> Additional info"
+            .parse()
+            .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        // The callout icon and name should be present
+        assert!(result.contains("ℹ️"));
+        assert!(result.contains("Note"));
+        assert!(result.contains("This is a note callout"));
+        assert!(result.contains("Additional info"));
+        // Should have box drawing characters
+        assert!(result.contains("┌─"));
+        assert!(result.contains("└─"));
+    }
+
+    #[test]
+    fn test_render_callout_blockquote_tip() {
+        let markdown: Markdown = "> [!TIP] This is a tip callout".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("💡"));
+        assert!(result.contains("Tip"));
+        assert!(result.contains("This is a tip callout"));
+        assert!(result.contains("┌─"));
+        assert!(result.contains("└─"));
+    }
+
+    #[test]
+    fn test_render_callout_blockquote_important() {
+        let markdown: Markdown = "> [!IMPORTANT] Important info".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("❗"));
+        assert!(result.contains("Important"));
+        assert!(result.contains("Important info"));
+        assert!(result.contains("┌─"));
+        assert!(result.contains("└─"));
+    }
+
+    #[test]
+    fn test_render_callout_blockquote_warning() {
+        let markdown: Markdown = "> [!WARNING] Warning info".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("⚠️"));
+        assert!(result.contains("Warning"));
+        assert!(result.contains("Warning info"));
+        assert!(result.contains("┌─"));
+        assert!(result.contains("└─"));
+    }
+
+    #[test]
+    fn test_render_callout_blockquote_caution() {
+        let markdown: Markdown = "> [!CAUTION] Caution info".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("🔥"));
+        assert!(result.contains("Caution"));
+        assert!(result.contains("Caution info"));
+        assert!(result.contains("┌─"));
+        assert!(result.contains("└─"));
+    }
+
+    #[test]
+    fn test_render_callout_blockquote_case_insensitive() {
+        let markdown: Markdown = "> [!note] lower case note\n\n> [!Tip] mixed case tip"
+            .parse()
+            .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("ℹ️"));
+        assert!(result.contains("Note"));
+        assert!(result.contains("lower case note"));
+        assert!(result.contains("💡"));
+        assert!(result.contains("Tip"));
+        assert!(result.contains("mixed case tip"));
+    }
+
+    #[test]
+    fn test_render_markdown_html_block() {
+        let markdown: Markdown = "<div>Hello HTML</div>".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        // Should contain the HTML content
+        assert!(result.contains("Hello HTML"));
+        // Should contain some syntax highlighting (colored output)
+        assert!(result.contains("\x1b"));
+    }
+
+    #[test]
+    fn test_render_markdown_inline_html() {
+        let markdown: Markdown = "Text <span>inline html</span> more text".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("inline html"));
+        assert!(result.contains("Text"));
+        assert!(result.contains("more text"));
+    }
+
+    #[test]
+    fn test_render_markdown_image_with_alt() {
+        let markdown: Markdown = "![Alt text](image.png)".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("🖼️"));
+        assert!(result.contains("Alt text"));
+        assert!(result.contains("image.png"));
+    }
+
+    #[test]
+    fn test_render_markdown_image_without_alt() {
+        let markdown: Markdown = "![](image.png)".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("🖼️"));
+        assert!(result.contains("image.png"));
+    }
+
+    #[test]
+    fn test_render_markdown_remote_image() {
+        let markdown: Markdown = "![Remote](https://example.com/image.png)".parse().unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("🖼️"));
+        assert!(result.contains("Remote"));
+        assert!(result.contains("https://example.com/image.png"));
+    }
+
+    #[test]
+    fn test_render_markdown_table_with_alignment() {
+        let markdown: Markdown = r#"
+| Left | Center | Right |
+|:-----|:------:|------:|
+| L1   | C1     | R1    |
+| L2   | C2     | R2    |
+"#
+        .parse()
+        .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Left"));
+        assert!(result.contains("Center"));
+        assert!(result.contains("Right"));
+        assert!(result.contains("L1"));
+        assert!(result.contains("C1"));
+        assert!(result.contains("R1"));
+        assert!(result.contains("L2"));
+        assert!(result.contains("C2"));
+        assert!(result.contains("R2"));
+        // Check for alignment markers in header border
+        assert!(result.contains(":"));
+    }
+
+    #[test]
+    fn test_render_markdown_table_with_inline_formatting() {
+        let markdown: Markdown = r#"
+| **Bold** | *Italic* | `Code` |
+|----------|----------|--------|
+| A        | B        | C      |
+"#
+        .parse()
+        .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Bold"));
+        assert!(result.contains("Italic"));
+        assert!(result.contains("Code"));
+        assert!(result.contains("A"));
+        assert!(result.contains("B"));
+        assert!(result.contains("C"));
+    }
+
+    #[test]
+    fn test_render_markdown_table_with_links_and_images() {
+        let markdown: Markdown = r#"
+| Link | Image |
+|------|-------|
+| [Google](https://google.com) | ![Alt](img.png) |
+"#
+        .parse()
+        .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Google"));
+        assert!(result.contains("https://google.com"));
+        assert!(result.contains("🖼️"));
+        assert!(result.contains("Alt"));
+        assert!(result.contains("img.png"));
+    }
+
+    #[test]
+    fn test_render_markdown_table_empty_cells() {
+        let markdown: Markdown = r#"
+| A | B | C |
+|---|---|---|
+|   | 1 |   |
+| 2 |   | 3 |
+"#
+        .parse()
+        .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("A"));
+        assert!(result.contains("B"));
+        assert!(result.contains("C"));
+        assert!(result.contains("1"));
+        assert!(result.contains("2"));
+        assert!(result.contains("3"));
+    }
+
+    #[test]
+    fn test_render_markdown_table_with_multiple_rows_and_columns() {
+        let markdown: Markdown = r#"
+| Col1 | Col2 | Col3 | Col4 |
+|------|------|------|------|
+| A    | B    | C    | D    |
+| E    | F    | G    | H    |
+| I    | J    | K    | L    |
+"#
+        .parse()
+        .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        for val in &[
+            "Col1", "Col2", "Col3", "Col4", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
+            "L",
+        ] {
+            assert!(result.contains(val));
+        }
+    }
+
+    #[test]
+    fn test_render_markdown_table_with_rowspan_and_colspan_like_content() {
+        // Markdown tables do not support rowspan/colspan, but test for cells with multiline content
+        let markdown: Markdown = r#"
+| Header |
+|--------|
+| Line 1<br>Line 2 |
+"#
+        .parse()
+        .unwrap();
+        let result = render_markdown_to_string(&markdown).unwrap();
+        assert!(result.contains("Header"));
+        assert!(result.contains("Line 1"));
+        assert!(result.contains("Line 2"));
     }
 }
