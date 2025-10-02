@@ -3643,7 +3643,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool
             (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
             _ => false,
         },
-        ast::Selector::MdxJsEsm => node.is_msx_js_esm(),
+        ast::Selector::MdxJsEsm => node.is_mdx_js_esm(),
         ast::Selector::Text => node.is_text(),
         ast::Selector::Toml => node.is_toml(),
         ast::Selector::Yaml => node.is_yaml(),
