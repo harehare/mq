@@ -560,6 +560,9 @@ impl Evaluator {
             }
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Until(cond, program) => self.eval_until(runtime_value, cond, program, env),
+            ast::Expr::Try(try_expr, catch_expr) => {
+                self.eval_try(runtime_value, try_expr, catch_expr, env)
+            }
             ast::Expr::Foreach(ident, values, body) => {
                 self.eval_foreach(runtime_value, ident.name, values, body, node.token_id, env)
             }
@@ -731,6 +734,20 @@ impl Evaluator {
         }
 
         Ok(RuntimeValue::Array(values))
+    }
+
+    #[inline(always)]
+    fn eval_try(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        try_expr: &Shared<ast::Node>,
+        catch_expr: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        match self.eval_expr(runtime_value, try_expr, env) {
+            Ok(result) => Ok(result),
+            Err(_) => self.eval_expr(runtime_value, catch_expr, env),
+        }
     }
 
     #[inline(always)]

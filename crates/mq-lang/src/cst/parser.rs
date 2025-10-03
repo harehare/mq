@@ -452,6 +452,11 @@ impl<'a> Parser<'a> {
                 } => self.parse_until(leading_trivia),
                 Token {
                     range: _,
+                    kind: TokenKind::Try,
+                    ..
+                } => self.parse_try(leading_trivia),
+                Token {
+                    range: _,
                     kind: TokenKind::Ident(_),
                     ..
                 } => self.parse_ident(leading_trivia),
@@ -1610,6 +1615,54 @@ impl<'a> Parser<'a> {
         let (mut program, _) = self.parse_program(false, true);
 
         children.append(&mut program);
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
+    fn parse_try(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(4);
+
+        let mut node = Node {
+            kind: NodeKind::Try,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        let leading_trivia = self.parse_leading_trivia();
+        children.push(self.parse_expr(leading_trivia, false, false)?);
+
+        // Parse catch keyword
+        let leading_trivia = self.parse_leading_trivia();
+        children.push(self.parse_catch(leading_trivia)?);
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
+    fn parse_catch(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(4);
+
+        let mut node = Node {
+            kind: NodeKind::Catch,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        let leading_trivia = self.parse_leading_trivia();
+        children.push(self.parse_expr(leading_trivia, false, false)?);
 
         node.children = children;
         Ok(Shared::new(node))

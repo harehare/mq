@@ -46,6 +46,8 @@ pub enum SymbolKind {
     Variable,
     While,
     Until,
+    Try,
+    Catch,
 }
 
 impl Symbol {

@@ -90,6 +90,11 @@ impl Node {
                 }
             }
             Expr::Paren(node) => node.range(Shared::clone(&arena)),
+            Expr::Try(try_expr, catch_expr) => {
+                let start = try_expr.range(Shared::clone(&arena)).start;
+                let end = catch_expr.range(Shared::clone(&arena)).end;
+                Range { start, end }
+            }
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -251,6 +256,7 @@ pub enum Expr {
     Self_,
     Nodes,
     Paren(Shared<Node>),
+    Try(Shared<Node>, Shared<Node>),
     Break,
     Continue,
 }
