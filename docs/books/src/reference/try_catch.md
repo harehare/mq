@@ -20,7 +20,7 @@ try <expr> catch <expr>
 
 ```python
 # When the expression succeeds
-try: error("error") catch: "unknown"
+try: "value" catch: "unknown"
 
 # When the expression fails
 try: get("missing") catch: "default"
