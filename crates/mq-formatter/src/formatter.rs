@@ -1345,7 +1345,6 @@ catch:
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
-        dbg!(&result);
         assert_eq!(result.unwrap(), expected);
     }
 }
