@@ -1,6 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
-use crate::number::Number;
+use crate::number::{self, Number};
 use crate::{Ident, Shared, SharedCell, Token, get_token};
 use base64::prelude::*;
 use itertools::Itertools;
@@ -2165,6 +2165,28 @@ define_builtin!(
     }
 );
 
+define_builtin!(NAN, ParamNum::Fixed(0), |_, _, _| {
+    Ok(RuntimeValue::Number(number::NAN))
+});
+
+define_builtin!(
+    IS_NAN,
+    ParamNum::Fixed(1),
+    |_, _, mut args| match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => {
+            Ok(RuntimeValue::Bool(n.is_nan()))
+        }
+        [_] => {
+            Ok(RuntimeValue::FALSE)
+        }
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(INFINITE, ParamNum::Fixed(0), |_, _, _| {
+    Ok(RuntimeValue::Number(number::INFINITE))
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2233,6 +2255,8 @@ const HASH_IMPLODE: u64 = fnv1a_hash_64("implode");
 const HASH_INCREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("increase_header_level");
 const HASH_INDEX: u64 = fnv1a_hash_64("index");
 const HASH_INSERT: u64 = fnv1a_hash_64("insert");
+const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
+const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
@@ -2241,6 +2265,7 @@ const HASH_LTE: u64 = fnv1a_hash_64(constants::LTE);
 const HASH_MATCH: u64 = fnv1a_hash_64("match");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
+const HASH_NAN: u64 = fnv1a_hash_64("nan");
 const HASH_NEGATE: u64 = fnv1a_hash_64("negate");
 const HASH_MOD: u64 = fnv1a_hash_64(constants::MOD);
 const HASH_MUL: u64 = fnv1a_hash_64(constants::MUL);
@@ -2343,6 +2368,8 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_INCREASE_HEADER_LEVEL => Some(&INCREASE_HEADER_LEVEL),
         HASH_INDEX => Some(&INDEX),
         HASH_INSERT => Some(&INSERT),
+        HASH_INFINITE => Some(&INFINITE),
+        HASH_IS_NAN => Some(&IS_NAN),
         HASH_JOIN => Some(&JOIN),
         HASH_KEYS => Some(&KEYS),
         HASH_LEN => Some(&LEN),
@@ -2357,6 +2384,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_NE => Some(&NE),
         HASH_NOT => Some(&NOT),
         HASH_NOW => Some(&NOW),
+        HASH_NAN => Some(&NAN),
         HASH_OR => Some(&OR),
         HASH_POW => Some(&POW),
         HASH_PRINT => Some(&PRINT),
@@ -3478,6 +3506,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             BuiltinFunctionDoc {
                 description: "Interns the given string, returning a canonical reference for efficient comparison.",
                 params: &["string"],
+            },
+        );
+        map.insert(
+            SmolStr::new("nan"),
+            BuiltinFunctionDoc {
+                description: "Returns a Not-a-Number (NaN) value.",
+                params: &[],
+            },
+        );
+        map.insert(
+            SmolStr::new("infinite"),
+            BuiltinFunctionDoc {
+                description: "Returns an infinite number value.",
+                params: &[],
             },
         );
         map

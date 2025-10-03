@@ -1,3 +1,4 @@
+use core::f64;
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -6,6 +7,9 @@ use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Number(f64);
+
+pub const NAN: Number = Number(f64::NAN);
+pub const INFINITE: Number = Number(f64::INFINITY);
 
 impl Number {
     pub fn new(value: f64) -> Self {
@@ -26,6 +30,10 @@ impl Number {
 
     pub fn is_zero(&self) -> bool {
         self.0.abs() < f64::EPSILON
+    }
+
+    pub fn is_nan(&self) -> bool {
+        self.0.is_nan()
     }
 }
 
