@@ -145,6 +145,8 @@ impl Formatter {
             mq_lang::CstNodeKind::Selector => {
                 self.format_selector(&node, indent_level_consider_new_line)
             }
+            mq_lang::CstNodeKind::Try => self.format_try(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Catch => self.format_catch(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
         }
     }
@@ -563,6 +565,52 @@ impl Formatter {
     fn format_ident(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         self.output.push_str(&node.to_string());
+    }
+
+    fn format_try(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+
+        if let Some(colon) = node.children.first() {
+            self.output.push_str(&colon.to_string());
+            self.append_space();
+        }
+
+        for child in node.children.iter().skip(1) {
+            if matches!(child.kind, mq_lang::CstNodeKind::Catch) {
+                self.format_node(mq_lang::Shared::clone(child), indent_level);
+            } else {
+                let child_indent = if child.has_new_line() {
+                    indent_level + 1
+                } else {
+                    indent_level
+                };
+                self.format_node(mq_lang::Shared::clone(child), child_indent);
+            }
+        }
+    }
+
+    fn format_catch(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        if !node.has_new_line() {
+            self.append_space();
+        }
+
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+
+        if let Some(colon) = node.children.first() {
+            self.output.push_str(&colon.to_string());
+            self.append_space();
+        }
+
+        for child in node.children.iter().skip(1) {
+            let child_indent = if child.has_new_line() {
+                indent_level + 1
+            } else {
+                indent_level
+            };
+            self.format_node(mq_lang::Shared::clone(child), child_indent);
+        }
     }
 
     fn append_leading_trivia(
@@ -1269,6 +1317,32 @@ process();"#,
     #[case::group_with_let("(let x = 1)", "(let x = 1)")]
     #[case::fn_end("fn(): test end", "fn(): test end")]
     #[case::negate_operator("-v", "-v")]
+    #[case::try_catch_multiline(
+        r#"try:
+  process()
+catch:
+  handle_error()"#,
+        "try:
+  process()
+catch:
+  handle_error()"
+    )]
+    #[case::try_catch_oneline(
+        "try: process() catch: handle_error()",
+        "try: process() catch: handle_error()"
+    )]
+    #[case::try_catch_with_finally(
+        r#"try:
+  process()
+catch:
+  handle_error()
+"#,
+        "try:
+  process()
+catch:
+  handle_error()
+"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

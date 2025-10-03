@@ -354,6 +354,12 @@ impl Hir {
             mq_lang::CstNodeKind::While => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Try => {
+                self.add_try_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Catch => {
+                self.add_catch_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Array => {
                 self.add_array_expr(node, source_id, scope_id, parent);
             }
@@ -593,6 +599,60 @@ impl Hir {
 
             node.children_without_token().iter().for_each(|child| {
                 self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
+            });
+        }
+    }
+
+    fn add_try_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Try,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Try,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            });
+        }
+    }
+
+    fn add_catch_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Catch,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Catch,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
         }
     }
@@ -1213,6 +1273,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::break_("while (true): break;", "break", SymbolKind::Keyword)]
     #[case::continue_("while (true): continue;", "continue", SymbolKind::Keyword)]
     #[case::block("do \"hello\" end", "hello", SymbolKind::String)]
+    #[case::try_("try: 1 catch: 2", "try", SymbolKind::Try)]
+    #[case::catch_("try: 1 catch: 2", "catch", SymbolKind::Catch)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

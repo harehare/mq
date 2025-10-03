@@ -100,6 +100,8 @@ pub enum NodeKind {
     Selector,
     Self_,
     Token,
+    Try,
+    Catch,
     UnaryOp(UnaryOp),
     Until,
     While,

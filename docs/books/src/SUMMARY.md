@@ -16,6 +16,7 @@
   - [Conditionals and Comparisons](reference/conditionals_and_comparisons.md)
     - [Conditionals](reference/conditionals.md)
     - [Comparisons](reference/comparisons.md)
+    - [Try-Catch](reference/try_catch.md)
   - [Syntax](reference/syntax.md)
     - [Comments](reference/comments.md)
     - [Control flow](reference/control_flow.md)

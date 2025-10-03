@@ -163,6 +163,10 @@ impl Optimizer {
             ast::Expr::Paren(node) => {
                 Self::collect_used_identifiers_in_node(node, used_idents);
             }
+            ast::Expr::Try(try_node, catch_node) => {
+                Self::collect_used_identifiers_in_node(try_node, used_idents);
+                Self::collect_used_identifiers_in_node(catch_node, used_idents);
+            }
             ast::Expr::Literal(_)
             | ast::Expr::Selector(_)
             | ast::Expr::Nodes

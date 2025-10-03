@@ -240,6 +240,8 @@ define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(r_brace, "}", TokenKind::RBrace);
 define_keyword_parser!(self_, "self", TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
+define_keyword_parser!(try_, "try", TokenKind::Try);
+define_keyword_parser!(catch_, "catch", TokenKind::Catch);
 define_keyword_parser!(until, "until", TokenKind::Until);
 define_keyword_parser!(while_, "while", TokenKind::While);
 define_token_parser!(lt, "<", TokenKind::Lt);
@@ -272,7 +274,7 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
         nodes, def, do_, let_, self_, while_, until, if_, elif, else_, end, none, include, foreach,
-        fn_, break_, continue_,
+        fn_, break_, continue_, try_, catch_,
     ))
     .parse(input)
 }

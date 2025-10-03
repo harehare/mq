@@ -228,6 +228,7 @@ impl<'a> Parser<'a> {
             TokenKind::While => self.parse_while(token),
             TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
+            TokenKind::Try => self.parse_try(token),
             // Delegate parsing of 'if' expressions.
             TokenKind::If => self.parse_expr_if(Shared::clone(&token)),
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
@@ -502,6 +503,7 @@ impl<'a> Parser<'a> {
             token_kind,
             Some(TokenKind::And)
                 | Some(TokenKind::Asterisk)
+                | Some(TokenKind::Catch)
                 | Some(TokenKind::Colon)
                 | Some(TokenKind::Comma)
                 | Some(TokenKind::Comment(_))
@@ -851,6 +853,39 @@ impl<'a> Parser<'a> {
             }
             None => Err(ParseError::UnexpectedToken((*until_token).clone())),
         }
+    }
+
+    fn parse_try(&mut self, try_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        let token_id = token_alloc(&self.token_arena, &try_token);
+
+        self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::Colon)
+        })?;
+
+        // Parse try expression
+        let try_expr = match self.tokens.next() {
+            Some(token) => self.parse_expr(Shared::clone(token))?,
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        // Expect 'catch' keyword
+        self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::Catch)
+        })?;
+        self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::Colon)
+        })?;
+
+        // Parse catch expression
+        let catch_expr = match self.tokens.next() {
+            Some(token) => self.parse_expr(Shared::clone(token))?,
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        Ok(Shared::new(Node {
+            token_id,
+            expr: Shared::new(Expr::Try(try_expr, catch_expr)),
+        }))
     }
 
     fn parse_foreach(&mut self, foreach_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
@@ -2380,6 +2415,29 @@ mod tests {
             token(TokenKind::Colon),
         ],
         Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
+    #[case::try_catch(
+        vec![
+            token(TokenKind::Try),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("error_expr"))),
+            token(TokenKind::Catch),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("fallback".to_owned())),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![Shared::new(Node {
+            token_id: 2.into(),
+            expr: Shared::new(Expr::Try(
+                Shared::new(Node {
+                    token_id: 2.into(),
+                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
+                }),
+                Shared::new(Node {
+                    token_id: 5.into(),
+                    expr: Shared::new(Expr::Literal(Literal::String("fallback".to_owned()))),
+                }),
+            )),
+        })]))]
     #[case::until(
         vec![
             token(TokenKind::Until),
