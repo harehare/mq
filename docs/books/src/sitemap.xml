@@ -77,6 +77,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/reference/try_catch</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference/syntax</loc>
     <priority>1.0</priority>
   </url>
