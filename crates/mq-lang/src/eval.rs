@@ -901,6 +901,7 @@ mod tests {
     use std::vec;
 
     use crate::ast::node::{Args, IdentWithToken};
+    use crate::number::{INFINITE, NAN};
     use crate::range::Range;
     use crate::{AstExpr, AstNode, ModuleLoader, token_alloc};
     use crate::{Token, TokenKind};
@@ -4763,6 +4764,27 @@ mod tests {
                     ast_call("intern", SmallVec::new())
                 ],
                 Ok(vec![RuntimeValue::String("".to_string())])
+            )]
+    #[case::infinite(
+                vec![RuntimeValue::NONE],
+                vec![
+                    ast_call("infinite", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Number(INFINITE)])
+            )]
+    #[case::is_nan_with_nan(
+                vec![RuntimeValue::Number(NAN)],
+                vec![
+                    ast_call("is_nan", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Bool(true)])
+            )]
+    #[case::is_nan_with_number(
+                vec![RuntimeValue::Number(42.0.into())],
+                vec![
+                    ast_call("is_nan", SmallVec::new())
+                ],
+                Ok(vec![RuntimeValue::Bool(false)])
             )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
