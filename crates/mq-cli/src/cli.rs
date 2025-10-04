@@ -426,11 +426,7 @@ impl Cli {
         .map(|(name, _)| format!(r#"include "{}""#, name))
         .join(" | ");
 
-        let aggregate = if self.input.aggregate {
-            Some("nodes")
-        } else {
-            None
-        };
+        let aggregate = self.input.aggregate.then_some("nodes");
 
         let query = match (includes.is_empty(), query.is_empty()) {
             (true, false) => query,
