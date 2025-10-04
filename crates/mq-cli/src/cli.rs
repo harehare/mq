@@ -99,6 +99,10 @@ pub enum LinkUrlStyle {
 
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
+    /// Aggregate all input files/content into a single array
+    #[arg(short = 'A', long, default_value_t = false)]
+    aggregate: bool,
+
     /// load filter from the file
     #[arg(short, long, default_value_t = false)]
     from_file: bool,
@@ -422,12 +426,18 @@ impl Cli {
         .map(|(name, _)| format!(r#"include "{}""#, name))
         .join(" | ");
 
-        Ok(match (includes.is_empty(), query.is_empty()) {
+        let aggregate = self.input.aggregate.then_some("nodes");
+
+        let query = match (includes.is_empty(), query.is_empty()) {
             (true, false) => query,
             (false, true) => includes,
             (false, false) => format!("{} | {}", includes, query),
             (true, true) => String::new(),
-        })
+        };
+
+        Ok(aggregate
+            .map(|agg| format!("{} | {}", agg, query))
+            .unwrap_or(query))
     }
 
     fn execute(
