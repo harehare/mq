@@ -381,3 +381,21 @@ def sections(md_nodes, level):
       | result
     end
 end
+
+# Transposes a 2D array (matrix), swapping rows and columns.
+def transpose(matrix):
+  if (!is_array(matrix)):
+    error("transpose: input must be an array of arrays")
+  elif (is_empty(matrix)): []
+  elif (!all(matrix, is_array)):
+    error("transpose: all elements must be arrays")
+  else: do
+    let row_count = len(matrix)
+  | let col_count = if (row_count == 0): 0 else: len(matrix[0])
+  | foreach (j, range(0, col_count - 1)):
+      foreach (i, range(0, row_count - 1)):
+        matrix[i][j]
+      end
+    end
+  end
+end
