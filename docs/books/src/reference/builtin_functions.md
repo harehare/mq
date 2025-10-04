@@ -50,7 +50,9 @@
 | `in` |  Returns true if the element is in the array. | `v`, `elem` | in(v, elem) |
 | `increase_header_level` | Increases the level of a markdown heading node by one, up to a maximum of 6. | `heading_node` | increase_header_level(heading_node) |
 | `index` | Finds the first occurrence of a substring in the given string. | `string`, `substring` | index(string, substring) |
+| `infinite` | Returns an infinite number value. |  | infinite() |
 | `insert` | Inserts a value into an array or string at the specified index, or into a dict with the specified key. | `target`, `index_or_key`, `value` | insert(target, index_or_key, value) |
+| `intern` | Interns the given string, returning a canonical reference for efficient comparison. | `string` | intern(string) |
 | `is_array` |  Checks if input is an array | `a` | is_array(a) |
 | `is_bool` |  Checks if input is a boolean | `b` | is_bool(b) |
 | `is_code` |  Checks if markdown is code block | `md` | is_code(md) |
@@ -95,6 +97,7 @@
 | `min` | Returns the minimum of two values. | `value1`, `value2` | min(value1, value2) |
 | `mod` | Calculates the remainder of the division of the first value by the second value. | `value1`, `value2` | mod(value1, value2) |
 | `mul` | Multiplies two values. | `value1`, `value2` | mul(value1, value2) |
+| `nan` | Returns a Not-a-Number (NaN) value. |  | nan() |
 | `ne` | Checks if two values are not equal. | `value1`, `value2` | ne(value1, value2) |
 | `negate` | Returns the negation of the given number. | `number` | negate(number) |
 | `not` | Performs a logical NOT operation on a boolean value. | `value` | not(value) |
@@ -156,6 +159,7 @@
 | `to_strong` | Creates a markdown strong (bold) node with the given value. | `value` | to_strong(value) |
 | `to_text` | Converts the given markdown node to plain text. | `markdown` | to_text(markdown) |
 | `to_tsv` |  Converts the given value to a TSV. | `v` | to_tsv(v) |
+| `transpose` |  Transposes a 2D array (matrix), swapping rows and columns. | `matrix` | transpose(matrix) |
 | `trim` | Trims whitespace from both ends of the given string. | `input` | trim(input) |
 | `trunc` | Truncates the given number to an integer by removing the fractional part. | `number` | trunc(number) |
 | `type` | Returns the type of the given value. | `value` | type(value) |

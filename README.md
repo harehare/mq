@@ -67,7 +67,7 @@ The installer will:
 ### Cargo
 
 ```sh
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.2.23
+$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.3.0
 # Latest Development Version
 $ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
 # Install the debugger
@@ -105,7 +105,7 @@ $ brew install harehare/tap/mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.2.23
+$ docker run --rm ghcr.io/harehare/mq:0.3.0
 ```
 
 ### Visual Studio Code Extension
@@ -161,8 +161,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -f, --from-file
@@ -180,7 +180,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-
+          
       --csv
           Include the built-in CSV module
       --fuzzy
