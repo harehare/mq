@@ -384,7 +384,7 @@ impl Formatter {
                     .map(|token| matches!(token.kind, mq_lang::TokenKind::Colon))
                     .unwrap_or(false)
             })
-            .unwrap();
+            .unwrap_or(0);
 
         node.children.iter().take(expr_index).for_each(|child| {
             self.format_node(
