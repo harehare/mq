@@ -45,7 +45,7 @@ try: get("primary") catch: try: get("secondary") catch: "default"
 
 ## Error Suppression (`?`)
 
-The error suppression operator `?` provides a concise way to handle errors by returning `None` (or an empty value) when an expression fails, instead of raising an error. This is equivalent to using a regular `try-catch` with a default fallback.
+The error suppression operator `?` provides a concise way to handle errors by returning `None` when an expression fails, instead of raising an error. This is equivalent to using a regular `try-catch` with a default fallback.
 
 ### Examples
 
