@@ -125,7 +125,7 @@ impl<'a> Parser<'a> {
             | TokenKind::Lte => 3,
             TokenKind::Plus | TokenKind::Minus => 4,
             TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
-            TokenKind::RangeOp => 6,
+            TokenKind::RangeOp | TokenKind::Coalesce => 6,
             _ => 0,
         }
     }
@@ -135,6 +135,7 @@ impl<'a> Parser<'a> {
         match kind {
             TokenKind::And => constants::AND,
             TokenKind::Asterisk => constants::MUL,
+            TokenKind::Coalesce => constants::COALESCE,
             TokenKind::EqEq => constants::EQ,
             TokenKind::Gte => constants::GTE,
             TokenKind::Gt => constants::GT,
@@ -483,6 +484,7 @@ impl<'a> Parser<'a> {
             TokenKind::And
                 | TokenKind::Asterisk
                 | TokenKind::EqEq
+                | TokenKind::Coalesce
                 | TokenKind::Gte
                 | TokenKind::Gt
                 | TokenKind::Lte
@@ -536,6 +538,7 @@ impl<'a> Parser<'a> {
                 | Some(TokenKind::SemiColon)
                 | Some(TokenKind::End)
                 | Some(TokenKind::Slash)
+                | Some(TokenKind::Coalesce)
                 | None
         )
     }
@@ -5069,6 +5072,154 @@ mod tests {
                 )),
             })])
         )]
+    #[rstest]
+    #[case::question_mark_after_call(
+                vec![
+                    token(TokenKind::Ident(SmolStr::new("foo"))),
+                    token(TokenKind::LParen),
+                    token(TokenKind::RParen),
+                    token(TokenKind::Question),
+                    token(TokenKind::Eof),
+                ],
+                Ok(vec![
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Try(
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
+                                    SmallVec::new(),
+                                )),
+                            }),
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Literal(Literal::None)),
+                            }),
+                        )),
+                    })
+                ]))]
+    #[case::question_mark_after_call_with_args(
+                vec![
+                    token(TokenKind::Ident(SmolStr::new("bar"))),
+                    token(TokenKind::LParen),
+                    token(TokenKind::StringLiteral("arg".to_owned())),
+                    token(TokenKind::RParen),
+                    token(TokenKind::Question),
+                    token(TokenKind::Eof),
+                ],
+                Ok(vec![
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Try(
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token("bar", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("bar")))))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                        }),
+                                    ],
+                                )),
+                            }),
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::None)),
+                            }),
+                        )),
+                    })
+                ]))]
+    #[case::question_mark_after_call_error(
+                vec![
+                    token(TokenKind::Ident(SmolStr::new("foo"))),
+                    token(TokenKind::Question),
+                    token(TokenKind::Eof),
+                ],
+                Err(ParseError::UnexpectedToken(token(TokenKind::Ident("foo".into())))))]
+    #[case::coalesce_simple(
+                    vec![
+                        token(TokenKind::StringLiteral("foo".to_owned())),
+                        token(TokenKind::Coalesce),
+                        token(TokenKind::StringLiteral("bar".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::COALESCE, Some(Shared::new(token(TokenKind::Coalesce)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("foo".to_owned()))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("bar".to_owned()))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ]))]
+    #[case::coalesce_with_none(
+                    vec![
+                        token(TokenKind::None),
+                        token(TokenKind::Coalesce),
+                        token(TokenKind::StringLiteral("default".to_owned())),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::COALESCE, Some(Shared::new(token(TokenKind::Coalesce)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::None)),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Literal(Literal::String("default".to_owned()))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ]))]
+    #[case::coalesce_with_identifiers(
+                    vec![
+                        token(TokenKind::Ident(SmolStr::new("x"))),
+                        token(TokenKind::Coalesce),
+                        token(TokenKind::Ident(SmolStr::new("y"))),
+                        token(TokenKind::Eof)
+                    ],
+                    Ok(vec![
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Call(
+                                IdentWithToken::new_with_token(constants::COALESCE, Some(Shared::new(token(TokenKind::Coalesce)))),
+                                smallvec![
+                                    Shared::new(Node {
+                                        token_id: 0.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                    }),
+                                    Shared::new(Node {
+                                        token_id: 2.into(),
+                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                    }),
+                                ],
+                            )),
+                        })
+                    ]))]
+    #[case::coalesce_error_missing_rhs(
+                    vec![
+                        token(TokenKind::StringLiteral("foo".to_owned())),
+                        token(TokenKind::Coalesce),
+                        token(TokenKind::Eof)
+                    ],
+                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();

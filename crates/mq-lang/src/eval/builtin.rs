@@ -2187,6 +2187,21 @@ define_builtin!(INFINITE, ParamNum::Fixed(0), |_, _, _| {
     Ok(RuntimeValue::Number(number::INFINITE))
 });
 
+define_builtin!(
+    COALESCE,
+    ParamNum::Fixed(2),
+    |_, _, mut args| match args.as_mut_slice() {
+        [a, b] => {
+            if a.is_none() {
+                Ok(std::mem::take(b))
+            } else {
+                Ok(std::mem::take(a))
+            }
+        }
+        _ => unreachable!(),
+    }
+);
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2231,6 +2246,7 @@ const HASH_BASE64: u64 = fnv1a_hash_64("base64");
 const HASH_BASE64D: u64 = fnv1a_hash_64("base64d");
 const HASH_CEIL: u64 = fnv1a_hash_64("ceil");
 const HASH_COMPACT: u64 = fnv1a_hash_64("compact");
+const HASH_COALESCE: u64 = fnv1a_hash_64("coalesce");
 const HASH_DECREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("decrease_header_level");
 const HASH_DEL: u64 = fnv1a_hash_64("del");
 const HASH_DICT: u64 = fnv1a_hash_64(constants::DICT);
@@ -2344,6 +2360,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_BASE64D => Some(&BASE64D),
         HASH_CEIL => Some(&CEIL),
         HASH_COMPACT => Some(&COMPACT),
+        HASH_COALESCE => Some(&COALESCE),
         HASH_DECREASE_HEADER_LEVEL => Some(&DECREASE_HEADER_LEVEL),
         HASH_DEL => Some(&DEL),
         HASH_DICT => Some(&DICT),
@@ -3520,6 +3537,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             BuiltinFunctionDoc {
                 description: "Returns an infinite number value.",
                 params: &[],
+            },
+        );
+        map.insert(
+            SmolStr::new("coalesce"),
+            BuiltinFunctionDoc {
+                description: "Returns the first non-None value from the two provided arguments.",
+                params: &["value1", "value2"],
             },
         );
         map
