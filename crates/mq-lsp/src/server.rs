@@ -220,7 +220,11 @@ impl LanguageServer for Backend {
 
 impl Backend {
     async fn on_change(&self, uri: Url, text: String) {
-        let (nodes, errors) = mq_lang::parse_recovery(&text);
+        let (nodes, errors) = if text.is_empty() {
+            (Vec::new(), mq_lang::CstErrorReporter::default())
+        } else {
+            mq_lang::parse_recovery(&text)
+        };
         let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         self.source_map
