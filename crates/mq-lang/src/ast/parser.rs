@@ -497,6 +497,14 @@ impl<'a> Parser<'a> {
         )
     }
 
+    fn is_next_token(&mut self, expected: impl Fn(&TokenKind) -> bool) -> bool {
+        self.tokens
+            .peek()
+            .as_ref()
+            .map(|t| &t.kind)
+            .is_some_and(expected)
+    }
+
     #[inline(always)]
     fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
         matches!(
@@ -571,13 +579,30 @@ impl<'a> Parser<'a> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::LParen) => {
                 let args = self.parse_args()?;
+                let token_id = token_alloc(&self.token_arena, &ident_token);
                 let call_node = Shared::new(Node {
-                    token_id: token_alloc(&self.token_arena, &ident_token),
+                    token_id,
                     expr: Shared::new(Expr::Call(
                         IdentWithToken::new_with_token(ident, Some(Shared::clone(&ident_token))),
                         args,
                     )),
                 });
+
+                if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Question)) {
+                    let question_token = self.tokens.next().unwrap();
+                    let question_token_id = token_alloc(&self.token_arena, question_token);
+
+                    return Ok(Shared::new(Node {
+                        token_id: question_token_id,
+                        expr: Shared::new(Expr::Try(
+                            call_node,
+                            Shared::new(Node {
+                                token_id,
+                                expr: Shared::new(Expr::Literal(Literal::None)),
+                            }),
+                        )),
+                    }));
+                }
 
                 // Check for bracket access after function call (e.g., foo()[0])
                 if matches!(
@@ -867,6 +892,19 @@ impl<'a> Parser<'a> {
             Some(token) => self.parse_expr(Shared::clone(token))?,
             None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         };
+
+        if !self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Catch)) {
+            return Ok(Shared::new(Node {
+                token_id,
+                expr: Shared::new(Expr::Try(
+                    try_expr,
+                    Shared::new(Node {
+                        token_id,
+                        expr: Shared::new(Expr::Literal(Literal::None)),
+                    }),
+                )),
+            }));
+        }
 
         // Expect 'catch' keyword
         self.next_token(token_id, |token_kind| {
@@ -4979,6 +5017,58 @@ mod tests {
                 )),
             })
         ]))]
+    #[case::try_without_catch(
+            vec![
+                token(TokenKind::Try),
+                token(TokenKind::Colon),
+                token(TokenKind::Ident(SmolStr::new("error_expr"))),
+                token(TokenKind::Eof),
+            ],
+            Ok(vec![Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Try(
+                    Shared::new(Node {
+                        token_id: 2.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
+                    }),
+                    Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Shared::new(Expr::Literal(Literal::None)),
+                    }),
+                )),
+            })])
+        )]
+    #[case::function_call_with_question_mark(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("foo"))),
+                token(TokenKind::LParen),
+                token(TokenKind::StringLiteral("arg".to_owned())),
+                token(TokenKind::RParen),
+                token(TokenKind::Question),
+                token(TokenKind::Eof),
+            ],
+            Ok(vec![Shared::new(Node {
+                token_id: 1.into(),
+                expr: Shared::new(Expr::Try(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
+                            smallvec![
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                }),
+                            ],
+                        )),
+                    }),
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Literal(Literal::None)),
+                    }),
+                )),
+            })])
+        )]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
