@@ -433,9 +433,12 @@ impl Formatter {
             self.append_indent(indent_level);
         }
         self.output.push_str(&node.to_string());
-        self.append_space();
 
-        let expr_nodes = node.children.iter().skip(1).peekable();
+        if !node.has_new_line() {
+            self.append_space();
+        }
+
+        let expr_nodes = node.children.iter().peekable();
         let block_indent_level = if is_prev_pipe {
             block_indent_level + 2
         } else {
