@@ -4797,12 +4797,52 @@ mod tests {
                 Ok(vec![RuntimeValue::Bool(true)])
             )]
     #[case::is_nan_with_number(
-                vec![RuntimeValue::Number(42.0.into())],
-                vec![
-                    ast_call("is_nan", SmallVec::new())
-                ],
-                Ok(vec![RuntimeValue::Bool(false)])
-            )]
+        vec![RuntimeValue::Number(42.0.into())],
+        vec![
+            ast_call("is_nan", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Bool(false)])
+    )]
+    #[case::coalesce_first_non_none(
+        vec![RuntimeValue::NONE],
+        vec![
+            ast_call("coalesce", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ast_node(ast::Expr::Literal(ast::Literal::String("first".to_string()))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("first".to_string())])
+    )]
+    #[case::coalesce_second_non_none(
+        vec![RuntimeValue::NONE],
+        vec![
+            ast_call("coalesce", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+            ])
+        ],
+        Ok(vec![RuntimeValue::NONE])
+    )]
+    #[case::coalesce_first_value_non_none(
+        vec![RuntimeValue::String("value".to_string())],
+        vec![
+            ast_call("coalesce", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
+                ast_node(ast::Expr::Literal(ast::Literal::String("other".to_string()))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("value".to_string())])
+    )]
+    #[case::coalesce_array(
+        vec![RuntimeValue::Array(vec![RuntimeValue::NONE, RuntimeValue::String("foo".to_string())])],
+        vec![
+            ast_call("coalesce", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::None)),
+                ast_node(ast::Expr::Literal(ast::Literal::String("bar".to_string()))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("bar".to_string())])
+    )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
