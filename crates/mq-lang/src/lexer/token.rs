@@ -102,6 +102,7 @@ pub enum TokenKind {
     And,
     Or,
     Not,
+    Question,
 }
 
 impl Token {
@@ -178,6 +179,7 @@ impl Display for TokenKind {
             TokenKind::While => write!(f, "while"),
             TokenKind::Whitespace(n) => write!(f, "{}", " ".repeat(*n)),
             TokenKind::LBrace => write!(f, "{{"),
+            TokenKind::Question => write!(f, "?"),
         }
     }
 }
