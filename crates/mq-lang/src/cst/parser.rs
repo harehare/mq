@@ -296,6 +296,7 @@ impl<'a> Parser<'a> {
                 kind,
                 TokenKind::And
                     | TokenKind::Asterisk
+                    | TokenKind::Coalesce
                     | TokenKind::EqEq
                     | TokenKind::Gte
                     | TokenKind::Gt
@@ -324,6 +325,11 @@ impl<'a> Parser<'a> {
                         kind: TokenKind::Asterisk,
                         ..
                     } => NodeKind::BinaryOp(BinaryOp::Multiplication),
+                    Token {
+                        range: _,
+                        kind: TokenKind::Coalesce,
+                        ..
+                    } => NodeKind::BinaryOp(BinaryOp::Coalesce),
                     Token {
                         range: _,
                         kind: TokenKind::EqEq,
@@ -3979,6 +3985,40 @@ mod tests {
                 Shared::new(Node {
                     kind: NodeKind::BinaryOp(BinaryOp::Plus),
                     token: Some(Shared::new(token(TokenKind::Plus))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::coalesce(
+        vec![
+            Shared::new(token(TokenKind::Ident("a".into()))),
+            Shared::new(token(TokenKind::Coalesce)),
+            Shared::new(token(TokenKind::Ident("b".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::BinaryOp(BinaryOp::Coalesce),
+                    token: Some(Shared::new(token(TokenKind::Coalesce))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
