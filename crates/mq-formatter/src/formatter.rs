@@ -100,9 +100,11 @@ impl Formatter {
             mq_lang::CstNodeKind::Group => {
                 self.format_group(&node, indent_level_consider_new_line);
             }
+            mq_lang::CstNodeKind::Block => {
+                self.format_block(&node, indent_level_consider_new_line, indent_level);
+            }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Block
-            | mq_lang::CstNodeKind::Def
+            mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
             | mq_lang::CstNodeKind::Until
@@ -110,10 +112,7 @@ impl Formatter {
                 &node,
                 indent_level_consider_new_line,
                 indent_level,
-                !matches!(
-                    node.kind,
-                    mq_lang::CstNodeKind::Fn | mq_lang::CstNodeKind::Block
-                ),
+                !matches!(node.kind, mq_lang::CstNodeKind::Fn),
             ),
             mq_lang::CstNodeKind::Eof => {}
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
@@ -406,6 +405,37 @@ impl Formatter {
             self.append_space();
         }
 
+        let block_indent_level = if is_prev_pipe {
+            block_indent_level + 2
+        } else {
+            block_indent_level + 1
+        } + indent_adjustment;
+
+        expr_nodes.for_each(|child| {
+            self.format_node(mq_lang::Shared::clone(child), block_indent_level);
+        });
+    }
+
+    fn format_block(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
+        let is_prev_pipe = self.is_prev_pipe();
+        let indent_adjustment = if self.is_let_line() {
+            self.current_line_indent()
+        } else {
+            0
+        };
+
+        if node.has_new_line() {
+            self.append_indent(indent_level);
+        }
+        self.output.push_str(&node.to_string());
+        self.append_space();
+
+        let expr_nodes = node.children.iter().skip(1).peekable();
         let block_indent_level = if is_prev_pipe {
             block_indent_level + 2
         } else {
