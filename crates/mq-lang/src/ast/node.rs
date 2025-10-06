@@ -75,6 +75,14 @@ impl Node {
                     .unwrap_or_default();
                 Range { start, end }
             }
+            Expr::CallDynamic(callable, args) => {
+                let start = callable.range(Shared::clone(&arena)).start;
+                let end = args
+                    .last()
+                    .map(|node| node.range(Shared::clone(&arena)).end)
+                    .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
+                Range { start, end }
+            }
             Expr::Let(_, node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
@@ -241,6 +249,7 @@ impl Display for Literal {
 pub enum Expr {
     Block(Program),
     Call(IdentWithToken, Args),
+    CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
@@ -267,6 +276,16 @@ impl Display for Expr {
         match self {
             Expr::Call(ident, args) => {
                 write!(f, "{}(", ident)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg.expr)?;
+                }
+                write!(f, ")")
+            }
+            Expr::CallDynamic(callable, args) => {
+                write!(f, "{}(", callable.expr)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;

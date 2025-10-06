@@ -79,6 +79,7 @@ pub enum NodeKind {
     Block,
     Break,
     Call,
+    CallDynamic,
     Continue,
     Def,
     Dict,

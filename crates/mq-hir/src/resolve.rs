@@ -8,7 +8,10 @@ impl Hir {
             .symbols
             .iter()
             .filter_map(|(ref_symbol_id, ref_symbol)| match &ref_symbol.kind {
-                SymbolKind::Ref | SymbolKind::Call => Some((ref_symbol_id, ref_symbol.clone())),
+                SymbolKind::Ref
+                | SymbolKind::Call
+                | SymbolKind::CallDynamic
+                | SymbolKind::Argument => Some((ref_symbol_id, ref_symbol.clone())),
                 _ => None,
             })
             .collect();

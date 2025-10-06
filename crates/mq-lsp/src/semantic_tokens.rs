@@ -74,7 +74,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 | mq_hir::SymbolKind::Array => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::TYPE)
                 }
-                mq_hir::SymbolKind::Call => {
+                mq_hir::SymbolKind::Call | mq_hir::SymbolKind::CallDynamic => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::METHOD)
                 }
                 mq_hir::SymbolKind::Else

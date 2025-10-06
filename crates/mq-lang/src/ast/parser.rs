@@ -734,13 +734,24 @@ impl<'a> Parser<'a> {
         };
 
         // Check for additional bracket access (nested indexing)
-        if matches!(
+        let final_result = if matches!(
             self.tokens.peek().map(|t| &t.kind),
             Some(TokenKind::LBracket)
         ) {
-            self.parse_bracket_access(result_node, original_token)
+            self.parse_bracket_access(result_node, Shared::clone(&original_token))?
         } else {
-            Ok(result_node)
+            result_node
+        };
+
+        // Check for function call after bracket access (e.g., arr[0]() or arr[0][1]())
+        if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
+            let args = self.parse_args()?;
+            Ok(Shared::new(Node {
+                token_id: token_alloc(&self.token_arena, &original_token),
+                expr: Shared::new(Expr::CallDynamic(final_result, args)),
+            }))
+        } else {
+            Ok(final_result)
         }
     }
 
@@ -5042,6 +5053,132 @@ mod tests {
                 )),
             })])
         )]
+    // Test index access followed by function call (e.g., arr[0]())
+    #[case::index_access_with_function_call(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("arr"))),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::CallDynamic(
+                    Shared::new(Node {
+                        token_id: 2.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                            smallvec![
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                }),
+                            ],
+                        )),
+                    }),
+                    SmallVec::new(),
+                )),
+            })
+        ]))]
+    // Test index access with args followed by function call (e.g., arr[0](arg))
+    #[case::index_access_with_function_call_and_args(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("arr"))),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("test".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::CallDynamic(
+                    Shared::new(Node {
+                        token_id: 2.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                            smallvec![
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 1.into(),
+                                    expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                }),
+                            ],
+                        )),
+                    }),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 3.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
+                        })
+                    ],
+                )),
+            })
+        ]))]
+    // Test chained index access followed by function call (e.g., arr[0][1]())
+    #[case::chained_index_access_with_function_call(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("arr"))),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LBracket),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RBracket),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 4.into(),
+                expr: Shared::new(Expr::CallDynamic(
+                    Shared::new(Node {
+                        token_id: 4.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                            smallvec![
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Call(
+                                        IdentWithToken::new_with_token(constants::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+                                        smallvec![
+                                            Shared::new(Node {
+                                                token_id: 0.into(),
+                                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                            }),
+                                            Shared::new(Node {
+                                                token_id: 1.into(),
+                                                expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                            }),
+                                        ],
+                                    )),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 3.into(),
+                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                }),
+                            ],
+                        )),
+                    }),
+                    SmallVec::new(),
+                )),
+            })
+        ]))]
     #[case::function_call_with_question_mark(
             vec![
                 token(TokenKind::Ident(SmolStr::new("foo"))),
