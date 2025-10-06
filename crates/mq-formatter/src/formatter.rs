@@ -1376,6 +1376,27 @@ catch:
   handle_error()
 "
     )]
+    #[case::coalesce_operator("let x = a?? b", "let x = a ?? b")]
+    #[case::coalesce_operator_with_call(
+        "let result = get_value() ?? default()",
+        "let result = get_value() ?? default()"
+    )]
+    #[case::coalesce_operator_with_literal("let x = value ?? 42", "let x = value ?? 42")]
+    #[case::coalesce_operator_with_string(
+        "let s = str ?? \"default\"",
+        "let s = str ?? \"default\""
+    )]
+    #[case::coalesce_operator_chain("let x = a ?? b ?? c", "let x = a ?? b ?? c")]
+    #[case::coalesce_operator_in_if(
+        "if(a ?? b): do_something() else: do_other()",
+        "if (a ?? b): do_something() else: do_other()"
+    )]
+    #[case::coalesce_operator_in_array("[a ?? b, c]", "[a ?? b, c]")]
+    #[case::coalesce_operator_in_dict("{\"key\": a ?? b}", "{\"key\": a ?? b}")]
+    #[case::coalesce_operator_with_comment(
+        "let x = a ?? b # fallback",
+        "let x = a ?? b # fallback"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
