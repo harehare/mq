@@ -29,5 +29,5 @@ name = "mqcr"
 path = "src/main.rs"
 
 [dev-dependencies]
-httpmock = "0.8.0"
+httpmock = "0.8.1"
 rstest.workspace = true
