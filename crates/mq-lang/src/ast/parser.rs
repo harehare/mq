@@ -125,7 +125,8 @@ impl<'a> Parser<'a> {
             | TokenKind::Lte => 3,
             TokenKind::Plus | TokenKind::Minus => 4,
             TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
-            TokenKind::RangeOp | TokenKind::Coalesce => 6,
+            TokenKind::RangeOp => 6,
+            TokenKind::Coalesce => 2,
             _ => 0,
         }
     }
