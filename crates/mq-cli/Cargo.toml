@@ -43,7 +43,7 @@ mq-repl.workspace = true
 mq-tui.workspace = true
 rayon = "1.11.0"
 regex-lite = {workspace = true, optional = true}
-rustyline = {version = "17.0.1", optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
+rustyline = {version = "17.0.2", optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
 strum = {version = "0.27.2", features = ["derive"], optional = true}
 tokio = {version = "1.47.1", features = ["io-util", "io-std", "rt"]}
 url.workspace = true
