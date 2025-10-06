@@ -859,7 +859,7 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
+        if let RuntimeValue::Function(params, program, fn_env) = fn_value {
             self.enter_scope()?;
             #[cfg(feature = "debugger")]
             self.debugger
