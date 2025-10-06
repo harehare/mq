@@ -28,6 +28,7 @@ pub enum SymbolKind {
     Block,
     Boolean,
     Call,
+    CallDynamic,
     Dict,
     Elif,
     Else,

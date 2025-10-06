@@ -122,6 +122,12 @@ impl Optimizer {
                     Self::collect_used_identifiers_in_node(arg, used_idents);
                 }
             }
+            ast::Expr::CallDynamic(callable, args) => {
+                Self::collect_used_identifiers_in_node(callable, used_idents);
+                for arg in args {
+                    Self::collect_used_identifiers_in_node(arg, used_idents);
+                }
+            }
             ast::Expr::Let(_, value_node) => {
                 Self::collect_used_identifiers_in_node(value_node, used_idents);
             }

@@ -318,6 +318,9 @@ impl Hir {
             mq_lang::CstNodeKind::Call => {
                 self.add_call_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::CallDynamic => {
+                self.add_call_dynamic_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Def => {
                 self.add_def_expr(node, source_id, scope_id, parent);
             }
@@ -898,21 +901,47 @@ impl Hir {
             });
 
             node.children_without_token().iter().for_each(|child| {
-                if matches!(child.kind, mq_lang::CstNodeKind::Literal)
-                    || matches!(child.kind, mq_lang::CstNodeKind::InterpolatedString)
-                {
-                    self.add_literal_expr(child, source_id, scope_id, parent);
-                } else {
-                    self.add_symbol(Symbol {
-                        value: child.name(),
-                        kind: SymbolKind::Argument,
-                        source: SourceInfo::new(Some(source_id), Some(child.range())),
-                        scope: scope_id,
-                        doc: Vec::new(),
-                        parent,
-                    });
-                }
+                // Process all arguments recursively to handle complex expressions
+                // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
+                // are properly registered as Ref symbols that can be resolved
+                self.add_expr(child, source_id, scope_id, parent);
             });
+        }
+    }
+
+    fn add_call_dynamic_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::CallDynamic,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None, // Dynamic calls don't have a static name
+                kind: SymbolKind::CallDynamic,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process all children (callable expression and arguments)
+            let children = node.children_without_token();
+
+            // First child is the callable expression (e.g., arr[0])
+            if let Some(callable) = children.first() {
+                self.add_expr(callable, source_id, scope_id, Some(symbol_id));
+            }
+
+            // Remaining children are arguments - process them recursively
+            for child in children.iter().skip(1) {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            }
         }
     }
 
@@ -1011,8 +1040,9 @@ impl Hir {
                 Some(scope_id),
             ));
 
-            let mut param_names = Vec::with_capacity(params.len());
+            let mut param_names = Vec::with_capacity(params.len().saturating_sub(1));
 
+            // For def expressions, the first param is the function name, so skip it
             params.iter().skip(1).for_each(|child| {
                 param_names.push(child.name().unwrap_or("arg".into()));
                 self.add_symbol(Symbol {
@@ -1021,7 +1051,7 @@ impl Hir {
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
                     scope: scope_id,
                     doc: Vec::new(),
-                    parent,
+                    parent: Some(symbol_id),
                 });
             });
 
@@ -1074,7 +1104,7 @@ impl Hir {
 
             let mut param_names = Vec::with_capacity(params.len());
 
-            params.iter().skip(1).for_each(|child| {
+            params.iter().for_each(|child| {
                 param_names.push(child.name().unwrap_or("arg".into()));
                 self.add_symbol(Symbol {
                     value: child.name(),
@@ -1082,7 +1112,7 @@ impl Hir {
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
                     scope: scope_id,
                     doc: Vec::new(),
-                    parent,
+                    parent: Some(symbol_id),
                 });
             });
 
@@ -1244,7 +1274,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]
-    #[case::fn_with_params("fn(x, y): add(x, y);", "x", SymbolKind::Argument)]
+    #[case::fn_with_params("fn(x, y): add(x, y);", "x", SymbolKind::Parameter)]
     #[case::fn_with_body("fn(): let x = 1 | x;", "x", SymbolKind::Variable)]
     #[case::fn_anonymous("let f = fn(): 42;", "fn", SymbolKind::Keyword)]
     #[case::eq("1 == 2", "==", SymbolKind::BinaryOp)]
@@ -1445,5 +1475,32 @@ end"#;
         if let Some(string_sym) = string_symbol {
             assert!(matches!(string_sym.kind, SymbolKind::String));
         }
+    }
+
+    #[test]
+    fn test_fn_param_resolution() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = "fn(x): x";
+        hir.add_code(None, code);
+
+        // Find the Ref symbol for the second 'x'
+        let ref_symbol = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Ref && s.value.as_deref() == Some("x"));
+
+        assert!(ref_symbol.is_some(), "Should have a Ref symbol for x");
+
+        let (ref_id, _) = ref_symbol.unwrap();
+        let resolved = hir.resolve_reference_symbol(ref_id);
+
+        assert!(resolved.is_some(), "x Ref should resolve to Parameter");
+
+        let resolved_symbol = &hir.symbols[resolved.unwrap()];
+        assert_eq!(resolved_symbol.kind, SymbolKind::Parameter);
+        assert_eq!(resolved_symbol.value.as_deref(), Some("x"));
+
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 }

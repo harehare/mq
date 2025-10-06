@@ -536,6 +536,9 @@ impl Evaluator {
 
                 self.eval_fn(runtime_value, Shared::clone(node), ident.name, args, env)
             }
+            ast::Expr::CallDynamic(callable, args) => {
+                self.eval_call_dynamic(runtime_value, callable, args, env)
+            }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
             ast::Expr::Break => Err(self.eval_break(Shared::clone(node))),
             ast::Expr::Continue => Err(self.eval_continue(Shared::clone(node))),
@@ -788,79 +791,7 @@ impl Evaluator {
         let resolved = Shared::clone(env).read().unwrap().resolve(ident);
 
         if let Ok(fn_value) = resolved {
-            if let RuntimeValue::Function(params, program, fn_env) = &fn_value {
-                self.enter_scope()?;
-                #[cfg(feature = "debugger")]
-                self.debugger
-                    .write()
-                    .unwrap()
-                    .push_call_stack(Shared::clone(&node));
-
-                let new_env =
-                    Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
-
-                if params.len() == args.len() + 1 {
-                    if let ast::Expr::Ident(id) = &*params.first().unwrap().expr {
-                        define(&new_env, id.name, runtime_value.clone());
-                    } else {
-                        return Err(EvalError::InvalidDefinition(
-                            (*get_token(
-                                Shared::clone(&self.token_arena),
-                                params.first().unwrap().token_id,
-                            ))
-                            .clone(),
-                            ident.to_string(),
-                        ));
-                    }
-
-                    for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
-                        if let ast::Expr::Ident(id) = &*param.expr {
-                            let val = self.eval_expr(runtime_value, arg, env)?;
-                            define(&new_env, id.name, val);
-                        } else {
-                            return Err(EvalError::InvalidDefinition(
-                                (*get_token(Shared::clone(&self.token_arena), param.token_id))
-                                    .clone(),
-                                ident.to_string(),
-                            ));
-                        }
-                    }
-                } else if args.len() != params.len() {
-                    return Err(EvalError::InvalidNumberOfArguments(
-                        (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                        ident.to_string(),
-                        params.len() as u8,
-                        args.len() as u8,
-                    ));
-                } else {
-                    for (arg, param) in args.into_iter().zip(params.iter()) {
-                        if let ast::Expr::Ident(id) = &*param.expr {
-                            let val = self.eval_expr(runtime_value, arg, env)?;
-                            define(&new_env, id.name, val);
-                        } else {
-                            return Err(EvalError::InvalidDefinition(
-                                (*get_token(Shared::clone(&self.token_arena), param.token_id))
-                                    .clone(),
-                                ident.to_string(),
-                            ));
-                        }
-                    }
-                };
-
-                let result = self.eval_program(program, runtime_value.clone(), new_env);
-                self.exit_scope();
-                #[cfg(feature = "debugger")]
-                self.debugger.write().unwrap().pop_call_stack();
-
-                result
-            } else if let RuntimeValue::NativeFunction(ident) = fn_value {
-                self.eval_builtin(runtime_value, node, &ident, args, env)
-            } else {
-                Err(EvalError::InvalidDefinition(
-                    (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                    ident.to_string(),
-                ))
-            }
+            self.call_fn(&fn_value, node, ident, args, runtime_value, env)
         } else {
             self.eval_builtin(runtime_value, node, &ident, args, env)
         }
@@ -883,6 +814,25 @@ impl Evaluator {
             .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))
     }
 
+    fn eval_call_dynamic(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        callable: &Shared<ast::Node>,
+        args: &ast::Args,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        let fn_value = self.eval_expr(runtime_value, callable, env)?;
+
+        self.call_fn(
+            &fn_value,
+            Shared::clone(callable),
+            Ident::new("<dynamic>"),
+            args,
+            runtime_value,
+            env,
+        )
+    }
+
     #[inline(always)]
     fn enter_scope(&mut self) -> Result<(), EvalError> {
         if self.call_stack_depth >= self.options.max_call_stack_depth {
@@ -896,6 +846,88 @@ impl Evaluator {
     fn exit_scope(&mut self) {
         if self.call_stack_depth > 0 {
             self.call_stack_depth -= 1;
+        }
+    }
+
+    #[inline(always)]
+    fn call_fn(
+        &mut self,
+        fn_value: &RuntimeValue,
+        node: Shared<ast::Node>,
+        ident: Ident,
+        args: &ast::Args,
+        runtime_value: &RuntimeValue,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        if let RuntimeValue::Function(params, program, fn_env) = fn_value {
+            self.enter_scope()?;
+            #[cfg(feature = "debugger")]
+            self.debugger
+                .write()
+                .unwrap()
+                .push_call_stack(Shared::clone(&node));
+
+            let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
+
+            if params.len() == args.len() + 1 {
+                if let ast::Expr::Ident(id) = &*params.first().unwrap().expr {
+                    define(&new_env, id.name, runtime_value.clone());
+                } else {
+                    return Err(EvalError::InvalidDefinition(
+                        (*get_token(
+                            Shared::clone(&self.token_arena),
+                            params.first().unwrap().token_id,
+                        ))
+                        .clone(),
+                        ident.to_string(),
+                    ));
+                }
+
+                for (arg, param) in args.into_iter().zip(params.iter().skip(1)) {
+                    if let ast::Expr::Ident(id) = &*param.expr {
+                        let val = self.eval_expr(runtime_value, arg, env)?;
+                        define(&new_env, id.name, val);
+                    } else {
+                        return Err(EvalError::InvalidDefinition(
+                            (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
+            } else if args.len() != params.len() {
+                return Err(EvalError::InvalidNumberOfArguments(
+                    (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                    ident.to_string(),
+                    params.len() as u8,
+                    args.len() as u8,
+                ));
+            } else {
+                for (arg, param) in args.into_iter().zip(params.iter()) {
+                    if let ast::Expr::Ident(id) = &*param.expr {
+                        let val = self.eval_expr(runtime_value, arg, env)?;
+                        define(&new_env, id.name, val);
+                    } else {
+                        return Err(EvalError::InvalidDefinition(
+                            (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
+                            ident.to_string(),
+                        ));
+                    }
+                }
+            };
+
+            let result = self.eval_program(program, runtime_value.clone(), new_env);
+            self.exit_scope();
+            #[cfg(feature = "debugger")]
+            self.debugger.write().unwrap().pop_call_stack();
+
+            result
+        } else if let RuntimeValue::NativeFunction(ident) = fn_value {
+            self.eval_builtin(runtime_value, node, ident, args, env)
+        } else {
+            Err(EvalError::InvalidDefinition(
+                (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                ident.to_string(),
+            ))
         }
     }
 }
