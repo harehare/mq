@@ -77,9 +77,11 @@ impl Formatter {
 
         if !matches!(
             node.kind,
+            // For CallDynamic, all nodes are output again, so do not output a newline here.
             mq_lang::CstNodeKind::Token
                 | mq_lang::CstNodeKind::BinaryOp(_)
                 | mq_lang::CstNodeKind::End
+                | mq_lang::CstNodeKind::CallDynamic
         ) {
             self.append_leading_trivia(&node, indent_level_consider_new_line);
         }
@@ -256,7 +258,14 @@ impl Formatter {
                 }
                 self.format_node(mq_lang::Shared::clone(colon), 0);
                 self.append_space();
-                self.format_node(mq_lang::Shared::clone(value), 0);
+                self.format_node(
+                    mq_lang::Shared::clone(value),
+                    if value.is_fn() {
+                        indent_level + indent_adjustment + 1
+                    } else {
+                        0
+                    },
+                );
                 i += 3;
             } else {
                 self.format_node(mq_lang::Shared::clone(key), 0);
@@ -1424,6 +1433,18 @@ catch:
         "let x = a ?? b # fallback"
     )]
     #[case::call_dynamic("v[0](1,2,3)", "v[0](1, 2, 3)")]
+    #[case::dict_with_fn_value_multiline(
+        r#"{
+"key1": fn():
+process();
+,"key2": "value2"
+}"#,
+        r#"{
+  "key1": fn():
+    process();
+,"key2": "value2"
+}"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
