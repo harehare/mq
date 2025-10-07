@@ -180,6 +180,10 @@ impl Node {
         matches!(self.kind, NodeKind::Token)
     }
 
+    pub fn is_fn(&self) -> bool {
+        matches!(self.kind, NodeKind::Fn)
+    }
+
     pub fn comments(&self) -> Vec<Comment> {
         self.leading_trivia
             .iter()
