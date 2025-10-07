@@ -7,6 +7,5 @@ ignore:
   - "crates/mq-tui/tests/tests.rs"
   - "crates/mq-wasm"
   - "crates/mq-mcp"
-  - "crates/mq-viewer"
   - "crates/mq-web-api"
   - "crates/mq-dap/src/server.rs"
