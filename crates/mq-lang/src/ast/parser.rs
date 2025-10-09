@@ -324,6 +324,10 @@ impl<'a> Parser<'a> {
                     self.tokens.next();
                     break;
                 }
+                Some(token) if matches!(token.kind, TokenKind::Comment(_)) => {
+                    self.tokens.next();
+                    continue;
+                }
                 None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
                 _ => {}
             }
@@ -454,7 +458,7 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.tokens.next() {
             match &token.kind {
                 TokenKind::RBracket => break,
-                TokenKind::Comma => continue,
+                TokenKind::Comma | TokenKind::Comment(_) => continue,
                 _ => {
                     let expr = self.parse_expr(Shared::clone(token))?;
                     elements.push(expr);

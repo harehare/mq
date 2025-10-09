@@ -1535,9 +1535,30 @@ fn engine_with_opt() -> Engine {
       Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
 #[case::let_do_block_simple("
     let v = do \"hello world\" | upcase() end | v
-    ",
-      vec![RuntimeValue::Number(0.into())],
+    ",      vec![RuntimeValue::Number(0.into())],
       Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
+#[case::array_with_comment("[1 # comment\n, 2, 3]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+          RuntimeValue::Number(1.into()),
+          RuntimeValue::Number(2.into()),
+          RuntimeValue::Number(3.into())])].into()))]
+#[case::dict_literal_with_comment(
+  r#"let d = {
+    "a": 1, # comment for a
+    "b": 2, # comment for b
+    # comment line
+    "c": 3
+  } | d"#,
+  vec![RuntimeValue::Number(0.into())],
+  Ok(vec![{
+    let mut dict = BTreeMap::new();
+    dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+    dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
+    dict.insert(Ident::new("c"), RuntimeValue::Number(3.into()));
+    dict.into()
+  }].into())
+)]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,
