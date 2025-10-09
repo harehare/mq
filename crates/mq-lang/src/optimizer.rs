@@ -610,9 +610,15 @@ impl Optimizer {
                 }
             }
             ast::Expr::Def(_, _, program) | ast::Expr::Fn(_, program) => {
+                // Save current constant table to prevent leaking function-local constants
+                let saved_constant_table = std::mem::take(&mut self.constant_table);
+
                 for node in program {
                     self.optimize_node(node);
                 }
+
+                // Restore the outer scope's constant table
+                self.constant_table = saved_constant_table;
             }
             ast::Expr::Paren(expr) => {
                 self.optimize_node(expr);
