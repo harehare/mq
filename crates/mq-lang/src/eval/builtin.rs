@@ -1952,10 +1952,16 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
 
         for entry in entries {
             if let RuntimeValue::Array(arr) = entry {
-                if arr.len() >= 2 {
-                    dict.insert(Ident::new(&arr[0].to_string()), arr[1].clone());
-                } else {
-                    return Err(Error::InvalidTypes("dict".to_string(), arr.clone()));
+                match arr.as_slice() {
+                    [RuntimeValue::Symbol(key), value] => {
+                        dict.insert(Ident::new(&key.to_string()), value.clone());
+                        continue;
+                    }
+                    [key, value] => {
+                        dict.insert(Ident::new(&key.to_string()), value.clone());
+                        continue;
+                    }
+                    a => return Err(Error::InvalidTypes("dict".to_string(), a.to_vec())),
                 }
             } else {
                 return Err(Error::InvalidTypes("dict".to_string(), vec![entry.clone()]));
