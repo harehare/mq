@@ -1360,7 +1360,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |_, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
-        [v, RuntimeValue::Number(n)] => {
+        [v, RuntimeValue::Number(n)] | [RuntimeValue::Number(n), v] => {
             repeat(v, n.value() as usize)
         }
         [a, b] => match (to_number(a)?, to_number(b)?) {
@@ -1378,7 +1378,10 @@ define_builtin!(
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
         [a, b] => match (to_number(a)?, to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 % n2).into()),
-            _ => unreachable!(),
+            _ => Err(Error::InvalidTypes(
+                "".to_string(),
+                vec![std::mem::take(a), std::mem::take(b)],
+            )),
         },
         _ => unreachable!(),
     }
