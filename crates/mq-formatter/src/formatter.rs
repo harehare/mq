@@ -445,10 +445,7 @@ impl Formatter {
             self.append_indent(indent_level);
         }
         self.output.push_str(&node.to_string());
-
-        if !node.has_new_line() {
-            self.append_space();
-        }
+        self.append_space();
 
         let expr_nodes = node.children.iter().peekable();
         let block_indent_level = if is_prev_pipe {
@@ -1444,6 +1441,33 @@ process();
     process();
 ,"key2": "value2"
 }"#
+    )]
+    #[case::do_block_multiline(
+        r#"do
+  process1()
+  | process2()
+end
+"#,
+        "do
+  process1()
+  | process2()
+end
+"
+    )]
+    #[case::do_block_oneline("do process1() | process2();", "do process1() | process2();")]
+    #[case::let_with_do_block_multiline(
+        r#"let result = do
+  step1()
+  | step2()
+"#,
+        "let result = do
+  step1()
+  | step2()
+"
+    )]
+    #[case::let_with_do_block_oneline(
+        "let result = do step1() | step2();",
+        "let result = do step1() | step2();"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
