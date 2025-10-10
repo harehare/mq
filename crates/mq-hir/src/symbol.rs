@@ -43,6 +43,7 @@ pub enum SymbolKind {
     Ref,
     Selector,
     String,
+    Symbol,
     UnaryOp,
     Variable,
     While,
