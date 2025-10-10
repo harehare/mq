@@ -1310,7 +1310,7 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args| {
             a.extend_from_slice(a2);
             Ok(RuntimeValue::Array(a))
         }
-        [RuntimeValue::Array(a1), a2] => {
+        [RuntimeValue::Array(a1), a2] | [a2, RuntimeValue::Array(a1)] => {
             let mut a = std::mem::take(a1);
             a.reserve(1);
             a.push(std::mem::take(a2));
