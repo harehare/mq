@@ -229,6 +229,7 @@ impl From<&lexer::token::StringSegment> for StringSegment {
 pub enum Literal {
     String(String),
     Number(Number),
+    Symbol(Ident),
     Bool(bool),
     None,
 }
@@ -238,6 +239,7 @@ impl Display for Literal {
         match self {
             Literal::String(s) => write!(f, "{}", s),
             Literal::Number(n) => write!(f, "{}", n),
+            Literal::Symbol(i) => write!(f, "{}", i),
             Literal::Bool(b) => write!(f, "{}", b),
             Literal::None => write!(f, "none"),
         }

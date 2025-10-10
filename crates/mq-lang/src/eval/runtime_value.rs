@@ -18,6 +18,7 @@ pub enum RuntimeValue {
     Number(Number),
     Bool(bool),
     String(String),
+    Symbol(Ident),
     Array(Vec<RuntimeValue>),
     Markdown(Node, Option<Selector>),
     Function(AstParams, Program, Shared<SharedCell<Env>>),
@@ -34,6 +35,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a == b,
             (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a == b,
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a == b,
+            (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a == b,
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
             (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => {
@@ -83,6 +85,12 @@ impl From<Number> for RuntimeValue {
     }
 }
 
+impl From<Ident> for RuntimeValue {
+    fn from(i: Ident) -> Self {
+        RuntimeValue::Symbol(i)
+    }
+}
+
 impl From<usize> for RuntimeValue {
     fn from(n: usize) -> Self {
         RuntimeValue::Number(Number::from(n))
@@ -107,6 +115,7 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a.partial_cmp(b),
             (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a.partial_cmp(b),
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a.partial_cmp(b),
+            (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a.partial_cmp(b),
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a.partial_cmp(b),
             (RuntimeValue::Markdown(a, _), RuntimeValue::Markdown(b, _)) => {
                 let a = a.to_string();
@@ -134,6 +143,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::Number(n) => Cow::Owned(n.to_string()),
             Self::Bool(b) => Cow::Owned(b.to_string()),
             Self::String(s) => Cow::Borrowed(s),
+            Self::Symbol(i) => Cow::Owned(format!(":{}", i)),
             Self::Array(_) => self.string(),
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
@@ -172,6 +182,7 @@ impl RuntimeValue {
             RuntimeValue::Number(_) => "number",
             RuntimeValue::Bool(_) => "bool",
             RuntimeValue::String(_) => "string",
+            RuntimeValue::Symbol(_) => "symbol",
             RuntimeValue::Markdown(_, _) => "markdown",
             RuntimeValue::Array(_) => "array",
             RuntimeValue::None => "None",
@@ -224,9 +235,10 @@ impl RuntimeValue {
                 Some(Selector::Index(i)) => node.find_at_index(*i).is_some(),
                 None => true,
             },
-            RuntimeValue::Function(_, _, _) => true,
-            RuntimeValue::NativeFunction(_) => true,
-            RuntimeValue::Dict(_) => true,
+            RuntimeValue::Symbol(_)
+            | RuntimeValue::Function(_, _, _)
+            | RuntimeValue::NativeFunction(_)
+            | RuntimeValue::Dict(_) => true,
             RuntimeValue::None => false,
         }
     }
@@ -237,6 +249,7 @@ impl RuntimeValue {
             RuntimeValue::Number(n) => n.value() as usize,
             RuntimeValue::Bool(_) => 1,
             RuntimeValue::String(s) => s.len(),
+            RuntimeValue::Symbol(i) => i.as_str().len(),
             RuntimeValue::Array(a) => a.len(),
             RuntimeValue::Markdown(m, _) => m.value().len(),
             RuntimeValue::Dict(m) => m.len(),
@@ -289,6 +302,7 @@ impl RuntimeValue {
             Self::Number(n) => Cow::Owned(n.to_string()),
             Self::Bool(b) => Cow::Owned(b.to_string()),
             Self::String(s) => Cow::Owned(format!(r#""{}""#, s)),
+            Self::Symbol(i) => Cow::Owned(format!(":{}", i)),
             Self::Array(a) => Cow::Owned(format!(
                 "[{}]",
                 a.iter()
@@ -395,6 +409,9 @@ impl RuntimeValues {
                         }
                         RuntimeValue::String(s) => {
                             RuntimeValue::Markdown(node.clone().with_value(s), None)
+                        }
+                        RuntimeValue::Symbol(i) => {
+                            RuntimeValue::Markdown(node.clone().with_value(&i.as_str()), None)
                         }
                         RuntimeValue::Bool(b) => RuntimeValue::Markdown(
                             node.clone().with_value(b.to_string().as_str()),
