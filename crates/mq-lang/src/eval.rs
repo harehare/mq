@@ -227,6 +227,7 @@ impl Evaluator {
                 | RuntimeValue::Bool(_)
                 | RuntimeValue::Number(_)
                 | RuntimeValue::String(_) => value.to_string().into(),
+                RuntimeValue::Symbol(i) => i.as_str().into(),
                 RuntimeValue::Markdown(node, _) => node,
             })
         })
@@ -596,6 +597,7 @@ impl Evaluator {
             ast::Literal::None => RuntimeValue::None,
             ast::Literal::Bool(b) => RuntimeValue::Bool(*b),
             ast::Literal::String(s) => RuntimeValue::String(s.clone()),
+            ast::Literal::Symbol(i) => RuntimeValue::Symbol(*i),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
         }
     }
@@ -4874,6 +4876,110 @@ mod tests {
             ])
         ],
         Ok(vec![RuntimeValue::String("bar".to_string())])
+    )]
+    #[case::eq_symbol(
+        vec![RuntimeValue::Symbol(Ident::new("sym"))],
+        vec![
+            ast_call(
+                "eq",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::TRUE])
+    )]
+    #[case::eq_symbol_false(
+        vec![RuntimeValue::Symbol(Ident::new("sym1"))],
+        vec![
+            ast_call(
+                "eq",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym1")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym2")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::FALSE])
+    )]
+    #[case::lt_symbol(
+        vec![RuntimeValue::Symbol(Ident::new("a"))],
+        vec![
+            ast_call(
+                "lt",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::TRUE])
+    )]
+    #[case::lt_symbol_false(
+        vec![RuntimeValue::Symbol(Ident::new("b"))],
+        vec![
+            ast_call(
+                "lt",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::TRUE])
+    )]
+    #[case::lte_symbol_true(
+        vec![RuntimeValue::Symbol(Ident::new("a"))],
+        vec![
+            ast_call(
+                "lte",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::TRUE])
+    )]
+    #[case::gt_symbol_false(
+        vec![RuntimeValue::Symbol(Ident::new("a"))],
+        vec![
+            ast_call(
+                "gt",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::FALSE])
+    )]
+    #[case::gte_symbol_true(
+        vec![RuntimeValue::Symbol(Ident::new("b"))],
+        vec![
+            ast_call(
+                "gte",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::TRUE])
+    )]
+    #[case::gte_symbol_false(
+        vec![RuntimeValue::Symbol(Ident::new("a"))],
+        vec![
+            ast_call(
+                "gte",
+                smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
+                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
+                ],
+            ),
+        ],
+        Ok(vec![RuntimeValue::FALSE])
     )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,

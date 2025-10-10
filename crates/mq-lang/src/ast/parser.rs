@@ -2,7 +2,7 @@ use crate::arena::Arena;
 use crate::ast::node::IdentWithToken;
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
-use crate::{Shared, SharedCell, get_token, token_alloc};
+use crate::{Ident, Shared, SharedCell, get_token, token_alloc};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
@@ -249,7 +249,31 @@ impl<'a> Parser<'a> {
             TokenKind::Minus => self.parse_negate(token),
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
+            TokenKind::Colon => self.parse_symbol(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            _ => Err(ParseError::UnexpectedToken((*token).clone())),
+        }
+    }
+
+    fn parse_symbol(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        match &token.kind {
+            TokenKind::Colon => {
+                let next_token = match self.tokens.next() {
+                    Some(t) => t,
+                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                };
+                match &next_token.kind {
+                    TokenKind::Ident(name) => Ok(Shared::new(Node {
+                        token_id: token_alloc(&self.token_arena, &token),
+                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(name)))),
+                    })),
+                    TokenKind::StringLiteral(s) => Ok(Shared::new(Node {
+                        token_id: token_alloc(&self.token_arena, &token),
+                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(s)))),
+                    })),
+                    _ => Err(ParseError::UnexpectedToken((**next_token).clone())),
+                }
+            }
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
     }

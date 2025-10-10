@@ -254,6 +254,9 @@ define_builtin!(
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
             Ok(std::mem::take(std::cmp::min(s1, s2)).into())
         }
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => {
+            Ok(std::mem::take(std::cmp::min(s1, s2)).into())
+        }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -273,6 +276,9 @@ define_builtin!(
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
             Ok(std::mem::take(std::cmp::max(s1, s2)).into())
         }
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => {
+            Ok(std::mem::take(std::cmp::max(s1, s2)).into())
+        }
         [RuntimeValue::None, a] | [a, RuntimeValue::None] => Ok(std::mem::take(a)),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -288,6 +294,7 @@ define_builtin!(
     |ident, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
+        [RuntimeValue::Symbol(s)] => Ok(mq_markdown::to_html(&s.as_str()).into()),
         [RuntimeValue::Markdown(node_value, _)] => {
             Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
         }
@@ -1223,6 +1230,7 @@ define_builtin!(NE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
 
 define_builtin!(GT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
+    [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 > s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
     [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 > b2).into()),
     [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1237,6 +1245,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |_, _, args| match args.as_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 >= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
         [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 >= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1249,6 +1258,7 @@ define_builtin!(
 
 define_builtin!(LT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
+    [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 < s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
     [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 < b2).into()),
     [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1263,6 +1273,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |_, _, args| match args.as_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 <= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
         [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 <= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
