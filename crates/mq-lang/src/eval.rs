@@ -4968,6 +4968,88 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::FALSE])
     )]
+    #[case::get_dict_symbol_key(
+        vec![RuntimeValue::Dict(vec![
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+            (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
+            (Ident::new("key3"), RuntimeValue::String("value3".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("get", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("key2")))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::String("value2".to_string())])
+    )]
+    #[case::get_dict_symbol_key_not_found(
+        vec![RuntimeValue::Dict(vec![
+            (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("get", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("keyX")))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::NONE])
+    )]
+    #[case::set_dict_symbol_key(
+        vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+            (Ident::new("sym2"), RuntimeValue::String("v2".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("set", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym2")))),
+                ast_node(ast::Expr::Literal(ast::Literal::String("updated".to_string()))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+            (Ident::new("sym2"), RuntimeValue::String("updated".to_string())),
+        ].into_iter().collect())])
+    )]
+    #[case::set_dict_symbol_key_new(
+        vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("set", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym3")))),
+                ast_node(ast::Expr::Literal(ast::Literal::String("newval".to_string()))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+            (Ident::new("sym3"), RuntimeValue::String("newval".to_string())),
+        ].into_iter().collect())])
+    )]
+    #[case::del_dict_symbol_key(
+        vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+            (Ident::new("sym2"), RuntimeValue::String("v2".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("del", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("sym1")))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym2"), RuntimeValue::String("v2".to_string())),
+        ].into_iter().collect())])
+    )]
+    #[case::del_dict_symbol_key_not_found(
+        vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+        ].into_iter().collect())],
+        vec![
+            ast_call("del", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("symX")))),
+            ])
+        ],
+        Ok(vec![RuntimeValue::Dict(vec![
+            (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
+        ].into_iter().collect())])
+    )]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
