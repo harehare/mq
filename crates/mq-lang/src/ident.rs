@@ -1,7 +1,4 @@
-use std::{
-    hash::Hash,
-    sync::{LazyLock, Mutex},
-};
+use std::sync::{LazyLock, Mutex};
 
 use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 
