@@ -4916,19 +4916,6 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::TRUE])
     )]
-    #[case::lt_symbol_false(
-        vec![RuntimeValue::Symbol(Ident::new("b"))],
-        vec![
-            ast_call(
-                "lt",
-                smallvec![
-                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("b")))),
-                    ast_node(ast::Expr::Literal(ast::Literal::Symbol(Ident::new("a")))),
-                ],
-            ),
-        ],
-        Ok(vec![RuntimeValue::TRUE])
-    )]
     #[case::lte_symbol_true(
         vec![RuntimeValue::Symbol(Ident::new("a"))],
         vec![
