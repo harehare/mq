@@ -76,6 +76,11 @@ impl Variable {
                 value: value.to_string(),
                 type_field: "string".to_string(),
             },
+            RuntimeValue::Symbol(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "symbol".to_string(),
+            },
             RuntimeValue::Number(_) => Variable {
                 name: ident.to_string(),
                 value: value.to_string(),

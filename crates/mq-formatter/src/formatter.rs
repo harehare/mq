@@ -726,6 +726,12 @@ impl Formatter {
     }
 
     fn append_literal(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        // Check if this is a symbol literal (has children: colon token + identifier/string)
+        if !node.children.is_empty() {
+            self.append_symbol(node, indent_level);
+            return;
+        }
+
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Literal,
             token: Some(token),
@@ -742,6 +748,24 @@ impl Formatter {
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
                 _ => unreachable!(),
+            }
+        }
+    }
+
+    fn append_symbol(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        // Format symbol as :ident or :"string"
+        for child in &node.children {
+            if let Some(token) = &child.token {
+                match &token.kind {
+                    mq_lang::TokenKind::Colon => self.output.push(':'),
+                    mq_lang::TokenKind::Ident(s) => self.output.push_str(s),
+                    mq_lang::TokenKind::StringLiteral(s) => {
+                        let escaped = Self::escape_string(s);
+                        self.output.push_str(&format!(r#""{}""#, escaped));
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -1469,6 +1493,12 @@ end
         "let result = do step1() | step2();",
         "let result = do step1() | step2();"
     )]
+    #[case::symbol_with_ident(":foo", ":foo")]
+    #[case::symbol_with_string(r#":"bar""#, r#":"bar""#)]
+    #[case::symbol_with_spaces(":  foo", ":foo")]
+    #[case::symbol_in_array("[:foo, :bar]", "[:foo, :bar]")]
+    #[case::symbol_in_dict(r#"{:key: "value"}"#, r#"{:key: "value"}"#)]
+    #[case::symbol_comparison(":foo == :bar", ":foo == :bar")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
