@@ -900,6 +900,11 @@ impl<'a> Parser<'a> {
             }
             | Token {
                 range: _,
+                kind: TokenKind::Colon,
+                ..
+            }
+            | Token {
+                range: _,
                 kind: TokenKind::LBrace,
                 ..
             } => self.parse_expr(leading_trivia, false, false),
