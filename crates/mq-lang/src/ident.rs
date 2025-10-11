@@ -102,6 +102,16 @@ impl<'de> serde::Deserialize<'de> for Ident {
         Ok(Ident::new(&s))
     }
 }
+
+pub fn all_symbols() -> Vec<String> {
+    STRING_INTERNER
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, s)| s.to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

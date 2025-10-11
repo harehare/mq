@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
+use crate::ident::all_symbols;
 use crate::number::{self, Number};
 use crate::{Ident, Shared, SharedCell, Token, get_token};
 use base64::prelude::*;
@@ -2246,6 +2247,15 @@ define_builtin!(
     }
 );
 
+define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _| {
+    Ok(RuntimeValue::Array(
+        all_symbols()
+            .into_iter()
+            .map(|symbol| RuntimeValue::Symbol(Ident::new(&symbol)))
+            .collect(),
+    ))
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2284,6 +2294,7 @@ const fn fnv1a_hash_64(s: &str) -> u64 {
 const HASH_ABS: u64 = fnv1a_hash_64("abs");
 const HASH_ADD: u64 = fnv1a_hash_64("add");
 const HASH_AND: u64 = fnv1a_hash_64(constants::AND);
+const HASH_ALL_SYMBOLS: u64 = fnv1a_hash_64("all_symbols");
 const HASH_ARRAY: u64 = fnv1a_hash_64(constants::ARRAY);
 const HASH_ATTR: u64 = fnv1a_hash_64(constants::ATTR);
 const HASH_BASE64: u64 = fnv1a_hash_64("base64");
@@ -2398,6 +2409,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ABS => Some(&ABS),
         HASH_ADD => Some(&ADD),
         HASH_AND => Some(&AND),
+        HASH_ALL_SYMBOLS => Some(&ALL_SYMBOLS),
         HASH_ARRAY => Some(&ARRAY),
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
@@ -3588,6 +3600,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             BuiltinFunctionDoc {
                 description: "Returns the first non-None value from the two provided arguments.",
                 params: &["value1", "value2"],
+            },
+        );
+        map.insert(
+            SmolStr::new("all_symbols"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of all interned symbols.",
+                params: &[],
             },
         );
         map
