@@ -3,12 +3,12 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-use string_interner::{DefaultBackend, DefaultSymbol, StringInterner, Symbol};
+use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 
 static STRING_INTERNER: LazyLock<Mutex<StringInterner<DefaultBackend>>> =
     LazyLock::new(|| Mutex::new(StringInterner::default()));
 
-#[derive(Debug, Clone, Copy, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(DefaultSymbol);
 
 impl Ident {
@@ -38,29 +38,6 @@ impl Ident {
 impl Default for Ident {
     fn default() -> Self {
         Ident::new("")
-    }
-}
-
-impl Hash for Ident {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.to_usize().hash(state);
-    }
-}
-
-impl Ord for Ident {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.to_usize().cmp(&other.0.to_usize())
-    }
-}
-impl PartialEq for Ident {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_usize() == other.0.to_usize()
-    }
-}
-
-impl PartialOrd for Ident {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
