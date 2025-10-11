@@ -1960,7 +1960,7 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
             if let RuntimeValue::Array(arr) = entry {
                 match arr.as_slice() {
                     [RuntimeValue::Symbol(key), value] => {
-                        dict.insert(Ident::new(&key.to_string()), value.clone());
+                        dict.insert(*key, value.clone());
                         continue;
                     }
                     [key, value] => {
