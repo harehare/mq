@@ -956,6 +956,11 @@ define_builtin!(
             dict.remove(&Ident::new(key));
             Ok(RuntimeValue::Dict(dict))
         }
+        [RuntimeValue::Dict(dict), RuntimeValue::Symbol(key)] => {
+            let mut dict = std::mem::take(dict);
+            dict.remove(key);
+            Ok(RuntimeValue::Dict(dict))
+        }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -1942,7 +1947,7 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
             [RuntimeValue::Array(entries)] => match entries.as_slice() {
                 [RuntimeValue::Array(_)] if args.len() == 1 => entries.clone(),
                 [RuntimeValue::Array(inner)] => inner.clone(),
-                [RuntimeValue::String(_), ..] => {
+                [RuntimeValue::String(_), ..] | [RuntimeValue::Symbol(_), ..] => {
                     vec![entries.clone().into()]
                 }
                 _ => entries.clone(),
@@ -1978,6 +1983,10 @@ define_builtin!(
     |ident, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map
             .get_mut(&Ident::new(key))
+            .map(std::mem::take)
+            .unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map
+            .get_mut(key)
             .map(std::mem::take)
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(array
@@ -2016,6 +2025,15 @@ define_builtin!(
         ] => {
             let mut new_dict = std::mem::take(map_val);
             new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
+            Ok(RuntimeValue::Dict(new_dict))
+        }
+        [
+            RuntimeValue::Dict(map_val),
+            RuntimeValue::Symbol(key_val),
+            value_val,
+        ] => {
+            let mut new_dict = std::mem::take(map_val);
+            new_dict.insert(*key_val, std::mem::take(value_val));
             Ok(RuntimeValue::Dict(new_dict))
         }
         [
@@ -2148,6 +2166,15 @@ define_builtin!(
         ] => {
             let mut new_dict = std::mem::take(map_val);
             new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
+            Ok(RuntimeValue::Dict(new_dict))
+        }
+        [
+            RuntimeValue::Dict(map_val),
+            RuntimeValue::Symbol(key_val),
+            value_val,
+        ] => {
+            let mut new_dict = std::mem::take(map_val);
+            new_dict.insert(*key_val, std::mem::take(value_val));
             Ok(RuntimeValue::Dict(new_dict))
         }
         [a, b, c] => Err(Error::InvalidTypes(

@@ -365,10 +365,7 @@ impl<'a> Parser<'a> {
             let key_node = match &key_token.kind {
                 TokenKind::Ident(name) => Shared::new(Node {
                     token_id: token_alloc(&self.token_arena, key_token),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
-                        name,
-                        Some(Shared::clone(key_token)),
-                    ))),
+                    expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(name)))),
                 }),
                 TokenKind::StringLiteral(s) => Shared::new(Node {
                     token_id: token_alloc(&self.token_arena, key_token),
@@ -3828,7 +3825,7 @@ mod tests {
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("key", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("key")))))))),
+                                                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("key")))),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
@@ -3867,7 +3864,7 @@ mod tests {
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("a")))),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
@@ -3919,7 +3916,7 @@ mod tests {
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("x")))),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
