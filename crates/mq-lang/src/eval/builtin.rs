@@ -2256,7 +2256,7 @@ define_builtin!(INPUT, ParamNum::None, |_, _, _| {
     io::stdin()
         .read_line(&mut input)
         .map_err(|e| Error::Runtime(format!("Failed to read from stdin: {}", e)))?;
-    input = input.trim_end_matches(&['\n', '\r'][..]).to_string();
+    input.truncate(input.trim_end_matches(&['\n', '\r'][..]).len());
 
     Ok(RuntimeValue::String(input))
 });
