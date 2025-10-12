@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
+use crate::ident::all_symbols;
 use crate::number::{self, Number};
 use crate::{Ident, Shared, SharedCell, Token, get_token};
 use base64::prelude::*;
@@ -255,6 +256,9 @@ define_builtin!(
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
             Ok(std::mem::take(std::cmp::min(s1, s2)).into())
         }
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => {
+            Ok(std::mem::take(std::cmp::min(s1, s2)).into())
+        }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -274,6 +278,9 @@ define_builtin!(
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
             Ok(std::mem::take(std::cmp::max(s1, s2)).into())
         }
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => {
+            Ok(std::mem::take(std::cmp::max(s1, s2)).into())
+        }
         [RuntimeValue::None, a] | [a, RuntimeValue::None] => Ok(std::mem::take(a)),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -289,6 +296,7 @@ define_builtin!(
     |ident, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
+        [RuntimeValue::Symbol(s)] => Ok(mq_markdown::to_html(&s.as_str()).into()),
         [RuntimeValue::Markdown(node_value, _)] => {
             Ok(mq_markdown::to_html(node_value.to_string().as_str()).into())
         }
@@ -950,6 +958,11 @@ define_builtin!(
             dict.remove(&Ident::new(key));
             Ok(RuntimeValue::Dict(dict))
         }
+        [RuntimeValue::Dict(dict), RuntimeValue::Symbol(key)] => {
+            let mut dict = std::mem::take(dict);
+            dict.remove(key);
+            Ok(RuntimeValue::Dict(dict))
+        }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -1224,6 +1237,7 @@ define_builtin!(NE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
 
 define_builtin!(GT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
+    [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 > s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
     [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 > b2).into()),
     [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1238,6 +1252,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |_, _, args| match args.as_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 >= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
         [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 >= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1250,6 +1265,7 @@ define_builtin!(
 
 define_builtin!(LT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
+    [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 < s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
     [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 < b2).into()),
     [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1264,6 +1280,7 @@ define_builtin!(
     ParamNum::Fixed(2),
     |_, _, args| match args.as_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
+        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 <= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
         [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 <= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
@@ -1932,7 +1949,7 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
             [RuntimeValue::Array(entries)] => match entries.as_slice() {
                 [RuntimeValue::Array(_)] if args.len() == 1 => entries.clone(),
                 [RuntimeValue::Array(inner)] => inner.clone(),
-                [RuntimeValue::String(_), ..] => {
+                [RuntimeValue::String(_), ..] | [RuntimeValue::Symbol(_), ..] => {
                     vec![entries.clone().into()]
                 }
                 _ => entries.clone(),
@@ -1942,10 +1959,16 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
 
         for entry in entries {
             if let RuntimeValue::Array(arr) = entry {
-                if arr.len() >= 2 {
-                    dict.insert(Ident::new(&arr[0].to_string()), arr[1].clone());
-                } else {
-                    return Err(Error::InvalidTypes("dict".to_string(), arr.clone()));
+                match arr.as_slice() {
+                    [RuntimeValue::Symbol(key), value] => {
+                        dict.insert(*key, value.clone());
+                        continue;
+                    }
+                    [key, value] => {
+                        dict.insert(Ident::new(&key.to_string()), value.clone());
+                        continue;
+                    }
+                    a => return Err(Error::InvalidTypes("dict".to_string(), a.to_vec())),
                 }
             } else {
                 return Err(Error::InvalidTypes("dict".to_string(), vec![entry.clone()]));
@@ -1962,6 +1985,10 @@ define_builtin!(
     |ident, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map
             .get_mut(&Ident::new(key))
+            .map(std::mem::take)
+            .unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map
+            .get_mut(key)
             .map(std::mem::take)
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(array
@@ -2000,6 +2027,15 @@ define_builtin!(
         ] => {
             let mut new_dict = std::mem::take(map_val);
             new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
+            Ok(RuntimeValue::Dict(new_dict))
+        }
+        [
+            RuntimeValue::Dict(map_val),
+            RuntimeValue::Symbol(key_val),
+            value_val,
+        ] => {
+            let mut new_dict = std::mem::take(map_val);
+            new_dict.insert(*key_val, std::mem::take(value_val));
             Ok(RuntimeValue::Dict(new_dict))
         }
         [
@@ -2134,6 +2170,15 @@ define_builtin!(
             new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
             Ok(RuntimeValue::Dict(new_dict))
         }
+        [
+            RuntimeValue::Dict(map_val),
+            RuntimeValue::Symbol(key_val),
+            value_val,
+        ] => {
+            let mut new_dict = std::mem::take(map_val);
+            new_dict.insert(*key_val, std::mem::take(value_val));
+            Ok(RuntimeValue::Dict(new_dict))
+        }
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
@@ -2216,6 +2261,15 @@ define_builtin!(INPUT, ParamNum::None, |_, _, _| {
     Ok(RuntimeValue::String(input))
 });
 
+define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _| {
+    Ok(RuntimeValue::Array(
+        all_symbols()
+            .into_iter()
+            .map(|symbol| RuntimeValue::Symbol(Ident::new(&symbol)))
+            .collect(),
+    ))
+});
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2254,6 +2308,7 @@ const fn fnv1a_hash_64(s: &str) -> u64 {
 const HASH_ABS: u64 = fnv1a_hash_64("abs");
 const HASH_ADD: u64 = fnv1a_hash_64("add");
 const HASH_AND: u64 = fnv1a_hash_64(constants::AND);
+const HASH_ALL_SYMBOLS: u64 = fnv1a_hash_64("all_symbols");
 const HASH_ARRAY: u64 = fnv1a_hash_64(constants::ARRAY);
 const HASH_ATTR: u64 = fnv1a_hash_64(constants::ATTR);
 const HASH_BASE64: u64 = fnv1a_hash_64("base64");
@@ -2369,6 +2424,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ABS => Some(&ABS),
         HASH_ADD => Some(&ADD),
         HASH_AND => Some(&AND),
+        HASH_ALL_SYMBOLS => Some(&ALL_SYMBOLS),
         HASH_ARRAY => Some(&ARRAY),
         HASH_ATTR => Some(&ATTR),
         HASH_BASE64 => Some(&BASE64),
@@ -3570,6 +3626,13 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             },
         );
 
+        map.insert(
+            SmolStr::new("all_symbols"),
+            BuiltinFunctionDoc {
+                description: "Returns an array of all interned symbols.",
+                params: &[],
+            },
+        );
         map
     },
 );

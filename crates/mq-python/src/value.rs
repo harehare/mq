@@ -118,6 +118,10 @@ impl From<mq_lang::RuntimeValue> for MQValue {
                 value: s,
                 markdown_type: MarkdownType::Text,
             },
+            mq_lang::RuntimeValue::Symbol(i) => MQValue::Markdown {
+                value: i.as_str(),
+                markdown_type: MarkdownType::Text,
+            },
             mq_lang::RuntimeValue::Number(n) => MQValue::Markdown {
                 value: n.to_string(),
                 markdown_type: MarkdownType::Text,

@@ -482,20 +482,36 @@ impl Hir {
             ..
         } = &**node
         {
-            self.add_symbol(Symbol {
-                value: node.name(),
-                kind: match &node.token.clone().unwrap().kind {
-                    mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
-                    mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
-                    mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
-                    mq_lang::TokenKind::None => SymbolKind::None,
-                    _ => unreachable!(),
-                },
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
+            // Check if this is a symbol literal (has children: colon + identifier/string)
+            if !node.children.is_empty() {
+                // Symbol literal: extract the symbol name from the second child
+                if let Some(symbol_child) = node.children.get(1) {
+                    self.add_symbol(Symbol {
+                        value: symbol_child.name(),
+                        kind: SymbolKind::Symbol,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+            } else {
+                // Regular literal with token
+                self.add_symbol(Symbol {
+                    value: node.name(),
+                    kind: match &node.token.clone().unwrap().kind {
+                        mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
+                        mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
+                        mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
+                        mq_lang::TokenKind::None => SymbolKind::None,
+                        _ => unreachable!(),
+                    },
+                    source: SourceInfo::new(Some(source_id), Some(node.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                });
+            }
         }
     }
 
@@ -1305,6 +1321,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::block("do \"hello\" end", "hello", SymbolKind::String)]
     #[case::try_("try: 1 catch: 2", "try", SymbolKind::Try)]
     #[case::catch_("try: 1 catch: 2", "catch", SymbolKind::Catch)]
+    #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
+    #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,

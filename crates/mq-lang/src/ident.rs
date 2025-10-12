@@ -32,6 +32,12 @@ impl Ident {
     }
 }
 
+impl Default for Ident {
+    fn default() -> Self {
+        Ident::new("")
+    }
+}
+
 impl From<&str> for Ident {
     fn from(s: &str) -> Self {
         Self::new(s)
@@ -70,6 +76,16 @@ impl<'de> serde::Deserialize<'de> for Ident {
         Ok(Ident::new(&s))
     }
 }
+
+pub fn all_symbols() -> Vec<String> {
+    STRING_INTERNER
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, s)| s.to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
