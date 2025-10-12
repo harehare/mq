@@ -64,11 +64,11 @@
       {
         "language": "mq",
         "scopeName": "source.mq",
-        "path": "./grammars/mq.tmLanguage.json"
+        "path": "./syntaxes/mq.tmLanguage.json"
       },
       {
         "scopeName": "markdown.mq.codeblock",
-        "path": "./grammars/mq.markdown.tmLanguage.json",
+        "path": "./syntaxes/mq.markdown.tmLanguage.json",
         "injectTo": [
           "text.html.markdown"
         ],
