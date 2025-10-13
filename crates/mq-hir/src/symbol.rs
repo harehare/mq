@@ -37,6 +37,7 @@ pub enum SymbolKind {
     If,
     Include(SourceId),
     Keyword,
+    Match,
     None,
     Number,
     Parameter,

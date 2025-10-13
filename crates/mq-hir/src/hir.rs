@@ -369,6 +369,9 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Match => {
+                self.add_match_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
@@ -1215,6 +1218,32 @@ impl Hir {
         }
     }
 
+    fn add_match_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Match,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Match,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+    }
+
     fn add_keyword(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -1323,6 +1352,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::catch_("try: 1 catch: 2", "catch", SymbolKind::Catch)]
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
+    #[case::pattern_match("match (v): | [1,2,3]: 1", "match", SymbolKind::Match)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
