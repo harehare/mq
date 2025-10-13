@@ -10,6 +10,7 @@ use regex_lite::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use smol_str::SmolStr;
 use std::collections::BTreeMap;
+use std::io;
 use std::process::exit;
 use std::{
     sync::{LazyLock, Mutex},
@@ -2213,7 +2214,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(NAN, ParamNum::Fixed(0), |_, _, _| {
+define_builtin!(NAN, ParamNum::None, |_, _, _| {
     Ok(RuntimeValue::Number(number::NAN))
 });
 
@@ -2231,7 +2232,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(INFINITE, ParamNum::Fixed(0), |_, _, _| {
+define_builtin!(INFINITE, ParamNum::None, |_, _, _| {
     Ok(RuntimeValue::Number(number::INFINITE))
 });
 
@@ -2249,6 +2250,16 @@ define_builtin!(
         _ => unreachable!(),
     }
 );
+
+define_builtin!(INPUT, ParamNum::None, |_, _, _| {
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| Error::Runtime(format!("Failed to read from stdin: {}", e)))?;
+    input.truncate(input.trim_end_matches(&['\n', '\r'][..]).len());
+
+    Ok(RuntimeValue::String(input))
+});
 
 define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _| {
     Ok(RuntimeValue::Array(
@@ -2330,6 +2341,7 @@ const HASH_INCREASE_HEADER_LEVEL: u64 = fnv1a_hash_64("increase_header_level");
 const HASH_INDEX: u64 = fnv1a_hash_64("index");
 const HASH_INSERT: u64 = fnv1a_hash_64("insert");
 const HASH_INFINITE: u64 = fnv1a_hash_64("infinite");
+const HASH_INPUT: u64 = fnv1a_hash_64("input");
 const HASH_IS_NAN: u64 = fnv1a_hash_64("is_nan");
 const HASH_JOIN: u64 = fnv1a_hash_64("join");
 const HASH_KEYS: u64 = fnv1a_hash_64("keys");
@@ -2446,6 +2458,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_INFINITE => Some(&INFINITE),
         HASH_IS_NAN => Some(&IS_NAN),
         HASH_INSERT => Some(&INSERT),
+        HASH_INPUT => Some(&INPUT),
         HASH_JOIN => Some(&JOIN),
         HASH_KEYS => Some(&KEYS),
         HASH_LEN => Some(&LEN),
@@ -3605,6 +3618,14 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
                 params: &["value1", "value2"],
             },
         );
+        map.insert(
+            SmolStr::new("input"),
+            BuiltinFunctionDoc {
+                description: "Reads a line from standard input and returns it as a string.",
+                params: &[],
+            },
+        );
+
         map.insert(
             SmolStr::new("all_symbols"),
             BuiltinFunctionDoc {
