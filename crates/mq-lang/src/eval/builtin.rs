@@ -448,7 +448,7 @@ define_builtin!(STARTS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(MATCH, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_re(s, pattern),
         [
@@ -2348,7 +2348,7 @@ const HASH_KEYS: u64 = fnv1a_hash_64("keys");
 const HASH_LEN: u64 = fnv1a_hash_64("len");
 const HASH_LT: u64 = fnv1a_hash_64(constants::LT);
 const HASH_LTE: u64 = fnv1a_hash_64(constants::LTE);
-const HASH_MATCH: u64 = fnv1a_hash_64("match");
+const HASH_REGEX_MATCH: u64 = fnv1a_hash_64("regex_match");
 const HASH_MAX: u64 = fnv1a_hash_64("max");
 const HASH_MIN: u64 = fnv1a_hash_64("min");
 const HASH_NAN: u64 = fnv1a_hash_64("nan");
@@ -2464,7 +2464,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_LEN => Some(&LEN),
         HASH_LT => Some(&LT),
         HASH_LTE => Some(&LTE),
-        HASH_MATCH => Some(&MATCH),
+        HASH_REGEX_MATCH => Some(&REGEX_MATCH),
         HASH_MAX => Some(&MAX),
         HASH_MIN => Some(&MIN),
         HASH_NEGATE => Some(&NEGATE),
@@ -3051,7 +3051,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             },
         );
         map.insert(
-            SmolStr::new("match"),
+            SmolStr::new("regex_match"),
             BuiltinFunctionDoc {
                 description: "Finds all matches of the given pattern in the string.",
                 params: &["string", "pattern"],

@@ -44,7 +44,7 @@ def _parse_json_value(input):
   def _parse_number(input):
     let input = trim(input)
     | let number_pattern = "^(-?[0-9]+(?:\\.[0-9]+)?)"
-    | let match_result = match(input, number_pattern)
+    | let match_result = regex_match(input, number_pattern)
     | if (is_empty(match_result)):
         [None, input]
       else:

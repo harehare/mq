@@ -182,7 +182,7 @@ end
 # Filters candidates by minimum fuzzy match score using Jaro-Winkler.
 def fuzzy_filter(candidates, query, threshold):
   let matches = fuzzy_match(candidates, query)
-  | filter(matches, fn(match): match["score"] >= threshold;)
+  | filter(matches, fn(m): m["score"] >= threshold;)
 end
 
 # Finds the best fuzzy match from candidates.

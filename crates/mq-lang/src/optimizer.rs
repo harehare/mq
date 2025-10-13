@@ -173,6 +173,17 @@ impl Optimizer {
                 Self::collect_used_identifiers_in_node(try_node, used_idents);
                 Self::collect_used_identifiers_in_node(catch_node, used_idents);
             }
+            ast::Expr::Match(value, arms) => {
+                Self::collect_used_identifiers_in_node(value, used_idents);
+                for arm in arms {
+                    // Collect identifiers from guard
+                    if let Some(guard) = &arm.guard {
+                        Self::collect_used_identifiers_in_node(guard, used_idents);
+                    }
+                    // Collect identifiers from body
+                    Self::collect_used_identifiers_in_node(&arm.body, used_idents);
+                }
+            }
             ast::Expr::Literal(_)
             | ast::Expr::Selector(_)
             | ast::Expr::Nodes

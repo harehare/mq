@@ -225,6 +225,7 @@ define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
 define_keyword_parser!(let_, "let", TokenKind::Let);
+define_keyword_parser!(match_, "match", TokenKind::Match);
 define_token_parser!(asterisk, "*", TokenKind::Asterisk);
 define_token_parser!(minus, "-", TokenKind::Minus);
 define_token_parser!(slash, "/", TokenKind::Slash);
@@ -275,8 +276,8 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        nodes, def, do_, let_, self_, while_, until, if_, elif, else_, end, none, include, foreach,
-        fn_, break_, continue_, try_, catch_,
+        nodes, def, do_, let_, match_, self_, while_, until, if_, elif, else_, end, none, include,
+        foreach, fn_, break_, continue_, try_, catch_,
     ))
     .parse(input)
 }
