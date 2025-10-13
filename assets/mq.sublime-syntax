@@ -1,0 +1,91 @@
+%YAML 1.2
+---
+name: mq
+file_extensions:
+  - mq
+scope: source.mq
+
+contexts:
+  main:
+    - include: comments
+    - include: keywords
+    - include: symbols
+    - include: strings-interpolated
+    - include: strings
+    - include: numbers
+    - include: functions
+    - include: variables
+    - include: selectors
+
+  comments:
+    - match: '#[^\n]*'
+      scope: comment.line.number-sign.mq
+
+  keywords:
+    - match: '\b(def|do|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include)\b'
+      scope: keyword.control.mq
+    - match: '(->|=|\||:|;|\?|!|\+|\-|\*|/|%|<|>|<=|>=|==|!=|&&)'
+      scope: keyword.operator.mq
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.mq
+    - match: '\b(None)\b'
+      scope: constant.language.none.mq
+
+  symbols:
+    - match: ":[a-zA-Z_][a-zA-Z0-9_]*"
+      scope: constant.other.symbol.mq
+
+  selectors:
+    - match: '\.([a-zA-Z_\[\]][a-zA-Z0-9_\[\]]*)'
+      scope: entity.name.function.selector.mq
+
+  functions:
+    - match: '\b(def)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+      scope: entity.name.function.mq
+    - match: '\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+      scope: entity.name.function.call.mq
+
+  variables:
+    - match: '\b(let)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*='
+      scope: variable.declaration.mq
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.mq
+      push: string-content
+
+  string-content:
+    - meta_scope: string.quoted.double.mq
+    - match: '\\.'
+      scope: constant.character.escape.mq
+    - match: '"'
+      scope: punctuation.definition.string.end.mq
+      pop: true
+
+  strings-interpolated:
+    - match: 's"'
+      scope: punctuation.definition.string.begin.mq
+      push: string-interpolated-content
+
+  string-interpolated-content:
+    - meta_scope: string.quoted.double.interpolated.mq
+    - match: '\$\{'
+      scope: punctuation.section.interpolation.begin.mq
+      push: interpolation-content
+    - match: '\\.'
+      scope: constant.character.escape.mq
+    - match: '"'
+      scope: punctuation.definition.string.end.mq
+      pop: true
+
+  interpolation-content:
+    - meta_scope: variable.interpolated.mq
+    - match: "[a-zA-Z_][a-zA-Z0-9_]*"
+      scope: variable.other.interpolated.mq
+    - match: '\}'
+      scope: punctuation.section.interpolation.end.mq
+      pop: true
+
+  numbers:
+    - match: '\b[0-9]+\b'
+      scope: constant.numeric.mq
