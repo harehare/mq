@@ -57,7 +57,7 @@ impl Hir {
             SymbolKind::Function(_) => 0,
             SymbolKind::Variable => 1,
             SymbolKind::Parameter => 2,
-            SymbolKind::PatternVariable => 2, // Same priority as Parameter
+            SymbolKind::PatternVariable => 2,
             SymbolKind::Argument => 3,
             _ => 4,
         }
@@ -98,7 +98,7 @@ impl Hir {
         match symbol_kind {
             SymbolKind::Argument => 0,
             SymbolKind::Parameter => 1,
-            SymbolKind::PatternVariable => 1, // Same priority as Parameter
+            SymbolKind::PatternVariable => 1,
             SymbolKind::Variable => 2,
             SymbolKind::Function(_) => 3,
             _ => 4,
