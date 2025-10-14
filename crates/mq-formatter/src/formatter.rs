@@ -869,11 +869,9 @@ impl Formatter {
                         }
                         return;
                     } else if matches!(token.kind, mq_lang::TokenKind::LBracket) {
-                        // Array pattern
                         self.format_array_pattern(node);
                         return;
                     } else if matches!(token.kind, mq_lang::TokenKind::LBrace) {
-                        // Dict pattern
                         self.format_dict_pattern(node);
                         return;
                     }
@@ -892,26 +890,17 @@ impl Formatter {
                 mq_lang::CstNodeKind::Token => {
                     if let Some(token) = &child.token {
                         match &token.kind {
-                            mq_lang::TokenKind::LBracket
-                            | mq_lang::TokenKind::RBracket
-                            | mq_lang::TokenKind::RangeOp => {
-                                self.output.push_str(&token.to_string())
-                            }
                             mq_lang::TokenKind::Comma => self.output.push_str(", "),
-                            _ => {}
+                            _ => self.output.push_str(&token.to_string()),
                         }
                     }
                 }
-                mq_lang::CstNodeKind::Pattern => {
-                    // Output the pattern's identifier/value directly
-                    if let Some(token) = &child.token {
-                        if let mq_lang::TokenKind::Ident(name) = &token.kind {
-                            self.output.push_str(name);
-                        }
-                    }
-                }
-                _ => {}
+                _ => self.output.push_str(&child.to_string()),
             }
+
+            child.children.iter().for_each(|gc| {
+                self.format_node(mq_lang::Shared::clone(gc), 0);
+            });
         }
     }
 
@@ -924,11 +913,6 @@ impl Formatter {
 
             if let Some(token) = &child.token {
                 match &token.kind {
-                    mq_lang::TokenKind::LBrace | mq_lang::TokenKind::RBrace => {
-                        self.output.push_str(&token.to_string());
-                        i += 1;
-                        continue;
-                    }
                     mq_lang::TokenKind::Comma => {
                         self.output.push_str(", ");
                         i += 1;
@@ -958,9 +942,18 @@ impl Formatter {
                             }
                         }
                     }
-                    _ => {}
+                    _ => {
+                        self.output.push_str(&token.to_string());
+                        i += 1;
+                        continue;
+                    }
                 }
             }
+
+            child.children.iter().for_each(|gc| {
+                self.format_node(mq_lang::Shared::clone(gc), 0);
+            });
+
             i += 1;
         }
     }
@@ -1809,6 +1802,14 @@ end"#
     #[case::match_with_array_pattern(
         "match(arr): | [a, b]: add(a, b) | _: 0 end",
         "match (arr): | [a, b]: add(a, b) | _: 0 end"
+    )]
+    #[case::match_with_array_pattern_with_literal(
+        "match(arr): | [1, 2]: add(1, 2) | _: 0 end",
+        "match (arr): | [1, 2]: add(1, 2) | _: 0 end"
+    )]
+    #[case::match_with_array_pattern_with_symbol(
+        "match(arr): | [:string, :string]: add(1, 2) | _: 0 end",
+        "match (arr): | [:string, :string]: add(1, 2) | _: 0 end"
     )]
     #[case::match_with_dict_pattern(
         "match(obj): | {name: n}: n | _: \"unknown\" end",

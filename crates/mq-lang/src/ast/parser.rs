@@ -1134,7 +1134,9 @@ impl<'a> Parser<'a> {
 
         match &token.kind {
             // Wildcard pattern: _
-            TokenKind::Ident(name) if name == "_" => Ok(Pattern::Wildcard),
+            TokenKind::Ident(name) if name == constants::PATTERN_MATCH_WILDCARD => {
+                Ok(Pattern::Wildcard)
+            }
             // Type pattern: :string, :number, etc.
             TokenKind::Colon => {
                 let type_token = match self.tokens.next() {
