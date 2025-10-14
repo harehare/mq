@@ -93,6 +93,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/reference/pattern_matching</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference/operators</loc>
     <priority>1.0</priority>
   </url>
