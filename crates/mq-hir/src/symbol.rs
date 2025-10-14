@@ -78,6 +78,11 @@ impl Symbol {
     }
 
     #[inline(always)]
+    pub fn is_pattern_variable(&self) -> bool {
+        matches!(self.kind, SymbolKind::PatternVariable)
+    }
+
+    #[inline(always)]
     pub fn is_internal_function(&self) -> bool {
         if matches!(self.kind, SymbolKind::Function(_)) {
             self.value
