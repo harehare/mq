@@ -19,6 +19,7 @@ pub enum ScopeKind {
     Let(SymbolId),
     Block(SymbolId),
     Loop(SymbolId),
+    MatchArm(SymbolId),
 }
 
 impl Scope {
@@ -41,6 +42,7 @@ impl Scope {
             ScopeKind::Let(symbol_id) => Some(symbol_id),
             ScopeKind::Block(symbol_id) => Some(symbol_id),
             ScopeKind::Loop(symbol_id) => Some(symbol_id),
+            ScopeKind::MatchArm(symbol_id) => Some(symbol_id),
             ScopeKind::Module(_) => None,
         }
     }
