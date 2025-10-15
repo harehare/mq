@@ -11,7 +11,7 @@ mq-lang = {workspace = true, features = ["debugger"]}
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = {version = "1.47", features = ["full"]}
+tokio = {version = "1.48", features = ["full"]}
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features = ["env-filter"]}
 
