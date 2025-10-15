@@ -52,6 +52,7 @@ Available type patterns:
 - `:array` - Matches array values
 - `:dict` - Matches dictionary values
 - `:bool` - Matches boolean values
+- `:markdown` - Matches markdown values
 - `:none` - Matches none value
 
 ## Array Patterns
