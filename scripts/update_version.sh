@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export MQ_VERSION="0.3.0"
+export MQ_VERSION="0.4.0"
 export README="../README.md"
 export INSTALL_DOC="../docs/books/src/start/install.md"
 
@@ -30,8 +30,17 @@ mq -I text 'include "update_version" | update_py_version()' "../crates/mq-python
 mq -U --args VERSION $MQ_VERSION '.code | select(contains("docker")) | update(s"$$ docker run --rm ghcr.io/harehare/mq:${VERSION}")' $README > README.md.tmp \
   && mv README.md.tmp $README
 
+mq -U --args VERSION $MQ_VERSION '.code | select(contains("docker")) | update(s"$$ docker run --rm ghcr.io/harehare/mq:${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
+  && mv INSTALL_DOC.md.tmp $INSTALL_DOC
+
 mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git https://github.com/harehare/mq.git mq-cli")) | gsub("--tag.+", s"--tag v${VERSION}")' $README > README.md.tmp \
   && mv README.md.tmp $README
 
+mq -U --args VERSION $MQ_VERSION '.code | select(contains("curl -L https://github.com/harehare/mq/releases/download/")) | gsub("v0.2.8", s"v${VERSION}")' $README > README.md.tmp \
+  && mv README.md.tmp $README
+
 mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git https://github.com/harehare/mq.git mq-cli")) | gsub("--tag.+", s"--tag v${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
+  && mv INSTALL_DOC.md.tmp $INSTALL_DOC
+
+mq -U --args VERSION $MQ_VERSION '.code | select(contains("https://github.com/harehare/mq/releases/download/")) | gsub("v0.3.0", s"v${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
   && mv INSTALL_DOC.md.tmp $INSTALL_DOC

@@ -20,7 +20,7 @@ license-file = "LICENSE"
 name = "mq-cli"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.3.0"
+version = "0.4.0"
 
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
