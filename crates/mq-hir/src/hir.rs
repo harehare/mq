@@ -369,6 +369,15 @@ impl Hir {
             mq_lang::CstNodeKind::Dict => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Match => {
+                self.add_match_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::MatchArm => {
+                self.add_match_arm_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Pattern => {
+                self.add_pattern_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
@@ -1215,6 +1224,47 @@ impl Hir {
         }
     }
 
+    fn add_match_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Match,
+            ..
+        } = &**node
+        {
+            // Create Match symbol
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Match,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let children = node.children_without_token();
+
+            // Process the value expression (first child: match (value))
+            if let Some(value_expr) = children.first() {
+                // Skip MatchArm nodes when looking for the value expression
+                if !matches!(value_expr.kind, mq_lang::CstNodeKind::MatchArm) {
+                    self.add_expr(value_expr, source_id, scope_id, Some(symbol_id));
+                }
+            }
+
+            // Process each MatchArm
+            for child in children.iter() {
+                if matches!(child.kind, mq_lang::CstNodeKind::MatchArm) {
+                    self.add_match_arm_expr(child, source_id, scope_id, Some(symbol_id));
+                }
+            }
+        }
+    }
+
     fn add_keyword(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -1230,6 +1280,129 @@ impl Hir {
             doc: node.comments(),
             parent,
         });
+    }
+
+    fn add_pattern_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Pattern,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Pattern,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Extract pattern variables and add them to the scope
+            self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id));
+
+            // Process nested patterns (for array, dict patterns)
+            for child in node.children_without_token() {
+                if matches!(child.kind, mq_lang::CstNodeKind::Pattern) {
+                    self.add_pattern_expr(&child, source_id, scope_id, Some(symbol_id));
+                } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
+                    // Ident nodes in patterns are part of symbol literals (:foo -> foo)
+                    // They should be registered as Symbol, not Ref
+                    self.add_symbol(Symbol {
+                        value: child.name(),
+                        kind: SymbolKind::Symbol,
+                        source: SourceInfo::new(Some(source_id), Some(child.range())),
+                        scope: scope_id,
+                        doc: child.comments(),
+                        parent: Some(symbol_id),
+                    });
+                } else {
+                    // Process other expressions in the pattern (e.g., literals, guard conditions)
+                    self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+                }
+            }
+        }
+    }
+
+    fn add_match_arm_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::MatchArm,
+            ..
+        } = &**node
+        {
+            // Create MatchArm symbol
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::MatchArm,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Create a dedicated scope for this MatchArm
+            // Pattern variables will be visible in this scope
+            let arm_scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::MatchArm(symbol_id),
+                Some(scope_id),
+            ));
+
+            let children = node.children_without_token();
+
+            // Process pattern (first child after the pipe token)
+            // The pattern introduces variables into the arm scope
+            if let Some(pattern) = children.first() {
+                if matches!(pattern.kind, mq_lang::CstNodeKind::Pattern) {
+                    self.add_pattern_expr(pattern, source_id, arm_scope_id, Some(symbol_id));
+                }
+            }
+
+            // Process remaining children (guard and body)
+            // These execute in the arm scope where pattern variables are visible
+            for child in children.iter().skip(1) {
+                self.add_expr(child, source_id, arm_scope_id, Some(symbol_id));
+            }
+        }
+    }
+
+    fn extract_pattern_variables(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let Some(token) = &node.token {
+            match &token.kind {
+                // Identifier pattern: introduces a variable binding
+                mq_lang::TokenKind::Ident(name) if name != "_" => {
+                    // Skip wildcards
+                    self.add_symbol(Symbol {
+                        value: Some(name.clone()),
+                        kind: SymbolKind::PatternVariable,
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                _ => {
+                    // For other token types (literals, wildcards), no variable is introduced
+                }
+            }
+        }
     }
 }
 
@@ -1323,6 +1496,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::catch_("try: 1 catch: 2", "catch", SymbolKind::Catch)]
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
+    #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
+    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
@@ -1335,7 +1510,14 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let symbol = hir
             .symbols
             .iter()
-            .find(|(_, symbol)| symbol.value == Some(expected_name.into()))
+            .find(|(_, symbol)| {
+                symbol.value == Some(expected_name.into())
+                    && match (&symbol.kind, &expected_kind) {
+                        (SymbolKind::Function(_), SymbolKind::Function(_)) => true,
+                        (SymbolKind::Include(_), SymbolKind::Include(_)) => true,
+                        (kind, expected) => kind == expected,
+                    }
+            })
             .unwrap()
             .1;
 
@@ -1519,6 +1701,223 @@ end"#;
         assert_eq!(resolved_symbol.kind, SymbolKind::Parameter);
         assert_eq!(resolved_symbol.value.as_deref(), Some("x"));
 
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_match_expression_basic() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match (1): | 1: "one" | _: "other" end"#;
+        hir.add_code(None, code);
+
+        // Check for Match symbol
+        let match_symbol = hir
+            .symbols()
+            .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Match));
+        assert!(match_symbol.is_some(), "Should have a Match symbol");
+
+        // Check for MatchArm symbols
+        let match_arms: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::MatchArm))
+            .collect();
+        assert_eq!(match_arms.len(), 2, "Should have 2 MatchArm symbols");
+
+        // Check for Pattern symbols
+        let patterns: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern))
+            .collect();
+        assert_eq!(patterns.len(), 2, "Should have 2 Pattern symbols");
+    }
+
+    #[test]
+    fn test_match_pattern_variable_scope() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match (10): | x: x + 1 end"#;
+        hir.add_code(None, code);
+
+        // Check for PatternVariable
+        let pattern_var = hir.symbols().find(|(_, symbol)| {
+            symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x")
+        });
+        assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
+
+        // Check for Ref to 'x' in the body
+        let x_ref = hir.symbols().find(|(_, symbol)| {
+            symbol.kind == SymbolKind::Ref && symbol.value.as_deref() == Some("x")
+        });
+        assert!(x_ref.is_some(), "Should have a Ref to 'x'");
+
+        // Check that MatchArm has its own scope
+        let match_arm_scopes: Vec<_> = hir
+            .scopes()
+            .filter(|(_, scope)| matches!(scope.kind, ScopeKind::MatchArm(_)))
+            .collect();
+        assert_eq!(match_arm_scopes.len(), 1, "Should have 1 MatchArm scope");
+    }
+
+    #[test]
+    fn test_match_array_pattern() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match ([1,2,3]): | [a, b, c]: a + b + c end"#;
+        hir.add_code(None, code);
+
+        // Check for PatternVariables
+        let pattern_vars: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .collect();
+        assert_eq!(
+            pattern_vars.len(),
+            3,
+            "Should have 3 PatternVariables (a, b, c)"
+        );
+
+        // Verify the names
+        let names: Vec<_> = pattern_vars
+            .iter()
+            .map(|(_, symbol)| symbol.value.as_ref().unwrap().as_str())
+            .collect();
+        assert!(names.contains(&"a"));
+        assert!(names.contains(&"b"));
+        assert!(names.contains(&"c"));
+    }
+
+    #[test]
+    fn test_match_wildcard_pattern() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match (5): | _: "anything" end"#;
+        hir.add_code(None, code);
+
+        // Wildcard should NOT create a PatternVariable
+        let pattern_vars: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .collect();
+        assert_eq!(
+            pattern_vars.len(),
+            0,
+            "Wildcard should not create PatternVariables"
+        );
+
+        // But should still have a Pattern symbol
+        let patterns: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Pattern))
+            .collect();
+        assert!(!patterns.is_empty(), "Should have Pattern symbols");
+    }
+
+    #[test]
+    fn test_match_pattern_variable_resolution() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match (10): | x: x + 1 end"#;
+        hir.add_code(None, code);
+
+        // Find the PatternVariable 'x'
+        let pattern_var = hir
+            .symbols()
+            .find(|(_, symbol)| {
+                symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x")
+            })
+            .map(|(id, _)| id);
+        assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
+
+        // Find the Ref to 'x' in the body
+        let x_ref = hir
+            .symbols()
+            .find(|(_, symbol)| {
+                symbol.kind == SymbolKind::Ref && symbol.value.as_deref() == Some("x")
+            })
+            .map(|(id, _)| id);
+        assert!(x_ref.is_some(), "Should have a Ref to 'x'");
+
+        // Verify that the Ref resolves to the PatternVariable
+        let resolved = hir.resolve_reference_symbol(x_ref.unwrap());
+        assert!(resolved.is_some(), "Ref 'x' should resolve");
+        assert_eq!(
+            resolved.unwrap(),
+            pattern_var.unwrap(),
+            "Ref 'x' should resolve to PatternVariable 'x'"
+        );
+
+        // Verify no unresolved errors
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_match_array_pattern_variable_resolution() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match ([1,2,3]): | [a, b, c]: a + b + c end"#;
+        hir.add_code(None, code);
+
+        // Find all PatternVariables
+        let pattern_vars: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
+            .map(|(id, symbol)| (id, symbol.value.clone()))
+            .collect();
+        assert_eq!(pattern_vars.len(), 3, "Should have 3 PatternVariables");
+
+        // Find all Refs in the body
+        let refs: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| symbol.kind == SymbolKind::Ref)
+            .map(|(id, symbol)| (id, symbol.value.clone()))
+            .collect();
+
+        // Each Ref should resolve to a PatternVariable
+        for (ref_id, ref_name) in refs {
+            let resolved = hir.resolve_reference_symbol(ref_id);
+            assert!(resolved.is_some(), "Ref should resolve");
+
+            let resolved_symbol = &hir.symbols[resolved.unwrap()];
+            assert_eq!(
+                resolved_symbol.kind,
+                SymbolKind::PatternVariable,
+                "Should resolve to PatternVariable"
+            );
+            assert_eq!(
+                resolved_symbol.value, ref_name,
+                "Resolved variable name should match"
+            );
+        }
+
+        // Verify no unresolved errors
+        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
+    }
+
+    #[test]
+    fn test_match_array_pattern_with_symbols() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+
+        let code = r#"match ([:foo, :bar]): | [:foo, :bar]: "matched" end"#;
+        hir.add_code(None, code);
+
+        // Check for Symbol literals
+        let symbols: Vec<_> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Symbol))
+            .collect();
+
+        // Should have 4 symbol literals (2 in match value, 2 in pattern)
+        assert_eq!(symbols.len(), 4, "Should have 4 Symbol literals");
+
+        // Verify no unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 }

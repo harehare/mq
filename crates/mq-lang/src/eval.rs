@@ -12,7 +12,7 @@ use crate::{
     arena::Arena,
     ast::{
         TokenId,
-        node::{self as ast, Branches},
+        node::{self as ast, Branches, MatchArms, Pattern},
     },
     error::InnerError,
     get_token,
@@ -577,6 +577,9 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Match(value_node, arms) => {
+                self.eval_match(runtime_value, value_node, arms, env)
+            }
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
         }
     }
@@ -776,6 +779,168 @@ impl Evaluator {
         }
 
         Ok(RuntimeValue::NONE)
+    }
+
+    #[inline(always)]
+    fn eval_match(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        value_node: &Shared<ast::Node>,
+        arms: &MatchArms,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        let match_value = self.eval_expr(runtime_value, value_node, env)?;
+
+        // Try each arm in order
+        for arm in arms {
+            // Check if the pattern matches
+            if let Some(bindings) = self.match_pattern(&match_value, &arm.pattern)? {
+                // If there's a guard, evaluate it
+                if let Some(guard_node) = &arm.guard {
+                    // Create a new environment with pattern bindings
+                    let guard_env =
+                        Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                    for (name, value) in bindings.iter() {
+                        define(&guard_env, *name, value.clone());
+                    }
+
+                    let guard_result = self.eval_expr(runtime_value, guard_node, &guard_env)?;
+                    if !guard_result.is_truthy() {
+                        // Guard failed, try next arm
+                        continue;
+                    }
+                }
+
+                // Pattern matched (and guard passed if present), evaluate body
+                let body_env =
+                    Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                for (name, value) in bindings {
+                    define(&body_env, name, value);
+                }
+
+                return self.eval_expr(runtime_value, &arm.body, &body_env);
+            }
+        }
+
+        Ok(RuntimeValue::NONE)
+    }
+
+    fn match_pattern(
+        &self,
+        value: &RuntimeValue,
+        pattern: &Pattern,
+    ) -> Result<Option<Vec<(Ident, RuntimeValue)>>, EvalError> {
+        match pattern {
+            Pattern::Wildcard => {
+                // Wildcard always matches, no bindings
+                Ok(Some(Vec::new()))
+            }
+            Pattern::Ident(ident) => {
+                // Identifier matches and binds the value
+                Ok(Some(vec![(ident.name, value.clone())]))
+            }
+            Pattern::Literal(lit) => {
+                // Literal pattern: check equality
+                let pattern_value = self.eval_literal(lit);
+                if *value == pattern_value {
+                    Ok(Some(Vec::new()))
+                } else {
+                    Ok(None)
+                }
+            }
+            Pattern::Type(type_name) => {
+                // Type pattern: check runtime type
+                let type_str = type_name.as_str();
+                let matches = match type_str.as_str() {
+                    "string" => matches!(value, RuntimeValue::String(_)),
+                    "number" => matches!(value, RuntimeValue::Number(_)),
+                    "bool" => matches!(value, RuntimeValue::Bool(_)),
+                    "array" => matches!(value, RuntimeValue::Array(_)),
+                    "dict" => matches!(value, RuntimeValue::Dict(_)),
+                    "markdown" => matches!(value, RuntimeValue::Markdown(_, _)),
+                    "function" => matches!(value, RuntimeValue::Function(_, _, _)),
+                    "symbol" => matches!(value, RuntimeValue::Symbol(_)),
+                    "none" => matches!(value, RuntimeValue::None),
+                    _ => false,
+                };
+
+                if matches {
+                    Ok(Some(Vec::new()))
+                } else {
+                    Ok(None)
+                }
+            }
+            Pattern::Array(patterns) => {
+                // Array pattern: match array elements
+                if let RuntimeValue::Array(values) = value {
+                    if values.len() != patterns.len() {
+                        return Ok(None);
+                    }
+
+                    let mut all_bindings = Vec::new();
+                    for (pattern, value) in patterns.iter().zip(values.iter()) {
+                        if let Some(bindings) = self.match_pattern(value, pattern)? {
+                            all_bindings.extend(bindings);
+                        } else {
+                            return Ok(None);
+                        }
+                    }
+                    Ok(Some(all_bindings))
+                } else {
+                    Ok(None)
+                }
+            }
+            Pattern::ArrayRest(patterns, rest_binding) => {
+                // Array rest pattern: match prefix and bind rest
+                if let RuntimeValue::Array(values) = value {
+                    if values.len() < patterns.len() {
+                        return Ok(None);
+                    }
+
+                    let mut all_bindings = Vec::new();
+
+                    // Match the prefix patterns
+                    for (pattern, value) in patterns.iter().zip(values.iter()) {
+                        if let Some(bindings) = self.match_pattern(value, pattern)? {
+                            all_bindings.extend(bindings);
+                        } else {
+                            return Ok(None);
+                        }
+                    }
+
+                    // Bind the rest of the array
+                    let rest_values = values[patterns.len()..].to_vec();
+                    all_bindings.push((rest_binding.name, RuntimeValue::Array(rest_values)));
+
+                    Ok(Some(all_bindings))
+                } else {
+                    Ok(None)
+                }
+            }
+            Pattern::Dict(field_patterns) => {
+                // Dict pattern: match dictionary fields
+                if let RuntimeValue::Dict(dict) = value {
+                    let mut all_bindings = Vec::new();
+
+                    for (key, pattern) in field_patterns {
+                        if let Some(field_value) = dict.get(&key.name) {
+                            if let Some(bindings) = self.match_pattern(field_value, pattern)? {
+                                all_bindings.extend(bindings);
+                            } else {
+                                return Ok(None);
+                            }
+                        } else {
+                            // Required field is missing
+                            return Ok(None);
+                        }
+                    }
+
+                    Ok(Some(all_bindings))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
     }
 
     #[inline(always)]
@@ -2436,26 +2601,26 @@ mod tests {
                                                     args: vec![123.to_string().into(), 0.to_string().into(), 4.to_string().into()]})))]
     #[case::match_regex1(vec![RuntimeValue::String("test123".to_string())],
        vec![
-            ast_call("match", smallvec![
+            ast_call("regex_match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::String("123".to_string())])]))]
     #[case::match_regex2(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test123".to_string(), position: None}), None)],
        vec![
-            ast_call("match", smallvec![
+            ast_call("regex_match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
        Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: r#"["123"]"#.to_string(), position: None}), None)]))]
     #[case::match_regex3(vec![RuntimeValue::Number(123.into())],
        vec![
-            ast_call("match", smallvec![
+            ast_call("regex_match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                    name: "match".to_string(),
+                                                    name: "regex_match".to_string(),
                                                     args: vec![123.to_string().into(), r"\d+".to_string().into()]})))]
     #[case::explode(vec![RuntimeValue::String("ABC".to_string())],
        vec![
@@ -4597,7 +4762,7 @@ mod tests {
         Ok(vec![RuntimeValue::NONE]))]
     #[case::match_(vec![RuntimeValue::NONE],
        vec![
-            ast_call("match", smallvec![
+            ast_call("regex_match", smallvec![
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],

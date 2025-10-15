@@ -151,6 +151,15 @@ impl Formatter {
             }
             mq_lang::CstNodeKind::Try => self.format_try(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Catch => self.format_catch(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Match => {
+                self.format_match(&node, indent_level_consider_new_line, indent_level)
+            }
+            mq_lang::CstNodeKind::MatchArm => {
+                self.format_match_arm(&node, indent_level_consider_new_line)
+            }
+            mq_lang::CstNodeKind::Pattern => {
+                self.format_pattern(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
         }
     }
@@ -675,6 +684,277 @@ impl Formatter {
                 indent_level
             };
             self.format_node(mq_lang::Shared::clone(child), child_indent);
+        }
+    }
+
+    fn format_match(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        indent_level: usize,
+        block_indent_level: usize,
+    ) {
+        let is_prev_pipe = self.is_prev_pipe();
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+        self.append_space();
+
+        let indent_level = if self.is_last_line_pipe() {
+            block_indent_level
+        } else {
+            indent_level
+        };
+
+        let indent_adjustment = if self.is_let_line() {
+            self.current_line_indent()
+        } else {
+            0
+        };
+
+        // Find the colon position
+        let colon_pos = node
+            .children
+            .iter()
+            .position(|c| {
+                c.token
+                    .as_ref()
+                    .map(|t| matches!(t.kind, mq_lang::TokenKind::Colon))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(0);
+
+        // Format arguments (lparen, value, rparen)
+        for child in node.children.iter().take(colon_pos) {
+            self.format_node(mq_lang::Shared::clone(child), 0);
+        }
+
+        // Format colon
+        if let Some(colon) = node.children.get(colon_pos) {
+            self.format_node(mq_lang::Shared::clone(colon), 0);
+        }
+
+        // Calculate indent level for match arms (similar to format_if)
+        let node_indent_level = if is_prev_pipe {
+            indent_level + 2
+        } else {
+            indent_level + 1
+        } + indent_adjustment;
+
+        // Calculate indent level for end keyword
+        let end_indent_level = if is_prev_pipe {
+            indent_level + 1
+        } else {
+            indent_level
+        } + indent_adjustment;
+
+        // Format match arms and end
+        let remaining_children: Vec<_> = node.children.iter().skip(colon_pos + 1).collect();
+
+        // Check if this is a multiline match (first match arm has new line)
+        let is_multiline = remaining_children.iter().any(|child| {
+            matches!(child.kind, mq_lang::CstNodeKind::MatchArm) && child.has_new_line()
+        });
+
+        for (i, child) in remaining_children.iter().enumerate() {
+            // Check if this is the last child and it's an End node
+            if i == remaining_children.len() - 1 && matches!(child.kind, mq_lang::CstNodeKind::End)
+            {
+                // Add newline before end for multiline match
+                if is_multiline {
+                    self.append_newline();
+                    self.append_indent(end_indent_level);
+                    self.output.push_str("end");
+                    continue;
+                }
+            }
+            self.format_node(mq_lang::Shared::clone(child), node_indent_level);
+        }
+    }
+
+    /// Formats a match arm node, handling pipe, pattern, optional guard, colon, and body.
+    fn format_match_arm(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        let children = &node.children;
+        let mut idx = 0;
+
+        // 1. Pipe
+        if let Some(pipe) = children.get(idx) {
+            if node.has_new_line() {
+                self.append_indent(indent_level);
+                self.output.push('|');
+                self.append_space();
+            } else {
+                self.format_node(mq_lang::Shared::clone(pipe), 0);
+            }
+            idx += 1;
+        }
+
+        // 2. Pattern
+        if let Some(pattern) = children.get(idx) {
+            self.format_node(mq_lang::Shared::clone(pattern), 0);
+            idx += 1;
+        }
+
+        // 3. Optional guard: if <expr>
+        if let Some(if_token) = children.get(idx) {
+            if let Some(token) = if_token.token.as_ref() {
+                if matches!(token.kind, mq_lang::TokenKind::If) {
+                    self.append_space();
+                    self.output.push_str("if ");
+                    idx += 1;
+
+                    // Guard expression: all nodes until colon
+                    while let Some(expr) = children.get(idx) {
+                        if let Some(t) = expr.token.as_ref() {
+                            if matches!(t.kind, mq_lang::TokenKind::Colon) {
+                                break;
+                            }
+                        }
+                        self.format_node(mq_lang::Shared::clone(expr), 0);
+                        idx += 1;
+                    }
+                }
+            }
+        }
+
+        // 4. Colon
+        if let Some(colon) = children.get(idx) {
+            if let Some(token) = colon.token.as_ref() {
+                if matches!(token.kind, mq_lang::TokenKind::Colon) {
+                    self.output.push_str(&token.to_string());
+                    self.append_space();
+                    idx += 1;
+                }
+            }
+        }
+
+        // 5. Body
+        if let Some(body) = children.get(idx) {
+            self.format_node(mq_lang::Shared::clone(body), 0);
+        }
+    }
+
+    fn format_pattern(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        if indent_level > 0 {
+            self.append_indent(indent_level);
+        }
+
+        // If pattern has a token, it's a simple pattern (literal, ident, wildcard)
+        if let Some(token) = &node.token {
+            match &token.kind {
+                mq_lang::TokenKind::StringLiteral(s) => {
+                    let escaped = Self::escape_string(s);
+                    self.output.push_str(&format!(r#""{}""#, escaped));
+                }
+                mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
+                mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
+                mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
+                mq_lang::TokenKind::Ident(name) => self.output.push_str(name),
+                _ => {}
+            }
+        }
+
+        // Format children (for complex patterns like arrays, dicts, type patterns)
+        if !node.children.is_empty() {
+            // Check if this is a type pattern (starts with colon)
+            if let Some(first) = node.children.first() {
+                if let Some(token) = &first.token {
+                    if matches!(token.kind, mq_lang::TokenKind::Colon) {
+                        // Type pattern: :type_name
+                        self.output.push_str(&token.to_string());
+                        if let Some(second) = node.children.get(1) {
+                            if let Some(t) = &second.token {
+                                if let mq_lang::TokenKind::Ident(name) = &t.kind {
+                                    self.output.push_str(name);
+                                }
+                            }
+                        }
+                        return;
+                    } else if matches!(token.kind, mq_lang::TokenKind::LBracket) {
+                        self.format_array_pattern(node);
+                        return;
+                    } else if matches!(token.kind, mq_lang::TokenKind::LBrace) {
+                        self.format_dict_pattern(node);
+                        return;
+                    }
+                }
+            }
+
+            for child in &node.children {
+                self.format_node(mq_lang::Shared::clone(child), 0);
+            }
+        }
+    }
+
+    fn format_array_pattern(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>) {
+        for child in &node.children {
+            match &child.kind {
+                mq_lang::CstNodeKind::Token => {
+                    if let Some(token) = &child.token {
+                        match &token.kind {
+                            mq_lang::TokenKind::Comma => self.output.push_str(", "),
+                            _ => self.output.push_str(&token.to_string()),
+                        }
+                    }
+                }
+                _ => self.output.push_str(&child.to_string()),
+            }
+
+            child.children.iter().for_each(|gc| {
+                self.format_node(mq_lang::Shared::clone(gc), 0);
+            });
+        }
+    }
+
+    fn format_dict_pattern(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>) {
+        let mut i = 0;
+        let children = &node.children;
+
+        while i < children.len() {
+            let child = &children[i];
+
+            if let Some(token) = &child.token {
+                match &token.kind {
+                    mq_lang::TokenKind::Comma => {
+                        self.output.push_str(", ");
+                        i += 1;
+                        continue;
+                    }
+                    mq_lang::TokenKind::Ident(name) => {
+                        self.output.push_str(name);
+
+                        // Check for colon and pattern after the identifier
+                        if let Some(next) = children.get(i + 1) {
+                            if let Some(next_token) = &next.token {
+                                if matches!(next_token.kind, mq_lang::TokenKind::Colon) {
+                                    self.output.push_str(&format!("{} ", next_token));
+                                    i += 2; // Skip colon
+
+                                    // Format the pattern after colon
+                                    if let Some(pattern_node) = children.get(i) {
+                                        if let Some(pattern_token) = &pattern_node.token {
+                                            if let mq_lang::TokenKind::Ident(pattern_name) =
+                                                &pattern_token.kind
+                                            {
+                                                self.output.push_str(pattern_name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        self.output.push_str(&token.to_string());
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+
+            child.children.iter().for_each(|gc| {
+                self.format_node(mq_lang::Shared::clone(gc), 0);
+            });
+
+            i += 1;
         }
     }
 
@@ -1499,6 +1779,70 @@ end
     #[case::symbol_in_array("[:foo, :bar]", "[:foo, :bar]")]
     #[case::symbol_in_dict(r#"{:key: "value"}"#, r#"{:key: "value"}"#)]
     #[case::symbol_comparison(":foo == :bar", ":foo == :bar")]
+    #[case::match_simple(
+        "match(x): | 1: \"one\" | _: \"other\" end",
+        "match (x): | 1: \"one\" | _: \"other\" end"
+    )]
+    #[case::match_multiline(
+        r#"match(x):
+| 1: "one"
+| 2: "two"
+| _: "other"
+end"#,
+        r#"match (x):
+  | 1: "one"
+  | 2: "two"
+  | _: "other"
+end"#
+    )]
+    #[case::match_with_guard(
+        "match(x): | n if(n > 0): \"positive\" | _: \"non-positive\" end",
+        "match (x): | n if (n > 0): \"positive\" | _: \"non-positive\" end"
+    )]
+    #[case::match_with_array_pattern(
+        "match(arr): | [a, b]: add(a, b) | _: 0 end",
+        "match (arr): | [a, b]: add(a, b) | _: 0 end"
+    )]
+    #[case::match_with_array_pattern_with_literal(
+        "match(arr): | [1, 2]: add(1, 2) | _: 0 end",
+        "match (arr): | [1, 2]: add(1, 2) | _: 0 end"
+    )]
+    #[case::match_with_array_pattern_with_symbol(
+        "match(arr): | [:string, :string]: add(1, 2) | _: 0 end",
+        "match (arr): | [:string, :string]: add(1, 2) | _: 0 end"
+    )]
+    #[case::match_with_dict_pattern(
+        "match(obj): | {name: n}: n | _: \"unknown\" end",
+        "match (obj): | {name: n}: n | _: \"unknown\" end"
+    )]
+    #[case::match_nested_in_let(
+        r#"let result = match(x):
+| 1: "one"
+| 2: "two"
+| _: "other"
+end"#,
+        r#"let result = match (x):
+  | 1: "one"
+  | 2: "two"
+  | _: "other"
+end"#
+    )]
+    #[case::match_with_type_pattern(
+        "match(val): | :string: \"is string\" | :number: \"is number\" | _: \"other\" end",
+        "match (val): | :string: \"is string\" | :number: \"is number\" | _: \"other\" end"
+    )]
+    #[case::match_multiline_in_pipe(
+        r#""test"
+| match(x):
+  | 1: "one"
+  | 2: "two"
+  end"#,
+        r#""test"
+| match (x):
+    | 1: "one"
+    | 2: "two"
+  end"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

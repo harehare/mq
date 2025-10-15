@@ -1,5 +1,5 @@
 use crate::arena::Arena;
-use crate::ast::node::IdentWithToken;
+use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
 use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
 use crate::{Ident, Shared, SharedCell, get_token, token_alloc};
@@ -220,19 +220,16 @@ impl<'a> Parser<'a> {
     fn parse_primary_expr(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
         match &token.kind {
             TokenKind::Selector(_) => self.parse_selector(token),
-            // Delegate parsing of 'let' expressions.
             TokenKind::Let => self.parse_expr_let(Shared::clone(&token)),
-            // Delegate parsing of 'def' (function definition) expressions.
             TokenKind::Def => self.parse_expr_def(Shared::clone(&token)),
-            // Delegate parsing of 'do' (block) expressions.
             TokenKind::Do => self.parse_expr_block(Shared::clone(&token)),
             TokenKind::Fn => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
             TokenKind::Try => self.parse_try(token),
-            // Delegate parsing of 'if' expressions.
             TokenKind::If => self.parse_expr_if(Shared::clone(&token)),
+            TokenKind::Match => self.parse_expr_match(Shared::clone(&token)),
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
             TokenKind::Include => self.parse_include(token),
             TokenKind::Self_ => self.parse_self(token),
@@ -1046,6 +1043,237 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn parse_expr_match(&mut self, match_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        let token_id = token_alloc(&self.token_arena, &match_token);
+
+        // Parse the value expression: match (value):
+        let args = self.parse_args()?;
+        if args.len() != 1 {
+            return Err(ParseError::UnexpectedToken(
+                (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
+            ));
+        }
+        let value = Shared::clone(args.first().unwrap());
+
+        // Expect colon after the value
+        let token_id = self.next_token(token_id, |token_kind| {
+            matches!(token_kind, TokenKind::Colon)
+        })?;
+
+        // Parse match arms
+        let mut arms: super::node::MatchArms = SmallVec::new();
+
+        while let Some(token) = self.tokens.peek() {
+            // Skip comments
+            if matches!(token.kind, TokenKind::Comment(_)) {
+                self.tokens.next();
+                continue;
+            }
+
+            // Check for end of match
+            if matches!(token.kind, TokenKind::End | TokenKind::Eof) {
+                break;
+            }
+
+            // Consume pipe '|' before each arm
+            self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Pipe))?;
+
+            // Parse pattern
+            let pattern = self.parse_pattern()?;
+
+            // Check for guard (if condition)
+            let guard = if let Some(token) = self.tokens.peek() {
+                if matches!(token.kind, TokenKind::If) {
+                    let if_token = Shared::clone(token);
+                    self.tokens.next(); // consume 'if'
+                    let guard_args = self.parse_args()?;
+                    if guard_args.len() != 1 {
+                        return Err(ParseError::UnexpectedToken((*if_token).clone()));
+                    }
+                    Some(Shared::clone(guard_args.first().unwrap()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Expect colon before body
+            let token_id = self.next_token(token_id, |token_kind| {
+                matches!(token_kind, TokenKind::Colon)
+            })?;
+
+            // Parse body expression
+            let body = self.parse_next_expr(token_id)?;
+
+            arms.push(MatchArm {
+                pattern,
+                guard,
+                body,
+            });
+        }
+
+        // Consume 'end' keyword
+        if let Some(token) = self.tokens.peek() {
+            if matches!(token.kind, TokenKind::End) {
+                self.tokens.next();
+            }
+        }
+
+        Ok(Shared::new(Node {
+            token_id,
+            expr: Shared::new(Expr::Match(value, arms)),
+        }))
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+        let token = match self.tokens.next() {
+            Some(t) => t,
+            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        };
+
+        match &token.kind {
+            // Wildcard pattern: _
+            TokenKind::Ident(name) if name == constants::PATTERN_MATCH_WILDCARD => {
+                Ok(Pattern::Wildcard)
+            }
+            // Type pattern: :string, :number, etc.
+            TokenKind::Colon => {
+                let type_token = match self.tokens.next() {
+                    Some(t) => t,
+                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                };
+                match &type_token.kind {
+                    TokenKind::Ident(type_name) => Ok(Pattern::Type(Ident::new(type_name))),
+                    _ => Err(ParseError::UnexpectedToken((**type_token).clone())),
+                }
+            }
+            // Literal patterns
+            TokenKind::StringLiteral(s) => Ok(Pattern::Literal(Literal::String(s.clone()))),
+            TokenKind::NumberLiteral(n) => Ok(Pattern::Literal(Literal::Number(*n))),
+            TokenKind::BoolLiteral(b) => Ok(Pattern::Literal(Literal::Bool(*b))),
+            TokenKind::None => Ok(Pattern::Literal(Literal::None)),
+            // Array pattern: [pattern, pattern, ...]
+            TokenKind::LBracket => self.parse_array_pattern(),
+            // Dict pattern: {key, key: pattern}
+            TokenKind::LBrace => self.parse_dict_pattern(),
+            // Identifier pattern (binding)
+            TokenKind::Ident(name) => Ok(Pattern::Ident(IdentWithToken::new(name))),
+            _ => Err(ParseError::UnexpectedToken((**token).clone())),
+        }
+    }
+
+    fn parse_array_pattern(&mut self) -> Result<super::node::Pattern, ParseError> {
+        let mut patterns = Vec::new();
+        let mut has_rest = false;
+        let mut rest_binding: Option<IdentWithToken> = None;
+
+        loop {
+            // Check for closing bracket
+            if let Some(token) = self.tokens.peek() {
+                if matches!(token.kind, TokenKind::RBracket) {
+                    self.tokens.next(); // consume ]
+                    break;
+                }
+
+                // Check for rest pattern: ...rest
+                if matches!(token.kind, TokenKind::RangeOp) {
+                    self.tokens.next();
+                    if let Some(ident_token) = self.tokens.next() {
+                        if let TokenKind::Ident(name) = &ident_token.kind {
+                            rest_binding = Some(IdentWithToken::new(name));
+                            has_rest = true;
+                        } else {
+                            return Err(ParseError::UnexpectedToken((**ident_token).clone()));
+                        }
+                    }
+                    // Expect closing bracket after rest
+                    if let Some(token) = self.tokens.next() {
+                        if !matches!(token.kind, TokenKind::RBracket) {
+                            return Err(ParseError::UnexpectedToken((**token).clone()));
+                        }
+                    }
+                    break;
+                }
+            }
+
+            let pattern = self.parse_pattern()?;
+            patterns.push(pattern);
+
+            // Check for comma or closing bracket
+            if let Some(token) = self.tokens.peek() {
+                if matches!(token.kind, TokenKind::Comma) {
+                    self.tokens.next(); // consume comma
+                } else if matches!(token.kind, TokenKind::RBracket) {
+                    // Will be consumed in next iteration
+                    continue;
+                } else {
+                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                }
+            }
+        }
+
+        if has_rest {
+            Ok(Pattern::ArrayRest(patterns, rest_binding.unwrap()))
+        } else {
+            Ok(Pattern::Array(patterns))
+        }
+    }
+
+    fn parse_dict_pattern(&mut self) -> Result<super::node::Pattern, ParseError> {
+        let mut fields = Vec::new();
+
+        loop {
+            // Check for closing brace
+            if let Some(token) = self.tokens.peek() {
+                if matches!(token.kind, TokenKind::RBrace) {
+                    self.tokens.next(); // consume }
+                    break;
+                }
+            }
+
+            // Parse key (must be identifier)
+            let key_token = match self.tokens.next() {
+                Some(t) => t,
+                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            };
+
+            let key = match &key_token.kind {
+                TokenKind::Ident(name) => IdentWithToken::new(name),
+                _ => return Err(ParseError::UnexpectedToken((**key_token).clone())),
+            };
+
+            // Check if there's a colon (key: pattern) or just key shorthand
+            let pattern = if let Some(token) = self.tokens.peek() {
+                if matches!(token.kind, TokenKind::Colon) {
+                    self.tokens.next(); // consume colon
+                    self.parse_pattern()?
+                } else {
+                    // Shorthand: {key} means {key: key}
+                    super::node::Pattern::Ident(key.clone())
+                }
+            } else {
+                super::node::Pattern::Ident(key.clone())
+            };
+
+            fields.push((key, pattern));
+
+            // Check for comma or closing brace
+            if let Some(token) = self.tokens.peek() {
+                if matches!(token.kind, TokenKind::Comma) {
+                    self.tokens.next(); // consume comma
+                } else if matches!(token.kind, TokenKind::RBrace) {
+                    // Will be consumed in next iteration
+                    continue;
+                } else {
+                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                }
+            }
+        }
+
+        Ok(super::node::Pattern::Dict(fields))
+    }
+
     #[inline(always)]
     fn parse_next_expr(&mut self, token_id: TokenId) -> Result<Shared<Node>, ParseError> {
         let expr_token = match self.tokens.next() {
@@ -1755,7 +1983,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Module, range::Range};
+    use crate::{Module, ast::node::MatchArm, range::Range};
 
     use super::*;
     use rstest::rstest;
@@ -5836,5 +6064,394 @@ mod tests {
             }
             Err(err) => panic!("Parse error: {:?}", err),
         }
+    }
+
+    #[rstest]
+    #[case::match_simple_literal(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("one".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::NumberLiteral(2.into())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("two".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("_"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("other".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("x")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Literal(Literal::Number(1.into())),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("one".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Literal(Literal::Number(2.into())),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("two".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 11.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_type_pattern(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("value"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("string"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("is string".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("number"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("is number".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("value", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("value")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Type(Ident::new("string")),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("is string".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Type(Ident::new("number")),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("is number".to_owned())))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_array_pattern(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("arr"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::LBracket),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(SmolStr::new("y"))),
+            token(TokenKind::RBracket),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("two elements".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("arr")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Array(vec![
+                                Pattern::Ident(IdentWithToken::new("x")),
+                                Pattern::Ident(IdentWithToken::new("y"))
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("two elements".to_owned())))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_array_rest_pattern(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("arr"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::LBracket),
+            token(TokenKind::Ident(SmolStr::new("first"))),
+            token(TokenKind::Comma),
+            token(TokenKind::RangeOp),
+            token(TokenKind::Ident(SmolStr::new("rest"))),
+            token(TokenKind::RBracket),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("first"))),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("arr")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::ArrayRest(
+                                vec![Pattern::Ident(IdentWithToken::new("first"))],
+                                IdentWithToken::new("rest")
+                            ),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("first", Some(Shared::new(Token {
+                                    range: Range::default(),
+                                    kind: TokenKind::Ident(SmolStr::new("first")),
+                                    module_id: 1.into()
+                                })))))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_dict_pattern(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("obj"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident(SmolStr::new("name"))),
+            token(TokenKind::Comma),
+            token(TokenKind::Ident(SmolStr::new("age"))),
+            token(TokenKind::RBrace),
+            token(TokenKind::Colon),
+            token(TokenKind::Ident(SmolStr::new("name"))),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("obj")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Dict(vec![
+                                (IdentWithToken::new("name"), Pattern::Ident(IdentWithToken::new("name"))),
+                                (IdentWithToken::new("age"), Pattern::Ident(IdentWithToken::new("age")))
+                            ]),
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("name", Some(Shared::new(Token {
+                                    range: Range::default(),
+                                    kind: TokenKind::Ident(SmolStr::new("name")),
+                                    module_id: 1.into()
+                                })))))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    #[case::match_with_guard(
+        vec![
+            token(TokenKind::Match),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("n"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::If),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Gt),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("positive".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::If),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Lt),
+            token(TokenKind::NumberLiteral(0.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("negative".to_owned())),
+            token(TokenKind::Pipe),
+            token(TokenKind::Ident(SmolStr::new("_"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("zero".to_owned())),
+            token(TokenKind::End),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Match(
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("n", Some(Shared::new(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Ident(SmolStr::new("n")),
+                            module_id: 1.into()
+                        })))))
+                    }),
+                    smallvec![
+                        MatchArm {
+                            pattern: Pattern::Ident(IdentWithToken::new("x")),
+                            guard: Some(Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::GT, Some(Shared::new(token(TokenKind::Gt)))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 4.into(),
+                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                                                range: Range::default(),
+                                                kind: TokenKind::Ident(SmolStr::new("x")),
+                                                module_id: 1.into()
+                                            })))))
+                                        }),
+                                        Shared::new(Node {
+                                            token_id: 6.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(0.into())))
+                                        })
+                                    ]
+                                ))
+                            })),
+                            body: Shared::new(Node {
+                                token_id: 8.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("positive".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Ident(IdentWithToken::new("x")),
+                            guard: Some(Shared::new(Node {
+                                token_id: 11.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::LT, Some(Shared::new(token(TokenKind::Lt)))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 10.into(),
+                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                                                range: Range::default(),
+                                                kind: TokenKind::Ident(SmolStr::new("x")),
+                                                module_id: 1.into()
+                                            })))))
+                                        }),
+                                        Shared::new(Node {
+                                            token_id: 12.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(0.into())))
+                                        })
+                                    ]
+                                ))
+                            })),
+                            body: Shared::new(Node {
+                                token_id: 14.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("negative".to_owned())))
+                            })
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            guard: None,
+                            body: Shared::new(Node {
+                                token_id: 17.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("zero".to_owned())))
+                            })
+                        }
+                    ]
+                ))
+            })
+        ]))]
+    fn test_parse_match(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
+        let arena = Arena::new(10);
+        let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
+        let result = Parser::new(
+            tokens.iter(),
+            Shared::new(SharedCell::new(arena)),
+            Module::TOP_LEVEL_MODULE_ID,
+        )
+        .parse();
+        assert_eq!(result, expected);
     }
 }

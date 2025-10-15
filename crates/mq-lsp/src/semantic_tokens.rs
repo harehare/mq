@@ -89,6 +89,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 | mq_hir::SymbolKind::Block
                 | mq_hir::SymbolKind::Try
                 | mq_hir::SymbolKind::Catch
+                | mq_hir::SymbolKind::Match
                 | mq_hir::SymbolKind::While => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::KEYWORD)
                 }
@@ -110,7 +111,11 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 mq_hir::SymbolKind::String => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::STRING)
                 }
-                mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::Symbol => {
+                mq_hir::SymbolKind::Variable
+                | mq_hir::SymbolKind::Symbol
+                | mq_hir::SymbolKind::MatchArm
+                | mq_hir::SymbolKind::Pattern
+                | mq_hir::SymbolKind::PatternVariable => {
                     token_type(tower_lsp::lsp_types::SemanticTokenType::VARIABLE)
                 }
             };

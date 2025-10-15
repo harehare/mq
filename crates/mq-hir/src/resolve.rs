@@ -57,6 +57,7 @@ impl Hir {
             SymbolKind::Function(_) => 0,
             SymbolKind::Variable => 1,
             SymbolKind::Parameter => 2,
+            SymbolKind::PatternVariable => 2,
             SymbolKind::Argument => 3,
             _ => 4,
         }
@@ -76,7 +77,8 @@ impl Hir {
                     && (symbol.is_function()
                         || symbol.is_parameter()
                         || symbol.is_variable()
-                        || symbol.is_argument())
+                        || symbol.is_argument()
+                        || symbol.is_pattern_variable())
                 {
                     let priority = self.get_symbol_priority_for_cross_source(&symbol.kind);
                     candidates.push((priority, symbol_id, symbol.clone()));
@@ -96,6 +98,7 @@ impl Hir {
         match symbol_kind {
             SymbolKind::Argument => 0,
             SymbolKind::Parameter => 1,
+            SymbolKind::PatternVariable => 1,
             SymbolKind::Variable => 2,
             SymbolKind::Function(_) => 3,
             _ => 4,
@@ -118,7 +121,8 @@ impl Hir {
                 && (symbol.is_function()
                     || symbol.is_parameter()
                     || symbol.is_variable()
-                    || symbol.is_argument())
+                    || symbol.is_argument()
+                    || symbol.is_pattern_variable())
             {
                 let priority = self.get_symbol_priority_for_scope(&symbol.kind);
                 candidates.push((priority, symbol_id, symbol.clone()));

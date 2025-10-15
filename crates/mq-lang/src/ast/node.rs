@@ -18,6 +18,7 @@ pub type Params = SmallVec<[Shared<Node>; 4]>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
+pub type MatchArms = SmallVec<[MatchArm; 4]>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -96,6 +97,14 @@ impl Node {
                     // Fallback to token range if no branches exist
                     arena[self.token_id].range.clone()
                 }
+            }
+            Expr::Match(value, arms) => {
+                let start = value.range(Shared::clone(&arena)).start;
+                let end = arms
+                    .last()
+                    .map(|arm| arm.body.range(Shared::clone(&arena)).end)
+                    .unwrap_or_else(|| arena[self.token_id].range.end.clone());
+                Range { start, end }
             }
             Expr::Paren(node) => node.range(Shared::clone(&arena)),
             Expr::Try(try_expr, catch_expr) => {
@@ -211,6 +220,26 @@ pub enum StringSegment {
     Self_,
 }
 
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone)]
+pub enum Pattern {
+    Literal(Literal),
+    Ident(IdentWithToken),
+    Wildcard,
+    Array(Vec<Pattern>),
+    ArrayRest(Vec<Pattern>, IdentWithToken), // patterns before .., rest binding
+    Dict(Vec<(IdentWithToken, Pattern)>),
+    Type(Ident), // :string, :number, etc.
+}
+
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub guard: Option<Shared<Node>>,
+    pub body: Shared<Node>,
+}
+
 impl From<&lexer::token::StringSegment> for StringSegment {
     fn from(segment: &lexer::token::StringSegment) -> Self {
         match segment {
@@ -263,6 +292,7 @@ pub enum Expr {
     Until(Shared<Node>, Program),
     Foreach(IdentWithToken, Shared<Node>, Program),
     If(Branches),
+    Match(Shared<Node>, MatchArms),
     Include(Literal),
     Self_,
     Nodes,

@@ -37,9 +37,13 @@ pub enum SymbolKind {
     If,
     Include(SourceId),
     Keyword,
+    Match,
+    MatchArm,
     None,
     Number,
     Parameter,
+    Pattern,
+    PatternVariable,
     Ref,
     Selector,
     String,
@@ -71,6 +75,11 @@ impl Symbol {
     #[inline(always)]
     pub fn is_argument(&self) -> bool {
         matches!(self.kind, SymbolKind::Argument)
+    }
+
+    #[inline(always)]
+    pub fn is_pattern_variable(&self) -> bool {
+        matches!(self.kind, SymbolKind::PatternVariable)
     }
 
     #[inline(always)]

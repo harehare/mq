@@ -1593,6 +1593,46 @@ fn test_eval(
   ",
     vec![RuntimeValue::Number(100.into())],
     Ok(vec![RuntimeValue::Number(40.into())].into()))]
+#[case::try_simple("
+    try:
+      1 / 0
+    catch:
+      \"error\"
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("error".to_string())].into()))]
+#[case::try_no_error("
+    try:
+      42
+    catch:
+      \"error\"
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::match_number(r#"
+    match (2):
+      | 1: "one"
+      | 2: "two"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("two".to_string())].into()))]
+#[case::match_string(r#"
+    match ("b"):
+      | "a": 1
+      | "b": 2
+      | _: 0
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::match_default(r#"
+    match (3):
+      | 1: "one"
+      | 2: "two"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
 fn test_eval_with_opt(
     mut engine_with_opt: Engine,
     #[case] program: &str,
