@@ -1384,7 +1384,6 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        // Check the token to determine the pattern type
         if let Some(token) = &node.token {
             match &token.kind {
                 // Identifier pattern: introduces a variable binding
@@ -1404,8 +1403,6 @@ impl Hir {
                 }
             }
         }
-        // Note: Nested patterns (array, dict) are handled by add_pattern_expr's recursive calls
-        // We only extract variables from the current pattern node, not from children
     }
 }
 
