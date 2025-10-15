@@ -2,7 +2,7 @@ use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
 use crate::ident::all_symbols;
 use crate::number::{self, Number};
-use crate::{Ident, Shared, SharedCell, Token, get_token};
+use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input};
 use base64::prelude::*;
 use itertools::Itertools;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -2270,6 +2270,22 @@ define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _| {
     ))
 });
 
+define_builtin!(
+    TO_MARKDOWN,
+    ParamNum::Fixed(1),
+    |ident, _, mut args| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
+            parse_markdown_input(s)
+                .map_err(|e| { Error::Runtime(format!("Failed to parse markdown: {}", e)) })?
+        )),
+        [a] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a)],
+        )),
+        _ => unreachable!(),
+    }
+);
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2391,6 +2407,7 @@ const HASH_TO_HTML: u64 = fnv1a_hash_64("to_html");
 const HASH_TO_IMAGE: u64 = fnv1a_hash_64("to_image");
 const HASH_TO_LINK: u64 = fnv1a_hash_64("to_link");
 const HASH_TO_MARKDOWN_STRING: u64 = fnv1a_hash_64("to_markdown_string");
+const HASH_TO_MARKDOWN: u64 = fnv1a_hash_64("to_markdown");
 const HASH_TO_MATH: u64 = fnv1a_hash_64("to_math");
 const HASH_TO_MATH_INLINE: u64 = fnv1a_hash_64("to_math_inline");
 const HASH_TO_MD_LIST: u64 = fnv1a_hash_64("to_md_list");
@@ -2507,6 +2524,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_TO_IMAGE => Some(&TO_IMAGE),
         HASH_TO_LINK => Some(&TO_LINK),
         HASH_TO_MARKDOWN_STRING => Some(&TO_MARKDOWN_STRING),
+        HASH_TO_MARKDOWN => Some(&TO_MARKDOWN),
         HASH_TO_MATH => Some(&TO_MATH),
         HASH_TO_MATH_INLINE => Some(&TO_MATH_INLINE),
         HASH_TO_MD_LIST => Some(&TO_MD_LIST),
@@ -3625,12 +3643,18 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
                 params: &[],
             },
         );
-
         map.insert(
             SmolStr::new("all_symbols"),
             BuiltinFunctionDoc {
                 description: "Returns an array of all interned symbols.",
                 params: &[],
+            },
+        );
+        map.insert(
+            SmolStr::new("to_markdown"),
+            BuiltinFunctionDoc {
+                description: "Parses a markdown string and returns an array of markdown nodes.",
+                params: &["markdown_string"],
             },
         );
         map

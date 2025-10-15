@@ -5215,6 +5215,17 @@ mod tests {
             (Ident::new("sym1"), RuntimeValue::String("v1".to_string())),
         ].into_iter().collect())])
     )]
+    #[case::to_markdown_string_to_markdown_array(
+        vec![RuntimeValue::String("a\n\nb\n\nc".to_string())],
+        vec![
+            ast_call("to_markdown", SmallVec::new())
+        ],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "a".to_string(), position: None}), None),
+            RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "b".to_string(), position: None}), None),
+            RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "c".to_string(), position: None}), None),
+        ])]))
+    ]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,
