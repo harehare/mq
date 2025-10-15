@@ -4,6 +4,7 @@
 | `abs` | Returns the absolute value of the given number. | `number` | abs(number) |
 | `add` | Adds two values. | `value1`, `value2` | add(value1, value2) |
 | `all` |  Returns true if all element in the array satisfies the provided function. | `v`, `f` | all(v, f) |
+| `all_symbols` | Returns an array of all interned symbols. |  | all_symbols() |
 | `and` | Performs a logical AND operation on two boolean values. | `value1`, `value2` | and(value1, value2) |
 | `any` |  Returns true if any element in the array satisfies the provided function. | `v`, `f` | any(v, f) |
 | `array` | Creates an array from the given values. | `values` | array(values) |
@@ -15,6 +16,7 @@
 | `booleans` |  Returns boolean if input is boolean, None otherwise | `b` | booleans(b) |
 | `breakpoint` | Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached. |  | breakpoint() |
 | `ceil` | Rounds the given number up to the nearest integer. | `number` | ceil(number) |
+| `coalesce` | Returns the first non-None value from the two provided arguments. | `value1`, `value2` | coalesce(value1, value2) |
 | `compact` | Removes None values from the given array. | `array` | compact(array) |
 | `contains` |  Checks if string contains a substring | `haystack`, `needle` | contains(haystack, needle) |
 | `debug` |  Prints the debug information of the given value. | `msg` | debug(msg) |
@@ -51,6 +53,7 @@
 | `increase_header_level` | Increases the level of a markdown heading node by one, up to a maximum of 6. | `heading_node` | increase_header_level(heading_node) |
 | `index` | Finds the first occurrence of a substring in the given string. | `string`, `substring` | index(string, substring) |
 | `infinite` | Returns an infinite number value. |  | infinite() |
+| `input` | Reads a line from standard input and returns it as a string. |  | input() |
 | `insert` | Inserts a value into an array or string at the specified index, or into a dict with the specified key. | `target`, `index_or_key`, `value` | insert(target, index_or_key, value) |
 | `intern` | Interns the given string, returning a canonical reference for efficient comparison. | `string` | intern(string) |
 | `is_array` |  Checks if input is an array | `a` | is_array(a) |
@@ -91,7 +94,6 @@
 | `ltrimstr` |  Removes prefix string from input if it exists | `s`, `left` | ltrimstr(s, left) |
 | `map` |  Applies a given function to each element of the provided array and returns a new array with the results. | `v`, `f` | map(v, f) |
 | `markdowns` |  Returns markdown if input is markdown, None otherwise | `m` | markdowns(m) |
-| `match` | Finds all matches of the given pattern in the string. | `string`, `pattern` | match(string, pattern) |
 | `matches_url` |  Checks if markdown node's URL matches a specified URL | `node`, `url` | matches_url(node, url) |
 | `max` | Returns the maximum of two values. | `value1`, `value2` | max(value1, value2) |
 | `min` | Returns the minimum of two values. | `value1`, `value2` | min(value1, value2) |
@@ -108,6 +110,7 @@
 | `print` | Prints a message to standard output and returns the current value. | `message` | print(message) |
 | `range` | Creates an array from start to end with an optional step. | `start`, `end`, `step` | range(start, end, step) |
 | `read_file` | Reads the contents of a file at the given path and returns it as a string. | `path` | read_file(path) |
+| `regex_match` | Finds all matches of the given pattern in the string. | `string`, `pattern` | regex_match(string, pattern) |
 | `repeat` | Repeats the given string a specified number of times. | `string`, `count` | repeat(string, count) |
 | `replace` | Replaces all occurrences of a substring with another substring. | `from`, `pattern`, `to` | replace(from, pattern, to) |
 | `reverse` | Reverses the given string or array. | `value` | reverse(value) |
@@ -147,6 +150,7 @@
 | `to_html` | Converts the given markdown string to HTML. | `markdown` | to_html(markdown) |
 | `to_image` | Creates a markdown image node with the given URL, alt text, and title. | `url`, `alt`, `title` | to_image(url, alt, title) |
 | `to_link` | Creates a markdown link node  with the given  url and title. | `url`, `value`, `title` | to_link(url, value, title) |
+| `to_markdown` | Parses a markdown string and returns an array of markdown nodes. | `markdown_string` | to_markdown(markdown_string) |
 | `to_markdown_string` | Converts the given value(s) to a markdown string representation. | `value` | to_markdown_string(value) |
 | `to_math` | Creates a markdown math block with the given value. | `value` | to_math(value) |
 | `to_math_inline` | Creates an inline markdown math node with the given value. | `value` | to_math_inline(value) |

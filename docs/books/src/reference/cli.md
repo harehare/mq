@@ -20,6 +20,8 @@ Arguments:
   [FILES]...       
 
 Options:
+  -A, --aggregate
+          Aggregate all input files/content into a single array
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
