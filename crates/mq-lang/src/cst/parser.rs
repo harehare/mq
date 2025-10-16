@@ -1389,6 +1389,32 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn parse_dict_key(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = match self.tokens.peek() {
+            Some(token) => Shared::clone(token),
+            None => return Err(ParseError::UnexpectedEOFDetected),
+        };
+
+        match &*token {
+            Token {
+                range: _,
+                kind: TokenKind::Ident(_),
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Colon,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::StringLiteral(_),
+                ..
+            } => self.parse_expr(leading_trivia, false, false),
+            _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
+        }
+    }
+
     fn parse_dict(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(64);
 
@@ -1426,7 +1452,7 @@ impl<'a> Parser<'a> {
         loop {
             let key_node = {
                 let leading_trivia = self.parse_leading_trivia();
-                self.parse_expr(leading_trivia, false, false)
+                self.parse_dict_key(leading_trivia)
             }?;
 
             let colon_node = self.next_node(
