@@ -1285,6 +1285,7 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
+    #[inline(always)]
     fn parse_node(
         &mut self,
         node_kind: NodeKind,
@@ -1389,6 +1390,33 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    #[inline(always)]
+    fn parse_dict_key(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = match self.tokens.peek() {
+            Some(token) => Shared::clone(token),
+            None => return Err(ParseError::UnexpectedEOFDetected),
+        };
+
+        match &*token {
+            Token {
+                range: _,
+                kind: TokenKind::Ident(_),
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::Colon,
+                ..
+            }
+            | Token {
+                range: _,
+                kind: TokenKind::StringLiteral(_),
+                ..
+            } => self.parse_expr(leading_trivia, false, false),
+            _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
+        }
+    }
+
     fn parse_dict(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(64);
 
@@ -1426,7 +1454,7 @@ impl<'a> Parser<'a> {
         loop {
             let key_node = {
                 let leading_trivia = self.parse_leading_trivia();
-                self.parse_expr(leading_trivia, false, false)
+                self.parse_dict_key(leading_trivia)
             }?;
 
             let colon_node = self.next_node(
@@ -2159,6 +2187,7 @@ impl<'a> Parser<'a> {
         Ok(nodes)
     }
 
+    #[inline(always)]
     fn parse_param(&mut self) -> Result<Shared<Node>, ParseError> {
         let leading_trivia = self.parse_leading_trivia();
 
@@ -2171,6 +2200,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(always)]
     fn parse_leading_trivia(&mut self) -> Vec<Trivia> {
         let mut trivia = Vec::with_capacity(100);
 
@@ -2207,6 +2237,7 @@ impl<'a> Parser<'a> {
         trivia
     }
 
+    #[inline(always)]
     fn try_next_token(&mut self, match_token_kind: fn(&TokenKind) -> bool) -> bool {
         let tokens = &mut self.tokens.clone();
         Self::try_parse_leading_trivia(tokens);
@@ -2220,6 +2251,7 @@ impl<'a> Parser<'a> {
         match_token_kind(&token.unwrap().kind)
     }
 
+    #[inline(always)]
     fn parse_trailing_trivia(&mut self) -> Vec<Trivia> {
         let mut trivia = Vec::with_capacity(10);
 
@@ -2235,6 +2267,7 @@ impl<'a> Parser<'a> {
         trivia
     }
 
+    #[inline(always)]
     fn skip_tokens(&mut self) {
         loop {
             let token = match self.tokens.peek() {
@@ -2259,6 +2292,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(always)]
     fn next_token(
         &mut self,
         match_token_kind: fn(&TokenKind) -> bool,
@@ -2277,6 +2311,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(always)]
     fn next_node(
         &mut self,
         expected_token: fn(&TokenKind) -> bool,
