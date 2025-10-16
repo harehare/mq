@@ -43,6 +43,7 @@ sync = []
 [dev-dependencies]
 divan = {version = "3.0.5", package = "codspeed-divan-compat"}
 mq-test.workspace = true
+proptest.workspace = true
 rstest.workspace = true
 
 [[bench]]

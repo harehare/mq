@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 18f6d5fefc6c3ede9ab9ce2f57d22ef7013591146c2f0a0c4775ddd21a8d6a3b # shrinks to expr_str = "let x = 1 | add(x, 1)"
