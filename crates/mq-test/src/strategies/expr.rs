@@ -1,10 +1,6 @@
 use proptest::prelude::*;
 
 /// Strategy for generating simple arithmetic expressions that can be fully constant-folded.
-///
-/// Generates expressions like `add(5, 3)`, `sub(10, 2)`, `mul(4, 7)`.
-///
-/// Returns a tuple of (expression_string, expected_result).
 pub fn arb_arithmetic_expr() -> impl Strategy<Value = (String, f64)> {
     (
         0i32..100,
@@ -25,15 +21,11 @@ pub fn arb_arithmetic_expr() -> impl Strategy<Value = (String, f64)> {
 }
 
 /// Strategy for generating nested arithmetic expressions.
-///
-/// Generates expressions like `add(mul(5, 3), 7)`.
 pub fn arb_nested_arithmetic_expr() -> impl Strategy<Value = String> {
     (0i32..20, 0i32..20, 0i32..20).prop_map(|(a, b, c)| format!("add(mul({}, {}), {})", a, b, c))
 }
 
 /// Strategy for generating string concatenation expressions.
-///
-/// Generates expressions like `add("hello", "world")`.
 pub fn arb_string_concat_expr() -> impl Strategy<Value = String> {
     (
         prop::string::string_regex("[a-z]{1,5}").unwrap(),
@@ -43,8 +35,6 @@ pub fn arb_string_concat_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating comparison expressions.
-///
-/// Generates expressions like `eq(5, 3)`, `gt(10, 20)`, etc.
 pub fn arb_comparison_expr() -> impl Strategy<Value = String> {
     (
         0i32..100,
@@ -55,8 +45,6 @@ pub fn arb_comparison_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating logical expressions.
-///
-/// Generates expressions like `and(true, false)`, `or(true, true)`.
 pub fn arb_logical_expr() -> impl Strategy<Value = String> {
     (
         prop::bool::ANY,
@@ -67,8 +55,6 @@ pub fn arb_logical_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating division and modulo expressions (avoiding division by zero).
-///
-/// Generates expressions like `div(10, 2)`, `mod(7, 3)`.
 pub fn arb_div_mod_expr() -> impl Strategy<Value = String> {
     (
         0i32..100,
@@ -79,52 +65,38 @@ pub fn arb_div_mod_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating let expressions with simple arithmetic.
-///
-/// Generates expressions like `let x = 5 | add(x, 3)`.
 pub fn arb_let_expr() -> impl Strategy<Value = String> {
     (1i32..50, 1i32..50).prop_map(|(a, b)| format!("let x = {} | add(x, {})", a, b))
 }
 
 /// Strategy for generating deeply nested arithmetic expressions.
-///
-/// Generates expressions like `add(mul(add(1, 2), sub(3, 4)), 1)`.
 pub fn arb_deeply_nested_expr() -> impl Strategy<Value = String> {
     (0i32..10, 0i32..10, 0i32..10, 0i32..10)
         .prop_map(|(a, b, c, d)| format!("add(mul(add({}, {}), sub({}, {})), {})", a, b, c, d, 1))
 }
 
 /// Strategy for generating mixed type expressions with type conversions.
-///
-/// Generates expressions like `to_number(to_string(42))`.
 pub fn arb_mixed_type_expr() -> impl Strategy<Value = String> {
     (0i32..100).prop_map(|a| format!("to_number(to_string({}))", a))
 }
 
 /// Strategy for generating power expressions.
-///
-/// Generates expressions like `pow(2, 3)`.
 pub fn arb_power_expr() -> impl Strategy<Value = String> {
     (0i32..10, 0i32..5).prop_map(|(a, b)| format!("pow({}, {})", a, b))
 }
 
 /// Strategy for generating function definition and inline candidates.
-///
-/// Generates expressions like `def f(x): add(x, 5) | f(10)`.
 pub fn arb_function_def_expr() -> impl Strategy<Value = String> {
     (1i32..20, 1i32..20).prop_map(|(a, b)| format!("def f(x): add(x, {}) | f({})", a, b))
 }
 
 /// Strategy for generating complex expressions combining multiple patterns.
-///
-/// Generates expressions like `let x = add(1, 2) | mul(x, 3)`.
 pub fn arb_complex_expr() -> impl Strategy<Value = String> {
     (0i32..20, 0i32..20, 1i32..10)
         .prop_map(|(a, b, c)| format!("let x = add({}, {}) | mul(x, {})", a, b, c))
 }
 
 /// Strategy for generating array literal expressions.
-///
-/// Generates expressions like `[1, 2, 3]`, `[10, 20]`.
 pub fn arb_array_expr() -> impl Strategy<Value = String> {
     prop::collection::vec(0i32..100, 1..5).prop_map(|nums| {
         format!(
@@ -138,8 +110,6 @@ pub fn arb_array_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating if expressions.
-///
-/// Generates expressions like `if eq(x, 1) then 10 else 20`.
 pub fn arb_if_expr() -> impl Strategy<Value = String> {
     (0i32..100, 0i32..100, 0i32..100, 0i32..100).prop_map(|(a, b, then_val, else_val)| {
         format!("if (eq({}, {})): {} else: {}", a, b, then_val, else_val)
@@ -147,8 +117,6 @@ pub fn arb_if_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating while loop expressions.
-///
-/// Generates expressions like `let x = 10 | while(gt(x, 0)) | sub(x, 1)`.
 pub fn arb_while_expr() -> impl Strategy<Value = String> {
     (1i32..20, 1i32..10).prop_map(|(init, step)| {
         format!(
@@ -159,8 +127,6 @@ pub fn arb_while_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating until loop expressions.
-///
-/// Generates expressions like `let x = 0 | until(eq(x, 10)) | add(x, 1)`.
 pub fn arb_until_expr() -> impl Strategy<Value = String> {
     (0i32..10, 5i32..20, 1i32..5).prop_map(|(init, target, step)| {
         format!(
@@ -171,8 +137,6 @@ pub fn arb_until_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating foreach loop expressions.
-///
-/// Generates expressions like `[1, 2, 3] | foreach(x, mul(x, 2))`.
 pub fn arb_foreach_expr() -> impl Strategy<Value = String> {
     (prop::collection::vec(1i32..20, 2..5), 1i32..10).prop_map(|(items, multiplier)| {
         format!(
@@ -188,30 +152,22 @@ pub fn arb_foreach_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating anonymous function (lambda) expressions.
-///
-/// Generates expressions like `(fn(x): add(x, 5))(10)`.
 pub fn arb_lambda_expr() -> impl Strategy<Value = String> {
     (1i32..50, 1i32..50).prop_map(|(a, b)| format!("let f = fn(x): add(x, {}); | f({})", a, b))
 }
 
 /// Strategy for generating try-catch expressions.
-///
-/// Generates expressions like `try div(10, 0) catch 0`.
 pub fn arb_try_catch_expr() -> impl Strategy<Value = String> {
     (1i32..100, 0i32..2, 0i32..100)
         .prop_map(|(a, b, fallback)| format!("try: div({}, {}) catch: {}", a, b, fallback))
 }
 
 /// Strategy for generating not expressions.
-///
-/// Generates expressions like `not(true)`, `not(false)`.
 pub fn arb_not_expr() -> impl Strategy<Value = String> {
     prop::bool::ANY.prop_map(|b| format!("not({})", b))
 }
 
 /// Strategy for generating ge/le comparison expressions.
-///
-/// Generates expressions like `ge(10, 5)`, `le(3, 7)`.
 pub fn arb_ge_le_expr() -> impl Strategy<Value = String> {
     (
         0i32..100,
@@ -222,15 +178,11 @@ pub fn arb_ge_le_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating none literal expressions.
-///
-/// Generates expressions like `none`.
 pub fn arb_none_expr() -> impl Strategy<Value = String> {
     Just("None".to_string())
 }
 
 /// Strategy for generating nested if expressions.
-///
-/// Generates expressions like `if gt(x, 10) then (if lt(x, 20) then 1 else 2) else 0`.
 pub fn arb_nested_if_expr() -> impl Strategy<Value = String> {
     (0i32..30, 0i32..10, 0i32..10, 0i32..10).prop_map(|(x, v1, v2, v3)| {
         format!(
@@ -241,8 +193,6 @@ pub fn arb_nested_if_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating chained comparison expressions.
-///
-/// Generates expressions like `and(gt(x, 0), lt(x, 100))`.
 pub fn arb_chained_comparison_expr() -> impl Strategy<Value = String> {
     (0i32..100, 0i32..50, 50i32..100).prop_map(|(x, lower, upper)| {
         format!("let x = {} | and(gt(x, {}), lt(x, {}))", x, lower, upper)
@@ -250,8 +200,6 @@ pub fn arb_chained_comparison_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating a single base expression (non-recursive, suitable for piping).
-///
-/// This is a subset of expressions that work well as components in a pipe chain.
 fn arb_base_expr() -> impl Strategy<Value = String> {
     prop_oneof![
         arb_arithmetic_expr().prop_map(|(expr, _)| expr),
@@ -268,16 +216,11 @@ fn arb_base_expr() -> impl Strategy<Value = String> {
 }
 
 /// Strategy for generating pipe-chained expressions.
-///
-/// Generates expressions by combining multiple base expressions with pipes,
-/// like `10 | add(5) | mul(2)` or `[1, 2, 3] | first | add(10)`.
 pub fn arb_piped_expr() -> impl Strategy<Value = String> {
     prop::collection::vec(arb_base_expr(), 2..5).prop_map(|exprs| exprs.join(" | "))
 }
 
 /// Strategy for generating any valid mq expression.
-///
-/// This is a union of all expression types for comprehensive testing.
 pub fn arb_any_expr() -> impl Strategy<Value = String> {
     prop_oneof![
         arb_arithmetic_expr().prop_map(|(expr, _)| expr),
