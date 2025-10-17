@@ -2387,9 +2387,8 @@ mod proptests {
             let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
 
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
-            if program.is_err() {
-                return Ok(());
-            }
+            prop_assume!(program.is_ok());
+
             let mut program = program.unwrap();
 
             let mut optimizer1 = Optimizer::default();
@@ -2413,9 +2412,7 @@ mod proptests {
             let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
 
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
-            if program.is_err() {
-                return Ok(());
-            }
+            prop_assume!(program.is_ok());
 
             let mut engine = crate::Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
