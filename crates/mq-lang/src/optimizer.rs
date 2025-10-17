@@ -2379,8 +2379,6 @@ mod proptests {
     use proptest::prelude::*;
 
     proptest! {
-        /// Property: Optimization is idempotent
-        /// Running optimize twice should produce the same result as running it once
         #[test]
         #[ignore]
         fn test_optimization_idempotent(
@@ -2388,29 +2386,21 @@ mod proptests {
         ) {
             let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
 
-            // Parse the expression
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
             if program.is_err() {
                 return Ok(());
             }
             let mut program = program.unwrap();
 
-            // First optimization
             let mut optimizer1 = Optimizer::default();
             optimizer1.optimize(&mut program);
             let first_optimized = program.clone();
 
-            // Second optimization
             let mut optimizer2 = Optimizer::default();
             optimizer2.optimize(&mut program);
             let second_optimized = program;
 
-            // Both should be equal (idempotent property)
-            prop_assert_eq!(
-                format!("{:?}", first_optimized),
-                format!("{:?}", second_optimized),
-                "Optimization should be idempotent"
-            );
+            prop_assert_eq!(first_optimized, second_optimized, "Optimization should be idempotent");
         }
 
         /// Property: Optimization preserves semantics for constant folding
@@ -2422,30 +2412,25 @@ mod proptests {
         ) {
             let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
 
-            // Parse the expression
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
             if program.is_err() {
                 return Ok(());
             }
 
-            // Evaluate without optimization
             let mut engine = crate::Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
-            // Evaluate with full optimization
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
-            // Both should succeed
             prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
             prop_assert!(result_opt.is_ok(), "Optimized evaluation should succeed");
 
-            // Both should produce the same result
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
             prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt),
+                val_no_opt,
+                val_opt,
                 "Expected value: {}", expected
             );
         }
@@ -2456,26 +2441,19 @@ mod proptests {
         fn test_optimization_preserves_semantics_nested(
             expr_str in arb_nested_arithmetic_expr()
         ) {
-            // Evaluate without optimization
             let mut engine = crate::Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
-            // Evaluate with full optimization
             let mut engine_opt = crate::Engine::default();
             let result_opt = engine_opt.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
-            // Both should succeed
             prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
             prop_assert!(result_opt.is_ok(), "Optimized evaluation should succeed");
 
-            // Both should produce the same result
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: InlineOnly optimization level should not affect semantics
@@ -2488,18 +2466,13 @@ mod proptests {
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_inline = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::InlineOnly);
 
-            // Both should succeed
             prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
             prop_assert!(result_inline.is_ok(), "Inline-only evaluation should succeed");
 
-            // Both should produce the same result
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_inline = &result_inline.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_inline)
-            );
+            prop_assert_eq!(val_no_opt, val_inline);
         }
 
         /// Property: String concatenation optimization preserves semantics
@@ -2518,10 +2491,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Comparison expressions optimization preserves semantics
@@ -2546,10 +2516,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Logical expressions optimization preserves semantics
@@ -2568,10 +2535,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Division and modulo optimization preserves semantics
@@ -2590,10 +2554,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Let expressions optimization preserves semantics
@@ -2612,10 +2573,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Deeply nested expressions optimization preserves semantics
@@ -2634,10 +2592,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Mixed type expressions optimization preserves semantics
@@ -2656,10 +2611,7 @@ mod proptests {
             let val_no_opt = &result_no_opt.unwrap()[0];
             let val_opt = &result_opt.unwrap()[0];
 
-            prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
-            );
+            prop_assert_eq!(val_no_opt, val_opt);
         }
 
         /// Property: Function definition and inlining preserves semantics
@@ -2679,8 +2631,8 @@ mod proptests {
             let val_opt = &result_opt.unwrap()[0];
 
             prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
+                val_no_opt,
+                val_opt
             );
         }
 
@@ -2701,8 +2653,8 @@ mod proptests {
             let val_opt = &result_opt.unwrap()[0];
 
             prop_assert_eq!(
-                format!("{:?}", val_no_opt),
-                format!("{:?}", val_opt)
+                val_no_opt,
+                val_opt
             );
         }
     }

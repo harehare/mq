@@ -257,8 +257,8 @@ define_token_parser!(coalesce, "??", TokenKind::Coalesce);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        and, or, coalesce, l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket,
-        r_bracket, question, pipe,
+        and, or, l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket,
+        r_bracket, coalesce, question, pipe,
     ))
     .parse(input)
 }
