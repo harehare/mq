@@ -159,7 +159,12 @@
 
       /* Header & Title */
       header {
-        background: linear-gradient(180deg, #3d4a5c 0%, #2a3444 50%, #3d4a5c 100%);
+        background: linear-gradient(
+          180deg,
+          #3d4a5c 0%,
+          #2a3444 50%,
+          #3d4a5c 100%
+        );
         border-bottom: 1px solid #4a5568;
         color: #e2e8f0;
         overflow: hidden;
@@ -213,7 +218,12 @@
       }
       .title {
         animation: fadeIn 0.8s ease-out;
-        background: linear-gradient(135deg, #0277bd 0%, #0288d1 50%, #67b8e3 100%);
+        background: linear-gradient(
+          135deg,
+          #0277bd 0%,
+          #0288d1 50%,
+          #67b8e3 100%
+        );
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -268,7 +278,8 @@
       .cta {
         background-color: var(--accent-primary);
         border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(2, 136, 209, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(2, 136, 209, 0.15),
+          0 1px 3px rgba(0, 0, 0, 0.1);
         color: #ffffff;
         display: inline-block;
         font-weight: 600;
@@ -279,7 +290,8 @@
       }
       .cta:hover {
         background-color: var(--accent-secondary);
-        box-shadow: 0 4px 12px rgba(2, 136, 209, 0.25), 0 2px 6px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 4px 12px rgba(2, 136, 209, 0.25),
+          0 2px 6px rgba(0, 0, 0, 0.15);
         transform: translateY(-2px);
       }
       .cta-container {
@@ -467,6 +479,76 @@
           transform: translateY(0);
         }
       }
+
+      /* Demo GIF Section */
+      .demo-section {
+        margin: 3rem auto;
+        max-width: 900px;
+        overflow: hidden;
+        padding: 2.5rem;
+      }
+      .demo-gif-wrapper {
+        background-color: #1e293b;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-height: 400px;
+        overflow: hidden;
+        position: relative;
+      }
+      .demo-gif {
+        display: block;
+        height: auto;
+        max-width: 100%;
+        width: 100%;
+      }
+      .demo-placeholder {
+        align-items: center;
+        color: #64748b;
+        display: flex;
+        font-family: "Source Code Pro", monospace;
+        font-size: 1.1rem;
+        justify-content: center;
+        min-height: 400px;
+      }
+
+      @media (max-width: 768px) {
+        .demo-section {
+          margin: 2rem 1rem;
+          padding: 1.75rem;
+        }
+        .demo-gif-wrapper {
+          min-height: 300px;
+        }
+        .demo-placeholder {
+          font-size: 0.9rem;
+          min-height: 300px;
+        }
+        .install-box {
+          padding: 1.75rem;
+        }
+        .install-tabs {
+          flex-direction: column;
+        }
+        .tab-button {
+          text-align: center;
+          width: 100%;
+        }
+        .code-block {
+          font-size: 0.85rem;
+          padding: 1.25rem;
+        }
+        .step-header {
+          gap: 1rem;
+        }
+        .step-number {
+          font-size: 1.1rem;
+          height: 40px;
+          width: 40px;
+        }
+        .step-title {
+          font-size: 1.3rem;
+        }
+      }
     </style>
   </head>
   <body>
@@ -477,6 +559,7 @@
         </a>
         <ul class="nav-links">
           <li><a href="#about">Overview</a></li>
+          <li><a href="#quick-install">Quick Install</a></li>
           <li><a href="#why-mq">Why mq?</a></li>
           <li><a href="#features">Features</a></li>
           <li><a href="#examples">Examples</a></li>
@@ -516,6 +599,7 @@
               similar to jq. It's written in Rust, allowing you to easily slice,
               filter, map, and transform structured data.
             </p>
+
             <div class="links">
               <a
                 href="https://mqlang.org/book/"
@@ -538,6 +622,14 @@
               >
                 <span class="link-icon">🔧</span> Tools
               </a>
+            </div>
+
+            <div class="demo-section">
+              <div class="demo-gif-wrapper">
+                <div class="demo-placeholder">
+                  <img src="demo.gif" alt="mq demo" class="demo-gif" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
