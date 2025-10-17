@@ -2688,7 +2688,7 @@ mod proptests {
         #[test]
         #[ignore]
         fn test_optimization_complex(
-            expr_str in arb_complex_expr()
+            expr_str in arb_any_expr()
         ) {
             let mut engine = crate::Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
