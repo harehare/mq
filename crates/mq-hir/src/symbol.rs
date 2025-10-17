@@ -68,11 +68,6 @@ impl Symbol {
     }
 
     #[inline(always)]
-    pub fn is_dict(&self) -> bool {
-        matches!(self.kind, SymbolKind::Dict)
-    }
-
-    #[inline(always)]
     pub fn is_parameter(&self) -> bool {
         matches!(self.kind, SymbolKind::Parameter)
     }
