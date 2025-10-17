@@ -176,7 +176,7 @@ impl Engine {
     /// let result = engine.eval_with_level("add(\" world\")", input.into_iter(), OptimizationLevel::None);
     /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn eval_with_level<I: Iterator<Item = RuntimeValue>>(
         &mut self,
         code: &str,
