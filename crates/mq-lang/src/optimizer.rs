@@ -2370,3 +2370,289 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use crate::{Arena, SharedCell};
+    use mq_test::strategies::expr::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        #[ignore]
+        fn test_optimization_idempotent(
+            (expr_str, _expected) in arb_arithmetic_expr()
+        ) {
+            let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+
+            let program = crate::parse(&expr_str, Shared::clone(&token_arena));
+            prop_assume!(program.is_ok());
+
+            let mut program = program.unwrap();
+
+            let mut optimizer1 = Optimizer::default();
+            optimizer1.optimize(&mut program);
+            let first_optimized = program.clone();
+
+            let mut optimizer2 = Optimizer::default();
+            optimizer2.optimize(&mut program);
+            let second_optimized = program;
+
+            prop_assert_eq!(first_optimized, second_optimized, "Optimization should be idempotent");
+        }
+
+        /// Property: Optimization preserves semantics for constant folding
+        /// The optimized and non-optimized versions should evaluate to the same value
+        #[test]
+        #[ignore]
+        fn test_optimization_preserves_semantics_constant_folding(
+            (expr_str, expected) in arb_arithmetic_expr()
+        ) {
+            let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+
+            let program = crate::parse(&expr_str, Shared::clone(&token_arena));
+            prop_assume!(program.is_ok());
+
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
+            prop_assert!(result_opt.is_ok(), "Optimized evaluation should succeed");
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(
+                val_no_opt,
+                val_opt,
+                "Expected value: {}", expected
+            );
+        }
+
+        /// Property: Nested expressions are also optimized correctly
+        #[test]
+        #[ignore]
+        fn test_optimization_preserves_semantics_nested(
+            expr_str in arb_nested_arithmetic_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+
+            let mut engine_opt = crate::Engine::default();
+            let result_opt = engine_opt.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
+            prop_assert!(result_opt.is_ok(), "Optimized evaluation should succeed");
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: InlineOnly optimization level should not affect semantics
+        #[test]
+        #[ignore]
+        fn test_inline_only_preserves_semantics(
+            (expr_str, _expected) in arb_arithmetic_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_inline = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::InlineOnly);
+
+            prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
+            prop_assert!(result_inline.is_ok(), "Inline-only evaluation should succeed");
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_inline = &result_inline.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_inline);
+        }
+
+        /// Property: String concatenation optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_string_concat(
+            expr_str in arb_string_concat_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Comparison expressions optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_comparison(
+            expr_str in arb_comparison_expr()
+        ) {
+            let mut engine_no_opt = crate::Engine::default();
+            engine_no_opt.load_builtin_module();
+            engine_no_opt.set_optimization_level(OptimizationLevel::None);
+            let result_no_opt = engine_no_opt.eval(&expr_str, crate::null_input().into_iter());
+
+            let mut engine_opt = crate::Engine::default();
+            engine_opt.load_builtin_module();
+            engine_opt.set_optimization_level(OptimizationLevel::Full);
+            let result_opt = engine_opt.eval(&expr_str, crate::null_input().into_iter());
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Logical expressions optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_logical(
+            expr_str in arb_logical_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Division and modulo optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_div_mod(
+            expr_str in arb_div_mod_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Let expressions optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_let_expr(
+            expr_str in arb_let_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Deeply nested expressions optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_deeply_nested(
+            expr_str in arb_deeply_nested_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Mixed type expressions optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_mixed_type(
+            expr_str in arb_mixed_type_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(val_no_opt, val_opt);
+        }
+
+        /// Property: Function definition and inlining preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_function_def(
+            expr_str in arb_function_def_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(
+                val_no_opt,
+                val_opt
+            );
+        }
+
+        /// Property: Complex expressions optimization preserves semantics
+        #[test]
+        #[ignore]
+        fn test_optimization_complex(
+            expr_str in arb_any_expr()
+        ) {
+            let mut engine = crate::Engine::default();
+            let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
+            let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+            prop_assert!(result_no_opt.is_ok());
+            prop_assert!(result_opt.is_ok());
+
+            let val_no_opt = &result_no_opt.unwrap()[0];
+            let val_opt = &result_opt.unwrap()[0];
+
+            prop_assert_eq!(
+                val_no_opt,
+                val_opt
+            );
+        }
+    }
+}

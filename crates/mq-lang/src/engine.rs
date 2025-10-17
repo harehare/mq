@@ -158,6 +158,51 @@ impl Engine {
         })
     }
 
+    /// Evaluates mq code with a specified optimization level.
+    ///
+    /// This method allows you to override the engine's current optimization level
+    /// for a single evaluation. Useful for benchmarking or testing different
+    /// optimization strategies.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::{Engine, OptimizationLevel};
+    ///
+    /// let mut engine = Engine::default();
+    /// engine.load_builtin_module();
+    ///
+    /// let input = mq_lang::parse_text_input("hello").unwrap();
+    /// let result = engine.eval_with_level("add(\" world\")", input.into_iter(), OptimizationLevel::None);
+    /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
+    /// ```
+    #[inline]
+    pub fn eval_with_level<I: Iterator<Item = RuntimeValue>>(
+        &mut self,
+        code: &str,
+        input: I,
+        level: OptimizationLevel,
+    ) -> MqResult {
+        let mut program = parse(code, Shared::clone(&self.token_arena))?;
+        Optimizer::with_level(level).optimize(&mut program);
+
+        #[cfg(feature = "debugger")]
+        self.evaluator
+            .module_loader
+            .set_source_code(code.to_string());
+
+        self.evaluator
+            .eval(&program, input.into_iter())
+            .map(|values| values.into())
+            .map_err(|e| {
+                Box::new(error::Error::from_error(
+                    code,
+                    e,
+                    self.evaluator.module_loader.clone(),
+                ))
+            })
+    }
+
     /// The main engine for evaluating mq code.
     ///
     /// The `Engine` manages parsing, optimization, and evaluation of mq.
@@ -177,24 +222,7 @@ impl Engine {
     /// ```
     ///
     pub fn eval<I: Iterator<Item = RuntimeValue>>(&mut self, code: &str, input: I) -> MqResult {
-        let mut program = parse(code, Shared::clone(&self.token_arena))?;
-        Optimizer::with_level(self.options.optimization_level).optimize(&mut program);
-
-        #[cfg(feature = "debugger")]
-        self.evaluator
-            .module_loader
-            .set_source_code(code.to_string());
-
-        self.evaluator
-            .eval(&program, input.into_iter())
-            .map(|values| values.into())
-            .map_err(|e| {
-                Box::new(error::Error::from_error(
-                    code,
-                    e,
-                    self.evaluator.module_loader.clone(),
-                ))
-            })
+        self.eval_with_level(code, input, self.options.optimization_level)
     }
 
     /// Evaluates a pre-parsed AST (Program).

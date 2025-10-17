@@ -9,6 +9,5 @@ bench = false
 doctest = false
 
 [dependencies]
+proptest.workspace = true
 scopeguard = "1.2.0"
-
-[dev-dependencies]

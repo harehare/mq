@@ -38,6 +38,7 @@ mq-mcp = {path = "./crates/mq-mcp"}
 mq-repl = {path = "./crates/mq-repl"}
 mq-test = {path = "./crates/mq-test"}
 mq-tui = {path = "./crates/mq-tui"}
+proptest = "1.8"
 regex-lite = "0.1.8"
 rstest = "0.26.1"
 rustc-hash = "2.1.1"
