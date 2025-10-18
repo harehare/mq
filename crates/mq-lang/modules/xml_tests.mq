@@ -1,7 +1,7 @@
 include "xml"
 | include "test"
 
-| let input = "<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>"
+| let input = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- test --><users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>"
 
 | def test_xml_parse():
     let result = xml_parse(input)

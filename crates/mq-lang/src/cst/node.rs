@@ -83,6 +83,7 @@ pub enum NodeKind {
     Continue,
     Def,
     Dict,
+    DictEntry,
     End,
     Elif,
     Else,
@@ -185,6 +186,10 @@ impl Node {
 
     pub fn is_fn(&self) -> bool {
         matches!(self.kind, NodeKind::Fn)
+    }
+
+    pub fn is_def(&self) -> bool {
+        matches!(self.kind, NodeKind::Def)
     }
 
     pub fn comments(&self) -> Vec<Comment> {
