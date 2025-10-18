@@ -83,6 +83,7 @@ pub enum NodeKind {
     Continue,
     Def,
     Dict,
+    DictEntry,
     End,
     Elif,
     Else,

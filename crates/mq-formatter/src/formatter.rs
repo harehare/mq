@@ -161,6 +161,7 @@ impl Formatter {
                 self.format_pattern(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::DictEntry => unreachable!(),
         }
     }
 
@@ -227,82 +228,38 @@ impl Formatter {
             0
         };
 
-        let len = node.children.len();
-        if len == 0 {
-            return;
-        }
+        for child in &node.children {
+            match child.kind {
+                mq_lang::CstNodeKind::DictEntry => {
+                    let key = &child.children[0];
+                    let colon = child.children.get(1);
+                    let value = child.children.get(2);
 
-        // Format LBrace
-        self.format_node(
-            mq_lang::Shared::clone(&node.children[0]),
-            indent_level + indent_adjustment,
-        );
-
-        // Early return if only braces exist
-        if len == 2 {
-            self.format_node(
-                mq_lang::Shared::clone(&node.children[1]),
-                indent_level + indent_adjustment,
-            );
-            return;
-        }
-
-        let is_multiline = node.children[1].has_new_line();
-
-        let mut i = 1;
-        while i < len - 1 {
-            let key = &node.children[i];
-            let colon = node.children.get(i + 1);
-            let value = node.children.get(i + 2);
-
-            // Defensive: ensure we have key: value
-            if let (Some(colon), Some(value)) = (colon, value) {
-                if key.has_new_line() {
-                    self.format_node(
-                        mq_lang::Shared::clone(key),
-                        indent_level + indent_adjustment + 1,
-                    );
-                } else {
-                    self.format_node(mq_lang::Shared::clone(key), 0);
-                }
-                self.format_node(mq_lang::Shared::clone(colon), 0);
-                self.append_space();
-                self.format_node(
-                    mq_lang::Shared::clone(value),
-                    if value.is_fn() {
-                        indent_level + indent_adjustment + 1
+                    if let (Some(colon), Some(value)) = (colon, value) {
+                        if key.has_new_line() {
+                            self.format_node(
+                                mq_lang::Shared::clone(key),
+                                indent_level + indent_adjustment + 1,
+                            );
+                        } else {
+                            self.format_node(mq_lang::Shared::clone(key), 0);
+                        }
+                        self.format_node(mq_lang::Shared::clone(colon), 0);
+                        self.append_space();
+                        self.format_node(
+                            mq_lang::Shared::clone(value),
+                            if value.is_fn() {
+                                indent_level + indent_adjustment + 1
+                            } else {
+                                0
+                            },
+                        );
                     } else {
-                        0
-                    },
-                );
-                i += 3;
-            } else {
-                self.format_node(mq_lang::Shared::clone(key), 0);
-                i += 1;
-            }
-
-            // Handle comma if present
-            if i < len - 1 {
-                if let Some(token) = node.children[i].token.as_ref() {
-                    if matches!(token.kind, mq_lang::TokenKind::Comma) {
-                        self.format_node(mq_lang::Shared::clone(&node.children[i]), 0);
-                        i += 1;
+                        self.format_node(mq_lang::Shared::clone(key), 0);
                     }
                 }
+                _ => self.format_node(mq_lang::Shared::clone(child), 0),
             }
-        }
-
-        // Format RBrace
-        if let Some(rbrace) = node.children.last() {
-            if is_multiline {
-                self.append_newline();
-                self.append_indent(indent_level + indent_adjustment);
-            }
-
-            self.format_node(
-                mq_lang::Shared::clone(rbrace),
-                indent_level + indent_adjustment,
-            );
         }
     }
 
@@ -1148,6 +1105,15 @@ impl Formatter {
                 mq_lang::TokenKind::RParen => {
                     if node.has_new_line() {
                         let indent_level = indent_level.saturating_sub(1);
+                        self.append_leading_trivia(node, indent_level);
+                        self.append_indent(indent_level);
+                        self.output.push_str(&token.to_string());
+                    } else {
+                        self.output.push_str(&token.to_string());
+                    }
+                }
+                mq_lang::TokenKind::RBrace => {
+                    if node.has_new_line() {
                         self.append_leading_trivia(node, indent_level);
                         self.append_indent(indent_level);
                         self.output.push_str(&token.to_string());

@@ -1219,25 +1219,30 @@ impl Hir {
                 parent,
             });
 
-            let mut iter = node.children_without_token().into_iter();
-            while let (Some(key_node), Some(value_node)) = (iter.next(), iter.next()) {
-                let key_symbol_id = self.add_symbol(Symbol {
-                    value: key_node.name(),
-                    kind: match &key_node.token {
-                        Some(token) => match &token.kind {
-                            mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
-                            mq_lang::TokenKind::Ident(_) => SymbolKind::Symbol,
-                            _ => SymbolKind::Symbol,
+            for entry in node.children_without_token() {
+                if let (Some(key_node), Some(value_node)) =
+                    (entry.children.first(), entry.children.get(2))
+                {
+                    let key_symbol_id = self.add_symbol(Symbol {
+                        value: key_node.name(),
+                        kind: match &key_node.token {
+                            Some(token) => match &token.kind {
+                                mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
+                                mq_lang::TokenKind::Ident(_) => SymbolKind::Symbol,
+                                _ => SymbolKind::Symbol,
+                            },
+                            None => SymbolKind::Symbol,
                         },
-                        None => SymbolKind::Symbol,
-                    },
-                    source: SourceInfo::new(Some(source_id), Some(key_node.range())),
-                    scope: scope_id,
-                    doc: key_node.comments(),
-                    parent: Some(symbol_id),
-                });
+                        source: SourceInfo::new(Some(source_id), Some(key_node.range())),
+                        scope: scope_id,
+                        doc: key_node.comments(),
+                        parent: Some(symbol_id),
+                    });
 
-                self.add_expr(&value_node, source_id, scope_id, Some(key_symbol_id));
+                    self.add_expr(value_node, source_id, scope_id, Some(key_symbol_id));
+                } else {
+                    unreachable!()
+                }
             }
         }
     }
