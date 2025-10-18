@@ -16,7 +16,7 @@ pub enum Selector {
 #[derive(Clone, Default)]
 pub enum RuntimeValue {
     Number(Number),
-    Bool(bool),
+    Boolean(bool),
     String(String),
     Symbol(Ident),
     Array(Vec<RuntimeValue>),
@@ -33,7 +33,7 @@ impl PartialEq for RuntimeValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a == b,
-            (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a == b,
+            (RuntimeValue::Boolean(a), RuntimeValue::Boolean(b)) => a == b,
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a == b,
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a == b,
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
@@ -57,7 +57,7 @@ impl From<Node> for RuntimeValue {
 
 impl From<bool> for RuntimeValue {
     fn from(b: bool) -> Self {
-        RuntimeValue::Bool(b)
+        RuntimeValue::Boolean(b)
     }
 }
 
@@ -109,11 +109,23 @@ impl From<BTreeMap<Ident, RuntimeValue>> for RuntimeValue {
     }
 }
 
+impl From<mq_markdown::AttrValue> for RuntimeValue {
+    fn from(attr_value: mq_markdown::AttrValue) -> Self {
+        match attr_value {
+            mq_markdown::AttrValue::String(s) => RuntimeValue::String(s),
+            mq_markdown::AttrValue::Number(n) => RuntimeValue::Number(n.into()),
+            mq_markdown::AttrValue::Integer(n) => RuntimeValue::Number(n.into()),
+            mq_markdown::AttrValue::Boolean(b) => RuntimeValue::Boolean(b),
+            mq_markdown::AttrValue::Null => RuntimeValue::NONE,
+        }
+    }
+}
+
 impl PartialOrd for RuntimeValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
             (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a.partial_cmp(b),
-            (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => a.partial_cmp(b),
+            (RuntimeValue::Boolean(a), RuntimeValue::Boolean(b)) => a.partial_cmp(b),
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a.partial_cmp(b),
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a.partial_cmp(b),
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a.partial_cmp(b),
@@ -141,7 +153,7 @@ impl std::fmt::Display for RuntimeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let value: Cow<'_, str> = match self {
             Self::Number(n) => Cow::Owned(n.to_string()),
-            Self::Bool(b) => Cow::Owned(b.to_string()),
+            Self::Boolean(b) => Cow::Owned(b.to_string()),
             Self::String(s) => Cow::Borrowed(s),
             Self::Symbol(i) => Cow::Owned(format!(":{}", i)),
             Self::Array(_) => self.string(),
@@ -167,8 +179,8 @@ impl std::fmt::Debug for RuntimeValue {
 
 impl RuntimeValue {
     pub const NONE: RuntimeValue = Self::None;
-    pub const TRUE: RuntimeValue = Self::Bool(true);
-    pub const FALSE: RuntimeValue = Self::Bool(false);
+    pub const TRUE: RuntimeValue = Self::Boolean(true);
+    pub const FALSE: RuntimeValue = Self::Boolean(false);
     pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
 
     #[inline(always)]
@@ -180,7 +192,7 @@ impl RuntimeValue {
     pub fn name(&self) -> &str {
         match self {
             RuntimeValue::Number(_) => "number",
-            RuntimeValue::Bool(_) => "bool",
+            RuntimeValue::Boolean(_) => "bool",
             RuntimeValue::String(_) => "string",
             RuntimeValue::Symbol(_) => "symbol",
             RuntimeValue::Markdown(_, _) => "markdown",
@@ -227,7 +239,7 @@ impl RuntimeValue {
     #[inline(always)]
     pub fn is_truthy(&self) -> bool {
         match self {
-            RuntimeValue::Bool(b) => *b,
+            RuntimeValue::Boolean(b) => *b,
             RuntimeValue::Number(n) => n.value() != 0.0,
             RuntimeValue::String(s) => !s.is_empty(),
             RuntimeValue::Array(a) => !a.is_empty(),
@@ -247,7 +259,7 @@ impl RuntimeValue {
     pub fn len(&self) -> usize {
         match self {
             RuntimeValue::Number(n) => n.value() as usize,
-            RuntimeValue::Bool(_) => 1,
+            RuntimeValue::Boolean(_) => 1,
             RuntimeValue::String(s) => s.len(),
             RuntimeValue::Symbol(i) => i.as_str().len(),
             RuntimeValue::Array(a) => a.len(),
@@ -300,7 +312,7 @@ impl RuntimeValue {
     fn string(&self) -> Cow<'_, str> {
         match self {
             Self::Number(n) => Cow::Owned(n.to_string()),
-            Self::Bool(b) => Cow::Owned(b.to_string()),
+            Self::Boolean(b) => Cow::Owned(b.to_string()),
             Self::String(s) => Cow::Owned(format!(r#""{}""#, s)),
             Self::Symbol(i) => Cow::Owned(format!(":{}", i)),
             Self::Array(a) => Cow::Owned(format!(
@@ -413,7 +425,7 @@ impl RuntimeValues {
                         RuntimeValue::Symbol(i) => {
                             RuntimeValue::Markdown(node.clone().with_value(&i.as_str()), None)
                         }
-                        RuntimeValue::Bool(b) => RuntimeValue::Markdown(
+                        RuntimeValue::Boolean(b) => RuntimeValue::Markdown(
                             node.clone().with_value(b.to_string().as_str()),
                             None,
                         ),
@@ -471,8 +483,8 @@ mod tests {
 
     #[test]
     fn test_runtime_value_from() {
-        assert_eq!(RuntimeValue::from(true), RuntimeValue::Bool(true));
-        assert_eq!(RuntimeValue::from(false), RuntimeValue::Bool(false));
+        assert_eq!(RuntimeValue::from(true), RuntimeValue::Boolean(true));
+        assert_eq!(RuntimeValue::from(false), RuntimeValue::Boolean(false));
         assert_eq!(
             RuntimeValue::from(String::from("test")),
             RuntimeValue::String(String::from("test"))
@@ -485,8 +497,8 @@ mod tests {
 
     #[rstest]
     #[case(RuntimeValue::Number(Number::from(42.0)), "42")]
-    #[case(RuntimeValue::Bool(true), "true")]
-    #[case(RuntimeValue::Bool(false), "false")]
+    #[case(RuntimeValue::Boolean(true), "true")]
+    #[case(RuntimeValue::Boolean(false), "false")]
     #[case(RuntimeValue::String("hello".to_string()), r#""hello""#)]
     #[case(RuntimeValue::None, "")]
     #[case(RuntimeValue::Array(vec![
@@ -505,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_runtime_value_display() {
-        assert_eq!(format!("{}", RuntimeValue::Bool(true)), "true");
+        assert_eq!(format!("{}", RuntimeValue::Boolean(true)), "true");
         assert_eq!(
             format!("{}", RuntimeValue::Number(Number::from(42.0))),
             "42"
@@ -521,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_runtime_value_debug() {
-        assert_eq!(format!("{:?}", RuntimeValue::Bool(true)), "true");
+        assert_eq!(format!("{:?}", RuntimeValue::Boolean(true)), "true");
         assert_eq!(
             format!("{:?}", RuntimeValue::Number(Number::from(42.0))),
             "42"
@@ -548,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_runtime_value_name() {
-        assert_eq!(RuntimeValue::Bool(true).name(), "bool");
+        assert_eq!(RuntimeValue::Boolean(true).name(), "bool");
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).name(), "number");
         assert_eq!(RuntimeValue::String(String::from("test")).name(), "string");
         assert_eq!(RuntimeValue::None.name(), "None");
@@ -581,8 +593,8 @@ mod tests {
 
     #[test]
     fn test_runtime_value_is_true() {
-        assert!(RuntimeValue::Bool(true).is_truthy());
-        assert!(!RuntimeValue::Bool(false).is_truthy());
+        assert!(RuntimeValue::Boolean(true).is_truthy());
+        assert!(!RuntimeValue::Boolean(false).is_truthy());
         assert!(RuntimeValue::Number(Number::from(42.0)).is_truthy());
         assert!(!RuntimeValue::Number(Number::from(0.0)).is_truthy());
         assert!(RuntimeValue::String(String::from("test")).is_truthy());
@@ -645,7 +657,7 @@ mod tests {
                 None
             )
         );
-        assert!(RuntimeValue::Bool(false) < RuntimeValue::Bool(true));
+        assert!(RuntimeValue::Boolean(false) < RuntimeValue::Boolean(true));
         assert!(
             RuntimeValue::Function(
                 SmallVec::new(),
@@ -666,7 +678,7 @@ mod tests {
     fn test_runtime_value_len() {
         assert_eq!(RuntimeValue::Number(Number::from(42.0)).len(), 42);
         assert_eq!(RuntimeValue::String(String::from("test")).len(), 4);
-        assert_eq!(RuntimeValue::Bool(true).len(), 1);
+        assert_eq!(RuntimeValue::Boolean(true).len(), 1);
         assert_eq!(RuntimeValue::Array(vec![RuntimeValue::None]).len(), 1);
         assert_eq!(
             RuntimeValue::Markdown(
@@ -775,7 +787,7 @@ mod tests {
             RuntimeValue::NONE
         );
         assert_eq!(
-            RuntimeValue::Bool(true).update_markdown_value("test"),
+            RuntimeValue::Boolean(true).update_markdown_value("test"),
             RuntimeValue::NONE
         );
         assert_eq!(

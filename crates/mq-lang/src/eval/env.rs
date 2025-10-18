@@ -61,7 +61,7 @@ impl Variable {
                 value: value.to_string(),
                 type_field: "array".to_string(),
             },
-            RuntimeValue::Bool(_) => Variable {
+            RuntimeValue::Boolean(_) => Variable {
                 name: ident.to_string(),
                 value: value.to_string(),
                 type_field: "bool".to_string(),
@@ -295,7 +295,7 @@ mod tests {
     #[cfg(feature = "debugger")]
     #[rstest]
     #[case(
-        vec![("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Bool(true))],
+        vec![("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Boolean(true))],
         vec![
             Variable { name: "a".to_string(), value: "1".to_string(), type_field: "number".to_string() },
             Variable { name: "b".to_string(), value: "true".to_string(), type_field: "bool".to_string() }
@@ -309,7 +309,7 @@ mod tests {
         ]
     )]
     #[case(
-        vec![("x", RuntimeValue::Bool(true)), ("y", RuntimeValue::None)],
+        vec![("x", RuntimeValue::Boolean(true)), ("y", RuntimeValue::None)],
         vec![
             Variable { name: "x".to_string(), value: "true".to_string(), type_field: "bool".to_string() },
             Variable { name: "y".to_string(), value: "None".to_string(), type_field: "none".to_string() }
@@ -353,7 +353,7 @@ mod tests {
     fn test_get_local_variables() {
         let mut env = Env::default();
         env.define(Ident::new("foo"), RuntimeValue::Number(10.0.into()));
-        env.define(Ident::new("bar"), RuntimeValue::Bool(false));
+        env.define(Ident::new("bar"), RuntimeValue::Boolean(false));
         // No parent: should return empty
         assert_eq!(env.get_local_variables().len(), 0);
 
@@ -374,7 +374,7 @@ mod tests {
 
         let mut env = Env::default();
         env.define(Ident::new("foo"), RuntimeValue::Number(1.0.into()));
-        env.define(Ident::new("bar"), RuntimeValue::Bool(true));
+        env.define(Ident::new("bar"), RuntimeValue::Boolean(true));
         env.define(
             Ident::new("func"),
             RuntimeValue::Function(

@@ -478,6 +478,129 @@ pub enum MdxAttributeValue {
     Literal(SmolStr),
 }
 
+/// Represents a typed attribute value that can be returned from or passed to attr/set_attr methods.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(untagged)
+)]
+pub enum AttrValue {
+    String(String),
+    Number(f64),
+    Integer(i64),
+    Boolean(bool),
+    Null,
+}
+
+impl From<String> for AttrValue {
+    fn from(s: String) -> Self {
+        AttrValue::String(s)
+    }
+}
+
+impl From<&str> for AttrValue {
+    fn from(s: &str) -> Self {
+        AttrValue::String(s.to_string())
+    }
+}
+
+impl From<f64> for AttrValue {
+    fn from(n: f64) -> Self {
+        AttrValue::Number(n)
+    }
+}
+
+impl From<i64> for AttrValue {
+    fn from(n: i64) -> Self {
+        AttrValue::Integer(n)
+    }
+}
+
+impl From<i32> for AttrValue {
+    fn from(n: i32) -> Self {
+        AttrValue::Integer(n as i64)
+    }
+}
+
+impl From<usize> for AttrValue {
+    fn from(n: usize) -> Self {
+        AttrValue::Integer(n as i64)
+    }
+}
+
+impl From<u8> for AttrValue {
+    fn from(n: u8) -> Self {
+        AttrValue::Integer(n as i64)
+    }
+}
+
+impl From<bool> for AttrValue {
+    fn from(b: bool) -> Self {
+        AttrValue::Boolean(b)
+    }
+}
+
+impl AttrValue {
+    /// Converts the attribute value to a string representation.
+    pub fn as_string(&self) -> String {
+        match self {
+            AttrValue::String(s) => s.clone(),
+            AttrValue::Number(n) => n.to_string(),
+            AttrValue::Integer(i) => i.to_string(),
+            AttrValue::Boolean(b) => b.to_string(),
+            AttrValue::Null => String::new(),
+        }
+    }
+
+    /// Converts the attribute value to an integer representation.
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            AttrValue::String(s) => s.parse().ok(),
+            AttrValue::Number(n) => Some(*n as i64),
+            AttrValue::Integer(i) => Some(*i),
+            AttrValue::Boolean(b) => Some(*b as i64),
+            AttrValue::Null => None,
+        }
+    }
+
+    /// Converts the attribute value to a number representation.
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            AttrValue::String(s) => s.parse().ok(),
+            AttrValue::Number(n) => Some(*n),
+            AttrValue::Integer(i) => Some(*i as f64),
+            AttrValue::Boolean(_) => None,
+            AttrValue::Null => None,
+        }
+    }
+
+    /// Returns `true` if the attribute value is a string.
+    pub fn is_string(&self) -> bool {
+        matches!(self, AttrValue::String(_))
+    }
+
+    /// Returns `true` if the attribute value is a number.
+    pub fn is_number(&self) -> bool {
+        matches!(self, AttrValue::Number(_))
+    }
+
+    /// Returns `true` if the attribute value is an integer.
+    pub fn is_integer(&self) -> bool {
+        matches!(self, AttrValue::Integer(_))
+    }
+
+    /// Returns `true` if the attribute value is a boolean.
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, AttrValue::Boolean(_))
+    }
+
+    /// Returns `true` if the attribute value is null.
+    pub fn is_null(&self) -> bool {
+        matches!(self, AttrValue::Null)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -1658,23 +1781,23 @@ impl Node {
         }
     }
 
-    // Returns the value of the specified attribute as a string, if present.
-    pub fn attr(&self, attr: &str) -> Option<String> {
+    /// Returns the value of the specified attribute, if present.
+    pub fn attr(&self, attr: &str) -> Option<AttrValue> {
         match self {
             Node::Footnote(Footnote { ident, values, .. }) => match attr {
-                "ident" => Some(ident.clone()),
-                "value" | "text" => Some(Self::values_to_string(
+                "ident" => Some(AttrValue::String(ident.clone())),
+                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
                     values.clone(),
                     &RenderOptions::default(),
-                )),
+                ))),
                 _ => None,
             },
             Node::Html(Html { value, .. }) => match attr {
-                "value" | "text" => Some(value.clone()),
+                "value" | "text" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Text(Text { value, .. }) => match attr {
-                "value" | "text" => Some(value.clone()),
+                "value" | "text" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Code(Code {
@@ -1684,67 +1807,67 @@ impl Node {
                 fence,
                 ..
             }) => match attr {
-                "value" | "text" => Some(value.clone()),
-                "lang" => lang.clone(),
-                "meta" => meta.clone(),
-                "fence" => Some(fence.to_string()),
+                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "lang" => lang.clone().map(AttrValue::String),
+                "meta" => meta.clone().map(AttrValue::String),
+                "fence" => Some(AttrValue::Boolean(*fence)),
                 _ => None,
             },
             Node::CodeInline(CodeInline { value, .. }) => match attr {
-                "value" | "text" => Some(value.to_string()),
+                "value" | "text" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MathInline(MathInline { value, .. }) => match attr {
-                "value" | "text" => Some(value.to_string()),
+                "value" | "text" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::Math(Math { value, .. }) => match attr {
-                "value" | "text" => Some(value.clone()),
+                "value" | "text" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Yaml(Yaml { value, .. }) => match attr {
-                "value" | "text" => Some(value.clone()),
+                "value" | "text" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Toml(Toml { value, .. }) => match attr {
-                "value" | "text" => Some(value.clone()),
+                "value" | "text" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Image(Image {
                 alt, url, title, ..
             }) => match attr {
-                "alt" => Some(alt.clone()),
-                "url" => Some(url.clone()),
-                "title" => title.clone(),
+                "alt" => Some(AttrValue::String(alt.clone())),
+                "url" => Some(AttrValue::String(url.clone())),
+                "title" => title.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::ImageRef(ImageRef {
                 alt, ident, label, ..
             }) => match attr {
-                "alt" => Some(alt.clone()),
-                "ident" => Some(ident.clone()),
-                "label" => label.clone(),
+                "alt" => Some(AttrValue::String(alt.clone())),
+                "ident" => Some(AttrValue::String(ident.clone())),
+                "label" => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::Link(Link {
                 url, title, values, ..
             }) => match attr {
-                "url" => Some(url.as_str().to_string()),
-                "title" => title.as_ref().map(|t| t.to_value()),
-                "value" | "text" => Some(Self::values_to_string(
+                "url" => Some(AttrValue::String(url.as_str().to_string())),
+                "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
+                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
                     values.clone(),
                     &RenderOptions::default(),
-                )),
+                ))),
                 _ => None,
             },
             Node::LinkRef(LinkRef { ident, label, .. }) => match attr {
-                "ident" => Some(ident.clone()),
-                "label" => label.clone(),
+                "ident" => Some(AttrValue::String(ident.clone())),
+                "label" => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::FootnoteRef(FootnoteRef { ident, label, .. }) => match attr {
-                "ident" => Some(ident.clone()),
-                "label" => label.clone(),
+                "ident" => Some(AttrValue::String(ident.clone())),
+                "label" => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::Definition(Definition {
@@ -1754,18 +1877,18 @@ impl Node {
                 label,
                 ..
             }) => match attr {
-                "ident" => Some(ident.clone()),
-                "url" => Some(url.as_str().to_string()),
-                "title" => title.as_ref().map(|t| t.to_value()),
-                "label" => label.clone(),
+                "ident" => Some(AttrValue::String(ident.clone())),
+                "url" => Some(AttrValue::String(url.as_str().to_string())),
+                "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
+                "label" => label.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::Heading(Heading { depth, values, .. }) => match attr {
-                "depth" | "level" => Some(depth.to_string()),
-                "value" | "text" => Some(Self::values_to_string(
+                "depth" | "level" => Some(AttrValue::Integer(*depth as i64)),
+                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
                     values.clone(),
                     &RenderOptions::default(),
-                )),
+                ))),
                 _ => None,
             },
             Node::List(List {
@@ -1776,14 +1899,14 @@ impl Node {
                 values,
                 ..
             }) => match attr {
-                "index" => Some(index.to_string()),
-                "level" => Some(level.to_string()),
-                "ordered" => Some(ordered.to_string()),
-                "checked" => checked.map(|c| c.to_string()),
-                "value" | "text" => Some(Self::values_to_string(
+                "index" => Some(AttrValue::Integer(*index as i64)),
+                "level" => Some(AttrValue::Integer(*level as i64)),
+                "ordered" => Some(AttrValue::Boolean(*ordered)),
+                "checked" => checked.map(AttrValue::Boolean),
+                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
                     values.clone(),
                     &RenderOptions::default(),
-                )),
+                ))),
                 _ => None,
             },
             Node::TableCell(TableCell {
@@ -1794,44 +1917,44 @@ impl Node {
                 values,
                 ..
             }) => match attr {
-                "column" => Some(column.to_string()),
-                "row" => Some(row.to_string()),
-                "last_cell_in_row" => Some(last_cell_in_row.to_string()),
-                "last_cell_of_in_table" => Some(last_cell_of_in_table.to_string()),
-                "value" | "text" => Some(Self::values_to_string(
+                "column" => Some(AttrValue::Integer(*column as i64)),
+                "row" => Some(AttrValue::Integer(*row as i64)),
+                "last_cell_in_row" => Some(AttrValue::Boolean(*last_cell_in_row)),
+                "last_cell_of_in_table" => Some(AttrValue::Boolean(*last_cell_of_in_table)),
+                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
                     values.clone(),
                     &RenderOptions::default(),
-                )),
+                ))),
                 _ => None,
             },
             Node::TableHeader(TableHeader { align, .. }) => match attr {
-                "align" => Some(
+                "align" => Some(AttrValue::String(
                     align
                         .iter()
                         .map(|a| a.to_string())
                         .collect::<Vec<_>>()
                         .join(","),
-                ),
+                )),
                 _ => None,
             },
             Node::MdxFlowExpression(MdxFlowExpression { value, .. }) => match attr {
-                "value" | "text" => Some(value.to_string()),
+                "value" | "text" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxTextExpression(MdxTextExpression { value, .. }) => match attr {
-                "value" | "text" => Some(value.to_string()),
+                "value" | "text" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxJsEsm(MdxJsEsm { value, .. }) => match attr {
-                "value" | "text" => Some(value.to_string()),
+                "value" | "text" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxJsxFlowElement(MdxJsxFlowElement { name, .. }) => match attr {
-                "name" => name.clone(),
+                "name" => name.clone().map(AttrValue::String),
                 _ => None,
             },
             Node::MdxJsxTextElement(MdxJsxTextElement { name, .. }) => match attr {
-                "name" => name.as_ref().map(|n| n.to_string()),
+                "name" => name.as_ref().map(|n| AttrValue::String(n.to_string())),
                 _ => None,
             },
             Node::Break(_) | Node::HorizontalRule(_) | Node::Fragment(_) | Node::Empty => None,
@@ -1844,198 +1967,221 @@ impl Node {
     }
 
     /// Sets the value of the specified attribute for the node, if supported.
-    pub fn set_attr(&mut self, attr: &str, value: &str) {
+    pub fn set_attr(&mut self, attr: &str, value: impl Into<AttrValue>) {
+        let value = value.into();
+        let value_str = value.as_string();
+
         match self {
             Node::Footnote(f) if attr == "ident" => {
-                f.ident = value.to_string();
+                f.ident = value_str;
             }
             Node::Html(h) if attr == "value" || attr == "text" => {
-                h.value = value.to_string();
+                h.value = value_str;
             }
             Node::Text(t) if attr == "value" || attr == "text" => {
-                t.value = value.to_string();
+                t.value = value_str;
             }
             Node::Code(c) => match attr {
                 "value" => {
-                    c.value = value.to_string();
+                    c.value = value_str;
                 }
                 "lang" => {
-                    c.lang = if value.is_empty() {
+                    c.lang = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 "meta" => {
-                    c.meta = if value.is_empty() {
+                    c.meta = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 "fence" => {
-                    c.fence = value == "true";
+                    c.fence = match value {
+                        AttrValue::Boolean(b) => b,
+                        _ => value_str == "true",
+                    };
                 }
                 _ => (),
             },
             Node::CodeInline(ci) if attr == "value" || attr == "text" => {
-                ci.value = value.into();
+                ci.value = value_str.into();
             }
             Node::MathInline(mi) if attr == "value" || attr == "text" => {
-                mi.value = value.into();
+                mi.value = value_str.into();
             }
             Node::Math(m) if attr == "value" || attr == "text" => {
-                m.value = value.to_string();
+                m.value = value_str;
             }
             Node::Yaml(y) if attr == "value" || attr == "text" => {
-                y.value = value.to_string();
+                y.value = value_str;
             }
             Node::Toml(t) if attr == "value" || attr == "text" => {
-                t.value = value.to_string();
+                t.value = value_str;
             }
             Node::Image(i) => match attr {
                 "alt" => {
-                    i.alt = value.to_string();
+                    i.alt = value_str;
                 }
                 "url" => {
-                    i.url = value.to_string();
+                    i.url = value_str;
                 }
                 "title" => {
-                    i.title = if value.is_empty() {
+                    i.title = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 _ => (),
             },
             Node::ImageRef(i) => match attr {
                 "alt" => {
-                    i.alt = value.to_string();
+                    i.alt = value_str;
                 }
                 "ident" => {
-                    i.ident = value.to_string();
+                    i.ident = value_str;
                 }
                 "label" => {
-                    i.label = if value.is_empty() {
+                    i.label = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 _ => (),
             },
             Node::Link(l) => match attr {
                 "url" => {
-                    l.url = Url::new(value.to_string());
+                    l.url = Url::new(value_str);
                 }
                 "title" => {
-                    l.title = if value.is_empty() {
+                    l.title = if value_str.is_empty() {
                         None
                     } else {
-                        Some(Title::new(value.to_string()))
+                        Some(Title::new(value_str))
                     };
                 }
                 _ => (),
             },
             Node::LinkRef(l) => match attr {
                 "ident" => {
-                    l.ident = value.to_string();
+                    l.ident = value_str;
                 }
                 "label" => {
-                    l.label = if value.is_empty() {
+                    l.label = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 _ => (),
             },
             Node::FootnoteRef(f) => match attr {
                 "ident" => {
-                    f.ident = value.to_string();
+                    f.ident = value_str;
                 }
                 "label" => {
-                    f.label = if value.is_empty() {
+                    f.label = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 _ => (),
             },
             Node::Definition(d) => match attr {
                 "ident" => {
-                    d.ident = value.to_string();
+                    d.ident = value_str;
                 }
                 "url" => {
-                    d.url = Url::new(value.to_string());
+                    d.url = Url::new(value_str);
                 }
                 "title" => {
-                    d.title = if value.is_empty() {
+                    d.title = if value_str.is_empty() {
                         None
                     } else {
-                        Some(Title::new(value.to_string()))
+                        Some(Title::new(value_str))
                     };
                 }
                 "label" => {
-                    d.label = if value.is_empty() {
+                    d.label = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value.to_string())
+                        Some(value_str)
                     };
                 }
                 _ => (),
             },
             Node::Heading(h) if attr == "depth" => {
-                if let Ok(depth) = value.parse::<u8>() {
-                    h.depth = depth;
-                }
+                h.depth = match value {
+                    AttrValue::Integer(i) => i as u8,
+                    _ => value_str.parse::<u8>().unwrap_or(h.depth),
+                };
             }
             Node::List(l) => match attr {
                 "index" => {
-                    if let Ok(index) = value.parse::<usize>() {
-                        l.index = index;
-                    }
+                    l.index = match value {
+                        AttrValue::Integer(i) => i as usize,
+                        _ => value_str.parse::<usize>().unwrap_or(l.index),
+                    };
                 }
                 "level" => {
-                    if let Ok(level) = value.parse::<u8>() {
-                        l.level = level;
-                    }
+                    l.level = match value {
+                        AttrValue::Integer(i) => i as u8,
+                        _ => value_str.parse::<u8>().unwrap_or(l.level),
+                    };
                 }
                 "ordered" => {
-                    l.ordered = value == "true";
+                    l.ordered = match value {
+                        AttrValue::Boolean(b) => b,
+                        _ => value_str == "true",
+                    };
                 }
                 "checked" => {
-                    l.checked = if value.is_empty() {
+                    l.checked = if value_str.is_empty() {
                         None
                     } else {
-                        Some(value == "true")
-                    }
+                        Some(match value {
+                            AttrValue::Boolean(b) => b,
+                            _ => value_str == "true",
+                        })
+                    };
                 }
                 _ => (),
             },
             Node::TableCell(c) => match attr {
                 "column" => {
-                    if let Ok(column) = value.parse::<usize>() {
-                        c.column = column;
-                    }
+                    c.column = match value {
+                        AttrValue::Integer(i) => i as usize,
+                        _ => value_str.parse::<usize>().unwrap_or(c.column),
+                    };
                 }
                 "row" => {
-                    if let Ok(row) = value.parse::<usize>() {
-                        c.row = row;
-                    }
+                    c.row = match value {
+                        AttrValue::Integer(i) => i as usize,
+                        _ => value_str.parse::<usize>().unwrap_or(c.row),
+                    };
                 }
                 "last_cell_in_row" => {
-                    c.last_cell_in_row = value == "true";
+                    c.last_cell_in_row = match value {
+                        AttrValue::Boolean(b) => b,
+                        _ => value_str == "true",
+                    };
                 }
                 "last_cell_of_in_table" => {
-                    c.last_cell_of_in_table = value == "true";
+                    c.last_cell_of_in_table = match value {
+                        AttrValue::Boolean(b) => b,
+                        _ => value_str == "true",
+                    };
                 }
                 _ => (),
             },
             Node::TableHeader(th) if attr == "align" => {
-                th.align = value
+                th.align = value_str
                     .split(',')
                     .map(|s| match s.trim() {
                         ":---" => TableAlignKind::Left,
@@ -2047,29 +2193,26 @@ impl Node {
                     .collect();
             }
             Node::MdxFlowExpression(m) if attr == "value" || attr == "text" => {
-                m.value = value.into();
+                m.value = value_str.into();
             }
             Node::MdxTextExpression(m) if attr == "value" || attr == "text" => {
-                m.value = value.into();
+                m.value = value_str.into();
             }
             Node::MdxJsEsm(m) if attr == "value" || attr == "text" => {
-                m.value = value.into();
-            }
-            Node::MdxJsEsm(m) if attr == "value" || attr == "text" => {
-                m.value = value.into();
+                m.value = value_str.into();
             }
             Node::MdxJsxFlowElement(m) if attr == "name" => {
-                m.name = if value.is_empty() {
+                m.name = if value_str.is_empty() {
                     None
                 } else {
-                    Some(value.to_string())
-                }
+                    Some(value_str)
+                };
             }
             Node::MdxJsxTextElement(m) if attr == "name" => {
-                m.name = if value.is_empty() {
+                m.name = if value_str.is_empty() {
                     None
                 } else {
-                    Some(value.into())
+                    Some(value_str.into())
                 };
             }
             _ => (),
@@ -4014,62 +4157,62 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: Vec::new(), position: None}), "ident", Some("id".to_string()))]
+    #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: Vec::new(), position: None}), "ident", Some(AttrValue::String("id".to_string())))]
     #[case(Node::Footnote(Footnote{ident: "id".to_string(), values: Vec::new(), position: None}), "unknown", None)]
-    #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), "value", Some("<div>test</div>".to_string()))]
+    #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), "value", Some(AttrValue::String("<div>test</div>".to_string())))]
     #[case(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), "unknown", None)]
-    #[case(Node::Text(Text{value: "text".to_string(), position: None}), "value", Some("text".to_string()))]
+    #[case(Node::Text(Text{value: "text".to_string(), position: None}), "value", Some(AttrValue::String("text".to_string())))]
     #[case(Node::Text(Text{value: "text".to_string(), position: None}), "unknown", None)]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "value", Some("code".to_string()))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "lang", Some("rust".to_string()))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "meta", Some("meta".to_string()))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "fence", Some("true".to_string()))]
-    #[case(Node::Code(Code{value: "code".to_string(), lang: None, meta: None, fence: false, position: None}), "fence", Some("false".to_string()))]
-    #[case(Node::CodeInline(CodeInline{value: "inline".into(), position: None}), "value", Some("inline".to_string()))]
-    #[case(Node::MathInline(MathInline{value: "math".into(), position: None}), "value", Some("math".to_string()))]
-    #[case(Node::Math(Math{value: "math".to_string(), position: None}), "value", Some("math".to_string()))]
-    #[case(Node::Yaml(Yaml{value: "yaml".to_string(), position: None}), "value", Some("yaml".to_string()))]
-    #[case(Node::Toml(Toml{value: "toml".to_string(), position: None}), "value", Some("toml".to_string()))]
-    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}), "alt", Some("alt".to_string()))]
-    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}), "url", Some("url".to_string()))]
-    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}), "title", Some("title".to_string()))]
-    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}), "alt", Some("alt".to_string()))]
-    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}), "ident", Some("id".to_string()))]
-    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}), "label", Some("label".to_string()))]
-    #[case(Node::Link(Link{url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), values: Vec::new(), position: None}), "url", Some("url".to_string()))]
-    #[case(Node::Link(Link{url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), values: Vec::new(), position: None}), "title", Some("title".to_string()))]
-    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: Vec::new(), label: Some("label".to_string()), position: None}), "ident", Some("id".to_string()))]
-    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: Vec::new(), label: Some("label".to_string()), position: None}), "label", Some("label".to_string()))]
-    #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), "ident", Some("id".to_string()))]
-    #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), "label", Some("label".to_string()))]
-    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "ident", Some("id".to_string()))]
-    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "url", Some("url".to_string()))]
-    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "title", Some("title".to_string()))]
-    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "label", Some("label".to_string()))]
-    #[case(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "depth", Some("3".to_string()))]
-    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "index", Some("2".to_string()))]
-    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "level", Some("1".to_string()))]
-    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "ordered", Some("true".to_string()))]
-    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "checked", Some("true".to_string()))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "column", Some("1".to_string()))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "row", Some("2".to_string()))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "last_cell_in_row", Some("true".to_string()))]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "last_cell_of_in_table", Some("false".to_string()))]
-    #[case(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}), "align", Some(":---,---:".to_string()))]
-    #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "expr".into(), position: None}), "value", Some("expr".to_string()))]
-    #[case(Node::MdxTextExpression(MdxTextExpression{value: "expr".into(), position: None}), "value", Some("expr".to_string()))]
-    #[case(Node::MdxJsEsm(MdxJsEsm{value: "esm".into(), position: None}), "value", Some("esm".to_string()))]
-    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None}), "name", Some("div".to_string()))]
-    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None}), "name", Some("span".to_string()))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "value", Some(AttrValue::String("code".to_string())))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "lang", Some(AttrValue::String("rust".to_string())))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "meta", Some(AttrValue::String("meta".to_string())))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: Some("rust".to_string()), meta: Some("meta".to_string()), fence: true, position: None}), "fence", Some(AttrValue::Boolean(true)))]
+    #[case(Node::Code(Code{value: "code".to_string(), lang: None, meta: None, fence: false, position: None}), "fence", Some(AttrValue::Boolean(false)))]
+    #[case(Node::CodeInline(CodeInline{value: "inline".into(), position: None}), "value", Some(AttrValue::String("inline".to_string())))]
+    #[case(Node::MathInline(MathInline{value: "math".into(), position: None}), "value", Some(AttrValue::String("math".to_string())))]
+    #[case(Node::Math(Math{value: "math".to_string(), position: None}), "value", Some(AttrValue::String("math".to_string())))]
+    #[case(Node::Yaml(Yaml{value: "yaml".to_string(), position: None}), "value", Some(AttrValue::String("yaml".to_string())))]
+    #[case(Node::Toml(Toml{value: "toml".to_string(), position: None}), "value", Some(AttrValue::String("toml".to_string())))]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}), "alt", Some(AttrValue::String("alt".to_string())))]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}), "url", Some(AttrValue::String("url".to_string())))]
+    #[case(Node::Image(Image{alt: "alt".to_string(), url: "url".to_string(), title: Some("title".to_string()), position: None}), "title", Some(AttrValue::String("title".to_string())))]
+    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}), "alt", Some(AttrValue::String("alt".to_string())))]
+    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}), "ident", Some(AttrValue::String("id".to_string())))]
+    #[case(Node::ImageRef(ImageRef{alt: "alt".to_string(), ident: "id".to_string(), label: Some("label".to_string()), position: None}), "label", Some(AttrValue::String("label".to_string())))]
+    #[case(Node::Link(Link{url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), values: Vec::new(), position: None}), "url", Some(AttrValue::String("url".to_string())))]
+    #[case(Node::Link(Link{url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), values: Vec::new(), position: None}), "title", Some(AttrValue::String("title".to_string())))]
+    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: Vec::new(), label: Some("label".to_string()), position: None}), "ident", Some(AttrValue::String("id".to_string())))]
+    #[case(Node::LinkRef(LinkRef{ident: "id".to_string(), values: Vec::new(), label: Some("label".to_string()), position: None}), "label", Some(AttrValue::String("label".to_string())))]
+    #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), "ident", Some(AttrValue::String("id".to_string())))]
+    #[case(Node::FootnoteRef(FootnoteRef{ident: "id".to_string(), label: Some("label".to_string()), position: None}), "label", Some(AttrValue::String("label".to_string())))]
+    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "ident", Some(AttrValue::String("id".to_string())))]
+    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "url", Some(AttrValue::String("url".to_string())))]
+    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "title", Some(AttrValue::String("title".to_string())))]
+    #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new("url".to_string()), title: Some(Title::new("title".to_string())), label: Some("label".to_string()), position: None}), "label", Some(AttrValue::String("label".to_string())))]
+    #[case(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "depth", Some(AttrValue::Integer(3)))]
+    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "index", Some(AttrValue::Integer(2)))]
+    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "level", Some(AttrValue::Integer(1)))]
+    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "ordered", Some(AttrValue::Boolean(true)))]
+    #[case(Node::List(List{index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "checked", Some(AttrValue::Boolean(true)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "column", Some(AttrValue::Integer(1)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "row", Some(AttrValue::Integer(2)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "last_cell_in_row", Some(AttrValue::Boolean(true)))]
+    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: false, values: Vec::new(), position: None}), "last_cell_of_in_table", Some(AttrValue::Boolean(false)))]
+    #[case(Node::TableHeader(TableHeader{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}), "align", Some(AttrValue::String(":---,---:".to_string())))]
+    #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "expr".into(), position: None}), "value", Some(AttrValue::String("expr".to_string())))]
+    #[case(Node::MdxTextExpression(MdxTextExpression{value: "expr".into(), position: None}), "value", Some(AttrValue::String("expr".to_string())))]
+    #[case(Node::MdxJsEsm(MdxJsEsm{value: "esm".into(), position: None}), "value", Some(AttrValue::String("esm".to_string())))]
+    #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None}), "name", Some(AttrValue::String("div".to_string())))]
+    #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None}), "name", Some(AttrValue::String("span".to_string())))]
     #[case(Node::Break(Break{position: None}), "value", None)]
     #[case(Node::HorizontalRule(HorizontalRule{position: None}), "value", None)]
     #[case(Node::Fragment(Fragment{values: Vec::new()}), "value", None)]
-    #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), "value", Some("heading text".to_string()))]
-    #[case(Node::Heading(Heading{depth: 2, values: vec![], position: None}), "value", Some("".to_string()))]
+    #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), "value", Some(AttrValue::String("heading text".to_string())))]
+    #[case(Node::Heading(Heading{depth: 2, values: vec![], position: None}), "value", Some(AttrValue::String("".to_string())))]
     #[case(Node::Heading(Heading{depth: 3, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None}),
-    ], position: None}), "value", Some("firstsecond".to_string()))]
+    ], position: None}), "value", Some(AttrValue::String("firstsecond".to_string())))]
     #[case(
         Node::List(List {
             index: 0,
@@ -4083,7 +4226,7 @@ mod tests {
             position: None,
         }),
         "value",
-        Some("item1item2".to_string())
+        Some(AttrValue::String("item1item2".to_string()))
     )]
     #[case(
         Node::TableCell(TableCell {
@@ -4098,7 +4241,7 @@ mod tests {
             position: None,
         }),
         "value",
-        Some("cell_value".to_string())
+        Some(AttrValue::String("cell_value".to_string()))
     )]
     #[case(
         Node::Footnote(Footnote {
@@ -4110,7 +4253,7 @@ mod tests {
             position: None,
         }),
         "value",
-        Some("footnote value".to_string())
+        Some(AttrValue::String("footnote value".to_string()))
     )]
     #[case(
         Node::Link(Link {
@@ -4123,10 +4266,10 @@ mod tests {
             position: None,
         }),
         "value",
-        Some("link text".to_string())
+        Some(AttrValue::String("link text".to_string()))
     )]
     #[case(Node::Empty, "value", None)]
-    fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<String>) {
+    fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
     }
 
@@ -4410,5 +4553,34 @@ mod tests {
     ) {
         node.set_attr(attr, value);
         assert_eq!(node, expected);
+    }
+
+    #[rstest]
+    #[case(AttrValue::String("test".to_string()), AttrValue::String("test".to_string()), true)]
+    #[case(AttrValue::String("test".to_string()), AttrValue::String("other".to_string()), false)]
+    #[case(AttrValue::Integer(42), AttrValue::Integer(42), true)]
+    #[case(AttrValue::Integer(42), AttrValue::Integer(0), false)]
+    #[case(AttrValue::Boolean(true), AttrValue::Boolean(true), true)]
+    #[case(AttrValue::Boolean(true), AttrValue::Boolean(false), false)]
+    #[case(AttrValue::String("42".to_string()), AttrValue::Integer(42), false)]
+    #[case(AttrValue::Boolean(false), AttrValue::Integer(0), false)]
+    fn test_attr_value_eq(#[case] a: AttrValue, #[case] b: AttrValue, #[case] expected: bool) {
+        assert_eq!(a == b, expected);
+    }
+
+    #[rstest]
+    #[case(AttrValue::String("test".to_string()), "test")]
+    #[case(AttrValue::Integer(42), "42")]
+    #[case(AttrValue::Boolean(true), "true")]
+    fn test_attr_value_as_str(#[case] value: AttrValue, #[case] expected: &str) {
+        assert_eq!(&value.as_string(), expected);
+    }
+
+    #[rstest]
+    #[case(AttrValue::Integer(42), Some(42))]
+    #[case(AttrValue::String("42".to_string()), Some(42))]
+    #[case(AttrValue::Boolean(false), Some(0))]
+    fn test_attr_value_as_i64(#[case] value: AttrValue, #[case] expected: Option<i64>) {
+        assert_eq!(value.as_i64(), expected);
     }
 }

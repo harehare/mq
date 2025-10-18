@@ -93,7 +93,7 @@ test: fmt lint test-mq test-doc test-all-features
 
 # Run tests with code coverage reporting
 test-cov:
-    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|wasm|web-api|dap|tui|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
+    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|wasm|web-api|dap|tui|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
 # Run fuzzing tests
 test-fuzz:

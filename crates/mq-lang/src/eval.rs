@@ -224,7 +224,7 @@ impl Evaluator {
                 }
                 RuntimeValue::Array(_)
                 | RuntimeValue::Dict(_)
-                | RuntimeValue::Bool(_)
+                | RuntimeValue::Boolean(_)
                 | RuntimeValue::Number(_)
                 | RuntimeValue::String(_) => value.to_string().into(),
                 RuntimeValue::Symbol(i) => i.as_str().into(),
@@ -598,7 +598,7 @@ impl Evaluator {
     fn eval_literal(&self, literal: &ast::Literal) -> RuntimeValue {
         match literal {
             ast::Literal::None => RuntimeValue::None,
-            ast::Literal::Bool(b) => RuntimeValue::Bool(*b),
+            ast::Literal::Bool(b) => RuntimeValue::Boolean(*b),
             ast::Literal::String(s) => RuntimeValue::String(s.clone()),
             ast::Literal::Symbol(i) => RuntimeValue::Symbol(*i),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
@@ -854,7 +854,7 @@ impl Evaluator {
                 let matches = match type_str.as_str() {
                     "string" => matches!(value, RuntimeValue::String(_)),
                     "number" => matches!(value, RuntimeValue::Number(_)),
-                    "bool" => matches!(value, RuntimeValue::Bool(_)),
+                    "bool" => matches!(value, RuntimeValue::Boolean(_)),
                     "array" => matches!(value, RuntimeValue::Array(_)),
                     "dict" => matches!(value, RuntimeValue::Dict(_)),
                     "markdown" => matches!(value, RuntimeValue::Markdown(_, _)),
@@ -2203,7 +2203,7 @@ mod tests {
     #[case::split_array_mixed_types(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(1.into()),
             RuntimeValue::String("separator".to_string()),
-            RuntimeValue::Bool(true),
+            RuntimeValue::Boolean(true),
         ])],
         vec![
             ast_call("split", smallvec![
@@ -2212,7 +2212,7 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Array(vec![
             RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]),
-            RuntimeValue::Array(vec![RuntimeValue::Bool(true)])
+            RuntimeValue::Array(vec![RuntimeValue::Boolean(true)])
         ])]))]
     #[case::join1(vec![RuntimeValue::String("test1,test2".to_string())],
        vec![
@@ -2576,7 +2576,7 @@ mod tests {
     #[case::slice_array_mixed_types(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("item1".to_string()),
             RuntimeValue::Number(42.into()),
-            RuntimeValue::Bool(true),
+            RuntimeValue::Boolean(true),
             RuntimeValue::String("item4".to_string()),
         ])],
        vec![
@@ -2587,7 +2587,7 @@ mod tests {
        ],
        Ok(vec![RuntimeValue::Array(vec![
             RuntimeValue::Number(42.into()),
-            RuntimeValue::Bool(true),
+            RuntimeValue::Boolean(true),
         ])]))]
     #[case::slice(vec![RuntimeValue::Number(123.into())],
        vec![
@@ -3194,7 +3194,7 @@ mod tests {
             RuntimeValue::String("test".to_string()),
             RuntimeValue::Number(1.into()),
             RuntimeValue::Number(2.into()),
-            RuntimeValue::Bool(false),
+            RuntimeValue::Boolean(false),
         ])],
         vec![
             ast_call("to_string", SmallVec::new())
@@ -3215,7 +3215,7 @@ mod tests {
              ast_call("to_text", SmallVec::new())
         ],
         Ok(vec!["42".to_string().into()]))]
-    #[case::to_text(vec![RuntimeValue::Bool(true)],
+    #[case::to_text(vec![RuntimeValue::Boolean(true)],
         vec![
              ast_call("to_text", SmallVec::new())
         ],
@@ -3700,7 +3700,7 @@ mod tests {
             Ok(vec![RuntimeValue::Array(Vec::new())]))]
     #[case::flatten_mixed_type_arrays(vec![RuntimeValue::Array(vec![
                 RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into())]),
-                RuntimeValue::Array(vec![RuntimeValue::Bool(true), RuntimeValue::String("b".to_string())])
+                RuntimeValue::Array(vec![RuntimeValue::Boolean(true), RuntimeValue::String("b".to_string())])
             ])],
             vec![
                 ast_call("flatten", SmallVec::new())
@@ -3708,7 +3708,7 @@ mod tests {
             Ok(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("a".to_string()),
                 RuntimeValue::Number(1.into()),
-                RuntimeValue::Bool(true),
+                RuntimeValue::Boolean(true),
                 RuntimeValue::String("b".to_string())
             ])]))]
     #[case::flatten_array_with_none_values(vec![RuntimeValue::Array(vec![
@@ -3827,7 +3827,7 @@ mod tests {
     #[case::set_array_mixed_types(vec![RuntimeValue::Array(vec![
         RuntimeValue::String("text".to_string()),
         RuntimeValue::Number(42.into()),
-        RuntimeValue::Bool(true),
+        RuntimeValue::Boolean(true),
         ])],
         vec![
         ast_call("set", smallvec![
@@ -3838,7 +3838,7 @@ mod tests {
         Ok(vec![RuntimeValue::Array(vec![
         RuntimeValue::String("text".to_string()),
         RuntimeValue::String("replaced".to_string()),
-        RuntimeValue::Bool(true),
+        RuntimeValue::Boolean(true),
         ])]))]
     #[case::set_array_with_none(vec![RuntimeValue::Array(vec![
         RuntimeValue::String("item1".to_string()),
@@ -3953,7 +3953,7 @@ mod tests {
     #[case::del_dict_mixed_value_types(vec![RuntimeValue::Dict(vec![
             (Ident::new("str_key"), RuntimeValue::String("string_value".to_string())),
             (Ident::new("num_key"), RuntimeValue::Number(42.into())),
-            (Ident::new("bool_key"), RuntimeValue::Bool(true)),
+            (Ident::new("bool_key"), RuntimeValue::Boolean(true)),
             (Ident::new("array_key"), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
         ].into_iter().collect())],
         vec![
@@ -3963,7 +3963,7 @@ mod tests {
         ],
         Ok(vec![RuntimeValue::Dict(vec![
             (Ident::new("str_key"), RuntimeValue::String("string_value".to_string())),
-            (Ident::new("bool_key"), RuntimeValue::Bool(true)),
+            (Ident::new("bool_key"), RuntimeValue::Boolean(true)),
             (Ident::new("array_key"), RuntimeValue::Array(vec![RuntimeValue::String("item".to_string())])),
         ].into_iter().collect())]))]
     #[case::del_dict_with_number_key_as_string(vec![RuntimeValue::Dict(vec![
@@ -4529,11 +4529,11 @@ mod tests {
             ast_call("to_array", SmallVec::new())
         ],
         Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(42.into())])]))]
-    #[case::to_array_bool(vec![RuntimeValue::Bool(true)],
+    #[case::to_array_bool(vec![RuntimeValue::Boolean(true)],
         vec![
             ast_call("to_array", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Bool(true)])]))]
+        Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Boolean(true)])]))]
     #[case::to_array_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())])],
         vec![
             ast_call("to_array", SmallVec::new())
@@ -4842,7 +4842,7 @@ mod tests {
                 args: vec!["test".to_string().into()]
             })))]
     #[case::and_true_last_value(
-                vec![RuntimeValue::Bool(true)],
+                vec![RuntimeValue::Boolean(true)],
                 vec![
                     ast_call("and", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
@@ -4852,17 +4852,17 @@ mod tests {
                 Ok(vec![RuntimeValue::String("last".to_string())])
             )]
     #[case::and_false_first_value(
-                vec![RuntimeValue::Bool(false)],
+                vec![RuntimeValue::Boolean(false)],
                 vec![
                     ast_call("and", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("should_not_evaluate".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::Bool(false)])
+                Ok(vec![RuntimeValue::Boolean(false)])
             )]
     #[case::and_mixed_values(
-                vec![RuntimeValue::Bool(true)],
+                vec![RuntimeValue::Boolean(true)],
                 vec![
                     ast_call("and", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
@@ -4872,7 +4872,7 @@ mod tests {
                 Ok(vec![RuntimeValue::Number(42.into())])
             )]
     #[case::and_multiple_true(
-                vec![RuntimeValue::Bool(true)],
+                vec![RuntimeValue::Boolean(true)],
                 vec![
                     ast_call("and", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
@@ -4883,27 +4883,27 @@ mod tests {
                 Ok(vec![RuntimeValue::String("final".to_string())])
             )]
     #[case::and_first_false(
-                vec![RuntimeValue::Bool(false)],
+                vec![RuntimeValue::Boolean(false)],
                 vec![
                     ast_call("and", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("should_not_evaluate".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::Bool(false)])
+                Ok(vec![RuntimeValue::Boolean(false)])
             )]
     #[case::or_true_first_value(
-                vec![RuntimeValue::Bool(true)],
+                vec![RuntimeValue::Boolean(true)],
                 vec![
                     ast_call("or", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                         ast_node(ast::Expr::Literal(ast::Literal::String("should_not_evaluate".to_string()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::Bool(true)])
+                Ok(vec![RuntimeValue::Boolean(true)])
             )]
     #[case::or_false_last_value(
-                vec![RuntimeValue::Bool(false)],
+                vec![RuntimeValue::Boolean(false)],
                 vec![
                     ast_call("or", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -4913,7 +4913,7 @@ mod tests {
                 Ok(vec![RuntimeValue::String("last".to_string())])
             )]
     #[case::or_multiple_false_then_true(
-                vec![RuntimeValue::Bool(false)],
+                vec![RuntimeValue::Boolean(false)],
                 vec![
                     ast_call("or", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -4924,7 +4924,7 @@ mod tests {
                 Ok(vec![RuntimeValue::Number(123.into())])
             )]
     #[case::or_all_false(
-                vec![RuntimeValue::Bool(false)],
+                vec![RuntimeValue::Boolean(false)],
                 vec![
                     ast_call("or", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
@@ -4932,17 +4932,17 @@ mod tests {
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::Bool(false)])
+                Ok(vec![RuntimeValue::Boolean(false)])
             )]
     #[case::or_first_true(
-                vec![RuntimeValue::Bool(true)],
+                vec![RuntimeValue::Boolean(true)],
                 vec![
                     ast_call("or", smallvec![
                         ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
                         ast_node(ast::Expr::Literal(ast::Literal::Number(999.into()))),
                     ])
                 ],
-                Ok(vec![RuntimeValue::Bool(true)])
+                Ok(vec![RuntimeValue::Boolean(true)])
             )]
     #[case::intern_string(
                 vec![RuntimeValue::String("hello".to_string())],
@@ -4993,14 +4993,14 @@ mod tests {
                 vec![
                     ast_call("is_nan", SmallVec::new())
                 ],
-                Ok(vec![RuntimeValue::Bool(true)])
+                Ok(vec![RuntimeValue::Boolean(true)])
             )]
     #[case::is_nan_with_number(
         vec![RuntimeValue::Number(42.0.into())],
         vec![
             ast_call("is_nan", SmallVec::new())
         ],
-        Ok(vec![RuntimeValue::Bool(false)])
+        Ok(vec![RuntimeValue::Boolean(false)])
     )]
     #[case::coalesce_first_non_none(
         vec![RuntimeValue::NONE],
@@ -5299,7 +5299,7 @@ mod tests {
         Ok(vec![RuntimeValue::String("The answer is 42.".to_string())])
     )]
     #[case::interpolated_string_with_bool(
-        vec![RuntimeValue::Bool(true)],
+        vec![RuntimeValue::Boolean(true)],
         vec![
             ast_node(ast::Expr::InterpolatedString(vec![
                 ast::StringSegment::Text("Value: ".to_string()),

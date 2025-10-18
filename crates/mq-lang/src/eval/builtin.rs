@@ -1239,7 +1239,7 @@ define_builtin!(GT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
     [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 > s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
-    [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 > b2).into()),
+    [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 > b2).into()),
     [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
         Ok((n1 > n2).into())
     }
@@ -1254,7 +1254,7 @@ define_builtin!(
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
         [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 >= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
-        [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 >= b2).into()),
+        [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 >= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
             Ok((n1 >= n2).into())
         }
@@ -1267,7 +1267,7 @@ define_builtin!(LT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
     [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 < s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
-    [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 < b2).into()),
+    [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 < b2).into()),
     [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
         Ok((n1 < n2).into())
     }
@@ -1282,7 +1282,7 @@ define_builtin!(
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
         [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 <= s2).into()),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
-        [RuntimeValue::Bool(b1), RuntimeValue::Bool(b2)] => Ok((b1 <= b2).into()),
+        [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 <= b2).into()),
         [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => {
             Ok((n1 <= n2).into())
         }
@@ -1409,12 +1409,12 @@ define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args| {
     let mut last_truthy = None;
     for arg in args {
         if !arg.is_truthy() {
-            return Ok(RuntimeValue::Bool(false));
+            return Ok(RuntimeValue::Boolean(false));
         }
         let mut arg = arg;
         last_truthy = Some(std::mem::take(&mut arg));
     }
-    Ok(last_truthy.unwrap_or(RuntimeValue::Bool(true)))
+    Ok(last_truthy.unwrap_or(RuntimeValue::Boolean(true)))
 });
 
 define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| {
@@ -1424,7 +1424,7 @@ define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| {
             return Ok(std::mem::take(&mut arg));
         }
     }
-    Ok(RuntimeValue::Bool(false))
+    Ok(RuntimeValue::Boolean(false))
 });
 
 define_builtin!(
@@ -1440,13 +1440,10 @@ define_builtin!(
     ATTR,
     ParamNum::Fixed(2),
     |_, _, mut args| match args.as_mut_slice() {
-        [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
-            let value = node.attr(attr);
-            match value {
-                Some(val) => Ok(RuntimeValue::String(val)),
-                None => Ok(RuntimeValue::None),
-            }
-        }
+        [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => Ok(node
+            .attr(attr)
+            .map(Into::into)
+            .unwrap_or(RuntimeValue::NONE)),
         [a, ..] => Ok(std::mem::take(a)),
         _ => unreachable!(),
     }
@@ -1459,9 +1456,34 @@ define_builtin!(
         [
             RuntimeValue::Markdown(node, selector),
             RuntimeValue::String(attr),
-            RuntimeValue::String(value),
+            value,
         ] => {
             let mut new_node = std::mem::replace(node, mq_markdown::Node::Empty);
+            let value = match value {
+                RuntimeValue::String(s) => mq_markdown::AttrValue::String(s.to_string()),
+                RuntimeValue::Number(n) => {
+                    if n.is_int() {
+                        mq_markdown::AttrValue::Integer(n.value() as i64)
+                    } else {
+                        mq_markdown::AttrValue::Number(n.value())
+                    }
+                }
+                RuntimeValue::Boolean(b) => mq_markdown::AttrValue::Boolean(*b),
+                RuntimeValue::None => mq_markdown::AttrValue::Null,
+                _ => {
+                    return Err(Error::InvalidTypes(
+                        "set_attr".to_string(),
+                        vec![
+                            RuntimeValue::Markdown(
+                                std::mem::replace(node, mq_markdown::Node::Empty),
+                                selector.take(),
+                            ),
+                            RuntimeValue::String(attr.clone()),
+                            std::mem::take(value),
+                        ],
+                    ));
+                }
+            };
             new_node.set_attr(attr, value);
             Ok(RuntimeValue::Markdown(new_node, selector.take()))
         }
@@ -1664,7 +1686,7 @@ define_builtin!(
     |_, _, mut args| match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
-            RuntimeValue::Bool(ordered),
+            RuntimeValue::Boolean(ordered),
         ] => Ok(mq_markdown::Node::List(mq_markdown::List {
             ordered: *ordered,
             ..std::mem::take(list)
@@ -1852,7 +1874,7 @@ define_builtin!(SET_CHECK, ParamNum::Fixed(2), |_, _, mut args| {
     match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
-            RuntimeValue::Bool(checked),
+            RuntimeValue::Boolean(checked),
         ] => Ok(mq_markdown::Node::List(mq_markdown::List {
             checked: Some(*checked),
             ..std::mem::take(list)
@@ -2223,7 +2245,7 @@ define_builtin!(
     ParamNum::Fixed(1),
     |_, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => {
-            Ok(RuntimeValue::Bool(n.is_nan()))
+            Ok(RuntimeValue::Boolean(n.is_nan()))
         }
         [_] => {
             Ok(RuntimeValue::FALSE)
@@ -4090,7 +4112,9 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
                         .parse::<f64>()
                         .map(|n| RuntimeValue::Number(n.into()))
                         .map_err(|e| Error::Runtime(format!("{}", e))),
-                    RuntimeValue::Bool(b) => Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into())),
+                    RuntimeValue::Boolean(b) => {
+                        Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into()))
+                    }
                     n @ RuntimeValue::Number(_) => Ok(n),
                     _ => Ok(RuntimeValue::Number(0.into())),
                 })
@@ -4098,8 +4122,8 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
 
             result_value.map(RuntimeValue::Array)
         }
-        RuntimeValue::Bool(true) => Ok(RuntimeValue::Number(1.into())),
-        RuntimeValue::Bool(false) => Ok(RuntimeValue::Number(0.into())),
+        RuntimeValue::Boolean(true) => Ok(RuntimeValue::Number(1.into())),
+        RuntimeValue::Boolean(false) => Ok(RuntimeValue::Number(0.into())),
         RuntimeValue::Number(n) => Ok(RuntimeValue::Number(*n)),
         _ => Ok(RuntimeValue::Number(0.into())),
     }
@@ -4153,8 +4177,8 @@ mod tests {
     #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
     #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
     #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Bool(true)))]
-    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Bool(true)))]
+    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Boolean(true)))]
+    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Boolean(true)))]
     fn test_eval_builtin(
         #[case] func_name: &str,
         #[case] args: Args,
@@ -4168,8 +4192,8 @@ mod tests {
     #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
     #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string()))]
     #[case("add", Vec::new(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
-    #[case("add", vec![RuntimeValue::Bool(true), RuntimeValue::Number(1.0.into())],
-        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Bool(true), RuntimeValue::Number(1.0.into())]))]
+    #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())],
+        Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(
         #[case] func_name: &str,
         #[case] args: Args,
@@ -4188,7 +4212,7 @@ mod tests {
         let args = vec![RuntimeValue::String("hello".into())];
 
         let result = eval_builtin(&first_arg, &ident, args);
-        assert_eq!(result, Ok(RuntimeValue::Bool(true)));
+        assert_eq!(result, Ok(RuntimeValue::Boolean(true)));
     }
     #[rstest]
     #[case::code(

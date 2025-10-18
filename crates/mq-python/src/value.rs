@@ -126,7 +126,7 @@ impl From<mq_lang::RuntimeValue> for MQValue {
                 value: n.to_string(),
                 markdown_type: MarkdownType::Text,
             },
-            mq_lang::RuntimeValue::Bool(b) => MQValue::Markdown {
+            mq_lang::RuntimeValue::Boolean(b) => MQValue::Markdown {
                 value: b.to_string(),
                 markdown_type: MarkdownType::Text,
             },
