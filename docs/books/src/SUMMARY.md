@@ -4,6 +4,7 @@
 - [Getting Started](start/index.md)
   - [Install](start/install.md)
   - [Development](start/development.md)
+  - [Syntax Highlighting](start/syntax-highlighting.md)
   - [Playground](start/playground.md)
   - [TUI](start/tui.md)
   - [Web crawler](start/crawler.md)
