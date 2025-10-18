@@ -750,7 +750,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue|match)\b/,
+            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
