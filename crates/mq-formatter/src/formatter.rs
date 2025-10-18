@@ -222,20 +222,21 @@ impl Formatter {
 
     fn format_dict(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
+        let len = node.children.len();
         let indent_adjustment = if self.is_let_line() {
             self.current_line_indent()
         } else {
             0
         };
 
-        for child in &node.children {
+        for child in &node.children[..len.saturating_sub(1)] {
             match child.kind {
                 mq_lang::CstNodeKind::DictEntry => {
-                    let key = &child.children[0];
+                    let key = child.children.first();
                     let colon = child.children.get(1);
                     let value = child.children.get(2);
 
-                    if let (Some(colon), Some(value)) = (colon, value) {
+                    if let (Some(key), Some(colon), Some(value)) = (key, colon, value) {
                         if key.has_new_line() {
                             self.format_node(
                                 mq_lang::Shared::clone(key),
@@ -254,12 +255,22 @@ impl Formatter {
                                 0
                             },
                         );
-                    } else {
-                        self.format_node(mq_lang::Shared::clone(key), 0);
                     }
                 }
-                _ => self.format_node(mq_lang::Shared::clone(child), 0),
+                _ => self.format_node(mq_lang::Shared::clone(child), indent_level),
             }
+        }
+
+        if let Some(last) = node.children.last() {
+            if last.has_new_line() {
+                self.append_newline();
+                self.append_indent(indent_level + indent_adjustment);
+            }
+
+            self.format_node(
+                mq_lang::Shared::clone(last),
+                indent_level + indent_adjustment,
+            );
         }
     }
 
@@ -1105,15 +1116,6 @@ impl Formatter {
                 mq_lang::TokenKind::RParen => {
                     if node.has_new_line() {
                         let indent_level = indent_level.saturating_sub(1);
-                        self.append_leading_trivia(node, indent_level);
-                        self.append_indent(indent_level);
-                        self.output.push_str(&token.to_string());
-                    } else {
-                        self.output.push_str(&token.to_string());
-                    }
-                }
-                mq_lang::TokenKind::RBrace => {
-                    if node.has_new_line() {
                         self.append_leading_trivia(node, indent_level);
                         self.append_indent(indent_level);
                         self.output.push_str(&token.to_string());
