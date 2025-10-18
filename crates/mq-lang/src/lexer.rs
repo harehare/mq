@@ -3,7 +3,7 @@ pub mod token;
 
 use error::LexerError;
 use nom::Parser;
-use nom::bytes::complete::{is_not, take_until};
+use nom::bytes::complete::{is_not, take_until, take_while1};
 use nom::character::complete::{digit1, line_ending};
 use nom::combinator::{cut, opt};
 use nom::{
@@ -89,19 +89,16 @@ impl Lexer {
 
     pub fn tokenize(&self, input: &str, module_id: ModuleId) -> Result<Vec<Token>, LexerError> {
         match tokens(Span::new_extra(input, module_id), &self.options) {
-            Ok((span, tokens)) => {
+            Ok((span, mut tokens)) => {
                 let eof: Range = span.into();
 
                 if eof.start == eof.end || self.options.ignore_errors {
-                    Ok([
-                        tokens,
-                        vec![Token {
-                            range: eof,
-                            kind: TokenKind::Eof,
-                            module_id,
-                        }],
-                    ]
-                    .concat())
+                    tokens.push(Token {
+                        range: eof,
+                        kind: TokenKind::Eof,
+                        module_id,
+                    });
+                    Ok(tokens)
                 } else {
                     Err(LexerError::UnexpectedEOFDetected(module_id))
                 }
@@ -176,7 +173,7 @@ fn newline(input: Span) -> IResult<Span, Token> {
 }
 
 fn tab(input: Span) -> IResult<Span, Token> {
-    map(recognize(many1(char('\t'))), |span: Span| {
+    map(take_while1(|c| c == '\t'), |span: Span| {
         let module_id = span.extra;
         let num = span.fragment().len();
         Token {
@@ -189,7 +186,7 @@ fn tab(input: Span) -> IResult<Span, Token> {
 }
 
 fn spaces(input: Span) -> IResult<Span, Token> {
-    map(recognize(many1(char(' '))), |span: Span| {
+    map(take_while1(|c| c == ' '), |span: Span| {
         let module_id = span.extra;
         let num = span.fragment().len();
         Token {
@@ -583,7 +580,9 @@ fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<To
     if options.include_spaces {
         many0(token_include_spaces).parse(input)
     } else {
-        many0(delimited(multispace0, token, multispace0)).parse(input)
+        let (input, tokens) = many0(preceded(multispace0, token)).parse(input)?;
+        let (input, _) = multispace0(input)?;
+        Ok((input, tokens))
     }
 }
 
