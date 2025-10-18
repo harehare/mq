@@ -188,6 +188,10 @@ impl Node {
         matches!(self.kind, NodeKind::Fn)
     }
 
+    pub fn is_def(&self) -> bool {
+        matches!(self.kind, NodeKind::Def)
+    }
+
     pub fn comments(&self) -> Vec<Comment> {
         self.leading_trivia
             .iter()

@@ -161,7 +161,9 @@ impl Formatter {
                 self.format_pattern(&node, indent_level_consider_new_line)
             }
             mq_lang::CstNodeKind::Token => self.append_token(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::DictEntry => unreachable!(),
+            mq_lang::CstNodeKind::DictEntry => {
+                self.format_dict_entry(&node, indent_level_consider_new_line)
+            }
         }
     }
 
@@ -220,6 +222,35 @@ impl Formatter {
         });
     }
 
+    fn format_dict_entry(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+
+        let key = node.children.first();
+        let colon = node.children.get(1);
+        let value = node.children.get(2);
+
+        if let (Some(key), Some(colon), Some(value)) = (key, colon, value) {
+            self.format_node(
+                mq_lang::Shared::clone(key),
+                if key.has_new_line() {
+                    indent_level + 1
+                } else {
+                    0
+                },
+            );
+            self.format_node(mq_lang::Shared::clone(colon), 0);
+            self.append_space();
+            self.format_node(
+                mq_lang::Shared::clone(value),
+                if value.is_fn() || value.is_def() {
+                    indent_level + 1
+                } else {
+                    0
+                },
+            );
+        }
+    }
+
     fn format_dict(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         let len = node.children.len();
@@ -230,35 +261,10 @@ impl Formatter {
         };
 
         for child in &node.children[..len.saturating_sub(1)] {
-            match child.kind {
-                mq_lang::CstNodeKind::DictEntry => {
-                    let key = child.children.first();
-                    let colon = child.children.get(1);
-                    let value = child.children.get(2);
-
-                    if let (Some(key), Some(colon), Some(value)) = (key, colon, value) {
-                        if key.has_new_line() {
-                            self.format_node(
-                                mq_lang::Shared::clone(key),
-                                indent_level + indent_adjustment + 1,
-                            );
-                        } else {
-                            self.format_node(mq_lang::Shared::clone(key), 0);
-                        }
-                        self.format_node(mq_lang::Shared::clone(colon), 0);
-                        self.append_space();
-                        self.format_node(
-                            mq_lang::Shared::clone(value),
-                            if value.is_fn() {
-                                indent_level + indent_adjustment + 1
-                            } else {
-                                0
-                            },
-                        );
-                    }
-                }
-                _ => self.format_node(mq_lang::Shared::clone(child), indent_level),
-            }
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                indent_level + indent_adjustment + 1,
+            );
         }
 
         if let Some(last) = node.children.last() {
@@ -1711,7 +1717,7 @@ process();
         r#"{
   "key1": fn():
     process();
-,"key2": "value2"
+  ,"key2": "value2"
 }"#
     )]
     #[case::do_block_multiline(
