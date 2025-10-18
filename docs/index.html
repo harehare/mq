@@ -99,6 +99,30 @@
       }
       footer {
         margin-top: auto;
+        background-color: var(--bg-secondary);
+        border-top: 1px solid var(--border-default);
+        padding: 3rem 0;
+        text-align: center;
+      }
+      footer p {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin: 0.5rem 0;
+      }
+      footer a {
+        color: #67b8e3;
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+      footer a:hover {
+        color: #4fc3f7;
+        text-decoration: underline;
+      }
+      footer .footer-links {
+        display: flex;
+        gap: 1.5rem;
+        justify-content: center;
+        margin-bottom: 1rem;
       }
 
       /* Navigation */
@@ -135,7 +159,7 @@
         color: #e2e8f0;
       }
       .nav-links a::after {
-        background-color: var(--accent-primary);
+        background-color: #67b8e3;
         bottom: -4px;
         content: "";
         height: 2px;
@@ -185,7 +209,7 @@
       .logo {
         align-items: center;
         display: flex;
-        gap: 0.5rem;
+        gap: 1.5rem;
         justify-content: center;
         margin-bottom: 1.2rem;
       }
@@ -212,22 +236,14 @@
         align-items: center;
         display: flex;
         flex-direction: column;
+        gap: 1rem;
         justify-content: center;
         position: relative;
         z-index: 10;
       }
       .title {
         animation: fadeIn 0.8s ease-out;
-        background: linear-gradient(
-          135deg,
-          #0277bd 0%,
-          #0288d1 50%,
-          #67b8e3 100%
-        );
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        color: #0288d1;
+        color: #67b8e3;
         display: inline-block;
         font-size: 5rem;
         font-weight: 800;
@@ -244,9 +260,7 @@
         font-weight: 400;
         letter-spacing: 0.5px;
         line-height: 1.7;
-        margin: 0 1rem 0 0;
-        margin-left: auto;
-        margin-right: auto;
+        margin: 0 auto;
         max-width: 600px;
         opacity: 0;
       }
@@ -276,11 +290,11 @@
 
       /* CTA & Links */
       .cta {
-        background-color: var(--accent-primary);
+        background-color: #67b8e3;
         border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(2, 136, 209, 0.15),
+        box-shadow: 0 2px 8px rgba(103, 184, 227, 0.2),
           0 1px 3px rgba(0, 0, 0, 0.1);
-        color: #ffffff;
+        color: #1e293b;
         display: inline-block;
         font-weight: 600;
         margin: 10px;
@@ -289,8 +303,8 @@
         transition: all 0.3s;
       }
       .cta:hover {
-        background-color: var(--accent-secondary);
-        box-shadow: 0 4px 12px rgba(2, 136, 209, 0.25),
+        background-color: #4fc3f7;
+        box-shadow: 0 4px 12px rgba(103, 184, 227, 0.35),
           0 2px 6px rgba(0, 0, 0, 0.15);
         transform: translateY(-2px);
       }
@@ -318,8 +332,8 @@
       }
       .link-item:hover {
         background-color: #fafbfc;
-        border-color: var(--accent-primary);
-        box-shadow: 0 4px 12px rgba(2, 136, 209, 0.15);
+        border-color: #67b8e3;
+        box-shadow: 0 4px 12px rgba(103, 184, 227, 0.25);
         transform: translateY(-2px);
       }
       .links {
@@ -331,12 +345,12 @@
       }
       .secondary-cta {
         background-color: transparent;
-        border: 2px solid var(--accent-primary);
-        color: var(--accent-primary);
+        border: 2px solid #67b8e3;
+        color: #67b8e3;
       }
       .secondary-cta:hover {
-        background-color: var(--accent-primary);
-        color: #ffffff;
+        background-color: #67b8e3;
+        color: #1e293b;
       }
 
       /* Features */
@@ -367,8 +381,8 @@
         font-size: 0.95rem;
       }
       .feature-item:hover {
-        border-color: var(--accent-primary);
-        box-shadow: 0 6px 16px rgba(2, 136, 209, 0.15);
+        border-color: #67b8e3;
+        box-shadow: 0 6px 16px rgba(103, 184, 227, 0.25);
         transform: translateY(-5px);
       }
       .features-grid {
@@ -759,7 +773,15 @@
 
     <footer>
       <div class="container">
-        <p class="version">Latest Version: v0.2.23</p>
+        <div class="footer-links">
+          <a href="https://github.com/harehare/mq" target="_blank">GitHub</a>
+          <a href="https://mqlang.org/book/" target="_blank">Documentation</a>
+          <a
+            href="https://github.com/harehare/mq/blob/main/LICENSE"
+            target="_blank"
+            >MIT License</a
+          >
+        </div>
       </div>
     </footer>
   </body>
