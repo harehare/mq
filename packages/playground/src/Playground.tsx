@@ -723,6 +723,22 @@ export const Playground = () => {
               endColumn: wordRange.endColumn,
             },
           },
+          {
+            label: "match",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "match (${1:value}):\n  | ${2:pattern}: ${3:body}\nend",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Match expression",
+            documentation:
+              "Creates a match expression that destructures the value and matches it against patterns",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
         ];
 
         return { suggestions: [...suggestions, ...snippets] };
@@ -734,7 +750,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue|match)\b/,
+            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],

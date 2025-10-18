@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import which from "which";
 import { MqDebugConfigurationProvider } from "./providers/debugger";
 import { MqCodeLensProvider } from "./providers/codelens";
+import { LspStatusBarManager } from "./providers/statusbar";
 
 const MQ_VERSION_KEY = "mq.version" as const;
 const COMMANDS = ["mq/run"] as const;
@@ -42,6 +43,7 @@ include "csv" | csv_parse("a,b,c\n1,2,3\n4,5,6", true) | csv_to_markdown_table()
 
 let client: lc.LanguageClient | null = null;
 let codeLensProvider: vscode.Disposable | null = null;
+let statusBarManager: LspStatusBarManager | null = null;
 
 const InputFormatMap = {
   md: "markdown",
@@ -154,6 +156,35 @@ function registerLspCommands(context: vscode.ExtensionContext) {
       }
       await stopLspServer();
       await startLspServer();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.stopLSPServer", async () => {
+      await stopLspServer();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.restartLSPServer", async () => {
+      await stopLspServer();
+      await startLspServer();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.showLspStatus", async () => {
+      if (statusBarManager) {
+        await statusBarManager.showStatusMenu();
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mq.showLSPOutput", () => {
+      if (client) {
+        client.outputChannel?.show();
+      }
     })
   );
 }
@@ -386,6 +417,20 @@ async function initializeLspServer(context: vscode.ExtensionContext) {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  // Initialize status bar manager
+  statusBarManager = new LspStatusBarManager();
+  context.subscriptions.push(statusBarManager);
+
+  // Update status bar visibility when active editor changes
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      statusBarManager?.updateVisibility(editor);
+    })
+  );
+
+  // Set initial visibility
+  statusBarManager.updateVisibility(vscode.window.activeTextEditor);
+
   registerNewCommand(context);
   registerLspCommands(context);
   registerDebugCommands(context);
@@ -491,6 +536,7 @@ const startLspServer = async () => {
 
     if (lspPath === null) {
       vscode.window.showErrorMessage("mq not found in PATH");
+      statusBarManager?.updateStatusBar(lc.State.Stopped);
       return;
     }
   }
@@ -528,7 +574,14 @@ const startLspServer = async () => {
     clientOptions
   );
 
-  return client.start();
+  // Update status bar when client state changes
+  client.onDidChangeState((event) => {
+    statusBarManager?.updateStatusBar(event.newState);
+  });
+
+  statusBarManager?.updateStatusBar(lc.State.Starting);
+  await client.start();
+  statusBarManager?.updateStatusBar(lc.State.Running);
 };
 
 const stopLspServer = async () => {
@@ -537,6 +590,7 @@ const stopLspServer = async () => {
   }
   await client.stop();
   client = null;
+  statusBarManager?.updateStatusBar(lc.State.Stopped);
 };
 
 const installServers = async (
