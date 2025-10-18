@@ -553,7 +553,7 @@ impl AttrValue {
         }
     }
 
-    /// Converts the attribute value to a integer representation.
+    /// Converts the attribute value to an integer representation.
     pub fn as_i64(&self) -> Option<i64> {
         match self {
             AttrValue::String(s) => s.parse().ok(),
