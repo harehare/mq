@@ -161,8 +161,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
@@ -182,7 +182,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -260,7 +260,7 @@ You can chain multiple operations to perform complex transformations:
 
 ```sh
 # Markdown TOC
-$ mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (!is_none(level)): to_md_list(link, to_number(level))' docs/books/**/*.md
+$ mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (!is_none(level)): to_md_list(link, level)' docs/books/**/*.md
 # String Interpolation
 $ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
 # Merging Multiple Files

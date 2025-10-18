@@ -87,7 +87,7 @@ Some text here.
       },
       {
         name: "Extract list",
-        code: `.[] | select(.list.level == "1")`,
+        code: `.[] | select(.list.level == 1)`,
         markdown: `# Product List
 
 - Electronics
@@ -211,7 +211,7 @@ And a [relative link](./readme.md).
         code: `.h
 | let link = to_link("#" + to_text(self), to_text(self), "")
 | let level = .h.depth
-| if (not(is_none(level))): to_md_list(link, to_number(level))`,
+| if (not(is_none(level))): to_md_list(link, level)`,
         markdown: `# [header1](https://example.com)
 
 - item 1

@@ -210,10 +210,10 @@ fn engine_with_opt() -> Engine {
       vec![RuntimeValue::Number(1.into())],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::is_bool_true("is_bool(true)",
-        vec![RuntimeValue::Bool(true)],
+        vec![RuntimeValue::Boolean(true)],
         Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::is_bool_false("is_bool(false)",
-        vec![RuntimeValue::Bool(false)],
+        vec![RuntimeValue::Boolean(false)],
         Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::is_bool_non_bool("is_bool(1)",
         vec![RuntimeValue::Number(1.into())],
@@ -625,7 +625,7 @@ fn engine_with_opt() -> Engine {
           Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
 #[case::dict_set_get_bool("let m = set(dict(), \"active\", true) | get(m, \"active\")",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Bool(true)].into()))]
+          Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::dict_set_get_none("let m = set(dict(), \"nothing\", None) | get(m, \"nothing\")",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::None].into()))]
@@ -661,16 +661,16 @@ fn engine_with_opt() -> Engine {
           Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
 #[case::dict_contains_existing_key(r#"let m = set(dict(), "name", "Jules") | contains(m, "name")"#,
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Bool(true)].into()))]
+          Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::dict_contains_non_existing_key(r#"let m = set(dict(), "name", "Jules") | contains(m, "age")"#,
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Bool(false)].into()))]
+          Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::dict_contains_empty(r#"contains(dict(), "any_key")"#,
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Bool(false)].into()))]
+          Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::dict_contains_multiple_keys(r#"let m = set(set(set(dict(), "a", 1), "b", 2), "c", 3) | contains(m, "b")"#,
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Bool(true)].into()))]
+          Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::dict_map_identity(r#"let m = dict(["a", 1], ["b", 2]) | map(m, fn(kv): kv;)"#,
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
@@ -1248,15 +1248,15 @@ fn engine_with_opt() -> Engine {
 #[case::any_true("
               any([1, 2, 3], fn(x): x == 2;)",
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])],
-              Ok(vec![RuntimeValue::Bool(true)].into()))]
+              Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::any_false("
               any([1, 2, 3], fn(x): x == 4;)",
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])],
-              Ok(vec![RuntimeValue::Bool(false)].into()))]
+              Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::any_empty_array("
               any([], fn(x): x == 1;)",
               vec![RuntimeValue::Array(vec![])],
-              Ok(vec![RuntimeValue::Bool(false)].into()))]
+              Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::any_dict_true(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 2;)"#,
               vec![{
                 let mut dict = BTreeMap::new();
@@ -1264,7 +1264,7 @@ fn engine_with_opt() -> Engine {
                 dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 dict.into()
               }],
-              Ok(vec![RuntimeValue::Bool(true)].into()))]
+              Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::any_dict_false(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 3;)"#,
               vec![{
                 let mut dict = BTreeMap::new();
@@ -1272,19 +1272,19 @@ fn engine_with_opt() -> Engine {
                 dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 dict.into()
               }],
-              Ok(vec![RuntimeValue::Bool(false)].into()))]
+              Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::all_true("
               all([2, 4, 6], fn(x): mod(x, 2) == 0;)",
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())])],
-              Ok(vec![RuntimeValue::Bool(true)].into()))]
+              Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::all_false("
               all([2, 3, 6], fn(x): mod(x, 2) == 0;)",
               vec![RuntimeValue::Array(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into())])],
-              Ok(vec![RuntimeValue::Bool(false)].into()))]
+              Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::all_empty_array("
               all([], fn(x): x == 1;)",
               vec![RuntimeValue::Array(vec![])],
-              Ok(vec![RuntimeValue::Bool(true)].into()))]
+              Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::all_dict_true(r#"all(dict(["a", 2], ["b", 4]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
               let mut dict = BTreeMap::new();
@@ -1292,7 +1292,7 @@ fn engine_with_opt() -> Engine {
               dict.insert(Ident::new("b"), RuntimeValue::Number(4.into()));
               dict.into()
               }],
-              Ok(vec![RuntimeValue::Bool(true)].into()))]
+              Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::all_dict_false(r#"all(dict(["a", 2], ["b", 3]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
               let mut dict = BTreeMap::new();
@@ -1300,25 +1300,25 @@ fn engine_with_opt() -> Engine {
               dict.insert(Ident::new("b"), RuntimeValue::Number(3.into()));
               dict.into()
               }],
-              Ok(vec![RuntimeValue::Bool(false)].into()))]
+              Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::in_array_true("in([1, 2, 3], 2)",
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::Bool(true)].into()))]
+            Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::in_array_false("in([1, 2, 3], 4)",
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::Bool(false)].into()))]
+            Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::in_string_true(r#"in("hello", "ell")"#,
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::Bool(true)].into()))]
+            Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::in_string_false(r#"in("hello", "xyz")"#,
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::Bool(false)].into()))]
+            Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::in_array_true(r#"in(["a", "b", "c"], ["a", "b"])"#,
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::Bool(true)].into()))]
+            Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::in_array_false(r#"in(["a", "c"], ["a", "b"])"#,
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::Bool(false)].into()))]
+            Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::to_csv_single_row(
             "to_csv()",
             vec![RuntimeValue::Array(vec![
@@ -1633,6 +1633,79 @@ fn test_eval(
     end"#,
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_type_number(r#"
+    match (1):
+      | :number: "is number"
+      | :string: "is string"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is number".to_string())].into()))]
+#[case::match_type_string(r#"
+    match ("abc"):
+      | :number: "is number"
+      | :string: "is string"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is string".to_string())].into()))]
+#[case::match_type_array(r#"
+    match ([1, 2, 3]):
+      | :array: "is array"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is array".to_string())].into()))]
+#[case::match_type_dict(r#"
+    match ({"key": "value"}):
+      | :dict: "is dict"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is dict".to_string())].into()))]
+#[case::match_type_symbol(r#"
+    match (:symbol):
+      | :symbol: "is symbol"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is symbol".to_string())].into()))]
+#[case::match_type_none(r#"
+    match (None):
+      | :none: "is none"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is none".to_string())].into()))]
+#[case::match_type_function(r#"
+    match (fn(x): 1;):
+      | :function: "is function"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("is function".to_string())].into()))]
+#[case::match_array_pattern(r#"
+    match ([1, 2]):
+      | [1, 2]: "matched"
+      | [2, 1]: "not matched"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
+#[case::match_array_pattern_with_rest(r#"
+    match ([1, 2]):
+      | [1, ..rest]: "matched"
+      | [1, 3]: "not matched"
+      | _: "other"
+    end"#,
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
+#[case::dynamic_call_simple("
+          let f = {f: fn(x): x + 1;}
+          | f[:f](41)
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(42.into())].into()))]
 fn test_eval_with_opt(
     mut engine_with_opt: Engine,
     #[case] program: &str,
@@ -1647,6 +1720,7 @@ fn test_eval_with_opt(
 #[case::error("f()def f(): 1", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(): 1 | func1(); | func1()", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(x): 1; | func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
+#[case::func_invalid_definition("def f(x): 1; | f2(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::invalid_definition("func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::interpolated_string("s\"${val1} World!\"", vec![RuntimeValue::Number(0.into())])]
 #[case::foreach("foreach(x, 1): add(x, 1);", vec![RuntimeValue::Number(10.into())])]
