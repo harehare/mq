@@ -6,7 +6,7 @@
   <a href="https://mqlang.org/playground">Playground 🎮</a>
 </div>
 
-# mq for Visual Studio Code
+<h1 align="center">mq for Visual Studio Code</h1>
 
 This extension adds support for the mq to Visual Studio Code.
 [mq](https://github.com/harehare/mq) is a jq like tool for markdown processing.
@@ -69,7 +69,7 @@ You can chain multiple operations to perform complex transformations:
 
 ```sh
 # Markdown TOC
-$ mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (not(is_none(level))): to_md_list(link, to_number(level))' docs/books/**/*.md
+$ mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (not(is_none(level))): to_md_list(link, level)' docs/books/**/*.md
 # String Interpolation
 $ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
 # Merging Multiple Files

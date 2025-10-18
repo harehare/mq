@@ -40,5 +40,12 @@
             "fn(${0:args}): ${1:body};"
         ],
         "description": "Define an anonymous function"
+    },
+    "match": {
+        "prefix": "match",
+        "body": [
+            "match (${1:value}):\n  | ${2:pattern}: ${3:body}\nend"
+        ],
+        "description": "Match expression with patterns"
     }
 }
