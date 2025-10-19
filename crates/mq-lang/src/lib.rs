@@ -166,6 +166,17 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
                 ModuleLoader::default(),
             ))
         })?;
+    let mut token_arena = {
+        #[cfg(not(feature = "sync"))]
+        {
+            token_arena.borrow_mut()
+        }
+
+        #[cfg(feature = "sync")]
+        {
+            token_arena.write().unwrap()
+        }
+    };
 
     AstParser::new(
         tokens
@@ -173,7 +184,7 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
             .map(Shared::new)
             .collect::<Vec<_>>()
             .iter(),
-        token_arena,
+        &mut token_arena,
         Module::TOP_LEVEL_MODULE_ID,
     )
     .parse()
