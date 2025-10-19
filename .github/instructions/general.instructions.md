@@ -35,7 +35,6 @@ The mq project follows this main directory structure:
   - `mq-python` - Python bindings for integrating mq functionality into Python applications
   - `mq-repl` - REPL (Read-Eval-Print Loop) for mq
   - `mq-test` - Test utilities and helpers for mq
-  - `mq-tui` - Terminal User Interface (TUI) for interacting with mq
   - `mq-wasm` - WebAssembly (Wasm) implementation for running mq in browsers and other WASM environments
   - `mq-web-api` - Web API bindings for mq
 - `/docs` - Documentation and user guides

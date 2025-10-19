@@ -40,7 +40,6 @@ mq-lsp.workspace = true
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown"]}
 mq-mcp.workspace = true
 mq-repl.workspace = true
-mq-tui.workspace = true
 rayon = "1.11.0"
 regex-lite = {workspace = true, optional = true}
 rustyline = {version = "17.0.2", optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}

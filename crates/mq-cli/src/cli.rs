@@ -206,12 +206,6 @@ enum Commands {
     },
     /// Start an MCP server for mq
     Mcp,
-    /// Start a TUI for mq
-    Tui {
-        /// Path to the file to be opened in TUI mode
-        #[arg(value_name = "FILE")]
-        file_path: PathBuf,
-    },
     /// Format mq files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
@@ -248,16 +242,6 @@ impl Cli {
             }
             None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
-            }
-            Some(Commands::Tui { file_path }) => {
-                let mut app = {
-                    let content = fs::read_to_string(file_path).into_diagnostic()?;
-                    mq_tui::App::with_file(content, file_path.to_string_lossy().into_owned())
-                };
-
-                app.run()?;
-
-                Ok(())
             }
             Some(Commands::Lsp { module_paths }) => {
                 tokio::runtime::Runtime::new()
