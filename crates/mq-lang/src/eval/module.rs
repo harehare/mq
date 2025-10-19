@@ -278,13 +278,25 @@ impl ModuleLoader {
         token_arena: TokenArena,
     ) -> Result<Program, ModuleError> {
         let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
+        let mut token_arena = {
+            #[cfg(not(feature = "sync"))]
+            {
+                token_arena.borrow_mut()
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                token_arena.write().unwrap()
+            }
+        };
+
         let program = Parser::new(
             tokens
                 .into_iter()
                 .map(Shared::new)
                 .collect::<Vec<_>>()
                 .iter(),
-            token_arena,
+            &mut token_arena,
             module_id,
         )
         .parse()?;
