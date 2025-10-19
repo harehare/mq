@@ -2,13 +2,14 @@ use crossbeam_channel::{Receiver, Sender};
 use dap::prelude::*;
 use dap::responses::{
     ContinueResponse, EvaluateResponse, ScopesResponse, SetBreakpointsResponse,
-    SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
+    SetExceptionBreakpointsResponse, SetVariableResponse, StackTraceResponse, ThreadsResponse,
+    VariablesResponse,
 };
 use dap::types::Breakpoint;
 use mq_lang::Shared;
-use std::io;
 use std::path::PathBuf;
 use std::thread;
+use std::{io, vec};
 use tracing::{debug, error};
 
 use crate::error::MqAdapterError;
@@ -304,6 +305,13 @@ impl MqAdapter {
                 let rsp = req.success(ResponseBody::Launch);
                 server.respond(rsp)?;
             }
+            Command::SetExceptionBreakpoints(_) => {
+                debug!("Received SetExceptionBreakpoints request");
+                let rsp = req.success(ResponseBody::SetExceptionBreakpoints(
+                    SetExceptionBreakpointsResponse { breakpoints: None },
+                ));
+                server.respond(rsp)?;
+            }
             Command::SetBreakpoints(args) => {
                 debug!(?args, "Received SetBreakpoints request");
 
@@ -581,6 +589,11 @@ impl MqAdapter {
                 ];
 
                 let rsp = req.success(ResponseBody::Scopes(ScopesResponse { scopes }));
+                server.respond(rsp)?;
+            }
+            Command::Pause(_) => {
+                debug!("Received Pause request");
+                let rsp = req.success(ResponseBody::Pause);
                 server.respond(rsp)?;
             }
             command => {
