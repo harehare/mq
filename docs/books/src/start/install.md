@@ -1,6 +1,6 @@
 # Install
 
-### Quick Install
+## Quick Install
 
 ```bash
 curl -sSL https://mqlang.org/install.sh | bash

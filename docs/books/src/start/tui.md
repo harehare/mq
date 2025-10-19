@@ -2,8 +2,14 @@
 
 The Text-based User Interface (TUI) provides an interactive way to explore and query Markdown files directly in your terminal.
 
+## Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/harehare/mqt/main/bin/install.sh | bash
+```
+
 ```sh
-$ mq tui file.md
+$ mqt file.md
 ```
 
 ## TUI Features
@@ -26,3 +32,9 @@ $ mq tui file.md
 | `Ctrl+l`         | Clear query                |
 | `PgUp`/`PgDn`    | Page through results       |
 | `Home`/`End`     | Jump to first/last result  |
+
+## Repository
+
+The source code and further documentation for `mqt` are available on GitHub:
+
+[https://github.com/harehare/mqt](https://github.com/harehare/mqt)
