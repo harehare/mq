@@ -1,6 +1,9 @@
 use std::{
     fmt::Debug,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering::SeqCst},
+    },
 };
 
 use crossbeam_channel::{Receiver, Sender};
@@ -59,8 +62,7 @@ impl DapHandlerWrapper {
             DapCommand::StepOut => mq_lang::DebuggerAction::FunctionExit,
             DapCommand::Pause => {
                 // Set pause flag and step into next statement
-                self.pause_requested
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.pause_requested.store(true, SeqCst);
                 mq_lang::DebuggerAction::StepInto
             }
             DapCommand::Terminate => mq_lang::DebuggerAction::Quit,
@@ -103,9 +105,7 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
         debug!(line = context.token.range.start.line + 1, "Step event");
 
         // Check if pause was requested
-        let is_pause = self
-            .pause_requested
-            .swap(false, std::sync::atomic::Ordering::SeqCst);
+        let is_pause = self.pause_requested.swap(false, SeqCst);
 
         // Send appropriate message to DAP server
         let message = if is_pause {

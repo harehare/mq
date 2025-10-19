@@ -7,9 +7,9 @@ use dap::responses::{
 };
 use dap::types::Breakpoint;
 use mq_lang::Shared;
+use std::io;
 use std::path::PathBuf;
 use std::thread;
-use std::{io, vec};
 use tracing::{debug, error};
 
 use crate::error::MqAdapterError;
