@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 use crossbeam_channel::{Receiver, Sender};
 use mq_lang::DebuggerAction;
@@ -36,6 +39,7 @@ impl mq_lang::DebuggerHandler for DapDebuggerHandler {}
 pub struct DapHandlerWrapper {
     handler: DapDebuggerHandler,
     command_rx: Receiver<DapCommand>,
+    pause_requested: Arc<AtomicBool>,
 }
 
 impl DapHandlerWrapper {
@@ -43,6 +47,7 @@ impl DapHandlerWrapper {
         Self {
             handler,
             command_rx,
+            pause_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -52,6 +57,12 @@ impl DapHandlerWrapper {
             DapCommand::Next => mq_lang::DebuggerAction::Next,
             DapCommand::StepIn => mq_lang::DebuggerAction::StepInto,
             DapCommand::StepOut => mq_lang::DebuggerAction::FunctionExit,
+            DapCommand::Pause => {
+                // Set pause flag and step into next statement
+                self.pause_requested
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                mq_lang::DebuggerAction::StepInto
+            }
             DapCommand::Terminate => mq_lang::DebuggerAction::Quit,
         }
     }
@@ -91,11 +102,24 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
     fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
         debug!(line = context.token.range.start.line + 1, "Step event");
 
-        // Send step completed message to DAP server
-        let message = DebuggerMessage::StepCompleted {
-            thread_id: self.handler.thread_id,
-            line: context.token.range.start.line as usize + 1,
-            context: context.clone(),
+        // Check if pause was requested
+        let is_pause = self
+            .pause_requested
+            .swap(false, std::sync::atomic::Ordering::SeqCst);
+
+        // Send appropriate message to DAP server
+        let message = if is_pause {
+            DebuggerMessage::Paused {
+                thread_id: self.handler.thread_id,
+                line: context.token.range.start.line as usize + 1,
+                context: context.clone(),
+            }
+        } else {
+            DebuggerMessage::StepCompleted {
+                thread_id: self.handler.thread_id,
+                line: context.token.range.start.line as usize + 1,
+                context: context.clone(),
+            }
         };
 
         if let Err(e) = self.handler.message_tx.send(message) {
