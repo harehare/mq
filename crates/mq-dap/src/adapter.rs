@@ -2,7 +2,8 @@ use crossbeam_channel::{Receiver, Sender};
 use dap::prelude::*;
 use dap::responses::{
     ContinueResponse, EvaluateResponse, ScopesResponse, SetBreakpointsResponse,
-    SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
+    SetExceptionBreakpointsResponse, SetVariableResponse, StackTraceResponse, ThreadsResponse,
+    VariablesResponse,
 };
 use dap::types::Breakpoint;
 use mq_lang::Shared;
@@ -186,6 +187,28 @@ impl MqAdapter {
 
                 server.send_event(event)?;
             }
+            DebuggerMessage::Paused {
+                thread_id,
+                line,
+                context,
+                ..
+            } => {
+                // Store the current debug context for variable inspection
+                self.current_debug_context = Some(context);
+                debug!(line = line, "Sending stopped event for pause");
+
+                let event = Event::Stopped(events::StoppedEventBody {
+                    reason: types::StoppedEventReason::Pause,
+                    description: Some(format!("Paused at line {}", line)),
+                    thread_id: Some(thread_id),
+                    preserve_focus_hint: None,
+                    text: None,
+                    all_threads_stopped: None,
+                    hit_breakpoint_ids: None,
+                });
+
+                server.send_event(event)?;
+            }
             DebuggerMessage::Terminated => {
                 debug!("Sending terminated event");
 
@@ -302,6 +325,13 @@ impl MqAdapter {
                 }
 
                 let rsp = req.success(ResponseBody::Launch);
+                server.respond(rsp)?;
+            }
+            Command::SetExceptionBreakpoints(_) => {
+                debug!("Received SetExceptionBreakpoints request");
+                let rsp = req.success(ResponseBody::SetExceptionBreakpoints(
+                    SetExceptionBreakpointsResponse { breakpoints: None },
+                ));
                 server.respond(rsp)?;
             }
             Command::SetBreakpoints(args) => {
@@ -583,6 +613,12 @@ impl MqAdapter {
                 let rsp = req.success(ResponseBody::Scopes(ScopesResponse { scopes }));
                 server.respond(rsp)?;
             }
+            Command::Pause(_) => {
+                debug!("Received Pause request");
+                self.send_debugger_command(DapCommand::Pause)?;
+                let rsp = req.success(ResponseBody::Pause);
+                server.respond(rsp)?;
+            }
             command => {
                 return Err(Box::new(MqAdapterError::UnhandledCommand(command.clone())));
             }
@@ -595,7 +631,6 @@ impl MqAdapter {
 mod tests {
     use super::*;
     use dap::server::Server;
-    use mq_lang::ArenaId;
     use std::io::{BufReader, BufWriter, Cursor};
 
     #[test]
@@ -1117,7 +1152,7 @@ mod tests {
             expr: Shared::new(mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(
                 42.into(),
             ))),
-            token_id: ArenaId::new(0),
+            token_id: 0u32.into(),
         }));
         adapter.current_debug_context = Some(context);
 

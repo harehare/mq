@@ -16,6 +16,12 @@ pub enum DebuggerMessage {
         line: usize,
         context: mq_lang::DebugContext,
     },
+    /// Program was paused by user request, should send stopped event
+    Paused {
+        thread_id: i64,
+        line: usize,
+        context: mq_lang::DebugContext,
+    },
     /// Program has terminated
     Terminated,
 }
@@ -31,6 +37,8 @@ pub enum DapCommand {
     StepIn,
     /// Step out of function
     StepOut,
+    /// Pause execution
+    Pause,
     /// Terminate debugging session
     Terminate,
 }

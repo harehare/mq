@@ -225,7 +225,12 @@ function registerDebugCommands(context: vscode.ExtensionContext) {
         inputFile: selectedFile.document.uri.fsPath,
       };
 
-      await vscode.debug.startDebugging(undefined, config);
+      const success = await vscode.debug.startDebugging(undefined, config);
+      if (!success) {
+        vscode.window.showErrorMessage(
+          "Failed to start debugging. Please ensure mq-dbg is installed and the configuration is correct."
+        );
+      }
     })
   );
 }
@@ -604,7 +609,6 @@ const installServers = async (
     return false;
   }
 
-  const mqDbgPath = await which("mq-dbg", { nothrow: true });
   const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-cli ${
     force ? " --force" : ""
   }`;
@@ -618,10 +622,7 @@ const installServers = async (
     "Install LSP Server",
     "mq-lsp",
     new vscode.ShellExecution(
-      (mqDbgPath
-        ? [installLspCommand]
-        : [installLspCommand, installDapCommand]
-      ).join(" && ")
+      [installLspCommand, installDapCommand].join(" && ")
     )
   );
 
