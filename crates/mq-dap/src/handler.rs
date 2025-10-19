@@ -50,7 +50,7 @@ impl DapHandlerWrapper {
         Self {
             handler,
             command_rx,
-            pause_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pause_requested: Arc::new(AtomicBool::new(false)),
         }
     }
 
