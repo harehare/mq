@@ -16,7 +16,7 @@ The installer will:
 ## Cargo
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.4.1
+cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.4.2
 # Latest Development Version
 $ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
 # Install the debugger
@@ -54,7 +54,7 @@ $ brew install harehare/tap/mq
 ## Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.4.1
+$ docker run --rm ghcr.io/harehare/mq:0.4.2
 ```
 
 ## Visual Studio Code Extension
