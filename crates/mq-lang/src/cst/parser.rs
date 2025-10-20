@@ -1855,15 +1855,14 @@ impl<'a> Parser<'a> {
         children.push(self.parse_pattern(pattern_leading_trivia)?);
 
         // Check for guard (if condition)
-        if let Some(token) = self.tokens.peek() {
-            if matches!(token.kind, TokenKind::If) {
-                children
-                    .push(self.next_node(|kind| matches!(kind, TokenKind::If), NodeKind::Token)?);
+        if let Some(token) = self.tokens.peek()
+            && matches!(token.kind, TokenKind::If)
+        {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::If), NodeKind::Token)?);
 
-                // Parse guard expression (as args)
-                let mut guard_args = self.parse_args()?;
-                children.append(&mut guard_args);
-            }
+            // Parse guard expression (as args)
+            let mut guard_args = self.parse_args()?;
+            children.append(&mut guard_args);
         }
 
         // Parse colon
@@ -2039,13 +2038,13 @@ impl<'a> Parser<'a> {
             let _leading_trivia = self.parse_leading_trivia();
 
             // Check for }
-            if let Some(token) = self.tokens.peek() {
-                if matches!(token.kind, TokenKind::RBrace) {
-                    children.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::RBrace), NodeKind::Token)?,
-                    );
-                    break;
-                }
+            if let Some(token) = self.tokens.peek()
+                && matches!(token.kind, TokenKind::RBrace)
+            {
+                children.push(
+                    self.next_node(|kind| matches!(kind, TokenKind::RBrace), NodeKind::Token)?,
+                );
+                break;
             }
 
             // Parse key (identifier)
@@ -2053,15 +2052,15 @@ impl<'a> Parser<'a> {
                 .push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
 
             // Check for colon (key: pattern) or just key
-            if let Some(token) = self.tokens.peek() {
-                if matches!(token.kind, TokenKind::Colon) {
-                    children.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?,
-                    );
+            if let Some(token) = self.tokens.peek()
+                && matches!(token.kind, TokenKind::Colon)
+            {
+                children.push(
+                    self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?,
+                );
 
-                    let pattern_leading_trivia = self.parse_leading_trivia();
-                    children.push(self.parse_pattern(pattern_leading_trivia)?);
-                }
+                let pattern_leading_trivia = self.parse_leading_trivia();
+                children.push(self.parse_pattern(pattern_leading_trivia)?);
             }
 
             // Check for comma or }

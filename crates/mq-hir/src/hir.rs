@@ -536,35 +536,33 @@ impl Hir {
             token: Some(token),
             ..
         } = &**node
-        {
-            if let Token {
+            && let Token {
                 kind: TokenKind::InterpolatedString(segments),
                 ..
             } = &**token
-            {
-                segments.iter().for_each(|segment| match segment {
-                    mq_lang::StringSegment::Text(text, range) => {
-                        self.add_symbol(Symbol {
-                            value: Some(text.into()),
-                            kind: SymbolKind::String,
-                            source: SourceInfo::new(Some(source_id), Some(range.clone())),
-                            scope: scope_id,
-                            doc: node.comments(),
-                            parent,
-                        });
-                    }
-                    mq_lang::StringSegment::Ident(ident, range) => {
-                        self.symbols.insert(Symbol {
-                            value: Some(ident.clone()),
-                            kind: SymbolKind::Variable,
-                            source: SourceInfo::new(Some(source_id), Some(range.clone())),
-                            scope: scope_id,
-                            doc: node.comments(),
-                            parent,
-                        });
-                    }
-                });
-            }
+        {
+            segments.iter().for_each(|segment| match segment {
+                mq_lang::StringSegment::Text(text, range) => {
+                    self.add_symbol(Symbol {
+                        value: Some(text.into()),
+                        kind: SymbolKind::String,
+                        source: SourceInfo::new(Some(source_id), Some(range.clone())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+                mq_lang::StringSegment::Ident(ident, range) => {
+                    self.symbols.insert(Symbol {
+                        value: Some(ident.clone()),
+                        kind: SymbolKind::Variable,
+                        source: SourceInfo::new(Some(source_id), Some(range.clone())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+            });
         }
     }
 
@@ -1386,10 +1384,10 @@ impl Hir {
 
             // Process pattern (first child after the pipe token)
             // The pattern introduces variables into the arm scope
-            if let Some(pattern) = children.first() {
-                if matches!(pattern.kind, mq_lang::CstNodeKind::Pattern) {
-                    self.add_pattern_expr(pattern, source_id, arm_scope_id, Some(symbol_id));
-                }
+            if let Some(pattern) = children.first()
+                && matches!(pattern.kind, mq_lang::CstNodeKind::Pattern)
+            {
+                self.add_pattern_expr(pattern, source_id, arm_scope_id, Some(symbol_id));
             }
 
             // Process remaining children (guard and body)

@@ -58,19 +58,19 @@ fn extract_identifier(request: &Request) -> String {
     // 3. Connection remote address
     // 4. Fallback to "unknown"
 
-    if let Some(forwarded_for) = request.headers().get("x-forwarded-for") {
-        if let Ok(forwarded_str) = forwarded_for.to_str() {
-            // Take the first IP from the comma-separated list
-            if let Some(first_ip) = forwarded_str.split(',').next() {
-                return first_ip.trim().to_string();
-            }
+    if let Some(forwarded_for) = request.headers().get("x-forwarded-for")
+        && let Ok(forwarded_str) = forwarded_for.to_str()
+    {
+        // Take the first IP from the comma-separated list
+        if let Some(first_ip) = forwarded_str.split(',').next() {
+            return first_ip.trim().to_string();
         }
     }
 
-    if let Some(real_ip) = request.headers().get("x-real-ip") {
-        if let Ok(ip_str) = real_ip.to_str() {
-            return ip_str.to_string();
-        }
+    if let Some(real_ip) = request.headers().get("x-real-ip")
+        && let Ok(ip_str) = real_ip.to_str()
+    {
+        return ip_str.to_string();
     }
 
     // Fallback - in a real deployment, you might want to extract from the connection

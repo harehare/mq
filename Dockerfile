@@ -1,4 +1,5 @@
-FROM rust:1.85-slim AS builder
+# syntax=docker/dockerfile:1
+FROM rust:1.90-slim AS builder
 
 WORKDIR /usr/src/app
 COPY . /usr/src/app

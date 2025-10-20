@@ -81,11 +81,11 @@ impl Optimizer {
                 let used_identifiers = self.collect_used_identifiers(program);
 
                 program.retain_mut(|node| {
-                    if let ast::Expr::Let(ident, _) = &*node.expr {
-                        if !used_identifiers.contains(&ident.name) {
-                            self.constant_table.remove(&ident.name);
-                            return false;
-                        }
+                    if let ast::Expr::Let(ident, _) = &*node.expr
+                        && !used_identifiers.contains(&ident.name)
+                    {
+                        self.constant_table.remove(&ident.name);
+                        return false;
                     }
                     true
                 });
@@ -237,10 +237,10 @@ impl Optimizer {
         match &*node.expr {
             ast::Expr::If(conditions) => {
                 for (cond_node_opt, _) in conditions {
-                    if let Some(cond_node) = cond_node_opt {
-                        if Self::contains_function_call(func_name, cond_node) {
-                            return true;
-                        }
+                    if let Some(cond_node) = cond_node_opt
+                        && Self::contains_function_call(func_name, cond_node)
+                    {
+                        return true;
                     }
                 }
             }
@@ -311,10 +311,10 @@ impl Optimizer {
             }
             ast::Expr::If(conditions) => {
                 for (cond_node_opt, body_node) in conditions {
-                    if let Some(cond_node) = cond_node_opt {
-                        if Self::contains_function_call(func_name, cond_node) {
-                            return true;
-                        }
+                    if let Some(cond_node) = cond_node_opt
+                        && Self::contains_function_call(func_name, cond_node)
+                    {
+                        return true;
                     }
                     if Self::contains_function_call(func_name, body_node) {
                         return true;
@@ -373,22 +373,22 @@ impl Optimizer {
 
     /// Handles inlining of top-level function calls
     fn inline_top_level_calls(&mut self, new_program: &mut Program, node: Shared<ast::Node>) {
-        if let ast::Expr::Call(func_ident, args) = &*node.expr {
-            if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
-                let mut param_bindings = FxHashMap::default();
-                for (param, arg) in params.iter().zip(args.iter()) {
-                    if let ast::Expr::Ident(param_ident) = &*param.expr {
-                        param_bindings.insert(param_ident.name, arg.clone());
-                    }
+        if let ast::Expr::Call(func_ident, args) = &*node.expr
+            && let Some((params, body, _)) = self.function_table.get(&func_ident.name)
+        {
+            let mut param_bindings = FxHashMap::default();
+            for (param, arg) in params.iter().zip(args.iter()) {
+                if let ast::Expr::Ident(param_ident) = &*param.expr {
+                    param_bindings.insert(param_ident.name, arg.clone());
                 }
-
-                for body_node in body {
-                    let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
-                    new_program.push(inlined_node);
-                }
-
-                return;
             }
+
+            for body_node in body {
+                let inlined_node = Self::substitute_parameters(body_node, &param_bindings);
+                new_program.push(inlined_node);
+            }
+
+            return;
         }
         new_program.push(node);
     }
@@ -636,12 +636,11 @@ impl Optimizer {
             }
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments.iter_mut() {
-                    if let ast::StringSegment::Ident(ident) = segment {
-                        if let Some(expr) = self.constant_table.get(ident) {
-                            if let ast::Expr::Literal(lit) = &**expr {
-                                *segment = ast::StringSegment::Text(lit.to_string());
-                            }
-                        }
+                    if let ast::StringSegment::Ident(ident) = segment
+                        && let Some(expr) = self.constant_table.get(ident)
+                        && let ast::Expr::Literal(lit) = &**expr
+                    {
+                        *segment = ast::StringSegment::Text(lit.to_string());
                     }
                 }
             }
@@ -1644,13 +1643,13 @@ mod tests {
         // Additionally, for the unused constant candidate test, check constant_table
         if input.len() == 3 && expected.len() == 2 {
             // Heuristic for this specific test case
-            if let AstExpr::Let(ident, _) = &*input[0].expr {
-                if ident.name.as_str() == "const_unused" {
-                    assert!(
-                        !optimizer.constant_table.contains_key(&ident.name),
-                        "const_unused should be removed from constant_table"
-                    );
-                }
+            if let AstExpr::Let(ident, _) = &*input[0].expr
+                && ident.name.as_str() == "const_unused"
+            {
+                assert!(
+                    !optimizer.constant_table.contains_key(&ident.name),
+                    "const_unused should be removed from constant_table"
+                );
             }
         }
     }

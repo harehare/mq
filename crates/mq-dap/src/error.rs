@@ -4,7 +4,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum MqAdapterError {
     #[error("Unhandled command: {0:?}")]
-    UnhandledCommand(Command),
+    UnhandledCommand(Box<Command>),
     #[error("Protocol error: {0}")]
     ProtocolError(String),
     #[error("Failed to deserialize launch arguments: {0}")]
