@@ -25,12 +25,12 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
     let mut fm_map = BTreeMap::new();
 
     // Extract <title> only from within <head>
-    if let Ok(title_selector) = Selector::parse("title") {
-        if let Some(title_node) = head_element.select(&title_selector).next() {
-            let title_str = title_node.text().collect::<String>().trim().to_string();
-            if !title_str.is_empty() {
-                fm_map.insert("title".to_string(), serde_yaml::Value::String(title_str));
-            }
+    if let Ok(title_selector) = Selector::parse("title")
+        && let Some(title_node) = head_element.select(&title_selector).next()
+    {
+        let title_str = title_node.text().collect::<String>().trim().to_string();
+        if !title_str.is_empty() {
+            fm_map.insert("title".to_string(), serde_yaml::Value::String(title_str));
         }
     }
 
@@ -42,32 +42,29 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
             if let (Some(name_attr), Some(content_attr)) = (
                 meta_node.value().attr("name"),
                 meta_node.value().attr("content"),
-            ) {
-                if !content_attr.is_empty() {
-                    match name_attr.to_lowercase().as_str() {
-                        "description" => {
-                            fm_map.insert(
-                                "description".to_string(),
-                                serde_yaml::Value::String(content_attr.to_string()),
-                            );
-                        }
-                        "keywords" => {
-                            content_attr
-                                .split(',')
-                                .map(|s| s.trim())
-                                .filter(|s| !s.is_empty())
-                                .for_each(|k| {
-                                    keywords.push(serde_yaml::Value::String(k.to_string()))
-                                });
-                        }
-                        "author" => {
-                            fm_map.insert(
-                                "author".to_string(),
-                                serde_yaml::Value::String(content_attr.to_string()),
-                            );
-                        }
-                        _ => {}
+            ) && !content_attr.is_empty()
+            {
+                match name_attr.to_lowercase().as_str() {
+                    "description" => {
+                        fm_map.insert(
+                            "description".to_string(),
+                            serde_yaml::Value::String(content_attr.to_string()),
+                        );
                     }
+                    "keywords" => {
+                        content_attr
+                            .split(',')
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .for_each(|k| keywords.push(serde_yaml::Value::String(k.to_string())));
+                    }
+                    "author" => {
+                        fm_map.insert(
+                            "author".to_string(),
+                            serde_yaml::Value::String(content_attr.to_string()),
+                        );
+                    }
+                    _ => {}
                 }
             }
         }
@@ -99,31 +96,30 @@ pub fn convert_html_to_markdown(
 
     let mut front_matter_str = String::new();
 
-    if options.generate_front_matter {
-        if let Some(fm_data) = extract_front_matter_from_head_ref(&html) {
-            if !fm_data.is_empty() {
-                // Convert BTreeMap<String, Value> to serde_yaml::Mapping (which is BTreeMap<Value, Value>)
-                let mut yaml_map = serde_yaml::Mapping::new();
-                for (k, v) in fm_data {
-                    yaml_map.insert(serde_yaml::Value::String(k), v);
-                }
-                let yaml_value = serde_yaml::Value::Mapping(yaml_map);
+    if options.generate_front_matter
+        && let Some(fm_data) = extract_front_matter_from_head_ref(&html)
+        && !fm_data.is_empty()
+    {
+        // Convert BTreeMap<String, Value> to serde_yaml::Mapping (which is BTreeMap<Value, Value>)
+        let mut yaml_map = serde_yaml::Mapping::new();
+        for (k, v) in fm_data {
+            yaml_map.insert(serde_yaml::Value::String(k), v);
+        }
+        let yaml_value = serde_yaml::Value::Mapping(yaml_map);
 
-                match serde_yaml::to_string(&yaml_value) {
-                    Ok(yaml) => {
-                        // serde_yaml::to_string might add its own "---" if it's a single doc,
-                        // or not if it's just a mapping. We want to ensure our format.
-                        // It typically does not add --- for a Value::Mapping.
-                        let content = yaml
-                            .trim_start_matches("---\n")
-                            .trim_end_matches('\n')
-                            .trim_end_matches("...");
-                        front_matter_str = format!("---\n{}\n---\n\n", content.trim());
-                    }
-                    Err(_) => {
-                        return Err(miette!("YAML serialization failed"));
-                    }
-                }
+        match serde_yaml::to_string(&yaml_value) {
+            Ok(yaml) => {
+                // serde_yaml::to_string might add its own "---" if it's a single doc,
+                // or not if it's just a mapping. We want to ensure our format.
+                // It typically does not add --- for a Value::Mapping.
+                let content = yaml
+                    .trim_start_matches("---\n")
+                    .trim_end_matches('\n')
+                    .trim_end_matches("...");
+                front_matter_str = format!("---\n{}\n---\n\n", content.trim());
+            }
+            Err(_) => {
+                return Err(miette!("YAML serialization failed"));
             }
         }
     }

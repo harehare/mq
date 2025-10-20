@@ -19,15 +19,15 @@ impl DebugConsoleWriter {
 impl Write for DebugConsoleWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let message = String::from_utf8_lossy(buf);
-        if let Some(ref sender) = self.sender {
-            if sender.send(message.to_string()).is_err() {
-                // Channel is closed, but we still need to return success
-                // to avoid breaking the logging infrastructure
-                eprintln!(
-                    "Warning: Log channel is closed, message dropped: {}",
-                    message
-                );
-            }
+        if let Some(ref sender) = self.sender
+            && sender.send(message.to_string()).is_err()
+        {
+            // Channel is closed, but we still need to return success
+            // to avoid breaking the logging infrastructure
+            eprintln!(
+                "Warning: Log channel is closed, message dropped: {}",
+                message
+            );
         }
 
         Ok(buf.len())

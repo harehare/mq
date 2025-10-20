@@ -71,18 +71,17 @@ impl Hir {
         let mut candidates = Vec::new();
 
         for (symbol_id, symbol) in &self.symbols {
-            if let Some(source_id) = symbol.source.source_id {
-                if source_ids.contains(&source_id)
-                    && symbol.value.as_ref() == Some(ref_name)
-                    && (symbol.is_function()
-                        || symbol.is_parameter()
-                        || symbol.is_variable()
-                        || symbol.is_argument()
-                        || symbol.is_pattern_variable())
-                {
-                    let priority = self.get_symbol_priority_for_cross_source(&symbol.kind);
-                    candidates.push((priority, symbol_id, symbol.clone()));
-                }
+            if let Some(source_id) = symbol.source.source_id
+                && source_ids.contains(&source_id)
+                && symbol.value.as_ref() == Some(ref_name)
+                && (symbol.is_function()
+                    || symbol.is_parameter()
+                    || symbol.is_variable()
+                    || symbol.is_argument()
+                    || symbol.is_pattern_variable())
+            {
+                let priority = self.get_symbol_priority_for_cross_source(&symbol.kind);
+                candidates.push((priority, symbol_id, symbol.clone()));
             }
         }
 

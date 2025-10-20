@@ -62,24 +62,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Semicolons and 'end' keyword terminate sub-programs (e.g., in 'def', 'fn').
                     // In the root program, a semicolon/end is only allowed if followed by EOF or a comment then EOF.
                     // Otherwise, it's an unexpected EOF because more expressions were expected.
-                    if root {
-                        if let Some(token) = self.tokens.peek() {
-                            if let TokenKind::Eof = &token.kind {
+                    if root && let Some(token) = self.tokens.peek() {
+                        if let TokenKind::Eof = &token.kind {
+                            break;
+                        } else if let TokenKind::Comment(_) = &token.kind {
+                            // Allow comments before EOF after a semicolon/end
+                            let _ = self.tokens.next(); // Consume comment
+                            if matches!(
+                                self.tokens.peek().map(|t| &t.kind),
+                                Some(TokenKind::Eof) | None
+                            ) {
                                 break;
-                            } else if let TokenKind::Comment(_) = &token.kind {
-                                // Allow comments before EOF after a semicolon/end
-                                let _ = self.tokens.next(); // Consume comment
-                                if matches!(
-                                    self.tokens.peek().map(|t| &t.kind),
-                                    Some(TokenKind::Eof) | None
-                                ) {
-                                    break;
-                                } else {
-                                    return Err(ParseError::UnexpectedEOFDetected(self.module_id));
-                                }
                             } else {
                                 return Err(ParseError::UnexpectedEOFDetected(self.module_id));
                             }
+                        } else {
+                            return Err(ParseError::UnexpectedEOFDetected(self.module_id));
                         }
                     }
                     // For non-root programs (e.g. function bodies), a semicolon/end explicitly ends the program.
@@ -403,11 +401,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 Some(token) if token.kind == TokenKind::Comma => {
                     self.tokens.next(); // Consume Comma
                     // Check for trailing comma followed by RBrace
-                    if let Some(next_token) = self.tokens.peek() {
-                        if next_token.kind == TokenKind::RBrace {
-                            self.tokens.next(); // Consume RBrace
-                            break;
-                        }
+                    if let Some(next_token) = self.tokens.peek()
+                        && next_token.kind == TokenKind::RBrace
+                    {
+                        self.tokens.next(); // Consume RBrace
+                        break;
                     }
                 }
                 Some(token) if token.kind == TokenKind::RBrace => {
@@ -1025,16 +1023,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let elif_branches = self.parse_elif(token_id)?;
         branches.extend(elif_branches);
 
-        if let Some(token) = self.tokens.peek() {
-            if matches!(token.kind, TokenKind::Else) {
-                let token_id =
-                    self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Else))?;
-                let token_id = self.next_token(token_id, |token_kind| {
-                    matches!(token_kind, TokenKind::Colon)
-                })?;
-                let else_expr = self.parse_next_expr(token_id)?;
-                branches.push((None, else_expr));
-            }
+        if let Some(token) = self.tokens.peek()
+            && matches!(token.kind, TokenKind::Else)
+        {
+            let token_id =
+                self.next_token(token_id, |token_kind| matches!(token_kind, TokenKind::Else))?;
+            let token_id = self.next_token(token_id, |token_kind| {
+                matches!(token_kind, TokenKind::Colon)
+            })?;
+            let else_expr = self.parse_next_expr(token_id)?;
+            branches.push((None, else_expr));
         }
 
         Ok(Shared::new(Node {
@@ -1114,10 +1112,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         // Consume 'end' keyword
-        if let Some(token) = self.tokens.peek() {
-            if matches!(token.kind, TokenKind::End) {
-                self.tokens.next();
-            }
+        if let Some(token) = self.tokens.peek()
+            && matches!(token.kind, TokenKind::End)
+        {
+            self.tokens.next();
         }
 
         Ok(Shared::new(Node {
@@ -1188,10 +1186,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }
                     }
                     // Expect closing bracket after rest
-                    if let Some(token) = self.tokens.next() {
-                        if !matches!(token.kind, TokenKind::RBracket) {
-                            return Err(ParseError::UnexpectedToken((**token).clone()));
-                        }
+                    if let Some(token) = self.tokens.next()
+                        && !matches!(token.kind, TokenKind::RBracket)
+                    {
+                        return Err(ParseError::UnexpectedToken((**token).clone()));
                     }
                     break;
                 }
@@ -1225,11 +1223,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         loop {
             // Check for closing brace
-            if let Some(token) = self.tokens.peek() {
-                if matches!(token.kind, TokenKind::RBrace) {
-                    self.tokens.next(); // consume }
-                    break;
-                }
+            if let Some(token) = self.tokens.peek()
+                && matches!(token.kind, TokenKind::RBrace)
+            {
+                self.tokens.next(); // consume }
+                break;
             }
 
             // Parse key (must be identifier)
@@ -1491,10 +1489,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             prev_token = Some(token);
 
-            if let Some(token) = self.tokens.peek() {
-                if !matches!(token.kind, TokenKind::RParen | TokenKind::Comma) {
-                    return Err(ParseError::ExpectedClosingParen((***token).clone()));
-                }
+            if let Some(token) = self.tokens.peek()
+                && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
+            {
+                return Err(ParseError::ExpectedClosingParen((***token).clone()));
             }
         }
 

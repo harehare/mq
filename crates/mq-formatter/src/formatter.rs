@@ -768,36 +768,34 @@ impl Formatter {
         }
 
         // 3. Optional guard: if <expr>
-        if let Some(if_token) = children.get(idx) {
-            if let Some(token) = if_token.token.as_ref() {
-                if matches!(token.kind, mq_lang::TokenKind::If) {
-                    self.append_space();
-                    self.output.push_str("if ");
-                    idx += 1;
+        if let Some(if_token) = children.get(idx)
+            && let Some(token) = if_token.token.as_ref()
+            && matches!(token.kind, mq_lang::TokenKind::If)
+        {
+            self.append_space();
+            self.output.push_str("if ");
+            idx += 1;
 
-                    // Guard expression: all nodes until colon
-                    while let Some(expr) = children.get(idx) {
-                        if let Some(t) = expr.token.as_ref() {
-                            if matches!(t.kind, mq_lang::TokenKind::Colon) {
-                                break;
-                            }
-                        }
-                        self.format_node(mq_lang::Shared::clone(expr), 0);
-                        idx += 1;
-                    }
+            // Guard expression: all nodes until colon
+            while let Some(expr) = children.get(idx) {
+                if let Some(t) = expr.token.as_ref()
+                    && matches!(t.kind, mq_lang::TokenKind::Colon)
+                {
+                    break;
                 }
+                self.format_node(mq_lang::Shared::clone(expr), 0);
+                idx += 1;
             }
         }
 
         // 4. Colon
-        if let Some(colon) = children.get(idx) {
-            if let Some(token) = colon.token.as_ref() {
-                if matches!(token.kind, mq_lang::TokenKind::Colon) {
-                    self.output.push_str(&token.to_string());
-                    self.append_space();
-                    idx += 1;
-                }
-            }
+        if let Some(colon) = children.get(idx)
+            && let Some(token) = colon.token.as_ref()
+            && matches!(token.kind, mq_lang::TokenKind::Colon)
+        {
+            self.output.push_str(&token.to_string());
+            self.append_space();
+            idx += 1;
         }
 
         // 5. Body
@@ -829,26 +827,25 @@ impl Formatter {
         // Format children (for complex patterns like arrays, dicts, type patterns)
         if !node.children.is_empty() {
             // Check if this is a type pattern (starts with colon)
-            if let Some(first) = node.children.first() {
-                if let Some(token) = &first.token {
-                    if matches!(token.kind, mq_lang::TokenKind::Colon) {
-                        // Type pattern: :type_name
-                        self.output.push_str(&token.to_string());
-                        if let Some(second) = node.children.get(1) {
-                            if let Some(t) = &second.token {
-                                if let mq_lang::TokenKind::Ident(name) = &t.kind {
-                                    self.output.push_str(name);
-                                }
-                            }
-                        }
-                        return;
-                    } else if matches!(token.kind, mq_lang::TokenKind::LBracket) {
-                        self.format_array_pattern(node);
-                        return;
-                    } else if matches!(token.kind, mq_lang::TokenKind::LBrace) {
-                        self.format_dict_pattern(node);
-                        return;
+            if let Some(first) = node.children.first()
+                && let Some(token) = &first.token
+            {
+                if matches!(token.kind, mq_lang::TokenKind::Colon) {
+                    // Type pattern: :type_name
+                    self.output.push_str(&token.to_string());
+                    if let Some(second) = node.children.get(1)
+                        && let Some(t) = &second.token
+                        && let mq_lang::TokenKind::Ident(name) = &t.kind
+                    {
+                        self.output.push_str(name);
                     }
+                    return;
+                } else if matches!(token.kind, mq_lang::TokenKind::LBracket) {
+                    self.format_array_pattern(node);
+                    return;
+                } else if matches!(token.kind, mq_lang::TokenKind::LBrace) {
+                    self.format_dict_pattern(node);
+                    return;
                 }
             }
 
@@ -896,23 +893,19 @@ impl Formatter {
                         self.output.push_str(name);
 
                         // Check for colon and pattern after the identifier
-                        if let Some(next) = children.get(i + 1) {
-                            if let Some(next_token) = &next.token {
-                                if matches!(next_token.kind, mq_lang::TokenKind::Colon) {
-                                    self.output.push_str(&format!("{} ", next_token));
-                                    i += 2; // Skip colon
+                        if let Some(next) = children.get(i + 1)
+                            && let Some(next_token) = &next.token
+                            && matches!(next_token.kind, mq_lang::TokenKind::Colon)
+                        {
+                            self.output.push_str(&format!("{} ", next_token));
+                            i += 2; // Skip colon
 
-                                    // Format the pattern after colon
-                                    if let Some(pattern_node) = children.get(i) {
-                                        if let Some(pattern_token) = &pattern_node.token {
-                                            if let mq_lang::TokenKind::Ident(pattern_name) =
-                                                &pattern_token.kind
-                                            {
-                                                self.output.push_str(pattern_name);
-                                            }
-                                        }
-                                    }
-                                }
+                            // Format the pattern after colon
+                            if let Some(pattern_node) = children.get(i)
+                                && let Some(pattern_token) = &pattern_node.token
+                                && let mq_lang::TokenKind::Ident(pattern_name) = &pattern_token.kind
+                            {
+                                self.output.push_str(pattern_name);
                             }
                         }
                     }

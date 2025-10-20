@@ -82,18 +82,18 @@ fn is_char_available() -> bool {
     }
 
     // Check if we're in a UTF-8 locale
-    if let Ok(lang) = std::env::var("LANG") {
-        if lang.to_lowercase().contains("utf-8") || lang.to_lowercase().contains("utf8") {
-            return true;
-        }
+    if let Ok(lang) = std::env::var("LANG")
+        && (lang.to_lowercase().contains("utf-8") || lang.to_lowercase().contains("utf8"))
+    {
+        return true;
     }
 
     // Check LC_ALL and LC_CTYPE for UTF-8 support
     for var in ["LC_ALL", "LC_CTYPE"] {
-        if let Ok(locale) = std::env::var(var) {
-            if locale.to_lowercase().contains("utf-8") || locale.to_lowercase().contains("utf8") {
-                return true;
-            }
+        if let Ok(locale) = std::env::var(var)
+            && (locale.to_lowercase().contains("utf-8") || locale.to_lowercase().contains("utf8"))
+        {
+            return true;
         }
     }
 

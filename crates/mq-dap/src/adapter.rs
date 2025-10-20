@@ -620,7 +620,9 @@ impl MqAdapter {
                 server.respond(rsp)?;
             }
             command => {
-                return Err(Box::new(MqAdapterError::UnhandledCommand(command.clone())));
+                return Err(Box::new(MqAdapterError::UnhandledCommand(Box::new(
+                    command.clone(),
+                ))));
             }
         }
         Ok(())

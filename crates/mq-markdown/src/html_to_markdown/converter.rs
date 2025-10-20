@@ -70,55 +70,50 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
     let mut first_tbody_first_row_used_as_header = false;
 
     for node in &table_element.children {
-        if let HtmlNode::Element(thead_element) = node {
-            if thead_element.tag_name == "thead" {
-                if let Some(HtmlNode::Element(tr_element)) = thead_element
-                    .children
-                    .iter()
-                    .find(|n| matches!(n, HtmlNode::Element(el) if el.tag_name == "tr"))
+        if let HtmlNode::Element(thead_element) = node
+            && thead_element.tag_name == "thead"
+            && let Some(HtmlNode::Element(tr_element)) = thead_element
+                .children
+                .iter()
+                .find(|n| matches!(n, HtmlNode::Element(el) if el.tag_name == "tr"))
+        {
+            for cell_node in &tr_element.children {
+                if let HtmlNode::Element(cell_element) = cell_node
+                    && (cell_element.tag_name == "th" || cell_element.tag_name == "td")
                 {
-                    for cell_node in &tr_element.children {
-                        if let HtmlNode::Element(cell_element) = cell_node {
-                            if cell_element.tag_name == "th" || cell_element.tag_name == "td" {
-                                let cell_content =
-                                    convert_children_to_string(&cell_element.children)?;
-                                header_cells.push(escape_table_cell_content(cell_content.trim()));
-                                header_alignments.push(get_cell_alignment(cell_element));
-                            }
-                        }
-                    }
+                    let cell_content = convert_children_to_string(&cell_element.children)?;
+                    header_cells.push(escape_table_cell_content(cell_content.trim()));
+                    header_alignments.push(get_cell_alignment(cell_element));
                 }
-                break;
             }
+
+            break;
         }
     }
 
     if header_cells.is_empty() {
         for node in &table_element.children {
             if let HtmlNode::Element(tbody_element) = node {
-                if tbody_element.tag_name == "tbody" {
-                    if let Some(HtmlNode::Element(tr_element)) = tbody_element
+                if tbody_element.tag_name == "tbody"
+                    && let Some(HtmlNode::Element(tr_element)) = tbody_element
                         .children
                         .iter()
                         .find(|n| matches!(n, HtmlNode::Element(el) if el.tag_name == "tr"))
-                    {
-                        for cell_node in &tr_element.children {
-                            if let HtmlNode::Element(cell_element) = cell_node {
-                                if cell_element.tag_name == "td" || cell_element.tag_name == "th" {
-                                    let cell_content =
-                                        convert_children_to_string(&cell_element.children)?;
-                                    header_cells
-                                        .push(escape_table_cell_content(cell_content.trim()));
-                                    header_alignments.push(get_cell_alignment(cell_element));
-                                }
-                            }
-                        }
-                        if !header_cells.is_empty() {
-                            first_tbody_first_row_used_as_header = true;
+                {
+                    for cell_node in &tr_element.children {
+                        if let HtmlNode::Element(cell_element) = cell_node
+                            && (cell_element.tag_name == "td" || cell_element.tag_name == "th")
+                        {
+                            let cell_content = convert_children_to_string(&cell_element.children)?;
+                            header_cells.push(escape_table_cell_content(cell_content.trim()));
+                            header_alignments.push(get_cell_alignment(cell_element));
                         }
                     }
-                    break;
+                    if !header_cells.is_empty() {
+                        first_tbody_first_row_used_as_header = true;
+                    }
                 }
+                break;
             }
         }
     }
@@ -130,30 +125,28 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
 
     let mut first_tbody_processed_for_data = false;
     for node in &table_element.children {
-        if let HtmlNode::Element(tbody_element) = node {
-            if tbody_element.tag_name == "tbody" {
-                let mut rows_to_iterate = tbody_element.children.iter();
-                if first_tbody_first_row_used_as_header && !first_tbody_processed_for_data {
-                    rows_to_iterate.next();
-                    first_tbody_processed_for_data = true;
-                }
-                for tr_node in rows_to_iterate {
-                    if let HtmlNode::Element(tr_element) = tr_node {
-                        if tr_element.tag_name == "tr" {
-                            let mut current_row_cells: Vec<String> = Vec::new();
-                            for td_node in &tr_element.children {
-                                if let HtmlNode::Element(td_element) = td_node {
-                                    if td_element.tag_name == "td" || td_element.tag_name == "th" {
-                                        let cell_content =
-                                            convert_children_to_string(&td_element.children)?;
-                                        current_row_cells
-                                            .push(escape_table_cell_content(cell_content.trim()));
-                                    }
-                                }
-                            }
-                            body_rows.push(current_row_cells);
+        if let HtmlNode::Element(tbody_element) = node
+            && tbody_element.tag_name == "tbody"
+        {
+            let mut rows_to_iterate = tbody_element.children.iter();
+            if first_tbody_first_row_used_as_header && !first_tbody_processed_for_data {
+                rows_to_iterate.next();
+                first_tbody_processed_for_data = true;
+            }
+            for tr_node in rows_to_iterate {
+                if let HtmlNode::Element(tr_element) = tr_node
+                    && tr_element.tag_name == "tr"
+                {
+                    let mut current_row_cells: Vec<String> = Vec::new();
+                    for td_node in &tr_element.children {
+                        if let HtmlNode::Element(td_element) = td_node
+                            && (td_element.tag_name == "td" || td_element.tag_name == "th")
+                        {
+                            let cell_content = convert_children_to_string(&td_element.children)?;
+                            current_row_cells.push(escape_table_cell_content(cell_content.trim()));
                         }
                     }
+                    body_rows.push(current_row_cells);
                 }
             }
         }
@@ -254,22 +247,23 @@ fn handle_pre_element(
 ) -> miette::Result<String> {
     let mut lang_specifier = String::new();
     let mut content_nodes = &element.children;
-    if let Some(HtmlNode::Element(code_element)) = element.children.first() {
-        if code_element.tag_name == "code" {
-            content_nodes = &code_element.children;
-            if let Some(Some(class_attr)) = code_element.attributes.get("class") {
-                for class_name in class_attr.split_whitespace() {
-                    if let Some(lang) = class_name.strip_prefix("language-") {
-                        lang_specifier = lang.to_string();
-                        break;
-                    } else if let Some(lang) = class_name.strip_prefix("lang-") {
-                        lang_specifier = lang.to_string();
-                        break;
-                    }
+    if let Some(HtmlNode::Element(code_element)) = element.children.first()
+        && code_element.tag_name == "code"
+    {
+        content_nodes = &code_element.children;
+        if let Some(Some(class_attr)) = code_element.attributes.get("class") {
+            for class_name in class_attr.split_whitespace() {
+                if let Some(lang) = class_name.strip_prefix("language-") {
+                    lang_specifier = lang.to_string();
+                    break;
+                } else if let Some(lang) = class_name.strip_prefix("lang-") {
+                    lang_specifier = lang.to_string();
+                    break;
                 }
             }
         }
     }
+
     let mut text_content = extract_text_from_pre_children(content_nodes);
     if text_content.starts_with('\n') {
         text_content.remove(0);
@@ -309,7 +303,8 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
             HtmlNode::Text(text) if text.trim().is_empty() => {}
             HtmlNode::Comment(_) => {}
             _ => {
-                let unexpected_block = convert_nodes_to_markdown(&[child_node.clone()], options)?;
+                let unexpected_block =
+                    convert_nodes_to_markdown(std::slice::from_ref(child_node), options)?;
                 if !unexpected_block.is_empty() {
                     dl_content_parts.push(unexpected_block);
                 }
@@ -381,22 +376,20 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
                 .and_then(|opt| opt.as_ref().cloned());
             if src_url.is_none() {
                 for child_node in &element.children {
-                    if let HtmlNode::Element(source_el) = child_node {
-                        if source_el.tag_name == "source" {
-                            if let Some(Some(s_src)) = source_el.attributes.get("src") {
-                                src_url = Some(s_src.clone());
-                                break;
-                            }
-                        }
+                    if let HtmlNode::Element(source_el) = child_node
+                        && source_el.tag_name == "source"
+                        && let Some(Some(s_src)) = source_el.attributes.get("src")
+                    {
+                        src_url = Some(s_src.clone());
+                        break;
                     }
                 }
             }
-            if tag_name == "video" {
-                if let Some(Some(poster_url)) = element.attributes.get("poster") {
-                    if !poster_url.is_empty() {
-                        additional_info = format!(" (Poster: {})", poster_url);
-                    }
-                }
+            if tag_name == "video"
+                && let Some(Some(poster_url)) = element.attributes.get("poster")
+                && !poster_url.is_empty()
+            {
+                additional_info = format!(" (Poster: {})", poster_url);
             }
         }
         "object" => {
@@ -440,17 +433,18 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
 fn handle_svg_element(element: &HtmlElement) -> miette::Result<String> {
     let mut title_text: Option<String> = None;
     for child_node in &element.children {
-        if let HtmlNode::Element(title_el) = child_node {
-            if title_el.tag_name == "title" {
-                let extracted_title = convert_children_to_string(&title_el.children)?;
-                let trimmed_title = extracted_title.trim();
-                if !trimmed_title.is_empty() {
-                    title_text = Some(trimmed_title.to_string());
-                }
-                break;
+        if let HtmlNode::Element(title_el) = child_node
+            && title_el.tag_name == "title"
+        {
+            let extracted_title = convert_children_to_string(&title_el.children)?;
+            let trimmed_title = extracted_title.trim();
+            if !trimmed_title.is_empty() {
+                title_text = Some(trimmed_title.to_string());
             }
+            break;
         }
     }
+
     if let Some(title) = title_text {
         Ok(format!("[SVG: {}]", title))
     } else {
@@ -511,8 +505,9 @@ fn convert_html_list_to_markdown(
                     }
                 }
             }
-        } else if let HtmlNode::Text(text_content) = node {
-            if !text_content.trim().is_empty() {}
+        } else if let HtmlNode::Text(text_content) = node
+            && !text_content.trim().is_empty()
+        {
         }
     }
     Ok(markdown_items
@@ -582,29 +577,24 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                     }
                     "br" => parts.push("  \n".to_string()),
                     "img" => {
-                        if let Some(Some(src_url)) = element.attributes.get("src") {
-                            if !src_url.is_empty() {
-                                let alt_text = element
-                                    .attributes
-                                    .get("alt")
-                                    .and_then(|opt_alt| opt_alt.as_ref())
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("");
-                                let title_part = element
-                                    .attributes
-                                    .get("title")
-                                    .and_then(|opt_title| opt_title.as_ref())
-                                    .filter(|title_str| !title_str.is_empty())
-                                    .map(|title_str| {
-                                        format!(" \"{}\"", title_str.replace('"', "\\\""))
-                                    })
-                                    .unwrap_or_default();
-                                let processed_src = process_url_for_markdown(src_url);
-                                parts.push(format!(
-                                    "![{}]({}{})",
-                                    alt_text, processed_src, title_part
-                                ));
-                            }
+                        if let Some(Some(src_url)) = element.attributes.get("src")
+                            && !src_url.is_empty()
+                        {
+                            let alt_text = element
+                                .attributes
+                                .get("alt")
+                                .and_then(|opt_alt| opt_alt.as_ref())
+                                .map(|s| s.as_str())
+                                .unwrap_or("");
+                            let title_part = element
+                                .attributes
+                                .get("title")
+                                .and_then(|opt_title| opt_title.as_ref())
+                                .filter(|title_str| !title_str.is_empty())
+                                .map(|title_str| format!(" \"{}\"", title_str.replace('"', "\\\"")))
+                                .unwrap_or_default();
+                            let processed_src = process_url_for_markdown(src_url);
+                            parts.push(format!("![{}]({}{})", alt_text, processed_src, title_part));
                         }
                     }
                     "input" => {

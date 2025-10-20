@@ -345,10 +345,10 @@ impl Debugger {
             }
 
             if breakpoint.line == line {
-                if let Some(bp_column) = breakpoint.column {
-                    if bp_column != column {
-                        continue;
-                    }
+                if let Some(bp_column) = breakpoint.column
+                    && bp_column != column
+                {
+                    continue;
                 }
 
                 return Some(breakpoint.clone());

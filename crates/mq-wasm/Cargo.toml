@@ -24,4 +24,4 @@ wasm-bindgen = "0.2.100"
 wasm-bindgen-test = "0.3.50"
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ['-O4', '--enable-simd']
+wasm-opt = ['-O4', '--enable-simd', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']

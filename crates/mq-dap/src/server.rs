@@ -66,12 +66,11 @@ pub fn start() -> DynResult<()> {
         }
 
         debug!("Waiting for next request or debugger message");
-        if let Some(rx) = adapter.debugger_message_rx() {
-            if let Ok(message) = rx.try_recv() {
-                if let Err(e) = adapter.handle_debugger_message(message, &mut server) {
-                    error!(error = %e, "Failed to handle debugger message");
-                }
-            }
+        if let Some(rx) = adapter.debugger_message_rx()
+            && let Ok(message) = rx.try_recv()
+            && let Err(e) = adapter.handle_debugger_message(message, &mut server)
+        {
+            error!(error = %e, "Failed to handle debugger message");
         }
 
         match server.poll_request()? {
@@ -80,10 +79,9 @@ pub fn start() -> DynResult<()> {
                     error!(error = %e, "Failed to handle DAP request");
                     if let Some(MqAdapterError::ProtocolError(msg)) =
                         e.downcast_ref::<MqAdapterError>()
+                        && msg == "Shutdown"
                     {
-                        if msg == "Shutdown" {
-                            break;
-                        }
+                        break;
                     }
                 }
             }
