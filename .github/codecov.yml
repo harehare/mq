@@ -9,3 +9,6 @@ ignore:
   - "crates/mq-web-api"
   - "crates/mq-dap/src/server.rs"
   - "crates/mq-test"
+coverage:
+  status:
+    project: true
