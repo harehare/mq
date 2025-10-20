@@ -1452,10 +1452,11 @@ impl<'a> Parser<'a> {
         }
 
         loop {
+            let leading_trivia = self.parse_leading_trivia();
             let mut dict_entry = Node {
                 kind: NodeKind::DictEntry,
                 token: None,
-                leading_trivia: Vec::new(),
+                leading_trivia,
                 trailing_trivia: Vec::new(),
                 children: Vec::new(),
             };
