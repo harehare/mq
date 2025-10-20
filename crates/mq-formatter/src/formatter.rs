@@ -68,7 +68,6 @@ impl Formatter {
 
     fn format_node(&mut self, node: mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         let has_leading_new_line = node.has_new_line();
-
         let indent_level_consider_new_line = if has_leading_new_line {
             indent_level
         } else {
@@ -230,24 +229,10 @@ impl Formatter {
         let value = node.children.get(2);
 
         if let (Some(key), Some(colon), Some(value)) = (key, colon, value) {
-            self.format_node(
-                mq_lang::Shared::clone(key),
-                if key.has_new_line() {
-                    indent_level + 1
-                } else {
-                    0
-                },
-            );
+            self.format_node(mq_lang::Shared::clone(key), indent_level);
             self.format_node(mq_lang::Shared::clone(colon), 0);
             self.append_space();
-            self.format_node(
-                mq_lang::Shared::clone(value),
-                if value.is_fn() || value.is_def() {
-                    indent_level + 1
-                } else {
-                    0
-                },
-            );
+            self.format_node(mq_lang::Shared::clone(value), indent_level);
         }
     }
 
