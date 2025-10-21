@@ -67,17 +67,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             break;
                         } else if let TokenKind::Comment(_) = &token.kind {
                             // Allow comments before EOF after a semicolon/end
-                            let _ = self.tokens.next(); // Consume comment
-                            if matches!(
-                                self.tokens.peek().map(|t| &t.kind),
-                                Some(TokenKind::Eof) | None
-                            ) {
-                                break;
-                            } else {
-                                return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                            match self.tokens.next() {
+                                Some(next_token) if matches!(next_token.kind, TokenKind::Eof) => {
+                                    break;
+                                }
+                                Some(next_token) => {
+                                    return Err(ParseError::UnexpectedToken(
+                                        (**next_token).clone(),
+                                    ));
+                                }
+                                None => break,
                             }
                         } else {
-                            return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+                            return Err(ParseError::UnexpectedToken((***token).clone()));
                         }
                     }
                     // For non-root programs (e.g. function bodies), a semicolon/end explicitly ends the program.
@@ -2430,7 +2432,7 @@ mod tests {
                 token(TokenKind::Ident(SmolStr::new("y"))),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+            Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("y"))))))]
     #[case::if_1(
             vec![
                 token(TokenKind::If),

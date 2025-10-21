@@ -238,7 +238,8 @@ impl<'a> Parser<'a> {
                                 leading_trivia = self.parse_leading_trivia();
                                 continue;
                             } else {
-                                self.errors.report(ParseError::UnexpectedEOFDetected);
+                                self.errors
+                                    .report(ParseError::UnexpectedToken(Shared::clone(token)));
                             }
                         }
                     }
@@ -3382,7 +3383,7 @@ mod tests {
                     children: Vec::new(),
                 }),
             ],
-            ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected], 100)
+            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Ident("y".into()))))], 100)
         )
     )]
     #[case::code_selector(
