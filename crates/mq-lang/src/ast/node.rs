@@ -336,7 +336,7 @@ mod tests {
     use super::*;
     use crate::{Position, TokenKind, arena::ArenaId};
     use rstest::rstest;
-    use smallvec::{SmallVec, smallvec};
+    use smallvec::smallvec;
 
     fn create_token(range: Range) -> Shared<Token> {
         Shared::new(Token {
@@ -346,331 +346,300 @@ mod tests {
         })
     }
 
-    #[test]
-    fn test_node_range_literal() {
-        let mut arena = Arena::new(10);
-        let range = Range {
-            start: Position::new(1, 1),
-            end: Position::new(2, 2),
-        };
-        let token = create_token(range.clone());
-        let token_id = arena.alloc(Shared::clone(&token));
-
-        let node = Node {
-            token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("test".to_string()))),
-        };
-
-        assert_eq!(node.range(Shared::new(arena)), range);
-    }
-
-    #[test]
-    fn test_node_range_def_with_program() {
-        let mut arena = Arena::new(10);
-
-        let stmt1_range = Range {
-            start: Position::new(1, 1),
-            end: Position::new(1, 10),
-        };
-        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
-
-        let stmt2_range = Range {
-            start: Position::new(2, 1),
-            end: Position::new(2, 15),
-        };
-        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
-
-        let stmt1 = Shared::new(Node {
-            token_id: stmt1_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("statement1".to_string()))),
-        });
-
-        let stmt2 = Shared::new(Node {
-            token_id: stmt2_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("statement2".to_string()))),
-        });
-
-        let def_token_id = arena.alloc(create_token(Range::default()));
-        let def_node = Node {
-            token_id: def_token_id,
-            expr: Shared::new(Expr::Def(
-                IdentWithToken::new("test_func"),
-                SmallVec::new(),
-                vec![stmt1, stmt2],
-            )),
-        };
-
-        assert_eq!(
-            def_node.range(Shared::new(arena)),
-            Range {
-                start: Position::new(1, 1),
-                end: Position::new(2, 15)
-            }
-        );
-    }
-
-    #[test]
-    fn test_node_range_while_loop() {
-        let mut arena = Arena::new(10);
-
-        let stmt1_range = Range {
-            start: Position::new(3, 2),
-            end: Position::new(3, 8),
-        };
-        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
-
-        let stmt2_range = Range {
-            start: Position::new(4, 2),
-            end: Position::new(4, 12),
-        };
-        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
-
-        let cond_token_id = arena.alloc(create_token(Range::default()));
-        let cond_node = Shared::new(Node {
-            token_id: cond_token_id,
-            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
-        });
-
-        let stmt1 = Shared::new(Node {
-            token_id: stmt1_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("loop1".to_string()))),
-        });
-
-        let stmt2 = Shared::new(Node {
-            token_id: stmt2_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("loop2".to_string()))),
-        });
-
-        let while_token_id = arena.alloc(create_token(Range::default()));
-        let while_node = Node {
-            token_id: while_token_id,
-            expr: Shared::new(Expr::While(cond_node, vec![stmt1, stmt2])),
-        };
-
-        assert_eq!(
-            while_node.range(Shared::new(arena)),
-            Range {
-                start: Position::new(3, 2),
-                end: Position::new(4, 12)
-            }
-        );
-    }
-
-    #[test]
-    fn test_node_range_until_loop() {
-        let mut arena = Arena::new(10);
-
-        let stmt1_range = Range {
-            start: Position::new(5, 4),
-            end: Position::new(5, 9),
-        };
-        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
-
-        let stmt2_range = Range {
-            start: Position::new(6, 4),
-            end: Position::new(6, 15),
-        };
-        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
-
-        let cond_token_id = arena.alloc(create_token(Range::default()));
-        let cond_node = Shared::new(Node {
-            token_id: cond_token_id,
-            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
-        });
-
-        let stmt1 = Shared::new(Node {
-            token_id: stmt1_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("until1".to_string()))),
-        });
-
-        let stmt2 = Shared::new(Node {
-            token_id: stmt2_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("until2".to_string()))),
-        });
-
-        let until_token_id = arena.alloc(create_token(Range::default()));
-        let until_node = Node {
-            token_id: until_token_id,
-            expr: Shared::new(Expr::Until(cond_node, vec![stmt1, stmt2])),
-        };
-
-        assert_eq!(
-            until_node.range(Shared::new(arena)),
-            Range {
-                start: Position::new(5, 4),
-                end: Position::new(6, 15)
-            }
-        );
-    }
-
-    #[test]
-    fn test_node_range_foreach_loop() {
-        let mut arena = Arena::new(10);
-
-        let stmt1_range = Range {
-            start: Position::new(10, 2),
-            end: Position::new(10, 20),
-        };
-        let stmt1_token_id = arena.alloc(create_token(stmt1_range.clone()));
-
-        let stmt2_range = Range {
-            start: Position::new(11, 2),
-            end: Position::new(11, 20),
-        };
-        let stmt2_token_id = arena.alloc(create_token(stmt2_range.clone()));
-
-        let iterable_token_id = arena.alloc(create_token(Range::default()));
-        let iterable_node = Shared::new(Node {
-            token_id: iterable_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("items".to_string()))),
-        });
-
-        let stmt1 = Shared::new(Node {
-            token_id: stmt1_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("foreach1".to_string()))),
-        });
-
-        let stmt2 = Shared::new(Node {
-            token_id: stmt2_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("foreach2".to_string()))),
-        });
-
-        let foreach_token_id = arena.alloc(create_token(Range::default()));
-        let foreach_node = Node {
-            token_id: foreach_token_id,
-            expr: Shared::new(Expr::Foreach(
-                IdentWithToken::new("item"),
-                iterable_node,
-                vec![stmt1, stmt2],
-            )),
-        };
-
-        assert_eq!(
-            foreach_node.range(Shared::new(arena)),
-            Range {
-                start: Position::new(10, 2),
-                end: Position::new(11, 20)
-            }
-        );
-    }
-
-    #[test]
-    fn test_node_range_call_with_args() {
-        let mut arena = Arena::new(10);
-
-        let arg1_range = Range {
-            start: Position::new(2, 2),
-            end: Position::new(2, 2),
-        };
-        let arg1_token = create_token(arg1_range.clone());
-        let arg1_token_id = arena.alloc(Shared::clone(&arg1_token));
-
-        let arg2_range = Range {
-            start: Position::new(3, 3),
-            end: Position::new(3, 3),
-        };
-        let arg2_token = create_token(arg2_range.clone());
-        let arg2_token_id = arena.alloc(Shared::clone(&arg2_token));
-
-        let arg1 = Shared::new(Node {
-            token_id: arg1_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("arg1".to_string()))),
-        });
-
-        let arg2 = Shared::new(Node {
-            token_id: arg2_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("arg2".to_string()))),
-        });
-
-        let call_token_id = arena.alloc(create_token(Range {
-            start: Position::new(1, 1),
-            end: Position::new(1, 1),
-        }));
-        let call_node = Node {
-            token_id: call_token_id,
-            expr: Shared::new(Expr::Call(
-                IdentWithToken::new("test_func"),
-                smallvec![arg1, arg2],
-            )),
-        };
-
-        assert_eq!(
-            call_node.range(Shared::new(arena)),
-            Range {
-                start: Position::new(2, 2),
-                end: Position::new(3, 3)
-            }
-        );
-    }
-
-    #[test]
-    fn test_node_range_if_expression() {
-        let mut arena = Arena::new(10);
-
-        let cond_range = Range {
-            start: Position::new(1, 1),
-            end: Position::new(1, 1),
-        };
-        let cond_token_id = arena.alloc(create_token(cond_range.clone()));
-
-        let then_range = Range {
-            start: Position::new(2, 2),
-            end: Position::new(2, 2),
-        };
-        let then_token_id = arena.alloc(create_token(then_range.clone()));
-
-        let else_range = Range {
-            start: Position::new(3, 3),
-            end: Position::new(3, 3),
-        };
-        let else_token_id = arena.alloc(create_token(else_range.clone()));
-
-        let cond_node = Shared::new(Node {
-            token_id: cond_token_id,
-            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
-        });
-
-        let then_node = Shared::new(Node {
-            token_id: then_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("then".to_string()))),
-        });
-
-        let else_node = Shared::new(Node {
-            token_id: else_token_id,
-            expr: Shared::new(Expr::Literal(Literal::String("else".to_string()))),
-        });
-
-        let if_node = Node {
-            token_id: arena.alloc(create_token(Range {
-                start: Position::new(0, 0),
-                end: Position::new(0, 0),
-            })),
-            expr: Shared::new(Expr::If(smallvec![
-                (Some(cond_node), then_node),
-                (None, else_node),
-            ])),
-        };
-
-        assert_eq!(
-            if_node.range(Shared::new(arena)),
-            Range {
-                start: Position::new(2, 2),
-                end: Position::new(3, 3)
-            }
-        );
-    }
-
     #[rstest]
-    #[case("abc", "def", std::cmp::Ordering::Less)]
-    #[case("def", "abc", std::cmp::Ordering::Greater)]
-    #[case("abc", "abc", std::cmp::Ordering::Equal)]
-    #[case("0", "abc", std::cmp::Ordering::Less)]
-    #[case("xyz", "abc", std::cmp::Ordering::Greater)]
-    fn test_ident_ordering(
-        #[case] name1: &str,
-        #[case] name2: &str,
-        #[case] expected: std::cmp::Ordering,
+    #[case(
+        Expr::CallDynamic(
+            Shared::new(Node {
+                token_id: ArenaId::new(1),
+                expr: Shared::new(Expr::Literal(Literal::String("callee".to_string()))),
+            }),
+            smallvec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(0),
+                    expr: Shared::new(Expr::Literal(Literal::String("arg1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("arg2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(1, 1), end: Position::new(1, 5) }),
+            (1, Range { start: Position::new(2, 1), end: Position::new(2, 5) }),
+        ],
+        Range { start: Position::new(2, 1), end: Position::new(2, 5) }
+    )]
+    #[case(
+        Expr::Match(
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("val".to_string()))),
+            }),
+            smallvec![
+                MatchArm {
+                    pattern: Pattern::Literal(Literal::String("a".to_string())),
+                    guard: None,
+                    body: Shared::new(Node {
+                        token_id: ArenaId::new(1),
+                        expr: Shared::new(Expr::Literal(Literal::String("body1".to_string()))),
+                    }),
+                },
+                MatchArm {
+                    pattern: Pattern::Literal(Literal::String("b".to_string())),
+                    guard: None,
+                    body: Shared::new(Node {
+                        token_id: ArenaId::new(2),
+                        expr: Shared::new(Expr::Literal(Literal::String("body2".to_string()))),
+                    }),
+                },
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(10, 1), end: Position::new(10, 5) }),
+            (1, Range { start: Position::new(11, 1), end: Position::new(11, 5) }),
+            (2, Range { start: Position::new(12, 1), end: Position::new(12, 5) }),
+        ],
+        Range { start: Position::new(10, 1), end: Position::new(12, 5) }
+    )]
+    #[case(
+        Expr::Try(
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("try".to_string()))),
+            }),
+            Shared::new(Node {
+                token_id: ArenaId::new(1),
+                expr: Shared::new(Expr::Literal(Literal::String("catch".to_string()))),
+            })
+        ),
+        vec![
+            (0, Range { start: Position::new(20, 1), end: Position::new(20, 5) }),
+            (1, Range { start: Position::new(21, 1), end: Position::new(21, 5) }),
+        ],
+        Range { start: Position::new(20, 1), end: Position::new(21, 5) }
+    )]
+    #[case(
+        Expr::Let(
+            IdentWithToken::new("x"),
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("letval".to_string()))),
+            })
+        ),
+        vec![
+            (0, Range { start: Position::new(30, 1), end: Position::new(30, 5) }),
+        ],
+        Range { start: Position::new(30, 1), end: Position::new(30, 5) }
+    )]
+    #[case(
+        Expr::Paren(
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("paren".to_string()))),
+            })
+        ),
+        vec![
+            (0, Range { start: Position::new(40, 1), end: Position::new(40, 5) }),
+        ],
+        Range { start: Position::new(40, 1), end: Position::new(40, 5) }
+    )]
+    #[case(
+        Expr::Block(vec![
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("block1".to_string()))),
+            }),
+            Shared::new(Node {
+                token_id: ArenaId::new(1),
+                expr: Shared::new(Expr::Literal(Literal::String("block2".to_string()))),
+            }),
+        ]),
+        vec![
+            (0, Range { start: Position::new(50, 1), end: Position::new(50, 5) }),
+            (1, Range { start: Position::new(51, 1), end: Position::new(51, 5) }),
+        ],
+        Range { start: Position::new(50, 1), end: Position::new(51, 5) }
+    )]
+    #[case(
+        Expr::Def(
+            IdentWithToken::new("f"),
+            smallvec![],
+            vec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(0),
+                    expr: Shared::new(Expr::Literal(Literal::String("def1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("def2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(60, 1), end: Position::new(60, 5) }),
+            (1, Range { start: Position::new(61, 1), end: Position::new(61, 5) }),
+        ],
+        Range { start: Position::new(60, 1), end: Position::new(61, 5) }
+    )]
+    #[case(
+        Expr::Fn(
+            smallvec![],
+            vec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(0),
+                    expr: Shared::new(Expr::Literal(Literal::String("fn1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("fn2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(70, 1), end: Position::new(70, 5) }),
+            (1, Range { start: Position::new(71, 1), end: Position::new(71, 5) }),
+        ],
+        Range { start: Position::new(70, 1), end: Position::new(71, 5) }
+    )]
+    #[case(
+        Expr::While(
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("cond".to_string()))),
+            }),
+            vec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("while1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(2),
+                    expr: Shared::new(Expr::Literal(Literal::String("while2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(81, 1), end: Position::new(81, 5) }),
+            (1, Range { start: Position::new(82, 1), end: Position::new(82, 5) }),
+            (2, Range { start: Position::new(82, 1), end: Position::new(82, 5) }),
+        ],
+        Range { start: Position::new(82, 1), end: Position::new(82, 5) }
+    )]
+    #[case(
+        Expr::Until(
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("cond".to_string()))),
+            }),
+            vec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("until1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(2),
+                    expr: Shared::new(Expr::Literal(Literal::String("until2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(91, 1), end: Position::new(91, 5) }),
+            (1, Range { start: Position::new(92, 1), end: Position::new(92, 5) }),
+            (2, Range { start: Position::new(92, 1), end: Position::new(92, 5) }),
+        ],
+        Range { start: Position::new(92, 1), end: Position::new(92, 5) }
+    )]
+    #[case(
+        Expr::Foreach(
+            IdentWithToken::new("item"),
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("iter".to_string()))),
+            }),
+            vec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("foreach1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(2),
+                    expr: Shared::new(Expr::Literal(Literal::String("foreach2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(101, 1), end: Position::new(101, 5) }),
+            (1, Range { start: Position::new(102, 1), end: Position::new(102, 5) }),
+            (2, Range { start: Position::new(102, 1), end: Position::new(102, 5) }),
+        ],
+        Range { start: Position::new(102, 1), end: Position::new(102, 5) }
+    )]
+    #[case(
+        Expr::If(smallvec![
+            (
+                Some(Shared::new(Node {
+                    token_id: ArenaId::new(0),
+                    expr: Shared::new(Expr::Literal(Literal::String("cond1".to_string()))),
+                })),
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("if1".to_string()))),
+                })
+            ),
+            (
+                Some(Shared::new(Node {
+                    token_id: ArenaId::new(2),
+                    expr: Shared::new(Expr::Literal(Literal::String("cond2".to_string()))),
+                })),
+                Shared::new(Node {
+                    token_id: ArenaId::new(3),
+                    expr: Shared::new(Expr::Literal(Literal::String("if2".to_string()))),
+                })
+            ),
+        ]),
+        vec![
+            (0, Range { start: Position::new(111, 1), end: Position::new(111, 5) }),
+            (1, Range { start: Position::new(113, 1), end: Position::new(113, 5) }),
+            (2, Range { start: Position::new(114, 1), end: Position::new(115, 5) }),
+            (3, Range { start: Position::new(116, 1), end: Position::new(117, 5) }),
+        ],
+        Range { start: Position::new(113, 1), end: Position::new(117, 5) }
+    )]
+    #[case(
+        Expr::Call(
+            IdentWithToken::new("func"),
+            smallvec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(0),
+                    expr: Shared::new(Expr::Literal(Literal::String("arg1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("arg2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(120, 1), end: Position::new(120, 5) }),
+            (1, Range { start: Position::new(121, 1), end: Position::new(121, 5) }),
+        ],
+        Range { start: Position::new(120, 1), end: Position::new(121, 5) }
+    )]
+    fn test_node_range_various_exprs(
+        #[case] expr: Expr,
+        #[case] token_ranges: Vec<(usize, Range)>,
+        #[case] expected: Range,
     ) {
-        assert_eq!(name1.partial_cmp(name2), Some(expected));
+        let mut arena = Arena::new(150);
+        for (_, range) in &token_ranges {
+            let token = create_token(range.clone());
+            let _ = arena.alloc(token);
+        }
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Shared::new(expr),
+        };
+        assert_eq!(node.range(Shared::new(arena)), expected);
     }
 }

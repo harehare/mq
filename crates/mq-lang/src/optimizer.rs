@@ -54,16 +54,6 @@ impl Optimizer {
         }
     }
 
-    /// Creates a new optimizer with both custom level and inline threshold
-    #[allow(dead_code)]
-    pub fn with_level_and_threshold(level: OptimizationLevel, threshold: usize) -> Self {
-        Self {
-            inline_threshold: threshold,
-            optimization_level: level,
-            ..Default::default()
-        }
-    }
-
     pub fn optimize(&mut self, program: &mut Program) {
         match self.optimization_level {
             OptimizationLevel::None => {
