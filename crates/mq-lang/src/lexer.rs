@@ -148,16 +148,27 @@ fn hex_escape(input: Span) -> IResult<Span, char> {
 }
 
 fn inline_comment(input: Span) -> IResult<Span, Token> {
-    map(preceded(char('#'), is_not("\n\r")), |span: Span| {
-        let module_id = span.extra;
-        let kind = TokenKind::Comment(span.fragment().to_string());
+    let (span, _) = char('#')(input)?;
+    let (span, start) = position(span)?;
+    let (span, comment_text) = opt(is_not("\n\r")).parse(span)?;
+    let (span, end) = position(span)?;
+
+    let module_id = start.extra;
+    let comment_str = comment_text
+        .map(|s: Span| s.fragment().to_string())
+        .unwrap_or_default();
+
+    Ok((
+        span,
         Token {
-            range: span.into(),
-            kind,
+            range: Range {
+                start: start.into(),
+                end: end.into(),
+            },
+            kind: TokenKind::Comment(comment_str),
             module_id,
-        }
-    })
-    .parse(input)
+        },
+    ))
 }
 
 fn newline(input: Span) -> IResult<Span, Token> {
@@ -1046,6 +1057,41 @@ mod tests {
             },
             Token {
                 range: Range { start: Position { line: 1, column: 22 }, end: Position { line: 1, column: 22 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::comment_with_empty_line("#\n# test",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 2 } },
+                kind: TokenKind::Comment("".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 2, column: 2 }, end: Position { line: 2, column: 7 } },
+                kind: TokenKind::Comment(" test".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 2, column: 7 }, end: Position { line: 2, column: 7 } },
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }
+        ])
+    )]
+    #[case::comment_hash_only("#",
+        Options::default(),
+        Ok(vec![
+            Token {
+                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 2 } },
+                kind: TokenKind::Comment("".to_string()),
+                module_id: 1.into(),
+            },
+            Token {
+                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 2 } },
                 kind: TokenKind::Eof,
                 module_id: 1.into(),
             }

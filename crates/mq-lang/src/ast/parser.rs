@@ -5603,6 +5603,52 @@ mod tests {
                         token(TokenKind::Eof)
                     ],
                     Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::negate_simple(
+        vec![
+            token(TokenKind::Minus),
+            token(TokenKind::NumberLiteral(42.into())),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::NEGATE, Some(Shared::new(token(TokenKind::Minus)))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    #[case::negate_with_identifier(
+        vec![
+            token(TokenKind::Minus),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::NEGATE, Some(Shared::new(token(TokenKind::Minus)))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
+    #[case::negate_error_missing_rhs(
+        vec![
+            token(TokenKind::Minus),
+            token(TokenKind::Eof)
+        ],
+        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
