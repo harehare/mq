@@ -11,13 +11,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: extractions/setup-just@v3
       - name: Install wasm-pack
         run: cargo install wasm-pack
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .tool-versions
           registry-url: "https://registry.npmjs.org"

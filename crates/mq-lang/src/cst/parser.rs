@@ -1312,37 +1312,31 @@ impl<'a> Parser<'a> {
             NodeKind::Token,
         )?);
 
-        let token = match self.tokens.peek() {
-            Some(token) => Shared::clone(token),
-            None => return Err(ParseError::UnexpectedEOFDetected),
-        };
-
-        if matches!(token.kind, TokenKind::RBracket) {
-            let leading_trivia = self.parse_leading_trivia();
-            let token = self.tokens.next().unwrap();
-            let trailing_trivia = self.parse_trailing_trivia();
-            children.push(Shared::new(Node {
-                kind: NodeKind::Token,
-                token: Some(Shared::clone(token)),
-                leading_trivia,
-                trailing_trivia,
-                children: Vec::new(),
-            }));
-
-            return Ok(Shared::new(Node {
-                kind: NodeKind::Array,
-                token: None,
-                leading_trivia: Vec::new(),
-                trailing_trivia: Vec::new(),
-                children,
-            }));
-        }
-
         loop {
+            let token = match self.tokens.peek() {
+                Some(token) => Shared::clone(token),
+                None => return Err(ParseError::UnexpectedEOFDetected),
+            };
+
+            if matches!(token.kind, TokenKind::RBracket) {
+                let leading_trivia = self.parse_leading_trivia();
+                let token = self.tokens.next().unwrap();
+                let trailing_trivia = self.parse_trailing_trivia();
+                children.push(Shared::new(Node {
+                    kind: NodeKind::Token,
+                    token: Some(Shared::clone(token)),
+                    leading_trivia,
+                    trailing_trivia,
+                    children: Vec::new(),
+                }));
+                break;
+            }
+
             let element_node = {
                 let leading_trivia = self.parse_leading_trivia();
                 self.parse_expr(leading_trivia, false, false)
             }?;
+
             let leading_trivia = self.parse_leading_trivia();
             let token = match self.tokens.peek() {
                 Some(token) => Shared::clone(token),

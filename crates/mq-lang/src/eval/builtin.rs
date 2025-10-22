@@ -324,17 +324,6 @@ define_builtin!(TO_MARKDOWN_STRING, ParamNum::Fixed(1), |_, _, args| {
 });
 
 define_builtin!(
-    TO_TSV,
-    ParamNum::Fixed(1),
-    |_, _, args| match args.as_slice() {
-        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
-        [RuntimeValue::Array(array)] => Ok(array.iter().join("\t").into()),
-        [a] => Ok(a.to_string().into()),
-        _ => unreachable!(),
-    }
-);
-
-define_builtin!(
     TO_STRING,
     ParamNum::Fixed(1),
     |_, _, args| match args.as_slice() {
@@ -2440,7 +2429,6 @@ const HASH_TO_NUMBER: u64 = fnv1a_hash_64("to_number");
 const HASH_TO_STRING: u64 = fnv1a_hash_64("to_string");
 const HASH_TO_STRONG: u64 = fnv1a_hash_64("to_strong");
 const HASH_TO_TEXT: u64 = fnv1a_hash_64("to_text");
-const HASH_TO_TSV: u64 = fnv1a_hash_64("to_tsv");
 const HASH_TRUNC: u64 = fnv1a_hash_64("trunc");
 const HASH_TRIM: u64 = fnv1a_hash_64("trim");
 const HASH_TYPE: u64 = fnv1a_hash_64("type");
@@ -2557,7 +2545,6 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_TO_STRING => Some(&TO_STRING),
         HASH_TO_STRONG => Some(&TO_STRONG),
         HASH_TO_TEXT => Some(&TO_TEXT),
-        HASH_TO_TSV => Some(&TO_TSV),
         HASH_TRUNC => Some(&TRUNC),
         HASH_TRIM => Some(&TRIM),
         HASH_TYPE => Some(&TYPE),
