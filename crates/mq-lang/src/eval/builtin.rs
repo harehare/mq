@@ -2018,7 +2018,7 @@ define_builtin!(
                 Some(runtime_value::Selector::Index(i.value() as usize)),
             ))
         }
-        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+        [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
