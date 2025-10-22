@@ -1313,12 +1313,7 @@ impl<'a> Parser<'a> {
         )?);
 
         loop {
-            let token = match self.tokens.peek() {
-                Some(token) => Shared::clone(token),
-                None => return Err(ParseError::UnexpectedEOFDetected),
-            };
-
-            if matches!(token.kind, TokenKind::RBracket) {
+            if self.try_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
                 let leading_trivia = self.parse_leading_trivia();
                 let token = self.tokens.next().unwrap();
                 let trailing_trivia = self.parse_trailing_trivia();
