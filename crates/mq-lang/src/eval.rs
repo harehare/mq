@@ -3467,6 +3467,15 @@ mod tests {
             RuntimeValue::Number(42.into()),
             RuntimeValue::Number(42.into()),
         ])]))]
+    #[case::repeat_invalid(vec![RuntimeValue::Number(42.into())],
+        vec![
+            ast_call("repeat", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("".into())))
+            ])
+        ],
+        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+           name: "repeat".to_string(),
+           args: vec!["42".to_string().into(), "".to_string().into()]})))]
     #[case::debug(vec![RuntimeValue::String("test".to_string())],
         vec![
             ast_call("stderr", SmallVec::new())
@@ -4141,6 +4150,17 @@ mod tests {
                 RuntimeValue::String("c".to_string()),
                 RuntimeValue::String("d".to_string()),
                 RuntimeValue::String("e".to_string()),
+            ])]))]
+    #[case::range_string(vec![RuntimeValue::String("a".to_string())],
+            vec![
+                ast_call("range", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("a1".to_string()))),
+                    ast_node(ast::Expr::Literal(ast::Literal::String("a2".to_string()))),
+                ])
+            ],
+            Ok(vec![RuntimeValue::Array(vec![
+                RuntimeValue::String("a1".to_string()),
+                RuntimeValue::String("a2".to_string()),
             ])]))]
     #[case::range_string_reverse(vec![RuntimeValue::String("e".to_string())],
             vec![
@@ -5226,6 +5246,20 @@ mod tests {
             RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "c".to_string(), position: None}), None),
         ])]))
     ]
+    #[case::to_markdown_none(vec![RuntimeValue::NONE],
+                vec![
+                    ast_call("to_markdown", SmallVec::new())
+                ],
+                Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                                     name: "to_markdown".to_string(),
+                                     args: vec!["".to_string().into()]})))]
+    #[case::error_with_message(vec![RuntimeValue::String("test".to_string())],
+        vec![
+            ast_call("error", smallvec![
+                ast_node(ast::Expr::Literal(ast::Literal::String("Custom error message".to_string())))
+            ])
+        ],
+        Err(InnerError::Eval(EvalError::UserDefined{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, message: "Custom error message".to_string()})))]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

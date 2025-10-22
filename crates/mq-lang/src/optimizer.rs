@@ -2369,7 +2369,6 @@ mod proptests {
 
     proptest! {
         #[test]
-        #[ignore]
         fn test_optimization_idempotent(
             (expr_str, _expected) in arb_arithmetic_expr()
         ) {
@@ -2394,7 +2393,6 @@ mod proptests {
         /// Property: Optimization preserves semantics for constant folding
         /// The optimized and non-optimized versions should evaluate to the same value
         #[test]
-        #[ignore]
         fn test_optimization_preserves_semantics_constant_folding(
             (expr_str, expected) in arb_arithmetic_expr()
         ) {
@@ -2423,7 +2421,6 @@ mod proptests {
 
         /// Property: Nested expressions are also optimized correctly
         #[test]
-        #[ignore]
         fn test_optimization_preserves_semantics_nested(
             expr_str in arb_nested_arithmetic_expr()
         ) {
@@ -2444,7 +2441,6 @@ mod proptests {
 
         /// Property: InlineOnly optimization level should not affect semantics
         #[test]
-        #[ignore]
         fn test_inline_only_preserves_semantics(
             (expr_str, _expected) in arb_arithmetic_expr()
         ) {
@@ -2463,7 +2459,6 @@ mod proptests {
 
         /// Property: String concatenation optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_string_concat(
             expr_str in arb_string_concat_expr()
         ) {
@@ -2482,7 +2477,6 @@ mod proptests {
 
         /// Property: Comparison expressions optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_comparison(
             expr_str in arb_comparison_expr()
         ) {
@@ -2507,7 +2501,6 @@ mod proptests {
 
         /// Property: Logical expressions optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_logical(
             expr_str in arb_logical_expr()
         ) {
@@ -2526,7 +2519,6 @@ mod proptests {
 
         /// Property: Division and modulo optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_div_mod(
             expr_str in arb_div_mod_expr()
         ) {
@@ -2545,7 +2537,6 @@ mod proptests {
 
         /// Property: Let expressions optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_let_expr(
             expr_str in arb_let_expr()
         ) {
@@ -2564,7 +2555,6 @@ mod proptests {
 
         /// Property: Deeply nested expressions optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_deeply_nested(
             expr_str in arb_deeply_nested_expr()
         ) {
@@ -2583,7 +2573,6 @@ mod proptests {
 
         /// Property: Mixed type expressions optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_mixed_type(
             expr_str in arb_mixed_type_expr()
         ) {
@@ -2602,7 +2591,6 @@ mod proptests {
 
         /// Property: Function definition and inlining preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_function_def(
             expr_str in arb_function_def_expr()
         ) {
@@ -2624,7 +2612,6 @@ mod proptests {
 
         /// Property: Complex expressions optimization preserves semantics
         #[test]
-        #[ignore]
         fn test_optimization_complex(
             expr_str in arb_any_expr()
         ) {

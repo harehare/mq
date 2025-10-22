@@ -25,7 +25,7 @@ def is_dict(d): type(d) == "dict";
 # Checks if string contains a substring
 def contains(haystack, needle):
   if (is_dict(haystack)):
-    not(is_none(get(haystack, needle)))
+    !is_none(haystack[needle])
   else:
     index(haystack, needle) != -1
 end
