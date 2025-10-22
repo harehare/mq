@@ -184,7 +184,7 @@ impl Formatter {
             return;
         }
 
-        let indent_adjustment = if self.is_let_line() {
+        let indent_adjustment = if self.is_let_line() || self.is_last_line_pipe() {
             self.current_line_indent()
         } else {
             0
@@ -239,7 +239,7 @@ impl Formatter {
     fn format_dict(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         self.append_indent(indent_level);
         let len = node.children.len();
-        let indent_adjustment = if self.is_let_line() {
+        let indent_adjustment = if self.is_let_line() || self.is_last_line_pipe() {
             self.current_line_indent()
         } else {
             0
