@@ -12,4 +12,4 @@ mq-markdown.workspace = true
 crate-type = ["cdylib", "staticlib"]
 
 [build-dependencies]
-cbindgen = "0.29.0"
+cbindgen = "0.29.2"
