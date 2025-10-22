@@ -423,7 +423,17 @@ impl Formatter {
         } + indent_adjustment;
 
         expr_nodes.for_each(|child| {
-            self.format_node(mq_lang::Shared::clone(child), block_indent_level);
+            self.format_node(
+                mq_lang::Shared::clone(child),
+                if matches!(
+                    child.token.as_ref().map(|t| &t.kind),
+                    Some(mq_lang::TokenKind::End)
+                ) {
+                    block_indent_level - 1
+                } else {
+                    block_indent_level
+                },
+            );
         });
     }
 
@@ -1263,6 +1273,18 @@ else:
 else:
   test2"
     )]
+    #[case::if_else(
+        "if(test):
+        test
+        else: do
+        test2
+        end",
+        "if (test):
+  test
+else: do
+    test2
+end"
+    )]
     #[case::one_line("if(test): test else: test2", "if (test): test else: test2")]
     #[case::one_line(
         "if(test): test elif(test2): test2 else: test3",
@@ -1714,11 +1736,11 @@ end
     #[case::let_with_do_block_multiline(
         r#"let result = do
   step1()
-  | step2()
+  | step2();
 "#,
         "let result = do
   step1()
-  | step2()
+  | step2();
 "
     )]
     #[case::let_with_do_block_oneline(
