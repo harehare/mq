@@ -58,18 +58,16 @@ def _parse_toml_content(input):
     | if (is_none(result)): pos else: result
   end
 
-  def _skip_comment_line(input, pos):
-    let current_pos = pos + 1
-    | let result = until (current_pos < len(input) && !_is_newline(input[current_pos])):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | if (is_none(result)): current_pos else: result
-  end
-
   def _skip_comment(input, pos):
     if (pos < len(input) && input[pos] == "#"):
-      _skip_comment_line(input, pos)
+      do
+        let current_pos = pos + 1
+        | let result = until (current_pos < len(input) && !_is_newline(input[current_pos])):
+                  let current_pos = current_pos + 1
+                  | current_pos
+                end
+        | if (is_none(result)): current_pos else: result
+      end
     else:
       pos
   end
@@ -89,46 +87,42 @@ def _parse_toml_content(input):
         final_pos
   end
 
-  def _parse_bare_key(input, pos):
-    let start_pos = pos
-    | let current_pos = pos
-    | let result = until (current_pos < len(input) && _is_alpha_numeric(input[current_pos])):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | let end_pos = if (is_none(result)): pos else: result
-    | let key = join(input[start_pos:end_pos], "")
-    | [key, end_pos]
-  end
-
-  def _parse_quoted_key(input, pos):
-    let quote_char = input[pos]
-    | let current_pos = pos + 1
-    | let key_chars = ""
-    | let escaped = false
-    | let char = input[current_pos]
-    | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
-          let result = if (escaped):
-            [key_chars + char, false, current_pos + 1]
-          elif (char == "\\"):
-            [key_chars, true, current_pos + 1]
-          else:
-            [key_chars + char, escaped, current_pos + 1]
-          | let key_chars = result[0]
-          | let escaped = result[1]
-          | let current_pos = result[2]
-          | let char = input[current_pos]
-          | result
-        end
-    # Add 1 to end_pos to skip the closing quote character
-    | [result[0], result[2] + 1]
-  end
-
   def _parse_key(input, pos):
     if (input[pos] == "\"" || input[pos] == "'"):
-      _parse_quoted_key(input, pos)
+      do
+        let quote_char = input[pos]
+        | let current_pos = pos + 1
+        | let key_chars = ""
+        | let escaped = false
+        | let char = input[current_pos]
+        | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
+                  let result = if (escaped):
+                    [key_chars + char, false, current_pos + 1]
+                  elif (char == "\\"):
+                    [key_chars, true, current_pos + 1]
+                  else:
+                    [key_chars + char, escaped, current_pos + 1]
+                  | let key_chars = result[0]
+                  | let escaped = result[1]
+                  | let current_pos = result[2]
+                  | let char = input[current_pos]
+                  | result
+                end
+        # Add 1 to end_pos to skip the closing quote character
+        | [result[0], result[2] + 1]
+      end
     else:
-      _parse_bare_key(input, pos)
+      do
+        let start_pos = pos
+        | let current_pos = pos
+        | let result = until (current_pos < len(input) && _is_alpha_numeric(input[current_pos])):
+                  let current_pos = current_pos + 1
+                  | current_pos
+                end
+        | let end_pos = if (is_none(result)): pos else: result
+        | let key = join(input[start_pos:end_pos], "")
+        | [key, end_pos]
+      end
   end
 
   def _parse_dotted_key(input, pos):
@@ -355,16 +349,6 @@ def _parse_toml_content(input):
     | [keys[0:-1] + last_key, is_array_section, current_pos]
   end
 
-  def _handle_key_value_line_char(table, current_section, input_chars, pos):
-    let result = _parse_key_value_pair(input_chars, pos)
-    | let keys = result[0]
-    | let value = result[1]
-    | let end_pos = result[2]
-    | let updated_table = _set_nested_value(table, current_section + keys, value)
-    | let end_pos = _skip_to_next_line(input_chars, end_pos)
-    | [updated_table, current_section, false, end_pos]
-  end
-
   def _handle_key_value_array(table, current_section, input_chars, pos):
     let current_pos = pos
     | let values = {}
@@ -404,7 +388,15 @@ def _parse_toml_content(input):
             elif (is_array_section):
               _handle_key_value_array(table, current_section, input_chars, pos)
             else:
-              _handle_key_value_line_char(table, current_section, input_chars, pos)
+              do
+                let result = _parse_key_value_pair(input_chars, pos)
+                | let keys = result[0]
+                | let value = result[1]
+                | let end_pos = result[2]
+                | let updated_table = _set_nested_value(table, current_section + keys, value)
+                | let end_pos = _skip_to_next_line(input_chars, end_pos)
+                | [updated_table, current_section, false, end_pos]
+              end
       | let table = result[0]
       | let current_section = result[1]
       | let is_array_section = result[2]
@@ -431,7 +423,6 @@ def _escape_string(str):
     "\t", "\\t"
   )
 end
-
 
 def _add_toml_lines(lines, key, value):
   if (is_dict(value)):

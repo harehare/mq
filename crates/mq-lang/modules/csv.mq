@@ -1,56 +1,50 @@
 # CSV/TSV Implementation in mq
 # Based on RFC 4180 for CSV format
 
-def _parse_csv_quoted_field(input, delimiter, pos):
-  let pos = pos + 1
-  | let field_content = ""
-  | let escaped = false
-  | let end_pos = pos
-  | let input_len = len(input)
-  | let result = until (end_pos < input_len && (escaped || input[end_pos] != "\"")):
-      let char = input[end_pos]
-      | let field_content = field_content + char
-      | let escaped = char == "\"" && !escaped
-      | let end_pos = end_pos + 1
-      | [field_content, end_pos]
-    end
-  | let field_content = if (is_none(result)): "" else: result[0]
-  | let end_pos = if (is_none(result)): pos else: result[1]
-  | let field_content = replace(field_content, "\"\"", "\"")
-  | let next_pos = if (end_pos < len(input)): end_pos + 1 else: end_pos
-  | [field_content, next_pos]
-end
-
-def _parse_csv_unquoted_field(input, delimiter, pos):
-  let end_pos = pos
-  | let current_input = input[end_pos]
-  | let input_len = len(input)
-  | let result = until (end_pos < input_len && current_input != delimiter && current_input != "\n" && current_input != "\r"):
-      let end_pos = end_pos + 1
-      | let current_input = input[end_pos]
-      | end_pos
-    end
-  | let result = if (is_none(result)): end_pos else: result
-  | let field_content = join(input[pos:result], "")
-  | [field_content, result]
-end
-
-def _parse_csv_field(input, delimiter, pos):
-  if (starts_with(input[pos], "\"")):
-    _parse_csv_quoted_field(input, delimiter, pos)
-  else:
-    _parse_csv_unquoted_field(input, delimiter, pos)
-end
-
 def _parse_csv_line(line, delimiter):
   let fields = []
   | let pos = 0
-  | let input_chars = to_array(line)
-  | let result = until (pos < len(input_chars)):
-      let field_result = _parse_csv_field(input_chars, delimiter, pos)
+  | let input = to_array(line)
+  | let result = until (pos < len(input)):
+      let field_result =
+        if (starts_with(input[pos], "\"")):
+          do
+            let pos = pos + 1
+            | let field_content = ""
+            | let escaped = false
+            | let end_pos = pos
+            | let input_len = len(input)
+            | let result = until (end_pos < input_len && (escaped || input[end_pos] != "\"")):
+                          let char = input[end_pos]
+                          | let field_content = field_content + char
+                          | let escaped = char == "\"" && !escaped
+                          | let end_pos = end_pos + 1
+                          | [field_content, end_pos]
+                        end
+            | let field_content = if (is_none(result)): "" else: result[0]
+            | let end_pos = if (is_none(result)): pos else: result[1]
+            | let field_content = replace(field_content, "\"\"", "\"")
+            | let next_pos = if (end_pos < len(input)): end_pos + 1 else: end_pos
+            | [field_content, next_pos]
+
+          end
+        else:
+          do
+            let end_pos = pos
+            | let current_input = input[end_pos]
+            | let input_len = len(input)
+            | let result = until (end_pos < input_len && current_input != delimiter && current_input != "\n" && current_input != "\r"):
+                          let end_pos = end_pos + 1
+                          | let current_input = input[end_pos]
+                          | end_pos
+                        end
+            | let result = if (is_none(result)): end_pos else: result
+            | let field_content = join(input[pos:result], "")
+            | [field_content, result]
+          end
       | let new_pos = field_result[1]
       | let fields = fields + field_result[0]
-      | let pos = if (new_pos < len(input_chars) && input_chars[new_pos] == delimiter):
+      | let pos = if (new_pos < len(input) && input[new_pos] == delimiter):
               new_pos + 1
             else:
               new_pos

@@ -1,16 +1,5 @@
 # JSON Implementation in mq
 
-def _split_string(input, pos):
-  let str_content = input[1:pos]
-  | let remaining = input[pos + 1:len(input)]
-  | [str_content, remaining]
-end
-
-def _split_number(input, number_str):
-  let remaining = input[len(number_str):len(input)]
-  | [to_number(number_str), remaining]
-end
-
 def _parse_json_value(input):
   let input = trim(input)
 
@@ -38,7 +27,9 @@ def _parse_json_value(input):
           | let pos = pos + 1
           | pos
         end
-    | _split_string(input, pos - 1)
+    | let str_content = input[1:pos - 1]
+    | let remaining = input[pos:len(input)]
+    | [str_content, remaining]
   end
 
   def _parse_number(input):
@@ -48,7 +39,11 @@ def _parse_json_value(input):
     | if (is_empty(match_result)):
         [None, input]
       else:
-        _split_number(input, first(match_result))
+        do
+          let number_str = first(match_result)
+          | let remaining = input[len(number_str):len(input)]
+          | [to_number(number_str), remaining]
+        end
   end
 
   def _parse_boolean(input):
