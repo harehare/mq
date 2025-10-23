@@ -12,7 +12,6 @@ import { useCustomTools } from "./hooks/useCustomTools";
 import { TREE_VIEW_SETTINGS } from "./constants";
 import { tools } from "./tools";
 import { CustomToolManager } from "./components/CustomToolManager";
-import { GitHubButton } from "./components/GitHubButton";
 
 const mdParser = new MarkdownIt();
 
@@ -234,7 +233,13 @@ function App() {
           <button onClick={toggleDarkMode} className="theme-toggle">
             {isDarkMode ? "☀️" : "🌙"}
           </button>
-          <GitHubButton />
+          <a
+            href="https://github.com/harehare/mq"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img src="https://img.shields.io/github/stars/harehare/mq?style=social" />
+          </a>
         </div>
       </header>
 

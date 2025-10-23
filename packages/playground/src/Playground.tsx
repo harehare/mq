@@ -4,7 +4,6 @@ import "./index.css";
 import * as mq from "mq-web";
 import { languages } from "monaco-editor";
 import LZString from "lz-string";
-import { GitHubButton } from "./components/GitHubButton";
 
 type SharedData = {
   code: string;
@@ -850,8 +849,21 @@ export const Playground = () => {
             </a>
             <h1>Playground</h1>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <GitHubButton />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              marginRight: "8px",
+            }}
+          >
+            <a
+              href="https://github.com/harehare/mq"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img src="https://img.shields.io/github/stars/harehare/mq?style=social" />
+            </a>
           </div>
         </header>
       )}
