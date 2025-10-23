@@ -1,17 +1,5 @@
 # XML Implementation in mq
 
-def _parse_attribute_value(input, quote_char):
-  let pos = 0
-  | let start_pos = pos
-  | let input_len = len(input)
-  | let pos = until (pos < input_len && input[pos] != quote_char):
-      let pos = pos + 1
-      | pos
-    end
-  | let value = input[start_pos:pos]
-  | [value, input[pos + 1:len(input)]]
-end
-
 def _parse_attributes(input):
   let input = trim(input)
   | let attributes = {}
@@ -33,7 +21,17 @@ def _parse_attributes(input):
             else:
               error("Attribute value must be quoted")
       | let input = input[1:len(input)]
-      | let value_result = _parse_attribute_value(input, quote_char)
+      | let value_result = do
+              let pos = 0
+              | let start_pos = pos
+              | let input_len = len(input)
+              | let pos = until (pos < input_len && input[pos] != quote_char):
+                              let pos = pos + 1
+                              | pos
+                            end
+              | let value = input[start_pos:pos]
+              | [value, input[pos + 1:len(input)]]
+            end
       | let attr_value = value_result[0]
       | let input = value_result[1]
       | let attributes = set(attributes, attr_name, attr_value)

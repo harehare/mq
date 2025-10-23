@@ -120,14 +120,6 @@ def parse_yaml_content(input):
         [set(result, key, value), next_index]
   end
 
-  def _handle_object_key_value(result, lines, current_index, target_indent):
-    let kv_pair = _parse_yaml_key_value(lines[current_index])
-    | if (kv_pair != None):
-        _process_key_value_pair(result, lines, current_index, target_indent, kv_pair)
-      else:
-        [result, current_index + 1]
-  end
-
   def _handle_array_empty_or_comment(result, current_index):
     [result, current_index + 1]
   end
@@ -138,15 +130,6 @@ def parse_yaml_content(input):
 
   def _handle_nested_array_item(result, lines, next_index, nested_result):
     [result + [nested_result[0]], nested_result[1]]
-  end
-
-  def _handle_array_item(result, lines, current_index, target_indent):
-    let item_value = _parse_yaml_array_line(lines[current_index])
-    | let next_index = current_index + 1
-    | if (next_index < len(lines) && _get_indent_level(lines[next_index]) > target_indent):
-        _handle_nested_array_item(result, lines, next_index, parse_yaml_lines(lines, next_index, _get_indent_level(lines[next_index])))
-      else:
-        [result + [item_value], next_index]
   end
 
   def _parse_yaml_object(lines, start_index, target_indent):
@@ -160,7 +143,13 @@ def parse_yaml_content(input):
                 elif (_get_indent_level(line) < target_indent):
                   _handle_object_indent_break(obj, current_index)
                 elif (_get_indent_level(line) == target_indent && _is_yaml_key_value(line)):
-                  _handle_object_key_value(obj, lines, current_index, target_indent)
+                  do
+                    let kv_pair = _parse_yaml_key_value(lines[current_index])
+                    | if (kv_pair != None):
+                        _process_key_value_pair(obj, lines, current_index, target_indent, kv_pair)
+                      else:
+                        [obj, current_index + 1]
+                  end
                 elif (line == "---"):
                   [obj, current_index + 1]
                 else:
@@ -183,7 +172,14 @@ def parse_yaml_content(input):
                 elif (_get_indent_level(line) < target_indent):
                   _handle_array_indent_break(arr, current_index)
                 elif (_get_indent_level(line) == target_indent && _is_yaml_array_item(line)):
-                  _handle_array_item(arr, lines, current_index, target_indent)
+                  do
+                    let item_value = _parse_yaml_array_line(lines[current_index])
+                    | let next_index = current_index + 1
+                    | if (next_index < len(lines) && _get_indent_level(lines[next_index]) > target_indent):
+                        _handle_nested_array_item(arr, lines, next_index, parse_yaml_lines(lines, next_index, _get_indent_level(lines[next_index])))
+                      else:
+                        [arr + [item_value], next_index]
+                  end
                 elif (line == "---"):
                   [arr + line, current_index + 1]
                 else:
@@ -238,7 +234,7 @@ ${trimmed_line}", current_index + 1]
       elif (_is_yaml_key_value(line)):
         _parse_yaml_object(lines, current_index, current_indent)
       else:
-        _handle_skip_line(lines, current_index, current_indent)
+        parse_yaml_lines(lines, current_index + 1, current_indent)
   end
 
   def parse_yaml_lines(lines, current_index, current_indent):
@@ -249,31 +245,13 @@ ${trimmed_line}", current_index + 1]
   | parse_yaml_lines(lines, 0, 0)
 end
 
-def _stringify_string_value(value):
-  if (contains(value, "\n") || contains(value, "\"") || contains(value, "'")):
-    "\"" + _escape_string(value) + "\""
-  else:
-    value
-end
-
-def _stringify_array_value(value, indent, indent_level):
-  if (is_empty(value)):
-    "[]"
-  else:
-    join(map(value, fn(item): "\n" + indent + "- " + _yaml_stringify_value(item, indent_level + 1);), "")
-end
-
-def _stringify_dict_value(value, indent, indent_level):
-  if (is_empty(keys(value))):
-    "{}"
-  else:
-    join(map(keys(value), fn(k): "\n" + indent + k + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
-end
-
 def _yaml_stringify_value(value, indent_level):
   let indent = join(map(range(0, indent_level * 2), fn(_): " ";), "")
   | if (is_string(value)):
-      _stringify_string_value(value)
+      if (contains(value, "\n") || contains(value, "\"") || contains(value, "'")):
+        "\"" + _escape_string(value) + "\""
+      else:
+        value
     elif (is_number(value)):
       to_string(value)
     elif (is_bool(value)):
@@ -281,37 +259,17 @@ def _yaml_stringify_value(value, indent_level):
     elif (is_none(value)):
       "null"
     elif (is_array(value)):
-      _stringify_array_value(value, indent, indent_level)
+      if (is_empty(value)):
+        "[]"
+      else:
+        join(map(value, fn(item): "\n" + indent + "- " + _yaml_stringify_value(item, indent_level + 1);), "")
     elif (is_dict(value)):
-      _stringify_dict_value(value, indent, indent_level)
+      if (is_empty(keys(value))):
+        "{}"
+      else:
+        join(map(keys(value), fn(k): "\n" + indent + k + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
     else:
       to_string(value)
-end
-
-def _create_array_markdown_table(data):
-  let headers = keys(first(data))
-  | let header_row = "| " + join(headers, " | ") + " |"
-  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-  | let data_rows = map(data, fn(row):
-      "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-    end)
-  | [header_row, separator_row] + data_rows
-  | join("\n")
-end
-
-def _create_dict_markdown_table(data):
-  let headers = ["Key", "Value"]
-  | let header_row = "| " + join(headers, " | ") + " |"
-  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-  | let data_rows = map(keys(data), fn(key):
-      "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-    end)
-  | [header_row, separator_row] + data_rows
-  | join("\n")
-end
-
-def _create_simple_markdown_table(data):
-  "| Value |\n| --- |\n| " + to_string(data) + " |"
 end
 
 # Parses a YAML string and returns the parsed data structure.
@@ -339,11 +297,29 @@ end
 # Converts a YAML data structure to a Markdown table.
 def yaml_to_markdown_table(data):
   if (is_array(data)):
-    _create_array_markdown_table(data)
+    do
+      let headers = keys(first(data))
+      | let header_row = "| " + join(headers, " | ") + " |"
+      | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+      | let data_rows = map(data, fn(row):
+              "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+            end)
+      | [header_row, separator_row] + data_rows
+      | join("\n")
+    end
   elif (is_dict(data)):
-    _create_dict_markdown_table(data)
+    do
+      let headers = ["Key", "Value"]
+      | let header_row = "| " + join(headers, " | ") + " |"
+      | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
+      | let data_rows = map(keys(data), fn(key):
+              "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+            end)
+      | [header_row, separator_row] + data_rows
+      | join("\n")
+    end
   else:
-    _create_simple_markdown_table(data)
+    "| Value |\n| --- |\n| " + to_string(data) + " |"
 end
 
 # Converts a data structure to a JSON string representation.
