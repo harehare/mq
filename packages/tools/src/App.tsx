@@ -238,7 +238,7 @@ function App() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <img src="https://img.shields.io/github/stars/harehare/mq?style=social" />
+            <img src="https://img.shields.io/github/stars/harehare/mq?style=social" alt="GitHub stars" />
           </a>
         </div>
       </header>
