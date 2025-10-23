@@ -186,6 +186,10 @@ impl Formatter {
 
         let indent_adjustment = if self.is_let_line() || self.is_last_line_pipe() {
             self.current_line_indent()
+        } else if indent_level == 0 {
+            // If indent_level is 0, it means the array is on the same line (no newline)
+            // Use the current line indent to calculate the base indent for children
+            self.current_line_indent()
         } else {
             0
         };
@@ -240,6 +244,10 @@ impl Formatter {
         self.append_indent(indent_level);
         let len = node.children.len();
         let indent_adjustment = if self.is_let_line() || self.is_last_line_pipe() {
+            self.current_line_indent()
+        } else if indent_level == 0 {
+            // If indent_level is 0, it means the dict is on the same line (no newline)
+            // Use the current line indent to calculate the base indent for children
             self.current_line_indent()
         } else {
             0
@@ -423,17 +431,7 @@ impl Formatter {
         } + indent_adjustment;
 
         expr_nodes.for_each(|child| {
-            self.format_node(
-                mq_lang::Shared::clone(child),
-                if matches!(
-                    child.token.as_ref().map(|t| &t.kind),
-                    Some(mq_lang::TokenKind::End)
-                ) {
-                    block_indent_level - 1
-                } else {
-                    block_indent_level
-                },
-            );
+            self.format_node(mq_lang::Shared::clone(child), block_indent_level);
         });
     }
 
@@ -1283,7 +1281,7 @@ else:
   test
 else: do
     test2
-end"
+  end"
     )]
     #[case::one_line("if(test): test else: test2", "if (test): test else: test2")]
     #[case::one_line(
@@ -1816,6 +1814,38 @@ end"#
     | 1: "one"
     | 2: "two"
   end"#
+    )]
+    #[case::dict_nested_multiline_level3(
+        r#"{
+"level1": {
+"level2": {
+"level3": "value"
+}
+}
+}"#,
+        r#"{
+  "level1": {
+    "level2": {
+      "level3": "value"
+    }
+  }
+}"#
+    )]
+    #[case::array_nested_multiline_level3(
+        r#"[
+[
+[
+"value"
+]
+]
+]"#,
+        r#"[
+  [
+    [
+      "value"
+    ]
+  ]
+]"#
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
