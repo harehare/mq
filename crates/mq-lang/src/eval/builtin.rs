@@ -2921,7 +2921,13 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
                 params: &[],
             },
         );
-
+        map.insert(
+            SmolStr::new("_get_markdown_position"),
+            BuiltinFunctionDoc {
+            description: "Internal function to get the position information of a markdown node, returning row and column data if available.",
+            params: &["markdown_node"],
+            },
+        );
         map
     },
 );
