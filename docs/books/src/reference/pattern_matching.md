@@ -65,13 +65,13 @@ match (arr):
   | [x]: x
   | [x, y]: add(x, y)
   | [first, second, third]: first
-  | [first, ...rest]: first
+  | [first, ..rest]: first
 end
 ```
 
-Array pattern features:
+Array patter features:
 - Match exact length: `[x, y]` matches arrays with exactly 2 elements
-- Rest pattern: `...rest` captures remaining elements
+- Rest pattern: `..rest` captures remaining elements
 - Empty array: `[]` matches empty arrays
 - Variable binding: Elements are bound to named variables
 
@@ -79,7 +79,7 @@ Array pattern features:
 
 ```ruby
 match (arr):
-  | [head, ...tail]: tail
+  | [head, ..tail]: tail
 end
 # array(1, 2, 3, 4) => array(2, 3, 4)
 ```
@@ -168,7 +168,7 @@ end
 
 # Match array with positive numbers
 match (arr):
-  | [x, ...] if (x > 0): "starts with positive"
+  | [x, ..] if (x > 0): "starts with positive"
   | _: "other"
 end
 ```
