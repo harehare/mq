@@ -2297,6 +2297,31 @@ define_builtin!(
     }
 );
 
+define_builtin!(
+    _GET_MARKDOWN_POSITION,
+    ParamNum::Fixed(1),
+    |ident, _, mut args| match args.as_mut_slice() {
+        [RuntimeValue::Markdown(node, _)] => {
+            node.position()
+                .map(|pos| {
+                    Ok(vec![
+                        ("start_line".to_string(), pos.start.line.into()),
+                        ("start_column".to_string(), pos.start.column.into()),
+                        ("end_line".to_string(), pos.end.line.into()),
+                        ("end_column".to_string(), pos.end.column.into()),
+                    ]
+                    .into())
+                })
+                .unwrap_or(Ok(RuntimeValue::NONE))
+        }
+        [a] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a)],
+        )),
+        _ => unreachable!(),
+    }
+);
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2439,6 +2464,7 @@ const HASH_URL_ENCODE: u64 = fnv1a_hash_64("url_encode");
 const HASH_UTF8BYTELEN: u64 = fnv1a_hash_64("utf8bytelen");
 const HASH_VALUES: u64 = fnv1a_hash_64("values");
 const HASH_INTERN: u64 = fnv1a_hash_64("intern");
+const HASH_GET_MARKDOWN_POSITION: u64 = fnv1a_hash_64("_get_markdown_position");
 #[cfg(feature = "file-io")]
 const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
@@ -2555,6 +2581,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_UTF8BYTELEN => Some(&UTF8BYTELEN),
         HASH_VALUES => Some(&VALUES),
         HASH_INTERN => Some(&INTERN),
+        HASH_GET_MARKDOWN_POSITION => Some(&_GET_MARKDOWN_POSITION),
         #[cfg(feature = "file-io")]
         HASH_READ_FILE => Some(&READ_FILE),
         _ => None,
