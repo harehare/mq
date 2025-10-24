@@ -5,7 +5,7 @@
 ```bash
 curl -sSL https://mqlang.org/install.sh | bash
 # Install the debugger
-curl_-sSL https://mqlang.org/install.sh | bash -s -- --with-debug
+curl -sSL https://mqlang.org/install.sh | bash -s -- --with-debug
 ```
 
 The installer will:

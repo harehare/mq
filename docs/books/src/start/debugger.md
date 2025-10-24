@@ -9,7 +9,7 @@ To use the debugger, you need to install `mq` with the debugger feature enabled.
 ### Quick Install
 
 ```bash
-curl_-sSL https://mqlang.org/install.sh | bash -s -- --with-debug
+curl -sSL https://mqlang.org/install.sh | bash -s -- --with-debug
 ```
 
 ### Cargo
