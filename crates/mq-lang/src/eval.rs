@@ -5260,6 +5260,18 @@ mod tests {
             ])
         ],
         Err(InnerError::Eval(EvalError::UserDefined{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, message: "Custom error message".to_string()})))]
+    #[case::get_markdown_position_line_col(
+            vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{
+                value: "test".to_string(),
+                position: Some(mq_markdown::Position{start: mq_markdown::Point{line: 1, column: 10}, end: mq_markdown::Point{line: 2, column: 15}})
+            }), None)],
+            vec![
+                ast_call("_get_markdown_position", SmallVec::new()),
+                ast_call("get", smallvec![
+                    ast_node(ast::Expr::Literal(ast::Literal::String("start_line".to_string()))),
+                ])
+            ],
+            Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "1".to_string(), position: None}), None)]))]
     fn test_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
         #[case] runtime_values: Vec<RuntimeValue>,

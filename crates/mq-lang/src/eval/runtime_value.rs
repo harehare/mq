@@ -109,6 +109,16 @@ impl From<BTreeMap<Ident, RuntimeValue>> for RuntimeValue {
     }
 }
 
+impl From<Vec<(String, Number)>> for RuntimeValue {
+    fn from(v: Vec<(String, Number)>) -> Self {
+        RuntimeValue::Dict(
+            v.into_iter()
+                .map(|(k, v)| (Ident::new(&k), RuntimeValue::Number(v)))
+                .collect::<BTreeMap<Ident, RuntimeValue>>(),
+        )
+    }
+}
+
 impl From<mq_markdown::AttrValue> for RuntimeValue {
     fn from(attr_value: mq_markdown::AttrValue) -> Self {
         match attr_value {
