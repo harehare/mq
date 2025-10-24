@@ -651,4 +651,245 @@ mod test {
 
         assert_eq!(error.source_code, ModuleLoader::BUILTIN_FILE);
     }
+
+    #[rstest]
+    #[case::lexer_unexpected_token(
+        InnerError::Lexer(LexerError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::lexer_unexpected_eof(InnerError::Lexer(LexerError::UnexpectedEOFDetected(
+        ArenaId::new(0)
+    )))]
+    #[case::parse_env_not_found(
+        InnerError::Parse(ParseError::EnvNotFound(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "ENV_VAR".into()))
+    )]
+    #[case::parse_unexpected_token(
+        InnerError::Parse(ParseError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::parse_unexpected_eof_detected(InnerError::Parse(ParseError::UnexpectedEOFDetected(
+        ArenaId::new(0)
+    )))]
+    #[case::parse_insufficient_tokens(
+        InnerError::Parse(ParseError::InsufficientTokens(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::parse_expected_closing_paren(
+        InnerError::Parse(ParseError::ExpectedClosingParen(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::parse_expected_closing_brace(
+        InnerError::Parse(ParseError::ExpectedClosingBrace(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::parse_expected_closing_bracket(
+        InnerError::Parse(ParseError::ExpectedClosingBracket(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::eval_recursion_error(InnerError::Eval(EvalError::RecursionError(0)))]
+    #[case::eval_module_load_error(
+        InnerError::Eval(EvalError::ModuleLoadError(ModuleError::NotFound("mod".into())))
+    )]
+    #[case::eval_user_defined(
+        InnerError::Eval(EvalError::UserDefined {
+            token: Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            message: "msg".to_string(),
+        })
+    )]
+    #[case::eval_invalid_base64_string(
+        InnerError::Eval(EvalError::InvalidBase64String(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "bad".to_string()))
+    )]
+    #[case::eval_not_defined(
+        InnerError::Eval(EvalError::NotDefined(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "name".to_string()))
+    )]
+    #[case::eval_datetime_format_error(
+        InnerError::Eval(EvalError::DateTimeFormatError(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "fmt".to_string()))
+    )]
+    #[case::eval_index_out_of_bounds(
+        InnerError::Eval(EvalError::IndexOutOfBounds(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, 1.into()))
+    )]
+    #[case::eval_invalid_definition(
+        InnerError::Eval(EvalError::InvalidDefinition(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "bad".into()))
+    )]
+    #[case::eval_invalid_types(
+        InnerError::Eval(EvalError::InvalidTypes {
+            token: Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            name: "int".into(),
+            args: vec!["str".into()],
+        })
+    )]
+    #[case::eval_invalid_number_of_arguments(
+        InnerError::Eval(EvalError::InvalidNumberOfArguments(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "func".to_string(), 2, 1))
+    )]
+    #[case::eval_invalid_regular_expression(
+        InnerError::Eval(EvalError::InvalidRegularExpression(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "bad".to_string()))
+    )]
+    #[case::eval_internal_error(
+        InnerError::Eval(EvalError::InternalError(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::eval_runtime_error(
+        InnerError::Eval(EvalError::RuntimeError(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "err".to_string()))
+    )]
+    #[case::eval_zero_division(
+        InnerError::Eval(EvalError::ZeroDivision(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::eval_break(
+        InnerError::Eval(EvalError::Break(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::eval_continue(
+        InnerError::Eval(EvalError::Continue(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }))
+    )]
+    #[case::eval_env_not_found(
+        InnerError::Eval(EvalError::EnvNotFound(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "ENV".into()))
+    )]
+    #[case::module_not_found(
+        InnerError::Module(ModuleError::NotFound("mod".to_string()))
+    )]
+    #[case::module_io_error(
+        InnerError::Module(ModuleError::IOError("io".to_string()))
+    )]
+    #[case::module_lexer_error_unexpected_token(
+        InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })))
+    )]
+    #[case::module_lexer_error_unexpected_eof(InnerError::Module(ModuleError::LexerError(
+        LexerError::UnexpectedEOFDetected(ArenaId::new(0))
+    )))]
+    #[case::module_parse_error_env_not_found(
+        InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        }, "ENV".into())))
+    )]
+    #[case::module_parse_error_unexpected_token(
+        InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })))
+    )]
+    #[case::module_parse_error_unexpected_eof(InnerError::Module(ModuleError::ParseError(
+        ParseError::UnexpectedEOFDetected(ArenaId::new(0))
+    )))]
+    #[case::module_parse_error_insufficient_tokens(
+        InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })))
+    )]
+    #[case::module_invalid_module(InnerError::Module(ModuleError::InvalidModule))]
+    #[case::module_parse_error_expected_closing_paren(
+        InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingParen(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })))
+    )]
+    #[case::module_parse_error_expected_closing_brace(
+        InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })))
+    )]
+    #[case::module_parse_error_expected_closing_bracket(
+        InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: ArenaId::new(0),
+        })))
+    )]
+    fn test_diagnostic_code_and_help(module_loader: ModuleLoader, #[case] cause: InnerError) {
+        let error = Error::from_error("source code", cause, module_loader);
+        // code() and help() must not panic
+        let _ = error.code();
+        let _ = error.help();
+    }
 }
