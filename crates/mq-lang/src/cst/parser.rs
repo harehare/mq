@@ -2282,6 +2282,10 @@ impl<'a> Parser<'a> {
                 | TokenKind::Ident(_)
                 | TokenKind::Pipe
                 | TokenKind::SemiColon
+                | TokenKind::Do
+                | TokenKind::Try
+                | TokenKind::LParen
+                | TokenKind::LBrace
                 | TokenKind::End
                 | TokenKind::Eof => return,
                 _ => {

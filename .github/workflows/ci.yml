@@ -23,9 +23,10 @@ jobs:
       - uses: harehare/setup-mq@v1
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Install cargo-readme
-        run: cargo install cargo-readme
-      - uses: taiki-e/install-action@nextest
+      - name: Install tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest,cargo-readme
       - name: Build
         run: just build
       - name: Run tests
