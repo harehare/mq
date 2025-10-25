@@ -60,8 +60,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Eof => break,     // End of file terminates the program.
                 TokenKind::SemiColon | TokenKind::End => {
                     // Semicolons and 'end' keyword terminate sub-programs (e.g., in 'def', 'fn').
-                    // In the root program, a semicolon/end is only allowed if followed by EOF.
-                    // Otherwise, it's an unexpected EOF because more expressions were expected.
+                    // In the root program, after a semicolon or 'end', the parser checks if the next token is EOF.
+                    // If the next token is not EOF, it returns an error for the unexpected token.
                     if root && let Some(token) = self.tokens.peek() {
                         if let TokenKind::Eof = &token.kind {
                             break;
