@@ -8,6 +8,7 @@ ignore:
   - "crates/mq-mcp"
   - "crates/mq-web-api"
   - "crates/mq-dap/src/server.rs"
+  - "crates/mq-lang/src/eval/debugger.rs"
   - "crates/mq-test"
 coverage:
   status:

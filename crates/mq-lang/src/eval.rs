@@ -5479,3 +5479,94 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[cfg(all(feature = "debugger", feature = "sync"))]
+mod debugger_tests {
+    use rstest::{fixture, rstest};
+    use smallvec::SmallVec;
+
+    use super::*;
+    use crate::ast::node::Args;
+    use crate::eval::debugger::{DebugContext, DebuggerHandler};
+    use crate::{AstNode, DebuggerAction, IdentWithToken, ModuleLoader, Range, token_alloc};
+
+    #[fixture]
+    fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
+
+        token_alloc(
+            &token_arena,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: 1.into(),
+            }),
+        );
+
+        token_arena
+    }
+
+    fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
+        Shared::new(AstNode {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Call(IdentWithToken::new(name), args)),
+        })
+    }
+
+    #[derive(Debug)]
+    struct TestDebuggerHandler {
+        breakpoints_hit: Shared<SharedCell<Vec<String>>>,
+        steps_taken: Shared<SharedCell<Vec<String>>>,
+        next_action: DebuggerAction,
+    }
+
+    impl TestDebuggerHandler {
+        fn new(action: DebuggerAction) -> Self {
+            Self {
+                breakpoints_hit: Shared::new(SharedCell::new(Vec::new())),
+                steps_taken: Shared::new(SharedCell::new(Vec::new())),
+                next_action: action,
+            }
+        }
+    }
+
+    impl DebuggerHandler for TestDebuggerHandler {
+        fn on_breakpoint_hit(
+            &self,
+            _breakpoint: &crate::eval::debugger::Breakpoint,
+            context: &DebugContext,
+        ) -> DebuggerAction {
+            self.breakpoints_hit
+                .write()
+                .unwrap()
+                .push(format!("breakpoint:{}", context.current_value));
+            self.next_action.clone()
+        }
+
+        fn on_step(&self, context: &DebugContext) -> DebuggerAction {
+            self.steps_taken
+                .write()
+                .unwrap()
+                .push(format!("step:{}", context.current_value));
+            self.next_action.clone()
+        }
+    }
+
+    #[rstest]
+    fn test_eval_debugger_breakpoint_call(token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) {
+        let handler = Shared::new(SharedCell::new(Box::new(TestDebuggerHandler::new(
+            DebuggerAction::Continue,
+        )) as Box<dyn DebuggerHandler>));
+
+        let mut evaluator = Evaluator::new(ModuleLoader::new(None), token_arena);
+        evaluator.debugger_handler = Shared::clone(&handler);
+
+        let program = vec![ast_call("breakpoint", SmallVec::new())];
+        let runtime_values = vec![RuntimeValue::String("test".to_string())];
+
+        let result = evaluator.eval(&program, runtime_values.into_iter());
+
+        assert_eq!(result, Ok(vec![RuntimeValue::String("test".to_string())]));
+    }
+}
