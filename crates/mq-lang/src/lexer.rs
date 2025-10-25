@@ -556,9 +556,20 @@ fn env(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
+fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
+    let mut current = input;
+    loop {
+        let (remaining, _) = multispace0(current)?;
+        if let Ok((after_comment, _)) = inline_comment(remaining) {
+            current = after_comment;
+        } else {
+            return Ok((remaining, ()));
+        }
+    }
+}
+
 fn token(input: Span) -> IResult<Span, Token> {
     alt((
-        inline_comment,
         keywords,
         env,
         literals,
@@ -591,8 +602,8 @@ fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<To
     if options.include_spaces {
         many0(token_include_spaces).parse(input)
     } else {
-        let (input, tokens) = many0(preceded(multispace0, token)).parse(input)?;
-        let (input, _) = multispace0(input)?;
+        let (input, tokens) = many0(preceded(skip_whitespace_and_comments, token)).parse(input)?;
+        let (input, _) = skip_whitespace_and_comments(input)?;
         Ok((input, tokens))
     }
 }
@@ -1036,11 +1047,6 @@ mod tests {
                 module_id: 1.into(),
             },
             Token {
-                range: Range { start: Position { line: 1, column: 11 }, end: Position { line: 1, column: 19 } },
-                kind: TokenKind::Comment(" comment".to_string()),
-                module_id: 1.into(),
-            },
-            Token {
                 range: Range { start: Position { line: 1, column: 19 }, end: Position { line: 1, column: 19 } },
                 kind: TokenKind::Eof,
                 module_id: 1.into(),
@@ -1050,11 +1056,6 @@ mod tests {
     #[case::comment_with_pipe_character("# comment with | pipe",
         Options::default(),
         Ok(vec![
-            Token {
-                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 22 } },
-                kind: TokenKind::Comment(" comment with | pipe".to_string()),
-                module_id: 1.into(),
-            },
             Token {
                 range: Range { start: Position { line: 1, column: 22 }, end: Position { line: 1, column: 22 } },
                 kind: TokenKind::Eof,
@@ -1066,16 +1067,6 @@ mod tests {
         Options::default(),
         Ok(vec![
             Token {
-                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 2 } },
-                kind: TokenKind::Comment("".to_string()),
-                module_id: 1.into(),
-            },
-            Token {
-                range: Range { start: Position { line: 2, column: 2 }, end: Position { line: 2, column: 7 } },
-                kind: TokenKind::Comment(" test".to_string()),
-                module_id: 1.into(),
-            },
-            Token {
                 range: Range { start: Position { line: 2, column: 7 }, end: Position { line: 2, column: 7 } },
                 kind: TokenKind::Eof,
                 module_id: 1.into(),
@@ -1085,11 +1076,6 @@ mod tests {
     #[case::comment_hash_only("#",
         Options::default(),
         Ok(vec![
-            Token {
-                range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 2 } },
-                kind: TokenKind::Comment("".to_string()),
-                module_id: 1.into(),
-            },
             Token {
                 range: Range { start: Position { line: 1, column: 2 }, end: Position { line: 1, column: 2 } },
                 kind: TokenKind::Eof,
