@@ -56,28 +56,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         while let Some(token) = self.tokens.next() {
             match &token.kind {
-                TokenKind::Pipe | TokenKind::Comment(_) => continue, // Skip pipes and comments.
-                TokenKind::Eof => break, // End of file terminates the program.
+                TokenKind::Pipe => continue, // Skip pipes.
+                TokenKind::Eof => break,     // End of file terminates the program.
                 TokenKind::SemiColon | TokenKind::End => {
                     // Semicolons and 'end' keyword terminate sub-programs (e.g., in 'def', 'fn').
-                    // In the root program, a semicolon/end is only allowed if followed by EOF or a comment then EOF.
+                    // In the root program, a semicolon/end is only allowed if followed by EOF.
                     // Otherwise, it's an unexpected EOF because more expressions were expected.
                     if root && let Some(token) = self.tokens.peek() {
                         if let TokenKind::Eof = &token.kind {
                             break;
-                        } else if let TokenKind::Comment(_) = &token.kind {
-                            // Allow comments before EOF after a semicolon/end
-                            match self.tokens.next() {
-                                Some(next_token) if matches!(next_token.kind, TokenKind::Eof) => {
-                                    break;
-                                }
-                                Some(next_token) => {
-                                    return Err(ParseError::UnexpectedToken(
-                                        (**next_token).clone(),
-                                    ));
-                                }
-                                None => break,
-                            }
                         } else {
                             return Err(ParseError::UnexpectedToken((***token).clone()));
                         }
@@ -345,10 +332,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     self.tokens.next();
                     break;
                 }
-                Some(token) if matches!(token.kind, TokenKind::Comment(_)) => {
-                    self.tokens.next();
-                    continue;
-                }
                 None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
                 _ => {}
             }
@@ -476,7 +459,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         while let Some(token) = self.tokens.next() {
             match &token.kind {
                 TokenKind::RBracket => break,
-                TokenKind::Comma | TokenKind::Comment(_) => continue,
+                TokenKind::Comma => continue,
                 _ => {
                     let expr = self.parse_expr(Shared::clone(token))?;
                     elements.push(expr);
@@ -539,7 +522,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::Catch)
                 | Some(TokenKind::Colon)
                 | Some(TokenKind::Comma)
-                | Some(TokenKind::Comment(_))
                 | Some(TokenKind::Eof)
                 | Some(TokenKind::Elif)
                 | Some(TokenKind::Else)
@@ -1064,12 +1046,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let mut arms: super::node::MatchArms = SmallVec::new();
 
         while let Some(token) = self.tokens.peek() {
-            // Skip comments
-            if matches!(token.kind, TokenKind::Comment(_)) {
-                self.tokens.next();
-                continue;
-            }
-
             // Check for end of match
             if matches!(token.kind, TokenKind::End | TokenKind::Eof) {
                 break;
@@ -1290,11 +1266,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let mut nodes = Vec::with_capacity(8);
 
         while let Some(token) = self.tokens.peek() {
-            if matches!(token.kind, TokenKind::Comment(_)) {
-                self.tokens.next();
-                continue;
-            }
-
             if !matches!(token.kind, TokenKind::Elif) {
                 break;
             }
@@ -1355,10 +1326,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let ast = self.parse_expr(Shared::clone(expr_token))?;
 
         self.next_token_with_eof(let_token_id, |token_kind| {
-            matches!(
-                token_kind,
-                TokenKind::Pipe | TokenKind::Eof | TokenKind::Comment(_)
-            )
+            matches!(token_kind, TokenKind::Pipe | TokenKind::Eof)
         })?;
 
         Ok(Shared::new(Node {
@@ -4981,135 +4949,6 @@ mod tests {
                             expr: Shared::new(Expr::Continue),
                         })
                     ]))]
-    #[case::if_with_comment_before_elif(
-                        vec![
-                            token(TokenKind::If),
-                            token(TokenKind::LParen),
-                            token(TokenKind::BoolLiteral(true)),
-                            token(TokenKind::RParen),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("true branch".to_owned())),
-                            token(TokenKind::Comment("comment before elif".to_owned())),
-                            token(TokenKind::Elif),
-                            token(TokenKind::LParen),
-                            token(TokenKind::BoolLiteral(false)),
-                            token(TokenKind::RParen),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("elif branch".to_owned())),
-                            token(TokenKind::Else),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("else branch".to_owned())),
-                            token(TokenKind::Eof)
-                        ],
-                        Ok(vec![
-                            Shared::new(Node {
-                                token_id: 11.into(),
-                                expr: Shared::new(Expr::If(smallvec![
-                                    (
-                                        Some(Shared::new(Node {
-                                            token_id: 1.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
-                                        })),
-                                        Shared::new(Node {
-                                            token_id: 3.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
-                                        })
-                                    ),
-                                    (
-                                        Some(Shared::new(Node {
-                                            token_id: 5.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
-
-                                        })),
-                                        Shared::new(Node {
-                                            token_id: 7.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("elif branch".to_owned()))),
-                                        })
-                                    ),
-                                    (
-                                        None,
-                                        Shared::new(Node {
-                                            token_id: 10.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("else branch".to_owned()))),
-                                        })
-                                    )
-                                ])),
-                            })
-                        ])
-                    )]
-    #[rstest]
-    #[case::if_with_multiple_comments_and_elifs(
-                        vec![
-                            token(TokenKind::If),
-                            token(TokenKind::LParen),
-                            token(TokenKind::BoolLiteral(true)),
-                            token(TokenKind::RParen),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("true branch".to_owned())),
-                            token(TokenKind::Comment("first comment".to_owned())),
-                            token(TokenKind::Elif),
-                            token(TokenKind::LParen),
-                            token(TokenKind::BoolLiteral(false)),
-                            token(TokenKind::RParen),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("first elif branch".to_owned())),
-                            token(TokenKind::Comment("second comment".to_owned())),
-                            token(TokenKind::Elif),
-                            token(TokenKind::LParen),
-                            token(TokenKind::BoolLiteral(true)),
-                            token(TokenKind::RParen),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("second elif branch".to_owned())),
-                            token(TokenKind::Else),
-                            token(TokenKind::Colon),
-                            token(TokenKind::StringLiteral("else branch".to_owned())),
-                            token(TokenKind::Eof)
-                        ],
-                        Ok(vec![
-                            Shared::new(Node {
-                                token_id: 15.into(),
-                                expr: Shared::new(Expr::If(smallvec![
-                                    (
-                                        Some(Shared::new(Node {
-                                            token_id: 1.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
-                                        })),
-                                        Shared::new(Node {
-                                            token_id: 3.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
-                                        })
-                                    ),
-                                    (
-                                        Some(Shared::new(Node {
-                                            token_id: 5.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
-                                        })),
-                                        Shared::new(Node {
-                                            token_id: 7.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("first elif branch".to_owned()))),
-                                        })
-                                    ),
-                                    (
-                                        Some(Shared::new(Node {
-                                            token_id: 9.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
-                                        })),
-                                        Shared::new(Node {
-                                            token_id: 11.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("second elif branch".to_owned()))),
-                                        })
-                                    ),
-                                    (
-                                        None,
-                                        Shared::new(Node {
-                                            token_id: 14.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("else branch".to_owned()))),
-                                        })
-                                    )
-                                ])),
-                            })
-                        ])
-                    )]
     #[case::self_bracket_access_with_number(
                 vec![
                     token(TokenKind::Self_),
