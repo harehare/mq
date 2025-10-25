@@ -5528,7 +5528,7 @@ mod debugger_tests {
             self.breakpoints_hit
                 .write()
                 .unwrap()
-                .push(format!("breakpoint:{}", context.current_value.to_string()));
+                .push(format!("breakpoint:{}", context.current_value));
             self.next_action.clone()
         }
 
@@ -5536,7 +5536,7 @@ mod debugger_tests {
             self.steps_taken
                 .write()
                 .unwrap()
-                .push(format!("step:{}", context.current_value.to_string()));
+                .push(format!("step:{}", context.current_value));
             self.next_action.clone()
         }
     }
