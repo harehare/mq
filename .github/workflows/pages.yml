@@ -1,6 +1,8 @@
 name: Deploy docs
 
 on:
+  push:
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -13,8 +15,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build_and_deploy:
+  changes:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' && contains(github.event.commits.*.message, '[skip ci]') == false
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+
+  build_and_deploy:
+    needs: changes
+    runs-on: ubuntu-latest
+    if: ${{ needs.changes.outputs.docs == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -23,8 +41,10 @@ jobs:
         with:
           node-version-file: .tool-versions
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Install wasm-pack and mdbook
-        run: cargo install wasm-pack mdbook
+      - name: Install tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack,mdbook
       - uses: extractions/setup-just@v3
       - name: Build
         run: just build-wasm
