@@ -179,6 +179,7 @@ impl Optimizer {
             | ast::Expr::Nodes
             | ast::Expr::Self_
             | ast::Expr::Include(_)
+            | ast::Expr::Module(_)
             | ast::Expr::Break
             | ast::Expr::Continue => {}
         }

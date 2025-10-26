@@ -106,7 +106,7 @@ impl Node {
                     .unwrap_or_else(|| arena[self.token_id].range.end.clone());
                 Range { start, end }
             }
-            Expr::Paren(node) => node.range(Shared::clone(&arena)),
+            Expr::Paren(node) | Expr::Module(node) => node.range(Shared::clone(&arena)),
             Expr::Try(try_expr, catch_expr) => {
                 let start = try_expr.range(Shared::clone(&arena)).start;
                 let end = catch_expr.range(Shared::clone(&arena)).end;
@@ -294,6 +294,7 @@ pub enum Expr {
     If(Branches),
     Match(Shared<Node>, MatchArms),
     Include(Literal),
+    Module(Shared<Node>),
     Self_,
     Nodes,
     Paren(Shared<Node>),
