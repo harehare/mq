@@ -927,7 +927,7 @@ impl Formatter {
             match trivia {
                 mq_lang::CstTrivia::Whitespace(_) => {}
                 comment @ mq_lang::CstTrivia::Comment(_) => {
-                    if node.has_new_line() {
+                    if self.is_last_new_line() {
                         self.append_indent(indent_level);
                     }
 
@@ -1133,6 +1133,11 @@ impl Formatter {
     #[inline(always)]
     fn is_prev_pipe(&self) -> bool {
         self.output.ends_with("| ")
+    }
+
+    #[inline(always)]
+    fn is_last_new_line(&self) -> bool {
+        self.output.trim().ends_with("\n")
     }
 
     #[inline(always)]
@@ -1846,6 +1851,24 @@ end"#
     ]
   ]
 ]"#
+    )]
+    #[case::comment_with_newline("# comment\nlet x = 1", "# comment\nlet x = 1")]
+    #[case::comment_with_indent(
+        "if(test):\n  test # comment\nelse:\n  test2 # comment2",
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+    )]
+    #[case::comment_inline_with_indent("let x = 1 # inline comment", "let x = 1 # inline comment")]
+    #[case::comment_multiline_with_indent(
+        "let x = 1\n  # multiline comment\nlet y = 2",
+        "let x = 1\n# multiline comment\nlet y = 2"
+    )]
+    #[case::comment_after_expr_multiline_with_indent(
+        "if(test):\n  test # comment\nelse:\n    test2 # comment2",
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+    )]
+    #[case::comment_after_expr_inline_with_indent(
+        "if(test): test # comment else:    test2 # comment2",
+        "if (test): test # comment else:    test2 # comment2"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
