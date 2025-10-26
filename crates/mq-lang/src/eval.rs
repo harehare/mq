@@ -577,6 +577,9 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Module(_module) => {
+                todo!()
+            }
             ast::Expr::Match(value_node, arms) => {
                 self.eval_match(runtime_value, value_node, arms, env)
             }
