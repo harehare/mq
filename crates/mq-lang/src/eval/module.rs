@@ -50,6 +50,7 @@ pub struct Module {
     pub functions: Program,
     pub modules: Program,
     pub vars: Program,
+    pub metadata: Option<Shared<ast::Node>>,
 }
 
 impl Module {
@@ -156,6 +157,11 @@ impl ModuleLoader {
             .cloned()
             .collect::<Vec<_>>();
 
+        let metadata = program
+            .iter()
+            .find(|node| matches!(*node.expr, ast::Expr::Module(_)))
+            .cloned();
+
         if program.len() != functions.len() + modules.len() + vars.len() {
             return Err(ModuleError::InvalidModule);
         }
@@ -165,6 +171,7 @@ impl ModuleLoader {
             functions,
             modules,
             vars,
+            metadata,
         }))
     }
 
@@ -338,7 +345,8 @@ mod tests {
                     module_id: 1.into()
                 }))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
-            ))})]
+            ))})],
+        metadata: None
     })))]
     #[case::load3("def test(): 1;".to_string(), Ok(Some(Module{
         name: "test".to_string(),
@@ -355,7 +363,8 @@ mod tests {
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
             ]
             ))})],
-        vars: Vec::new()
+        vars: Vec::new(),
+        metadata: None
     })))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Some(Module{
         name: "test".to_string(),
@@ -388,7 +397,8 @@ mod tests {
                     ],
                 ))})]
             ))})],
-        vars: Vec::new()
+        vars: Vec::new(),
+        metadata: None
     })))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
@@ -407,6 +417,7 @@ mod tests {
         functions: Vec::new(),
         modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
         vars: Vec::new(),
+        metadata: None
     })))]
     fn test_load_standard_module(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
