@@ -1026,6 +1026,7 @@ impl Formatter {
                 "s\"{}\"",
                 token
                     .to_string()
+                    .replace("\\", "\\\\") // Must be first to avoid double-escaping
                     .replace("\"", "\\\"")
                     .replace("\t", "\\t")
                     .replace("\r", "\\r")
@@ -1870,6 +1871,11 @@ end"#
         "if(test): test # comment else:    test2 # comment2",
         "if (test): test # comment else:    test2 # comment2"
     )]
+    #[case::interpolated_string_with_escaped_brackets(
+        r#"s"\\[${phrase}\\]\\(""#,
+        r#"s"\\[${phrase}\\]\\(""#
+    )]
+    #[case::interpolated_string_with_backslash(r#"s"\\test""#, r#"s"\\test""#)]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
