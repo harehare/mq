@@ -79,6 +79,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Nodes => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
                 }
+                TokenKind::Module if root => {
+                    let ast = self.parse_module(Shared::clone(token))?;
+                    asts.push(ast);
+                }
+                TokenKind::Module => {
+                    return Err(ParseError::UnexpectedToken((**token).clone()));
+                }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
                 _ => {
                     let ast = self.parse_expr(Shared::clone(token))?;
@@ -235,6 +242,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::None => self.parse_literal(token),
             TokenKind::Colon => self.parse_symbol(token),
             TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            _ => Err(ParseError::UnexpectedToken((*token).clone())),
+        }
+    }
+
+    fn parse_module(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        match &token.kind {
+            TokenKind::Module => {
+                let next_token = match self.tokens.next() {
+                    Some(t) => t,
+                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                };
+                let metadata = self.parse_dict(Shared::clone(next_token))?;
+
+                Ok(Shared::new(Node {
+                    token_id: self.token_arena.alloc(token),
+                    expr: Shared::new(Expr::Module(metadata)),
+                }))
+            }
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
     }
@@ -5490,6 +5515,47 @@ mod tests {
             token(TokenKind::Eof)
         ],
         Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+    #[case::module_simple(
+        vec![
+            token(TokenKind::Module),
+            token(TokenKind::LBrace),
+            token(TokenKind::StringLiteral("key".to_owned())),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Module(
+                    Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
+                            smallvec![
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Call(
+                                        IdentWithToken::new_with_token(constants::ARRAY, Some(Shared::new(token(TokenKind::StringLiteral("key".to_owned()))))),
+                                        smallvec![
+                                            Shared::new(Node {
+                                                token_id: 1.into(),
+                                                expr: Shared::new(Expr::Literal(Literal::String("key".to_owned()))),
+                                            }),
+                                            Shared::new(Node {
+                                                token_id: 2.into(),
+                                                expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                            }),
+                                        ],
+                                    )),
+                                }),
+                            ],
+                        )),
+                    }),
+                )),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
