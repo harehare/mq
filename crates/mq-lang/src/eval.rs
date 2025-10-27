@@ -219,9 +219,9 @@ impl Evaluator {
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
-                RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) => {
-                    mq_markdown::Node::Empty
-                }
+                RuntimeValue::Function(_, _, _)
+                | RuntimeValue::NativeFunction(_)
+                | RuntimeValue::Module(_) => mq_markdown::Node::Empty,
                 RuntimeValue::Array(_)
                 | RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)

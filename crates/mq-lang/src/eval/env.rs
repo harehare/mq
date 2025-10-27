@@ -101,6 +101,11 @@ impl Variable {
                 value: "native function".to_string(),
                 type_field: "native_function".to_string(),
             },
+            RuntimeValue::Module(m) => Variable {
+                name: m.name().to_string(),
+                value: format!("module/{}", m.len()),
+                type_field: "module".to_string(),
+            },
             RuntimeValue::None => Variable {
                 name: ident.to_string(),
                 value: "None".to_string(),
@@ -127,6 +132,10 @@ impl Env {
             context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
             parent: Some(parent),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.context.len()
     }
 
     #[inline(always)]
