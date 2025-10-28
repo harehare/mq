@@ -768,7 +768,7 @@ mod tests {
             Vec::new(),
             Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(format!("{:?}", function), "function");
+        assert_eq!(format!("{:?}", function), "function/0");
 
         let native_fn = RuntimeValue::NativeFunction(Ident::new("debug"));
         assert_eq!(format!("{:?}", native_fn), "native_function");
