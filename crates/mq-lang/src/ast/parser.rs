@@ -226,6 +226,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Match => self.parse_expr_match(Shared::clone(&token)),
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
             TokenKind::Include => self.parse_include(token),
+            TokenKind::Import => self.parse_import(token),
             TokenKind::Self_ => self.parse_self(token),
             TokenKind::Break => self.parse_break(token),
             TokenKind::Continue => self.parse_continue(token),
@@ -1381,6 +1382,39 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token => Err(ParseError::InsufficientTokens((*token).clone())),
             },
             None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        }
+    }
+
+    #[inline(always)]
+    fn parse_import(&mut self, import_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        let token_id = self.token_arena.alloc(import_token);
+        let token = match self.tokens.peek() {
+            Some(token) => Ok(Shared::clone(token)),
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        }?;
+
+        match &token.kind {
+            TokenKind::StringLiteral(module) => {
+                self.tokens.next();
+
+                match self.tokens.peek() {
+                    Some(token) => match &token.kind {
+                        TokenKind::StringLiteral(module) => Ok(Shared::new(Node {
+                            token_id,
+                            expr: Shared::new(Expr::Import(
+                                Literal::String(module.to_owned()),
+                                None,
+                            )),
+                        })),
+                        _ => Err(ParseError::InsufficientTokens((***token).clone())),
+                    },
+                    None => Ok(Shared::new(Node {
+                        token_id,
+                        expr: Shared::new(Expr::Import(Literal::String(module.to_owned()), None)),
+                    })),
+                }
+            }
+            _ => Err(ParseError::InsufficientTokens((*token).clone())),
         }
     }
 

@@ -116,6 +116,7 @@ impl Node {
             | Expr::Ident(_)
             | Expr::Selector(_)
             | Expr::Include(_)
+            | Expr::Import(_, _)
             | Expr::InterpolatedString(_)
             | Expr::Nodes
             | Expr::Self_
@@ -294,6 +295,7 @@ pub enum Expr {
     If(Branches),
     Match(Shared<Node>, MatchArms),
     Include(Literal),
+    Import(Literal, Option<Literal>),
     Module(Shared<Node>),
     Self_,
     Nodes,
