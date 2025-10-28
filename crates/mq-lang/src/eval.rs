@@ -156,6 +156,9 @@ impl Evaluator {
                     ast::Expr::Include(module_id) => {
                         self.eval_include(module_id.to_owned())?;
                     }
+                    ast::Expr::Import(module_path, alias) => {
+                        self.eval_import(module_path.to_owned(), alias.to_owned())?;
+                    }
                     _ => nodes.push(Shared::clone(node)),
                 };
 
@@ -390,6 +393,97 @@ impl Evaluator {
         }
     }
 
+    fn eval_import(
+        &mut self,
+        module_path: ast::Literal,
+        alias: Option<ast::Literal>,
+    ) -> Result<(), EvalError> {
+        match module_path {
+            ast::Literal::String(module_name) => {
+                let module = self
+                    .module_loader
+                    .load_from_file(&module_name, Shared::clone(&self.token_arena))?;
+
+                if let Some(module) = module {
+                    // Create a new environment for the module exports
+                    let module_env = Shared::new(SharedCell::new(Env::with_parent(
+                        Shared::downgrade(&self.env),
+                    )));
+
+                    // Load module contents into the module environment
+                    for node in &module.modules {
+                        if let ast::Expr::Include(_) = &*node.expr {
+                            self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
+                        }
+                    }
+
+                    for node in &module.functions {
+                        if let ast::Expr::Def(ident, params, program) = &*node.expr {
+                            define(
+                                &module_env,
+                                ident.name,
+                                RuntimeValue::Function(
+                                    params.clone(),
+                                    program.clone(),
+                                    Shared::clone(&module_env),
+                                ),
+                            );
+                        }
+                    }
+
+                    for node in &module.vars {
+                        if let ast::Expr::Let(ident, node) = &*node.expr {
+                            let val = self.eval_expr(
+                                &RuntimeValue::NONE,
+                                node,
+                                &Shared::clone(&module_env),
+                            )?;
+                            define(&module_env, ident.name, val);
+                        }
+                    }
+
+                    let module_name_to_use = match alias {
+                        Some(ast::Literal::String(alias_name)) => alias_name,
+                        _ => {
+                            if let Some(metadata) = module.metadata {
+                                match self.eval_expr(
+                                    &RuntimeValue::NONE,
+                                    &metadata,
+                                    &Shared::clone(&module_env),
+                                )? {
+                                    RuntimeValue::Dict(dict) => dict
+                                        .get(&Ident::new("name"))
+                                        .map(|name| name.to_string())
+                                        .unwrap_or(module.name),
+                                    _ => module.name,
+                                }
+                            } else {
+                                module.name
+                            }
+                        }
+                    };
+
+                    // Register the module in the environment
+                    let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+                        &module_name_to_use,
+                        module_env,
+                    ));
+
+                    define(
+                        &self.env,
+                        Ident::new(&module_name_to_use),
+                        module_runtime_value,
+                    );
+                }
+
+                Ok(())
+            }
+            _ => Err(EvalError::ModuleLoadError(
+                module::ModuleError::InvalidModule,
+            )),
+        }
+    }
+
     #[inline(always)]
     fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
         match runtime_value {
@@ -575,6 +669,10 @@ impl Evaluator {
             }
             ast::Expr::Include(module_id) => {
                 self.eval_include(module_id.to_owned())?;
+                Ok(runtime_value.clone())
+            }
+            ast::Expr::Import(module_path, alias) => {
+                self.eval_import(module_path.to_owned(), alias.to_owned())?;
                 Ok(runtime_value.clone())
             }
             ast::Expr::Module(_module) => {

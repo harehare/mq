@@ -49,12 +49,14 @@ pub struct Token {
 /// TokenKind variants are sorted alphabetically for maintainability.
 pub enum TokenKind {
     And,
+    As,
     Asterisk,
     BoolLiteral(bool),
     Break,
     Catch,
     Coalesce,
     Colon,
+    DoubleColon,
     Comma,
     Comment(String),
     Continue,
@@ -75,6 +77,7 @@ pub enum TokenKind {
     If,
     Include,
     InterpolatedString(Vec<StringSegment>),
+    Import,
     LBrace,
     LBracket,
     Let,
@@ -127,6 +130,7 @@ impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
             TokenKind::And => write!(f, "&&"),
+            TokenKind::As => write!(f, "as"),
             TokenKind::Or => write!(f, "||"),
             TokenKind::Not => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
@@ -139,6 +143,7 @@ impl Display for TokenKind {
             TokenKind::Comment(comment) => write!(f, "# {}", comment.trim()),
             TokenKind::Def => write!(f, "def"),
             TokenKind::Do => write!(f, "do"),
+            TokenKind::DoubleColon => write!(f, "::"),
             TokenKind::Elif => write!(f, "elif"),
             TokenKind::Else => write!(f, "else"),
             TokenKind::End => write!(f, "end"),
@@ -151,6 +156,7 @@ impl Display for TokenKind {
             TokenKind::Ident(ident) => write!(f, "{}", ident),
             TokenKind::If => write!(f, "if"),
             TokenKind::Include => write!(f, "include"),
+            TokenKind::Import => write!(f, "import"),
             TokenKind::InterpolatedString(segments) => {
                 write!(f, "{}", segments.iter().join(""))
             }

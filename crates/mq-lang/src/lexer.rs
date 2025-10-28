@@ -209,10 +209,12 @@ fn spaces(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
+define_keyword_parser!(as_, "as", TokenKind::As);
 define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(comma, ",", TokenKind::Comma);
 define_keyword_parser!(def, "def", TokenKind::Def);
 define_keyword_parser!(do_, "do", TokenKind::Do);
+define_token_parser!(double_colon, "::", TokenKind::DoubleColon);
 define_keyword_parser!(elif, "elif", TokenKind::Elif);
 define_keyword_parser!(else_, "else", TokenKind::Else);
 define_keyword_parser!(end, "end", TokenKind::End);
@@ -229,6 +231,7 @@ define_keyword_parser!(fn_, "fn", TokenKind::Fn);
 define_keyword_parser!(foreach, "foreach", TokenKind::Foreach);
 define_keyword_parser!(if_, "if", TokenKind::If);
 define_keyword_parser!(include, "include", TokenKind::Include);
+define_keyword_parser!(import, "import", TokenKind::Import);
 define_token_parser!(l_bracket, "[", TokenKind::LBracket);
 define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
@@ -265,8 +268,21 @@ define_token_parser!(coalesce, "??", TokenKind::Coalesce);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
-        and, or, l_paren, r_paren, l_brace, r_brace, comma, colon, semi_colon, l_bracket,
-        r_bracket, coalesce, question, pipe,
+        and,
+        or,
+        l_paren,
+        r_paren,
+        l_brace,
+        r_brace,
+        comma,
+        colon,
+        double_colon,
+        semi_colon,
+        l_bracket,
+        r_bracket,
+        coalesce,
+        question,
+        pipe,
     ))
     .parse(input)
 }
@@ -282,12 +298,20 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
     alt((not,)).parse(input)
 }
 
-fn keywords(input: Span) -> IResult<Span, Token> {
+fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        nodes, def, do_, let_, match_, self_, while_, until, if_, elif, else_, end, none, include,
-        foreach, fn_, break_, continue_, try_, catch_,
+        def, do_, let_, match_, while_, until, if_, elif, else_, end, foreach, fn_, break_,
+        continue_, try_, catch_,
     ))
     .parse(input)
+}
+
+fn builtin_keywords(input: Span) -> IResult<Span, Token> {
+    alt((nodes, self_, none, include, import, as_)).parse(input)
+}
+
+fn keywords(input: Span) -> IResult<Span, Token> {
+    alt((control_keywords, builtin_keywords)).parse(input)
 }
 
 fn number_literal(input: Span) -> IResult<Span, Token> {
