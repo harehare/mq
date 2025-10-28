@@ -927,7 +927,9 @@ impl Formatter {
             match trivia {
                 mq_lang::CstTrivia::Whitespace(_) => {}
                 comment @ mq_lang::CstTrivia::Comment(_) => {
-                    if self.is_last_new_line() {
+                    if self.is_prev_pipe() {
+                        self.append_space();
+                    } else if node.has_new_line() {
                         self.append_indent(indent_level);
                     }
 
@@ -1137,8 +1139,14 @@ impl Formatter {
     }
 
     #[inline(always)]
-    fn is_last_new_line(&self) -> bool {
-        self.output.trim().ends_with("\n")
+    pub fn prev_line_indent(&self) -> usize {
+        let mut lines = self.output.lines().rev();
+        lines.next();
+        if let Some(prev_line) = lines.next() {
+            prev_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
+        } else {
+            0
+        }
     }
 
     #[inline(always)]
