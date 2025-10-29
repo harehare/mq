@@ -11,7 +11,8 @@ impl Hir {
                 SymbolKind::Ref
                 | SymbolKind::Call
                 | SymbolKind::CallDynamic
-                | SymbolKind::Argument => Some((ref_symbol_id, ref_symbol.clone())),
+                | SymbolKind::Argument
+                | SymbolKind::QualifiedAccess => Some((ref_symbol_id, ref_symbol.clone())),
                 _ => None,
             })
             .collect();
@@ -41,8 +42,13 @@ impl Hir {
         let mut source_ids = Vec::new();
 
         for (_, symbol) in &self.symbols {
-            if let SymbolKind::Include(source_id) = symbol.kind {
-                source_ids.push(source_id);
+            match symbol.kind {
+                SymbolKind::Include(source_id)
+                | SymbolKind::Import(source_id)
+                | SymbolKind::Module(source_id) => {
+                    source_ids.push(source_id);
+                }
+                _ => {}
             }
         }
 

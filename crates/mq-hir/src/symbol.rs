@@ -54,6 +54,9 @@ pub enum SymbolKind {
     Until,
     Try,
     Catch,
+    Import(SourceId),
+    Module(SourceId),
+    QualifiedAccess,
 }
 
 impl Symbol {

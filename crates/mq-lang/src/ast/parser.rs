@@ -9,7 +9,7 @@ use std::iter::Peekable;
 
 use super::constants;
 use super::error::ParseError;
-use super::node::{Args, Branches, Expr, Literal, Node, Selector};
+use super::node::{AccessTarget, Args, Branches, Expr, Literal, Node, Selector};
 use super::{Program, TokenId};
 
 type IfExpr = (Option<Shared<Node>>, Shared<Node>);
@@ -611,6 +611,50 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         ident_token: Shared<Token>,
     ) -> Result<Shared<Node>, ParseError> {
         match self.tokens.peek().map(|t| &t.kind) {
+            Some(TokenKind::DoubleColon) => {
+                // Parse qualified access: module::function() or module::ident
+                self.tokens.next(); // consume '::'
+
+                let target_token = self
+                    .tokens
+                    .next()
+                    .ok_or(ParseError::UnexpectedEOFDetected(self.module_id))?;
+
+                let target_ident = match &target_token.kind {
+                    TokenKind::Ident(name) => name.clone(),
+                    _ => return Err(ParseError::UnexpectedToken((**target_token).clone())),
+                };
+
+                let access_target = match self.tokens.peek().map(|t| &t.kind) {
+                    Some(TokenKind::LParen) => {
+                        // It's a function call: module::function(args)
+                        let args = self.parse_args()?;
+                        AccessTarget::Call(
+                            IdentWithToken::new_with_token(
+                                &target_ident,
+                                Some(Shared::clone(target_token)),
+                            ),
+                            args,
+                        )
+                    }
+                    _ => {
+                        // It's an identifier: module::ident
+                        AccessTarget::Ident(IdentWithToken::new_with_token(
+                            &target_ident,
+                            Some(Shared::clone(target_token)),
+                        ))
+                    }
+                };
+
+                let token_id = self.token_arena.alloc(Shared::clone(&ident_token));
+                Ok(Shared::new(Node {
+                    token_id,
+                    expr: Shared::new(Expr::QualifiedAccess(
+                        IdentWithToken::new_with_token(ident, Some(Shared::clone(&ident_token))),
+                        access_target,
+                    )),
+                }))
+            }
             Some(TokenKind::LParen) => {
                 let args = self.parse_args()?;
                 let token_id = self.token_arena.alloc(Shared::clone(&ident_token));
@@ -1388,29 +1432,40 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(always)]
     fn parse_import(&mut self, import_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
         let token_id = self.token_arena.alloc(import_token);
-        let token = match self.tokens.peek() {
+        let token = match self.tokens.next() {
             Some(token) => Ok(Shared::clone(token)),
             None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         match &token.kind {
             TokenKind::StringLiteral(module) => {
-                self.tokens.next();
+                let module_name = module.to_owned();
 
+                // Check for 'as' keyword
                 match self.tokens.peek() {
-                    Some(token) => match &token.kind {
-                        TokenKind::StringLiteral(module) => Ok(Shared::new(Node {
-                            token_id,
-                            expr: Shared::new(Expr::Import(
-                                Literal::String(module.to_owned()),
-                                None,
-                            )),
-                        })),
-                        _ => Err(ParseError::InsufficientTokens((***token).clone())),
-                    },
-                    None => Ok(Shared::new(Node {
+                    Some(token) if matches!(token.kind, TokenKind::As) => {
+                        self.tokens.next(); // consume 'as'
+
+                        // Parse the alias identifier
+                        let alias_token = match self.tokens.next() {
+                            Some(t) => t,
+                            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                        };
+
+                        match &alias_token.kind {
+                            TokenKind::Ident(alias) => Ok(Shared::new(Node {
+                                token_id,
+                                expr: Shared::new(Expr::Import(
+                                    Literal::String(module_name),
+                                    Some(Literal::String(alias.to_string())),
+                                )),
+                            })),
+                            _ => Err(ParseError::UnexpectedToken((**alias_token).clone())),
+                        }
+                    }
+                    _ => Ok(Shared::new(Node {
                         token_id,
-                        expr: Shared::new(Expr::Import(Literal::String(module.to_owned()), None)),
+                        expr: Shared::new(Expr::Import(Literal::String(module_name), None)),
                     })),
                 }
             }
@@ -5590,6 +5645,95 @@ mod tests {
                 )),
             })
         ]))]
+    #[case::module_with_dict(
+            vec![
+            token(TokenKind::Module),
+            token(TokenKind::LBrace),
+            token(TokenKind::Ident(SmolStr::new("name"))),
+            token(TokenKind::Colon),
+            token(TokenKind::StringLiteral("test".to_owned())),
+            token(TokenKind::RBrace),
+            token(TokenKind::Eof)
+            ],
+            Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Module(
+                Shared::new(Node {
+                    token_id: 0.into(),
+                    expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
+                    smallvec![
+                        Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Shared::new(Expr::Call(
+                            IdentWithToken::new_with_token(constants::ARRAY, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
+                            smallvec![
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("name")))),
+                            }),
+                            Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
+                            }),
+                            ],
+                        )),
+                        }),
+                    ],
+                    )),
+                }),
+                )),
+            })
+            ]))]
+    #[case::import_simple(
+            vec![
+            token(TokenKind::Import),
+            token(TokenKind::StringLiteral("name".to_owned())),
+            token(TokenKind::Eof),
+            ],
+            Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Import(
+                Literal::String("name".to_owned()),
+                None,
+                )),
+            })
+            ]))]
+    #[case::import_as(
+            vec![
+            token(TokenKind::Import),
+            token(TokenKind::StringLiteral("name".to_owned())),
+            token(TokenKind::As),
+            token(TokenKind::Ident(SmolStr::new("test"))),
+            token(TokenKind::Eof),
+            ],
+            Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Import(
+                    Literal::String("name".to_owned()),
+                    Some(Literal::String("test".to_owned())),
+                )),
+            })
+            ]))]
+    #[case::qualified_access(
+            vec![
+            token(TokenKind::Ident(SmolStr::new("test"))),
+            token(TokenKind::DoubleColon),
+            token(TokenKind::Ident(SmolStr::new("foo"))),
+            token(TokenKind::Eof),
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::QualifiedAccess(
+                        IdentWithToken::new_with_token("test", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("test")))))),
+                        AccessTarget::Ident(IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
+                    ))),
+                })
+            ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();

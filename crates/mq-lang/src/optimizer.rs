@@ -174,6 +174,19 @@ impl Optimizer {
                     Self::collect_used_identifiers_in_node(&arm.body, used_idents);
                 }
             }
+            ast::Expr::QualifiedAccess(module_name, access_target) => {
+                // Collect module name
+                used_idents.insert(module_name.name);
+                // Collect from access target
+                match access_target {
+                    ast::AccessTarget::Call(_, args) => {
+                        for arg in args {
+                            Self::collect_used_identifiers_in_node(arg, used_idents);
+                        }
+                    }
+                    ast::AccessTarget::Ident(_) => {}
+                }
+            }
             ast::Expr::Literal(_)
             | ast::Expr::Selector(_)
             | ast::Expr::Nodes
@@ -333,6 +346,22 @@ impl Optimizer {
                     }
                 }
             }
+            ast::Expr::QualifiedAccess(_, access_target) => {
+                // Check if qualified access contains function call
+                match access_target {
+                    ast::AccessTarget::Call(call_ident, args) => {
+                        if call_ident.name == func_name {
+                            return true;
+                        }
+                        for arg in args {
+                            if Self::contains_function_call(func_name, arg) {
+                                return true;
+                            }
+                        }
+                    }
+                    ast::AccessTarget::Ident(_) => {}
+                }
+            }
             _ => {}
         }
         false
@@ -463,6 +492,23 @@ impl Optimizer {
                 let new_inner = self.inline_functions_in_node(Shared::clone(inner));
                 Shared::new(ast::Expr::Paren(new_inner))
             }
+            ast::Expr::QualifiedAccess(module_name, access_target) => {
+                // Inline functions in qualified access arguments
+                let new_access_target = match access_target {
+                    ast::AccessTarget::Call(func_name, args) => {
+                        let new_args: ast::Args = args
+                            .iter()
+                            .map(|arg| self.inline_functions_in_node(Shared::clone(arg)))
+                            .collect();
+                        ast::AccessTarget::Call(func_name.clone(), new_args)
+                    }
+                    ast::AccessTarget::Ident(_) => access_target.clone(),
+                };
+                Shared::new(ast::Expr::QualifiedAccess(
+                    module_name.clone(),
+                    new_access_target,
+                ))
+            }
             _ => Shared::clone(&node.expr),
         };
 
@@ -497,6 +543,23 @@ impl Optimizer {
             ast::Expr::Paren(inner) => {
                 let substituted_inner = Self::substitute_parameters(inner, param_bindings);
                 Shared::new(ast::Expr::Paren(substituted_inner))
+            }
+            ast::Expr::QualifiedAccess(module_name, access_target) => {
+                // Substitute parameters in qualified access arguments
+                let new_access_target = match access_target {
+                    ast::AccessTarget::Call(func_name, args) => {
+                        let substituted_args = args
+                            .iter()
+                            .map(|arg| Self::substitute_parameters(arg, param_bindings))
+                            .collect();
+                        ast::AccessTarget::Call(func_name.clone(), substituted_args)
+                    }
+                    ast::AccessTarget::Ident(_) => access_target.clone(),
+                };
+                Shared::new(ast::Expr::QualifiedAccess(
+                    module_name.clone(),
+                    new_access_target,
+                ))
             }
             _ => node.expr.clone(),
         };

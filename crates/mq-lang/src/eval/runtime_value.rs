@@ -32,6 +32,10 @@ impl ModuleEnv {
         &self.name
     }
 
+    pub fn exports(&self) -> &Shared<SharedCell<Env>> {
+        &self.exports
+    }
+
     pub fn len(&self) -> usize {
         #[cfg(not(feature = "sync"))]
         {

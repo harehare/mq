@@ -162,7 +162,9 @@ impl ModuleLoader {
             .find(|node| matches!(*node.expr, ast::Expr::Module(_)))
             .cloned();
 
-        if program.len() != functions.len() + modules.len() + vars.len() {
+        let expected_len =
+            functions.len() + modules.len() + vars.len() + if metadata.is_some() { 1 } else { 0 };
+        if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
         }
 
