@@ -339,6 +339,15 @@ impl Hir {
             mq_lang::CstNodeKind::Include => {
                 self.add_include_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Import => {
+                self.add_import_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Module => {
+                self.add_module_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::QualifiedAccess => {
+                self.add_qualified_access_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.add_interpolated_string(node, source_id, scope_id, parent);
             }
@@ -594,6 +603,93 @@ impl Hir {
                     });
                 }
             });
+        }
+    }
+
+    fn add_import_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Import,
+            ..
+        } = &**node
+        {
+            let _ = node.children_without_token().first().map(|child| {
+                let module_name = child.name().unwrap();
+                if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
+                    let code = self.module_loader.read_file(&module_name);
+                    let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
+
+                    self.add_symbol(Symbol {
+                        value: Some(module_name.clone()),
+                        kind: SymbolKind::Import(module_source_id),
+                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        scope: scope_id,
+                        doc: node.comments(),
+                        parent,
+                    });
+                }
+            });
+        }
+    }
+
+    fn add_module_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Module,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Module(source_id),
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process child nodes (module metadata dict)
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+    }
+
+    fn add_qualified_access_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::QualifiedAccess,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::QualifiedAccess,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process child nodes (module name, function/value name, and args if call)
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
         }
     }
 

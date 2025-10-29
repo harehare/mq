@@ -237,6 +237,7 @@ define_token_parser!(l_paren, "(", TokenKind::LParen);
 define_token_parser!(l_brace, "{", TokenKind::LBrace);
 define_keyword_parser!(let_, "let", TokenKind::Let);
 define_keyword_parser!(match_, "match", TokenKind::Match);
+define_keyword_parser!(module_, "module", TokenKind::Module);
 define_token_parser!(asterisk, "*", TokenKind::Asterisk);
 define_token_parser!(minus, "-", TokenKind::Minus);
 define_token_parser!(slash, "/", TokenKind::Slash);
@@ -307,7 +308,7 @@ fn control_keywords(input: Span) -> IResult<Span, Token> {
 }
 
 fn builtin_keywords(input: Span) -> IResult<Span, Token> {
-    alt((nodes, self_, none, include, import, as_)).parse(input)
+    alt((nodes, self_, none, include, import, module_, as_)).parse(input)
 }
 
 fn keywords(input: Span) -> IResult<Span, Token> {

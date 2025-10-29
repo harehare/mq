@@ -450,6 +450,16 @@ impl<'a> Parser<'a> {
                 } => self.parse_include(leading_trivia),
                 Token {
                     range: _,
+                    kind: TokenKind::Import,
+                    ..
+                } => self.parse_import(leading_trivia),
+                Token {
+                    range: _,
+                    kind: TokenKind::Module,
+                    ..
+                } => self.parse_module(leading_trivia),
+                Token {
+                    range: _,
                     kind: TokenKind::While,
                     ..
                 } => self.parse_while(leading_trivia),
@@ -624,6 +634,41 @@ impl<'a> Parser<'a> {
         let token = self.tokens.next().unwrap();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+
+        // Check for qualified access (module::function or module::value)
+        if let Some(next_token) = self.tokens.peek()
+            && matches!(next_token.kind, TokenKind::DoubleColon)
+        {
+            let mut node = Node {
+                kind: NodeKind::QualifiedAccess,
+                token: Some(Shared::clone(token)),
+                leading_trivia,
+                trailing_trivia: Vec::new(),
+                children: Vec::new(),
+            };
+
+            // Add double colon token
+            children.push(self.next_node(
+                |kind| matches!(kind, TokenKind::DoubleColon),
+                NodeKind::Token,
+            )?);
+
+            // Add target identifier
+            children
+                .push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
+
+            // Check if it's a function call
+            if let Some(token) = self.tokens.peek()
+                && matches!(token.kind, TokenKind::LParen)
+            {
+                let mut args = self.parse_args()?;
+                children.append(&mut args);
+            }
+
+            node.children = children;
+            return Ok(Shared::new(node));
+        }
+
         let mut node = Node {
             kind: NodeKind::Ident,
             token: Some(Shared::clone(token)),
@@ -1172,6 +1217,59 @@ impl<'a> Parser<'a> {
             |kind| matches!(kind, TokenKind::StringLiteral(_)),
             NodeKind::Literal,
         )?);
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
+    fn parse_import(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+
+        let mut node = Node {
+            kind: NodeKind::Import,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        // Parse module path (string literal)
+        children.push(self.next_node(
+            |kind| matches!(kind, TokenKind::StringLiteral(_)),
+            NodeKind::Literal,
+        )?);
+
+        // Parse optional 'as alias'
+        if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::As)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::As), NodeKind::Token)?);
+            children.push(self.next_node(
+                |kind| matches!(kind, TokenKind::StringLiteral(_) | TokenKind::Ident(_)),
+                NodeKind::Literal,
+            )?);
+        }
+
+        node.children = children;
+        Ok(Shared::new(node))
+    }
+
+    fn parse_module(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+        let token = self.tokens.next();
+        let trailing_trivia = self.parse_trailing_trivia();
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+
+        let mut node = Node {
+            kind: NodeKind::Module,
+            token: Some(Shared::clone(token.unwrap())),
+            leading_trivia,
+            trailing_trivia,
+            children: Vec::new(),
+        };
+
+        let trailing_trivia = self.parse_trailing_trivia();
+        // Parse dictionary (metadata)
+        children.push(self.parse_dict(trailing_trivia)?);
 
         node.children = children;
         Ok(Shared::new(node))

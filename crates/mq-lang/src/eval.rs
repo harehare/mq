@@ -4,6 +4,7 @@ use crate::DebuggerHandler;
 use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
+use crate::eval::runtime_value::ModuleEnv;
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
 
@@ -397,7 +398,7 @@ impl Evaluator {
         &mut self,
         module_path: ast::Literal,
         alias: Option<ast::Literal>,
-    ) -> Result<(), EvalError> {
+    ) -> Result<RuntimeValue, EvalError> {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -446,16 +447,20 @@ impl Evaluator {
                         Some(ast::Literal::String(alias_name)) => alias_name,
                         _ => {
                             if let Some(metadata) = module.metadata {
-                                match self.eval_expr(
-                                    &RuntimeValue::NONE,
-                                    &metadata,
-                                    &Shared::clone(&module_env),
-                                )? {
-                                    RuntimeValue::Dict(dict) => dict
-                                        .get(&Ident::new("name"))
-                                        .map(|name| name.to_string())
-                                        .unwrap_or(module.name),
-                                    _ => module.name,
+                                if let ast::Expr::Module(dict_node) = &*metadata.expr {
+                                    match self.eval_expr(
+                                        &RuntimeValue::NONE,
+                                        dict_node,
+                                        &Shared::clone(&module_env),
+                                    )? {
+                                        RuntimeValue::Dict(dict) => dict
+                                            .get(&Ident::new("name"))
+                                            .map(|name| name.to_string())
+                                            .unwrap_or(module.name),
+                                        _ => module.name,
+                                    }
+                                } else {
+                                    module.name
                                 }
                             } else {
                                 module.name
@@ -466,7 +471,7 @@ impl Evaluator {
                     // Register the module in the environment
                     let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
                         &module_name_to_use,
-                        module_env,
+                        Shared::clone(&module_env),
                     ));
 
                     define(
@@ -474,13 +479,94 @@ impl Evaluator {
                         Ident::new(&module_name_to_use),
                         module_runtime_value,
                     );
-                }
 
-                Ok(())
+                    Ok(RuntimeValue::Module(ModuleEnv::new(
+                        &module_name_to_use,
+                        module_env,
+                    )))
+                } else {
+                    Err(EvalError::ModuleLoadError(module::ModuleError::NotFound(
+                        module_name,
+                    )))
+                }
             }
             _ => Err(EvalError::ModuleLoadError(
                 module::ModuleError::InvalidModule,
             )),
+        }
+    }
+
+    fn eval_qualified_access(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        module_name: &ast::IdentWithToken,
+        access_target: &ast::AccessTarget,
+        token_id: TokenId,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
+        // Get the module from the environment
+        let module_value = self.eval_ident(module_name.name, token_id, env)?;
+
+        match module_value {
+            RuntimeValue::Module(module_env) => {
+                let module_exports = Shared::clone(module_env.exports());
+
+                match access_target {
+                    ast::AccessTarget::Call(func_name, args) => {
+                        // Resolve function from module exports and call it
+                        #[cfg(not(feature = "sync"))]
+                        let resolved = module_exports.borrow().resolve(func_name.name);
+                        #[cfg(feature = "sync")]
+                        let resolved = module_exports.read().unwrap().resolve(func_name.name);
+
+                        match resolved {
+                            Ok(fn_value) => {
+                                // Create a dummy node for the function call
+                                let call_node = Shared::new(ast::Node {
+                                    token_id,
+                                    expr: Shared::new(ast::Expr::Call(
+                                        func_name.clone(),
+                                        args.clone(),
+                                    )),
+                                });
+                                self.call_fn(
+                                    &fn_value,
+                                    call_node,
+                                    func_name.name,
+                                    args,
+                                    runtime_value,
+                                    env,
+                                )
+                            }
+                            Err(_) => {
+                                let token = get_token(Shared::clone(&self.token_arena), token_id);
+                                Err(EvalError::NotDefined(
+                                    (*token).clone(),
+                                    func_name.name.to_string(),
+                                ))
+                            }
+                        }
+                    }
+                    ast::AccessTarget::Ident(ident) => {
+                        // Resolve value from module exports
+                        #[cfg(not(feature = "sync"))]
+                        let resolved = module_exports.borrow().resolve(ident.name);
+                        #[cfg(feature = "sync")]
+                        let resolved = module_exports.read().unwrap().resolve(ident.name);
+
+                        resolved.map_err(|e| {
+                            e.to_eval_error(token_id, Shared::clone(&self.token_arena))
+                        })
+                    }
+                }
+            }
+            _ => {
+                let token = get_token(Shared::clone(&self.token_arena), token_id);
+                Err(EvalError::NotDefined(
+                    (*token).clone(),
+                    module_name.name.to_string(),
+                ))
+            }
         }
     }
 
@@ -672,12 +758,16 @@ impl Evaluator {
                 Ok(runtime_value.clone())
             }
             ast::Expr::Import(module_path, alias) => {
-                self.eval_import(module_path.to_owned(), alias.to_owned())?;
-                Ok(runtime_value.clone())
+                self.eval_import(module_path.to_owned(), alias.to_owned())
             }
-            ast::Expr::Module(_module) => {
-                todo!()
-            }
+            ast::Expr::Module(_) => Ok(runtime_value.clone()),
+            ast::Expr::QualifiedAccess(module_name, access_target) => self.eval_qualified_access(
+                runtime_value,
+                module_name,
+                access_target,
+                node.token_id,
+                env,
+            ),
             ast::Expr::Match(value_node, arms) => {
                 self.eval_match(runtime_value, value_node, arms, env)
             }
@@ -5412,6 +5502,138 @@ mod tests {
                 vec![RuntimeValue::String("".to_string())].into_iter()
             ),
             Ok(vec![RuntimeValue::Number(42.into())])
+        );
+    }
+
+    #[test]
+    fn test_import_qualified_access_function() {
+        let (temp_dir, temp_file_path) = mq_test::create_file(
+            "test_qualified.mq",
+            r#"module {"name": "testmod"}
+| def greet(name): "Hello, " + name + "!";"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_qualified".to_string()),
+                    None,
+                )),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    IdentWithToken::new("testmod"),
+                    ast::AccessTarget::Call(
+                        IdentWithToken::new("greet"),
+                        smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(
+                            "World".to_string()
+                        )))],
+                    ),
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena()).eval(
+                &program,
+                vec![RuntimeValue::String("".to_string())].into_iter()
+            ),
+            Ok(vec![RuntimeValue::String("Hello, World!".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_import_qualified_access_value() {
+        let (temp_dir, temp_file_path) = mq_test::create_file(
+            "test_qualified_val.mq",
+            r#"module {"name": "mymod"}
+| let answer = 42"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_qualified_val".to_string()),
+                    None,
+                )),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    IdentWithToken::new("mymod"),
+                    ast::AccessTarget::Ident(IdentWithToken::new("answer")),
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena()).eval(
+                &program,
+                vec![RuntimeValue::String("".to_string())].into_iter()
+            ),
+            Ok(vec![RuntimeValue::Number(42.into())])
+        );
+    }
+
+    #[test]
+    fn test_import_qualified_access_with_args() {
+        let (temp_dir, temp_file_path) = mq_test::create_file(
+            "test_qualified_math.mq",
+            r#"module {"name": "math"}
+| def add2(a, b): a + b;
+| def multiply(x, y): x * y;"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(
+                    ast::Literal::String("test_qualified_math".to_string()),
+                    None,
+                )),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    IdentWithToken::new("math"),
+                    ast::AccessTarget::Call(
+                        IdentWithToken::new("add2"),
+                        smallvec![
+                            ast_node(ast::Expr::Literal(ast::Literal::Number(10.into()))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Number(20.into())))
+                        ],
+                    ),
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena()).eval(
+                &program,
+                vec![RuntimeValue::String("".to_string())].into_iter()
+            ),
+            Ok(vec![RuntimeValue::Number(30.into())])
         );
     }
 
