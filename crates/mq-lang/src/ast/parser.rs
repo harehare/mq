@@ -5734,6 +5734,33 @@ mod tests {
                     ))),
                 })
             ]))]
+    #[case::qualified_access_with_call(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("mod"))),
+            token(TokenKind::DoubleColon),
+            token(TokenKind::Ident(SmolStr::new("func"))),
+            token(TokenKind::LParen),
+            token(TokenKind::StringLiteral("arg".to_owned())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 4.into(),
+                expr: Shared::new(Expr::QualifiedAccess(
+                    IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod")))))),
+                    AccessTarget::Call(
+                        IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
+                        smallvec![
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                            }),
+                        ],
+                    ),
+                )),
+            })
+        ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
