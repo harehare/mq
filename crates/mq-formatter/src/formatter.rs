@@ -204,7 +204,7 @@ impl Formatter {
         self.append_space();
 
         node.children.iter().for_each(|child| {
-            self.format_node(mq_lang::Shared::clone(child), indent_level);
+            self.format_node(mq_lang::Shared::clone(child), indent_level + 1);
         });
     }
 
@@ -1036,7 +1036,7 @@ impl Formatter {
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
-                _ => unreachable!(),
+                token => self.output.push_str(&token.to_string()),
             }
         }
     }
@@ -1931,6 +1931,16 @@ end"#
         r#"s"\\[${phrase}\\]\\(""#
     )]
     #[case::interpolated_string_with_backslash(r#"s"\\test""#, r#"s"\\test""#)]
+    #[case::module_with_body(
+        r#"module test:
+import "foo.mq"
+| def main(): test();
+end"#,
+        r#"module test:
+  import "foo.mq"
+  | def main(): test();
+end"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

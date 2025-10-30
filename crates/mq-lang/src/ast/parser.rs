@@ -260,7 +260,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Only allow 'let', 'def', or 'module' at the top-level of a module block
                     for node in &program {
                         match &*node.expr {
-                            Expr::Let(_, _) | Expr::Def(_, _, _) | Expr::Module(_, _) => {}
+                            Expr::Let(_, _)
+                            | Expr::Def(_, _, _)
+                            | Expr::Module(_, _)
+                            | Expr::Import(_) => {}
                             _ => {
                                 return Err(ParseError::UnexpectedToken(
                                     (*self.token_arena[node.token_id]).clone(),
@@ -1468,34 +1471,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match &token.kind {
             TokenKind::StringLiteral(module) => {
                 let module_name = module.to_owned();
-
-                // Check for 'as' keyword
-                match self.tokens.peek() {
-                    Some(token) if matches!(token.kind, TokenKind::As) => {
-                        self.tokens.next(); // consume 'as'
-
-                        // Parse the alias identifier
-                        let alias_token = match self.tokens.next() {
-                            Some(t) => t,
-                            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                        };
-
-                        match &alias_token.kind {
-                            TokenKind::Ident(alias) => Ok(Shared::new(Node {
-                                token_id,
-                                expr: Shared::new(Expr::Import(
-                                    Literal::String(module_name),
-                                    Some(Literal::String(alias.to_string())),
-                                )),
-                            })),
-                            _ => Err(ParseError::UnexpectedToken((**alias_token).clone())),
-                        }
-                    }
-                    _ => Ok(Shared::new(Node {
-                        token_id,
-                        expr: Shared::new(Expr::Import(Literal::String(module_name), None)),
-                    })),
-                }
+                Ok(Shared::new(Node {
+                    token_id,
+                    expr: Shared::new(Expr::Import(Literal::String(module_name))),
+                }))
             }
             _ => Err(ParseError::InsufficientTokens((*token).clone())),
         }
@@ -5642,8 +5621,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Shared::new(Expr::Import(
-                Literal::String("name".to_owned()),
-                None,
+                    Literal::String("name".to_owned()),
                 )),
             })
             ]))]
@@ -5651,8 +5629,6 @@ mod tests {
             vec![
             token(TokenKind::Import),
             token(TokenKind::StringLiteral("name".to_owned())),
-            token(TokenKind::As),
-            token(TokenKind::Ident(SmolStr::new("test"))),
             token(TokenKind::Eof),
             ],
             Ok(vec![
@@ -5660,7 +5636,6 @@ mod tests {
                 token_id: 0.into(),
                 expr: Shared::new(Expr::Import(
                     Literal::String("name".to_owned()),
-                    Some(Literal::String("test".to_owned())),
                 )),
             })
             ]))]

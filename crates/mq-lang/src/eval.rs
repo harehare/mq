@@ -157,8 +157,8 @@ impl Evaluator {
                     ast::Expr::Include(module_id) => {
                         self.eval_include(module_id.to_owned())?;
                     }
-                    ast::Expr::Import(module_path, alias) => {
-                        self.eval_import(module_path.to_owned(), alias.to_owned())?;
+                    ast::Expr::Import(module_path) => {
+                        self.eval_import(module_path.to_owned())?;
                     }
                     _ => nodes.push(Shared::clone(node)),
                 };
@@ -263,9 +263,7 @@ impl Evaluator {
                     ast::Expr::Module(ident, program) => {
                         self.eval_module(&RuntimeValue::NONE, ident, program)?
                     }
-                    ast::Expr::Import(module_path, alias) => {
-                        self.eval_import(module_path.to_owned(), alias.to_owned())?
-                    }
+                    ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned())?,
                     _ => {
                         return Err(EvalError::InternalError(
                             (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -456,11 +454,7 @@ impl Evaluator {
         Ok(runtime_value.clone())
     }
 
-    fn eval_import(
-        &mut self,
-        module_path: ast::Literal,
-        alias: Option<ast::Literal>,
-    ) -> Result<RuntimeValue, EvalError> {
+    fn eval_import(&mut self, module_path: ast::Literal) -> Result<RuntimeValue, EvalError> {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -475,9 +469,25 @@ impl Evaluator {
 
                     // Load module contents into the module environment
                     for node in &module.modules {
-                        if let ast::Expr::Include(_) = &*node.expr {
-                            self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
-                        }
+                        let _ = match &*node.expr {
+                            ast::Expr::Include(_) => self.eval_expr(
+                                &RuntimeValue::NONE,
+                                node,
+                                &Shared::clone(&self.env),
+                            )?,
+                            ast::Expr::Module(ident, program) => {
+                                self.eval_module(&RuntimeValue::NONE, ident, program)?
+                            }
+                            ast::Expr::Import(module_path) => {
+                                self.eval_import(module_path.to_owned())?
+                            }
+                            _ => {
+                                return Err(EvalError::InternalError(
+                                    (*get_token(Shared::clone(&self.token_arena), node.token_id))
+                                        .clone(),
+                                ));
+                            }
+                        };
                     }
 
                     for node in &module.functions {
@@ -505,10 +515,7 @@ impl Evaluator {
                         }
                     }
 
-                    let module_name_to_use = match alias {
-                        Some(ast::Literal::String(alias_name)) => alias_name,
-                        _ => module.name,
-                    };
+                    let module_name_to_use = module.name;
 
                     // Register the module in the environment
                     let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
@@ -799,9 +806,7 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
-            ast::Expr::Import(module_path, alias) => {
-                self.eval_import(module_path.to_owned(), alias.to_owned())
-            }
+            ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned()),
             ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program),
             ast::Expr::QualifiedAccess(module_name, access_target) => self.eval_qualified_access(
                 runtime_value,
@@ -5564,10 +5569,9 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(
-                    ast::Literal::String("test_qualified".to_string()),
-                    None,
-                )),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String(
+                    "test_qualified".to_string(),
+                ))),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5606,10 +5610,9 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(
-                    ast::Literal::String("test_qualified_val".to_string()),
-                    None,
-                )),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String(
+                    "test_qualified_val".to_string(),
+                ))),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5646,10 +5649,9 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(
-                    ast::Literal::String("test_qualified_math".to_string()),
-                    None,
-                )),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String(
+                    "test_qualified_math".to_string(),
+                ))),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),

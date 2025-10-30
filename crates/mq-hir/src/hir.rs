@@ -1615,6 +1615,12 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
     #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern)]
+    #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
+    #[case::module(
+        "module a: def b(): 1; end",
+        "module",
+        SymbolKind::Module(SourceId::default())
+    )]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
@@ -1632,6 +1638,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
                     && match (&symbol.kind, &expected_kind) {
                         (SymbolKind::Function(_), SymbolKind::Function(_)) => true,
                         (SymbolKind::Include(_), SymbolKind::Include(_)) => true,
+                        (SymbolKind::Module(_), SymbolKind::Module(_)) => true,
+                        (SymbolKind::Import(_), SymbolKind::Import(_)) => true,
                         (kind, expected) => kind == expected,
                     }
             })
@@ -1641,6 +1649,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         match (&symbol.kind, &expected_kind) {
             (SymbolKind::Function(_), SymbolKind::Function(_)) => {}
             (SymbolKind::Include(_), SymbolKind::Include(_)) => {}
+            (SymbolKind::Module(_), SymbolKind::Module(_)) => {}
+            (SymbolKind::Import(_), SymbolKind::Import(_)) => {}
             _ => assert_eq!(symbol.kind, expected_kind),
         }
     }
