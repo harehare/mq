@@ -749,7 +749,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue|import|module|as)\b/,
+            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue|import|module)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
@@ -862,7 +862,10 @@ export const Playground = () => {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <img src="https://img.shields.io/github/stars/harehare/mq?style=social" alt="GitHub stars" />
+              <img
+                src="https://img.shields.io/github/stars/harehare/mq?style=social"
+                alt="GitHub stars"
+              />
             </a>
           </div>
         </header>
