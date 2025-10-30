@@ -22,7 +22,7 @@ contexts:
       scope: comment.line.number-sign.mq
 
   keywords:
-    - match: '\b(def|do|let|if|elif|else|end|while|foreach|until|self|nodes|match|fn|break|continue|include|import|module|as)\b'
+    - match: '\b(def|do|let|if|elif|else|end|while|foreach|until|self|nodes|match|fn|break|continue|include|import|module)\b'
       scope: keyword.control.mq
     - match: '(->|=|\||:|;|\?|!|\+|\-|\*|/|%|<|>|<=|>=|==|!=|&&)'
       scope: keyword.operator.mq
