@@ -26,7 +26,7 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
             .to_string();
     }
 
-    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None)\b";
+    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None|match|import|as|module)\b";
     if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| {
