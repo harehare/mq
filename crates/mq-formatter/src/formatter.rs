@@ -1036,7 +1036,14 @@ impl Formatter {
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
-                token => self.output.push_str(&token.to_string()),
+                // Explicitly handle unexpected token kinds
+                other => {
+                    eprintln!(
+                        "Warning: Unexpected token kind in append_literal: {:?}. Inserting placeholder.",
+                        other
+                    );
+                    self.output.push_str("[UNEXPECTED TOKEN]");
+                }
             }
         }
     }
