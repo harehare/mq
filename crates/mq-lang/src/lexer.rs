@@ -209,7 +209,6 @@ fn spaces(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-define_keyword_parser!(as_, "as", TokenKind::As);
 define_token_parser!(colon, ":", TokenKind::Colon);
 define_token_parser!(comma, ",", TokenKind::Comma);
 define_keyword_parser!(def, "def", TokenKind::Def);
@@ -308,7 +307,7 @@ fn control_keywords(input: Span) -> IResult<Span, Token> {
 }
 
 fn builtin_keywords(input: Span) -> IResult<Span, Token> {
-    alt((nodes, self_, none, include, import, module_, as_)).parse(input)
+    alt((nodes, self_, none, include, import, module_)).parse(input)
 }
 
 fn keywords(input: Span) -> IResult<Span, Token> {

@@ -117,7 +117,7 @@ impl Node {
             | Expr::Ident(_)
             | Expr::Selector(_)
             | Expr::Include(_)
-            | Expr::Import(_, _)
+            | Expr::Import(_)
             | Expr::InterpolatedString(_)
             | Expr::QualifiedAccess(_, _)
             | Expr::Nodes
@@ -310,7 +310,7 @@ pub enum Expr {
     If(Branches),
     Match(Shared<Node>, MatchArms),
     Include(Literal),
-    Import(Literal, Option<Literal>),
+    Import(Literal),
     Module(IdentWithToken, Program),
     QualifiedAccess(IdentWithToken, AccessTarget),
     Self_,
