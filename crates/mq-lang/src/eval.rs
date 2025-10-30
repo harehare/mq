@@ -4,7 +4,7 @@ use crate::DebuggerHandler;
 use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
-use crate::eval::runtime_value::ModuleEnv;
+use crate::{IdentWithToken, eval::runtime_value::ModuleEnv};
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
 
@@ -256,13 +256,22 @@ impl Evaluator {
     pub(crate) fn load_module(&mut self, module: Option<module::Module>) -> Result<(), EvalError> {
         if let Some(module) = module {
             for node in &module.modules {
-                if let ast::Expr::Include(_) = &*node.expr {
-                    self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&self.env))?;
-                } else {
-                    return Err(EvalError::InternalError(
-                        (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                    ));
-                }
+                let _ = match &*node.expr {
+                    ast::Expr::Include(_) => {
+                        self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&self.env))?
+                    }
+                    ast::Expr::Module(ident, program) => {
+                        self.eval_module(&RuntimeValue::NONE, ident, program)?
+                    }
+                    ast::Expr::Import(module_path, alias) => {
+                        self.eval_import(module_path.to_owned(), alias.to_owned())?
+                    }
+                    _ => {
+                        return Err(EvalError::InternalError(
+                            (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
+                        ));
+                    }
+                };
             }
 
             for node in &module.functions {
@@ -394,6 +403,59 @@ impl Evaluator {
         }
     }
 
+    fn eval_module(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        ident: &IdentWithToken,
+        program: &Program,
+    ) -> Result<RuntimeValue, EvalError> {
+        let module_name_to_use = &ident.name.as_str();
+
+        // Create a new environment for the module exports
+        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(
+            &self.env,
+        ))));
+
+        for node in program {
+            match &*node.expr {
+                ast::Expr::Include(_) => {
+                    self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
+                }
+                ast::Expr::Def(ident, params, program) => {
+                    define(
+                        &module_env,
+                        ident.name,
+                        RuntimeValue::Function(
+                            params.clone(),
+                            program.clone(),
+                            Shared::clone(&module_env),
+                        ),
+                    );
+                }
+                ast::Expr::Let(ident, node) => {
+                    let val =
+                        self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
+                    define(&module_env, ident.name, val);
+                }
+                _ => {}
+            }
+        }
+
+        // Register the module in the environment
+        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+            module_name_to_use,
+            Shared::clone(&module_env),
+        ));
+
+        define(
+            &self.env,
+            Ident::new(module_name_to_use),
+            module_runtime_value,
+        );
+
+        Ok(runtime_value.clone())
+    }
+
     fn eval_import(
         &mut self,
         module_path: ast::Literal,
@@ -445,27 +507,7 @@ impl Evaluator {
 
                     let module_name_to_use = match alias {
                         Some(ast::Literal::String(alias_name)) => alias_name,
-                        _ => {
-                            if let Some(metadata) = module.metadata {
-                                if let ast::Expr::Module(dict_node) = &*metadata.expr {
-                                    match self.eval_expr(
-                                        &RuntimeValue::NONE,
-                                        dict_node,
-                                        &Shared::clone(&module_env),
-                                    )? {
-                                        RuntimeValue::Dict(dict) => dict
-                                            .get(&Ident::new("name"))
-                                            .map(|name| name.to_string())
-                                            .unwrap_or(module.name),
-                                        _ => module.name,
-                                    }
-                                } else {
-                                    module.name
-                                }
-                            } else {
-                                module.name
-                            }
-                        }
+                        _ => module.name,
                     };
 
                     // Register the module in the environment
@@ -760,7 +802,7 @@ impl Evaluator {
             ast::Expr::Import(module_path, alias) => {
                 self.eval_import(module_path.to_owned(), alias.to_owned())
             }
-            ast::Expr::Module(_) => Ok(runtime_value.clone()),
+            ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program),
             ast::Expr::QualifiedAccess(module_name, access_target) => self.eval_qualified_access(
                 runtime_value,
                 module_name,
@@ -5509,8 +5551,7 @@ mod tests {
     fn test_import_qualified_access_function() {
         let (temp_dir, temp_file_path) = mq_test::create_file(
             "test_qualified.mq",
-            r#"module {"name": "testmod"}
-| def greet(name): "Hello, " + name + "!";"#,
+            r#"def greet(name): "Hello, " + name + "!";"#,
         );
 
         defer! {
@@ -5531,7 +5572,7 @@ mod tests {
             Shared::new(ast::Node {
                 token_id: 0.into(),
                 expr: Shared::new(ast::Expr::QualifiedAccess(
-                    IdentWithToken::new("testmod"),
+                    IdentWithToken::new("test_qualified"),
                     ast::AccessTarget::Call(
                         IdentWithToken::new("greet"),
                         smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(
@@ -5552,11 +5593,8 @@ mod tests {
 
     #[test]
     fn test_import_qualified_access_value() {
-        let (temp_dir, temp_file_path) = mq_test::create_file(
-            "test_qualified_val.mq",
-            r#"module {"name": "mymod"}
-| let answer = 42"#,
-        );
+        let (temp_dir, temp_file_path) =
+            mq_test::create_file("test_qualified_val.mq", r#"let answer = 42"#);
 
         defer! {
             if temp_file_path.exists() {
@@ -5576,7 +5614,7 @@ mod tests {
             Shared::new(ast::Node {
                 token_id: 0.into(),
                 expr: Shared::new(ast::Expr::QualifiedAccess(
-                    IdentWithToken::new("mymod"),
+                    IdentWithToken::new("test_qualified_val"),
                     ast::AccessTarget::Ident(IdentWithToken::new("answer")),
                 )),
             }),
@@ -5594,9 +5632,8 @@ mod tests {
     fn test_import_qualified_access_with_args() {
         let (temp_dir, temp_file_path) = mq_test::create_file(
             "test_qualified_math.mq",
-            r#"module {"name": "math"}
-| def add2(a, b): a + b;
-| def multiply(x, y): x * y;"#,
+            r#"def add2(a, b): a + b;
+            def multiply(x, y): x * y;"#,
         );
 
         defer! {
@@ -5617,7 +5654,7 @@ mod tests {
             Shared::new(ast::Node {
                 token_id: 0.into(),
                 expr: Shared::new(ast::Expr::QualifiedAccess(
-                    IdentWithToken::new("math"),
+                    IdentWithToken::new("test_qualified_math"),
                     ast::AccessTarget::Call(
                         IdentWithToken::new("add2"),
                         smallvec![

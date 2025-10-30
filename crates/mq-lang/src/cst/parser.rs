@@ -1267,9 +1267,38 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        let trailing_trivia = self.parse_trailing_trivia();
-        // Parse dictionary (metadata)
-        children.push(self.parse_dict(trailing_trivia)?);
+        // Parse module name (identifier)
+        children.push(self.next_node(
+            |kind| matches!(kind, TokenKind::Ident(_)),
+            NodeKind::Literal,
+        )?);
+
+        // Parse colon
+        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        // Parse program block (contains let, def, or module statements)
+        let (program_nodes, errors) = self.parse_program(false, false);
+
+        // Validate that only let, def, or module statements are in the module block
+        for child in &program_nodes {
+            match child.kind {
+                NodeKind::Let | NodeKind::Def | NodeKind::Module => {}
+                _ => {
+                    // Report error but continue parsing
+                    if let Some(ref token) = child.token {
+                        self.errors
+                            .report(ParseError::UnexpectedToken(Shared::clone(token)));
+                    }
+                }
+            }
+        }
+
+        // Merge errors from parse_program into self.errors
+        for error in errors.to_vec() {
+            self.errors.report(error);
+        }
+
+        children.extend(program_nodes);
 
         node.children = children;
         Ok(Shared::new(node))

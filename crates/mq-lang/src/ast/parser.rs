@@ -79,13 +79,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Nodes => {
                     return Err(ParseError::UnexpectedToken((**token).clone()));
                 }
-                TokenKind::Module if root => {
-                    let ast = self.parse_module(Shared::clone(token))?;
-                    asts.push(ast);
-                }
-                TokenKind::Module => {
-                    return Err(ParseError::UnexpectedToken((**token).clone()));
-                }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
                 _ => {
                     let ast = self.parse_expr(Shared::clone(token))?;
@@ -221,6 +214,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::While => self.parse_while(token),
             TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
+            TokenKind::Module => self.parse_module(token),
             TokenKind::Try => self.parse_try(token),
             TokenKind::If => self.parse_expr_if(Shared::clone(&token)),
             TokenKind::Match => self.parse_expr_match(Shared::clone(&token)),
@@ -249,18 +243,52 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_module(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
         match &token.kind {
-            TokenKind::Module => {
-                let next_token = match self.tokens.next() {
-                    Some(t) => t,
-                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-                };
-                let metadata = self.parse_dict(Shared::clone(next_token))?;
+            TokenKind::Module => match self.tokens.peek() {
+                Some(_) => {
+                    let ident_token = self
+                        .tokens
+                        .next()
+                        .ok_or(ParseError::UnexpectedEOFDetected(self.module_id))?;
+                    let ident_token_id = self.token_arena.alloc(Shared::clone(ident_token));
 
-                Ok(Shared::new(Node {
-                    token_id: self.token_arena.alloc(token),
-                    expr: Shared::new(Expr::Module(metadata)),
-                }))
-            }
+                    self.next_token(ident_token_id, |token_kind| {
+                        matches!(token_kind, TokenKind::Colon)
+                    })?;
+
+                    let program = self.parse_program(false)?;
+
+                    // Only allow 'let', 'def', or 'module' at the top-level of a module block
+                    for node in &program {
+                        match &*node.expr {
+                            Expr::Let(_, _) | Expr::Def(_, _, _) | Expr::Module(_, _) => {}
+                            _ => {
+                                return Err(ParseError::UnexpectedToken(
+                                    (*self.token_arena[node.token_id]).clone(),
+                                ));
+                            }
+                        }
+                    }
+
+                    Ok(Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(&token)),
+                        expr: Shared::new(Expr::Module(
+                            IdentWithToken::new_with_token(
+                                match &ident_token.kind {
+                                    TokenKind::Ident(name) => name,
+                                    _ => {
+                                        return Err(ParseError::UnexpectedToken(
+                                            (**ident_token).clone(),
+                                        ));
+                                    }
+                                },
+                                Some(Shared::clone(ident_token)),
+                            ),
+                            program.iter().map(Shared::clone).collect(),
+                        )),
+                    }))
+                }
+                None => Err(ParseError::UnexpectedToken((*token).clone())),
+            },
             _ => Err(ParseError::UnexpectedToken((*token).clone())),
         }
     }
@@ -5604,88 +5632,6 @@ mod tests {
             token(TokenKind::Eof)
         ],
         Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
-    #[case::module_simple(
-        vec![
-            token(TokenKind::Module),
-            token(TokenKind::LBrace),
-            token(TokenKind::StringLiteral("key".to_owned())),
-            token(TokenKind::Colon),
-            token(TokenKind::StringLiteral("value".to_owned())),
-            token(TokenKind::RBrace),
-            token(TokenKind::Eof)
-        ],
-        Ok(vec![
-            Shared::new(Node {
-                token_id: 0.into(),
-                expr: Shared::new(Expr::Module(
-                    Shared::new(Node {
-                        token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(constants::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
-                            smallvec![
-                                Shared::new(Node {
-                                    token_id: 0.into(),
-                                    expr: Shared::new(Expr::Call(
-                                        IdentWithToken::new_with_token(constants::ARRAY, Some(Shared::new(token(TokenKind::StringLiteral("key".to_owned()))))),
-                                        smallvec![
-                                            Shared::new(Node {
-                                                token_id: 1.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::String("key".to_owned()))),
-                                            }),
-                                            Shared::new(Node {
-                                                token_id: 2.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
-                                            }),
-                                        ],
-                                    )),
-                                }),
-                            ],
-                        )),
-                    }),
-                )),
-            })
-        ]))]
-    #[case::module_with_dict(
-            vec![
-            token(TokenKind::Module),
-            token(TokenKind::LBrace),
-            token(TokenKind::Ident(SmolStr::new("name"))),
-            token(TokenKind::Colon),
-            token(TokenKind::StringLiteral("test".to_owned())),
-            token(TokenKind::RBrace),
-            token(TokenKind::Eof)
-            ],
-            Ok(vec![
-            Shared::new(Node {
-                token_id: 0.into(),
-                expr: Shared::new(Expr::Module(
-                Shared::new(Node {
-                    token_id: 0.into(),
-                    expr: Shared::new(Expr::Call(
-                    IdentWithToken::new_with_token(constants::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
-                    smallvec![
-                        Shared::new(Node {
-                        token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(constants::ARRAY, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                            smallvec![
-                            Shared::new(Node {
-                                token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("name")))),
-                            }),
-                            Shared::new(Node {
-                                token_id: 2.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
-                            }),
-                            ],
-                        )),
-                        }),
-                    ],
-                    )),
-                }),
-                )),
-            })
-            ]))]
     #[case::import_simple(
             vec![
             token(TokenKind::Import),

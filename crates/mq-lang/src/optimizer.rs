@@ -193,7 +193,7 @@ impl Optimizer {
             | ast::Expr::Self_
             | ast::Expr::Include(_)
             | ast::Expr::Import(_, _)
-            | ast::Expr::Module(_)
+            | ast::Expr::Module(_, _)
             | ast::Expr::Break
             | ast::Expr::Continue => {}
         }
