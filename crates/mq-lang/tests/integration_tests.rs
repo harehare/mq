@@ -1706,6 +1706,16 @@ fn test_eval(
           ",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::qualified_access_to_module("
+module math:
+  def add_one(x):
+    x + 1;
+  def add_two(x):
+    x + 2;
+end
+| math::add_one(41) + math::add_two(40)",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(84.into())].into()))]
 fn test_eval_with_opt(
     mut engine_with_opt: Engine,
     #[case] program: &str,

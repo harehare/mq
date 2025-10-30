@@ -54,6 +54,7 @@ impl Node {
             | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Until(_, program)
+            | Expr::Module(_, program)
             | Expr::Foreach(_, _, program) => {
                 let start = program
                     .first()
@@ -106,7 +107,7 @@ impl Node {
                     .unwrap_or_else(|| arena[self.token_id].range.end.clone());
                 Range { start, end }
             }
-            Expr::Paren(node) | Expr::Module(node) => node.range(Shared::clone(&arena)),
+            Expr::Paren(node) => node.range(Shared::clone(&arena)),
             Expr::Try(try_expr, catch_expr) => {
                 let start = try_expr.range(Shared::clone(&arena)).start;
                 let end = catch_expr.range(Shared::clone(&arena)).end;
@@ -310,7 +311,7 @@ pub enum Expr {
     Match(Shared<Node>, MatchArms),
     Include(Literal),
     Import(Literal, Option<Literal>),
-    Module(Shared<Node>),
+    Module(IdentWithToken, Program),
     QualifiedAccess(IdentWithToken, AccessTarget),
     Self_,
     Nodes,
