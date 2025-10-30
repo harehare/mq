@@ -643,48 +643,81 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     ) -> Result<Shared<Node>, ParseError> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::DoubleColon) => {
-                // Parse qualified access: module::function() or module::ident
-                self.tokens.next(); // consume '::'
+                // Parse qualified access: module::function(), module::ident, or module::module2::method
+                // Build the module path by collecting all identifiers separated by '::'
+                let mut module_path = vec![IdentWithToken::new_with_token(
+                    ident,
+                    Some(Shared::clone(&ident_token)),
+                )];
 
-                let target_token = self
-                    .tokens
-                    .next()
-                    .ok_or(ParseError::UnexpectedEOFDetected(self.module_id))?;
+                // Collect all module path segments
+                while matches!(
+                    self.tokens.peek().map(|t| &t.kind),
+                    Some(TokenKind::DoubleColon)
+                ) {
+                    self.tokens.next(); // consume '::'
 
-                let target_ident = match &target_token.kind {
-                    TokenKind::Ident(name) => name.clone(),
-                    _ => return Err(ParseError::UnexpectedToken((**target_token).clone())),
-                };
+                    let next_token = self
+                        .tokens
+                        .next()
+                        .ok_or(ParseError::UnexpectedEOFDetected(self.module_id))?;
 
-                let access_target = match self.tokens.peek().map(|t| &t.kind) {
-                    Some(TokenKind::LParen) => {
-                        // It's a function call: module::function(args)
-                        let args = self.parse_args()?;
-                        AccessTarget::Call(
-                            IdentWithToken::new_with_token(
-                                &target_ident,
-                                Some(Shared::clone(target_token)),
-                            ),
-                            args,
-                        )
+                    let next_ident = match &next_token.kind {
+                        TokenKind::Ident(name) => name.clone(),
+                        _ => return Err(ParseError::UnexpectedToken((**next_token).clone())),
+                    };
+
+                    // Check if this is the last segment (followed by '(' or not '::')
+                    match self.tokens.peek().map(|t| &t.kind) {
+                        Some(TokenKind::DoubleColon) => {
+                            // More segments to come, add to module path
+                            module_path.push(IdentWithToken::new_with_token(
+                                &next_ident,
+                                Some(Shared::clone(next_token)),
+                            ));
+                        }
+                        Some(TokenKind::LParen) => {
+                            // This is a function call: module::...::function(args)
+                            let args = self.parse_args()?;
+                            let access_target = AccessTarget::Call(
+                                IdentWithToken::new_with_token(
+                                    &next_ident,
+                                    Some(Shared::clone(next_token)),
+                                ),
+                                args,
+                            );
+
+                            let token_id = self.token_arena.alloc(Shared::clone(&ident_token));
+                            return Ok(Shared::new(Node {
+                                token_id,
+                                expr: Shared::new(Expr::QualifiedAccess(
+                                    module_path,
+                                    access_target,
+                                )),
+                            }));
+                        }
+                        _ => {
+                            // This is an identifier: module::...::ident
+                            let access_target =
+                                AccessTarget::Ident(IdentWithToken::new_with_token(
+                                    &next_ident,
+                                    Some(Shared::clone(next_token)),
+                                ));
+
+                            let token_id = self.token_arena.alloc(Shared::clone(&ident_token));
+                            return Ok(Shared::new(Node {
+                                token_id,
+                                expr: Shared::new(Expr::QualifiedAccess(
+                                    module_path,
+                                    access_target,
+                                )),
+                            }));
+                        }
                     }
-                    _ => {
-                        // It's an identifier: module::ident
-                        AccessTarget::Ident(IdentWithToken::new_with_token(
-                            &target_ident,
-                            Some(Shared::clone(target_token)),
-                        ))
-                    }
-                };
+                }
 
-                let token_id = self.token_arena.alloc(Shared::clone(&ident_token));
-                Ok(Shared::new(Node {
-                    token_id,
-                    expr: Shared::new(Expr::QualifiedAccess(
-                        IdentWithToken::new_with_token(ident, Some(Shared::clone(&ident_token))),
-                        access_target,
-                    )),
-                }))
+                // This should not be reached, but handle it gracefully
+                Err(ParseError::UnexpectedToken((*ident_token).clone()))
             }
             Some(TokenKind::LParen) => {
                 let args = self.parse_args()?;
@@ -5650,7 +5683,7 @@ mod tests {
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Shared::new(Expr::QualifiedAccess(
-                        IdentWithToken::new_with_token("test", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("test")))))),
+                        vec![IdentWithToken::new_with_token("test", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("test"))))))],
                         AccessTarget::Ident(IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                     ))),
                 })
@@ -5669,7 +5702,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Shared::new(Expr::QualifiedAccess(
-                    IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod")))))),
+                    vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
                         smallvec![
@@ -5678,6 +5711,32 @@ mod tests {
                                 expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
                             }),
                         ],
+                    ),
+                )),
+            })
+        ]))]
+    #[case::qualified_access_multi_level(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("mod1"))),
+            token(TokenKind::DoubleColon),
+            token(TokenKind::Ident(SmolStr::new("mod2"))),
+            token(TokenKind::DoubleColon),
+            token(TokenKind::Ident(SmolStr::new("func"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 4.into(),
+                expr: Shared::new(Expr::QualifiedAccess(
+                    vec![
+                        IdentWithToken::new_with_token("mod1", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod1")))))),
+                        IdentWithToken::new_with_token("mod2", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod2")))))),
+                    ],
+                    AccessTarget::Call(
+                        IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
+                        smallvec![],
                     ),
                 )),
             })

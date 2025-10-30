@@ -635,7 +635,7 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
 
-        // Check for qualified access (module::function or module::value)
+        // Check for qualified access (module::function, module::value, or module::module2::method)
         if let Some(next_token) = self.tokens.peek()
             && matches!(next_token.kind, TokenKind::DoubleColon)
         {
@@ -647,22 +647,33 @@ impl<'a> Parser<'a> {
                 children: Vec::new(),
             };
 
-            // Add double colon token
-            children.push(self.next_node(
-                |kind| matches!(kind, TokenKind::DoubleColon),
-                NodeKind::Token,
-            )?);
-
-            // Add target identifier
-            children
-                .push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
-
-            // Check if it's a function call
-            if let Some(token) = self.tokens.peek()
-                && matches!(token.kind, TokenKind::LParen)
+            // Parse all :: separated identifiers
+            while let Some(peek_token) = self.tokens.peek()
+                && matches!(peek_token.kind, TokenKind::DoubleColon)
             {
-                let mut args = self.parse_args()?;
-                children.append(&mut args);
+                // Add double colon token
+                children.push(self.next_node(
+                    |kind| matches!(kind, TokenKind::DoubleColon),
+                    NodeKind::Token,
+                )?);
+
+                // Add identifier
+                children.push(
+                    self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?,
+                );
+
+                // Check if there's another :: or if we're at a function call
+                if let Some(next_peek) = self.tokens.peek() {
+                    if matches!(next_peek.kind, TokenKind::LParen) {
+                        // This is a function call, parse args and break
+                        let mut args = self.parse_args()?;
+                        children.append(&mut args);
+                        break;
+                    }
+                    // Otherwise, continue the loop to check for more ::
+                } else {
+                    break;
+                }
             }
 
             node.children = children;
@@ -6438,6 +6449,246 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::qualified_access_simple(
+        vec![
+            Shared::new(token(TokenKind::Ident("mod1".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Ident("value".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::QualifiedAccess,
+                    token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("value".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::qualified_access_multi_level(
+        vec![
+            Shared::new(token(TokenKind::Ident("mod1".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Ident("mod2".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Ident("value".into()))),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::QualifiedAccess,
+                    token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("mod2".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("value".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::qualified_access_with_call(
+        vec![
+            Shared::new(token(TokenKind::Ident("mod1".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Ident("func".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::StringLiteral("arg".into()))),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::QualifiedAccess,
+                    token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("func".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::StringLiteral("arg".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::qualified_access_multi_level_with_call(
+        vec![
+            Shared::new(token(TokenKind::Ident("mod1".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Ident("mod2".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Ident("func".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::QualifiedAccess,
+                    token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("mod2".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("func".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
     #[case::module_simple(
         vec![
             Shared::new(token(TokenKind::Module)),
@@ -6464,7 +6715,7 @@ mod tests {
                     trailing_trivia: Vec::new(),
                     children: vec![
                         Shared::new(Node {
-                            kind: NodeKind::Literal,
+                            kind: NodeKind::Ident,
                             token: Some(Shared::new(token(TokenKind::Ident("modname1".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
@@ -6547,16 +6798,16 @@ mod tests {
                                     trailing_trivia: Vec::new(),
                                     children: Vec::new(),
                                 }),
+                                Shared::new(Node {
+                                    kind: NodeKind::Eof,
+                                    token: Some(Shared::new(token(TokenKind::Eof))),
+                                    leading_trivia: Vec::new(),
+                                    trailing_trivia: Vec::new(),
+                                    children: Vec::new(),
+                                }),
                             ],
                         }),
                     ],
-                }),
-                Shared::new(Node {
-                    kind: NodeKind::Eof,
-                    token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
-                    children: Vec::new(),
                 }),
             ],
             ErrorReporter::default()

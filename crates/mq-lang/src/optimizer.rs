@@ -174,9 +174,11 @@ impl Optimizer {
                     Self::collect_used_identifiers_in_node(&arm.body, used_idents);
                 }
             }
-            ast::Expr::QualifiedAccess(module_name, access_target) => {
-                // Collect module name
-                used_idents.insert(module_name.name);
+            ast::Expr::QualifiedAccess(module_path, access_target) => {
+                // Collect all module names in the path
+                for module_ident in module_path {
+                    used_idents.insert(module_ident.name);
+                }
                 // Collect from access target
                 match access_target {
                     ast::AccessTarget::Call(_, args) => {
@@ -492,7 +494,7 @@ impl Optimizer {
                 let new_inner = self.inline_functions_in_node(Shared::clone(inner));
                 Shared::new(ast::Expr::Paren(new_inner))
             }
-            ast::Expr::QualifiedAccess(module_name, access_target) => {
+            ast::Expr::QualifiedAccess(module_path, access_target) => {
                 // Inline functions in qualified access arguments
                 let new_access_target = match access_target {
                     ast::AccessTarget::Call(func_name, args) => {
@@ -505,7 +507,7 @@ impl Optimizer {
                     ast::AccessTarget::Ident(_) => access_target.clone(),
                 };
                 Shared::new(ast::Expr::QualifiedAccess(
-                    module_name.clone(),
+                    module_path.clone(),
                     new_access_target,
                 ))
             }
@@ -544,7 +546,7 @@ impl Optimizer {
                 let substituted_inner = Self::substitute_parameters(inner, param_bindings);
                 Shared::new(ast::Expr::Paren(substituted_inner))
             }
-            ast::Expr::QualifiedAccess(module_name, access_target) => {
+            ast::Expr::QualifiedAccess(module_path, access_target) => {
                 // Substitute parameters in qualified access arguments
                 let new_access_target = match access_target {
                     ast::AccessTarget::Call(func_name, args) => {
@@ -557,7 +559,7 @@ impl Optimizer {
                     ast::AccessTarget::Ident(_) => access_target.clone(),
                 };
                 Shared::new(ast::Expr::QualifiedAccess(
-                    module_name.clone(),
+                    module_path.clone(),
                     new_access_target,
                 ))
             }

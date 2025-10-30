@@ -312,7 +312,7 @@ pub enum Expr {
     Include(Literal),
     Import(Literal),
     Module(IdentWithToken, Program),
-    QualifiedAccess(IdentWithToken, AccessTarget),
+    QualifiedAccess(Vec<IdentWithToken>, AccessTarget),
     Self_,
     Nodes,
     Paren(Shared<Node>),
