@@ -1716,6 +1716,18 @@ end
 | math::add_one(41) + math::add_two(40)",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Number(84.into())].into()))]
+#[case::qualified_access_to_nested_module("
+module math:
+  module operations:
+    def add_one(x):
+      x + 1;
+    def add_two(x):
+      x + 2;
+  end
+end
+| math::operations::add_one(41) + math::operations::add_two(40)",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(84.into())].into()))]
 fn test_eval_with_opt(
     mut engine_with_opt: Engine,
     #[case] program: &str,

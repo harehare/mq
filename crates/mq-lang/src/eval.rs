@@ -158,7 +158,7 @@ impl Evaluator {
                         self.eval_include(module_id.to_owned())?;
                     }
                     ast::Expr::Import(module_path) => {
-                        self.eval_import(module_path.to_owned())?;
+                        self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))?;
                     }
                     _ => nodes.push(Shared::clone(node)),
                 };
@@ -260,10 +260,15 @@ impl Evaluator {
                     ast::Expr::Include(_) => {
                         self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&self.env))?
                     }
-                    ast::Expr::Module(ident, program) => {
-                        self.eval_module(&RuntimeValue::NONE, ident, program)?
+                    ast::Expr::Module(ident, program) => self.eval_module(
+                        &RuntimeValue::NONE,
+                        ident,
+                        program,
+                        &Shared::clone(&self.env),
+                    )?,
+                    ast::Expr::Import(module_path) => {
+                        self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))?
                     }
-                    ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned())?,
                     _ => {
                         return Err(EvalError::InternalError(
                             (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -406,13 +411,12 @@ impl Evaluator {
         runtime_value: &RuntimeValue,
         ident: &IdentWithToken,
         program: &Program,
+        env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         let module_name_to_use = &ident.name.as_str();
 
         // Create a new environment for the module exports
-        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(
-            &self.env,
-        ))));
+        let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
         for node in program {
             match &*node.expr {
@@ -435,6 +439,12 @@ impl Evaluator {
                         self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
                     define(&module_env, ident.name, val);
                 }
+                ast::Expr::Import(module_path) => {
+                    self.eval_import(module_path.to_owned(), &Shared::clone(&module_env))?;
+                }
+                ast::Expr::Module(ident, program) => {
+                    let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
+                }
                 _ => {}
             }
         }
@@ -454,7 +464,11 @@ impl Evaluator {
         Ok(runtime_value.clone())
     }
 
-    fn eval_import(&mut self, module_path: ast::Literal) -> Result<RuntimeValue, EvalError> {
+    fn eval_import(
+        &mut self,
+        module_path: ast::Literal,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, EvalError> {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -463,9 +477,8 @@ impl Evaluator {
 
                 if let Some(module) = module {
                     // Create a new environment for the module exports
-                    let module_env = Shared::new(SharedCell::new(Env::with_parent(
-                        Shared::downgrade(&self.env),
-                    )));
+                    let module_env =
+                        Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
                     // Load module contents into the module environment
                     for node in &module.modules {
@@ -476,10 +489,10 @@ impl Evaluator {
                                 &Shared::clone(&self.env),
                             )?,
                             ast::Expr::Module(ident, program) => {
-                                self.eval_module(&RuntimeValue::NONE, ident, program)?
+                                self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?
                             }
                             ast::Expr::Import(module_path) => {
-                                self.eval_import(module_path.to_owned())?
+                                self.eval_import(module_path.to_owned(), &module_env)?
                             }
                             _ => {
                                 return Err(EvalError::InternalError(
@@ -548,15 +561,45 @@ impl Evaluator {
     fn eval_qualified_access(
         &mut self,
         runtime_value: &RuntimeValue,
-        module_name: &ast::IdentWithToken,
+        module_path: &[ast::IdentWithToken],
         access_target: &ast::AccessTarget,
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        // Get the module from the environment
-        let module_value = self.eval_ident(module_name.name, token_id, env)?;
+        // Traverse the module path to get to the final module
+        let mut current_value = if let Some(first_module) = module_path.first() {
+            self.eval_ident(first_module.name, token_id, env)?
+        } else {
+            let token = get_token(Shared::clone(&self.token_arena), token_id);
+            return Err(EvalError::InternalError((*token).clone()));
+        };
 
-        match module_value {
+        // Traverse nested modules
+        for module_ident in &module_path[1..] {
+            match current_value {
+                RuntimeValue::Module(module_env) => {
+                    let module_exports = Shared::clone(module_env.exports());
+
+                    #[cfg(not(feature = "sync"))]
+                    let resolved = module_exports.borrow().resolve(module_ident.name);
+                    #[cfg(feature = "sync")]
+                    let resolved = module_exports.read().unwrap().resolve(module_ident.name);
+
+                    current_value = resolved
+                        .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))?;
+                }
+                _ => {
+                    let token = get_token(Shared::clone(&self.token_arena), token_id);
+                    return Err(EvalError::NotDefined(
+                        (*token).clone(),
+                        module_ident.name.to_string(),
+                    ));
+                }
+            }
+        }
+
+        // Now access the target from the final module
+        match current_value {
             RuntimeValue::Module(module_env) => {
                 let module_exports = Shared::clone(module_env.exports());
 
@@ -611,10 +654,11 @@ impl Evaluator {
             }
             _ => {
                 let token = get_token(Shared::clone(&self.token_arena), token_id);
-                Err(EvalError::NotDefined(
-                    (*token).clone(),
-                    module_name.name.to_string(),
-                ))
+                let last_module = module_path
+                    .last()
+                    .map(|m| m.name.to_string())
+                    .unwrap_or_default();
+                Err(EvalError::NotDefined((*token).clone(), last_module))
             }
         }
     }
@@ -806,8 +850,10 @@ impl Evaluator {
                 self.eval_include(module_id.to_owned())?;
                 Ok(runtime_value.clone())
             }
-            ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned()),
-            ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program),
+            ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env),
+            ast::Expr::Module(ident, program) => {
+                self.eval_module(runtime_value, ident, program, env)
+            }
             ast::Expr::QualifiedAccess(module_name, access_target) => self.eval_qualified_access(
                 runtime_value,
                 module_name,
@@ -5576,7 +5622,7 @@ mod tests {
             Shared::new(ast::Node {
                 token_id: 0.into(),
                 expr: Shared::new(ast::Expr::QualifiedAccess(
-                    IdentWithToken::new("test_qualified"),
+                    vec![IdentWithToken::new("test_qualified")],
                     ast::AccessTarget::Call(
                         IdentWithToken::new("greet"),
                         smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(
@@ -5617,7 +5663,7 @@ mod tests {
             Shared::new(ast::Node {
                 token_id: 0.into(),
                 expr: Shared::new(ast::Expr::QualifiedAccess(
-                    IdentWithToken::new("test_qualified_val"),
+                    vec![IdentWithToken::new("test_qualified_val")],
                     ast::AccessTarget::Ident(IdentWithToken::new("answer")),
                 )),
             }),
@@ -5656,7 +5702,7 @@ mod tests {
             Shared::new(ast::Node {
                 token_id: 0.into(),
                 expr: Shared::new(ast::Expr::QualifiedAccess(
-                    IdentWithToken::new("test_qualified_math"),
+                    vec![IdentWithToken::new("test_qualified_math")],
                     ast::AccessTarget::Call(
                         IdentWithToken::new("add2"),
                         smallvec![
