@@ -34,6 +34,7 @@ pub enum SymbolKind {
     Else,
     Foreach,
     Function(Params),
+    Ident,
     If,
     Include(SourceId),
     Keyword,
@@ -71,6 +72,11 @@ impl Symbol {
     }
 
     #[inline(always)]
+    pub fn is_module(&self) -> bool {
+        matches!(self.kind, SymbolKind::Module(_))
+    }
+
+    #[inline(always)]
     pub fn is_parameter(&self) -> bool {
         matches!(self.kind, SymbolKind::Parameter)
     }
@@ -83,6 +89,11 @@ impl Symbol {
     #[inline(always)]
     pub fn is_pattern_variable(&self) -> bool {
         matches!(self.kind, SymbolKind::PatternVariable)
+    }
+
+    #[inline(always)]
+    pub fn is_ident(&self) -> bool {
+        matches!(self.kind, SymbolKind::Ident)
     }
 
     #[inline(always)]

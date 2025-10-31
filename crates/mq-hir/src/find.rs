@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
-use crate::{Hir, Scope, Symbol, SymbolKind, scope::ScopeId, source::SourceId, symbol::SymbolId};
+use crate::{
+    Hir, Scope, Symbol, SymbolKind,
+    scope::{ScopeId, ScopeKind},
+    source::SourceId,
+    symbol::SymbolId,
+};
 
 impl Hir {
     pub fn find_symbol_in_position(
@@ -74,7 +79,9 @@ impl Hir {
                 && (symbol.is_function()
                     || symbol.is_parameter()
                     || symbol.is_variable()
-                    || symbol.is_argument())
+                    || symbol.is_module()
+                    || symbol.is_argument()
+                    || symbol.is_ident())
             {
                 symbols.push(Arc::new(symbol.clone()));
             }
@@ -108,6 +115,58 @@ impl Hir {
 
     pub fn find_scope_by_source(&self, source_id: &SourceId) -> ScopeId {
         self.source_scopes[source_id]
+    }
+
+    /// Finds a module symbol by name in the given scope and its parent scopes
+    pub fn find_module_by_name(
+        &self,
+        scope_id: ScopeId,
+        module_name: &str,
+    ) -> Option<(SymbolId, Symbol)> {
+        let symbols = self.find_symbols_in_scope(scope_id);
+
+        symbols
+            .iter()
+            .find(|symbol| {
+                symbol.is_module() && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name)
+            })
+            .and_then(|_symbol| {
+                self.symbols
+                    .iter()
+                    .find(|(_, s)| {
+                        s.is_module() && s.value.as_ref().map(|v| v.as_str()) == Some(module_name)
+                    })
+                    .map(|(id, s)| (id, s.clone()))
+            })
+    }
+
+    /// Finds symbols in a module by its source_id (only symbols directly in the module, not parent scopes)
+    pub fn find_symbols_in_module(&self, module_source_id: SourceId) -> Vec<Arc<Symbol>> {
+        // Find the scope for this module source
+        if let Some(scope_id) = self.scopes.iter().find_map(|(scope_id, scope)| {
+            if let ScopeKind::Module(source_id) = scope.kind
+                && source_id == module_source_id
+            {
+                return Some(scope_id);
+            }
+            None
+        }) {
+            // Only return symbols directly in this scope, not parent scopes
+            let mut symbols = Vec::new();
+            self.symbols.iter().for_each(|(_, symbol)| {
+                if symbol.scope == scope_id
+                    && (symbol.is_function()
+                        || symbol.is_parameter()
+                        || symbol.is_variable()
+                        || symbol.is_argument())
+                {
+                    symbols.push(Arc::new(symbol.clone()));
+                }
+            });
+            symbols
+        } else {
+            Vec::new()
+        }
     }
 }
 #[cfg(test)]
@@ -143,6 +202,16 @@ mod tests {
         let symbols = hir.find_symbols_in_scope(scope_id);
 
         assert_eq!(symbols.len(), 1);
+    }
+
+    #[test]
+    fn test_find_symbols_in_module_scope() {
+        let mut hir = Hir::default();
+        let (_, scope_id) = hir.add_code(None, "module mod1: def func1(): 1; end");
+        let symbols = hir.find_symbols_in_scope(scope_id);
+
+        // Symbols: mod1 (Ident), Module, func1 (Function)
+        assert_eq!(symbols.len(), 3);
     }
 
     #[test]
