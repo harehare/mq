@@ -190,11 +190,11 @@ impl ModuleLoader {
 
     pub fn load_from_file(
         &mut self,
-        module_name: &str,
+        module_path: &str,
         token_arena: TokenArena,
     ) -> Result<Option<Module>, ModuleError> {
-        let program = self.read_file(module_name)?;
-        self.load(module_name, &program, token_arena)
+        let program = self.read_file(module_path)?;
+        self.load(module_path, &program, token_arena)
     }
 
     pub fn read_file(&self, module_name: &str) -> Result<String, ModuleError> {
