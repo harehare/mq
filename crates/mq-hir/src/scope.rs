@@ -36,6 +36,11 @@ impl Scope {
         self.children.push(child_id);
     }
 
+    #[inline(always)]
+    pub fn is_module(&self) -> bool {
+        matches!(self.kind, ScopeKind::Module(_))
+    }
+
     pub fn symbol_id(&self) -> Option<SymbolId> {
         match self.kind {
             ScopeKind::Function(symbol_id) => Some(symbol_id),

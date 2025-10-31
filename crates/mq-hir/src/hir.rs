@@ -649,8 +649,25 @@ impl Hir {
             ..
         } = &**node
         {
+            let children = node.children_without_token();
+
+            // Get the module name from the first child
+            let module_name = children.first().and_then(|n| n.name());
+
+            // First child is the module name - register as Ident
+            if let Some(module_name_node) = children.first() {
+                self.add_symbol(Symbol {
+                    value: module_name_node.name(),
+                    kind: SymbolKind::Ident,
+                    source: SourceInfo::new(Some(source_id), Some(module_name_node.range())),
+                    scope: scope_id,
+                    doc: node.comments(),
+                    parent,
+                });
+            }
+
             let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
+                value: module_name,
                 kind: SymbolKind::Module(source_id),
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
@@ -658,9 +675,9 @@ impl Hir {
                 parent,
             });
 
-            // Process child nodes (module metadata dict)
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            // Process remaining child nodes (module body)
+            for child in children.iter().skip(1) {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
             }
         }
     }
@@ -1618,9 +1635,10 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::module(
         "module a: def b(): 1; end",
-        "module",
+        "a",
         SymbolKind::Module(SourceId::default())
     )]
+    #[case::module_name_ident("module math: def add(): 1; end", "math", SymbolKind::Ident)]
     fn test_add_code(
         #[case] code: &str,
         #[case] expected_name: &str,
