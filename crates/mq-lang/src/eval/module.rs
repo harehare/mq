@@ -133,10 +133,21 @@ impl ModuleLoader {
         }
 
         let module_id = self.loaded_modules.len().into();
-        self.loaded_modules.alloc(module_name.into());
         let mut program = Self::parse_program(code, module_id, token_arena)?;
 
-        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(&mut program);
+        self.load_from_ast(module_name, &mut program)
+    }
+
+    pub fn load_from_ast(
+        &mut self,
+        module_name: &str,
+        program: &mut Program,
+    ) -> Result<Option<Module>, ModuleError> {
+        if self.loaded_modules.contains(module_name.into()) {
+            return Ok(None);
+        }
+
+        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(program);
 
         let modules = program
             .iter()
@@ -166,6 +177,8 @@ impl ModuleLoader {
         if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
         }
+
+        self.loaded_modules.alloc(module_name.into());
 
         Ok(Some(Module {
             name: module_name.to_string(),
