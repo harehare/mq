@@ -25,28 +25,19 @@ pub fn response(
                 .map(|(scope_id, _)| scope_id)
                 .unwrap_or_else(|| hir.read().unwrap().find_scope_by_source(source_id));
 
-            // Check if we're completing after "::" (qualified access)
-            // Look for a module identifier just before the current position
-            let module_completion = if position.character >= 5 {
-                // Try to find the QualifiedAccess symbol before the current position
-                // We look back enough to find the module name (typically 5-10 characters back)
+            let module_completion = if position.character >= 3 {
                 let before_pos = mq_lang::Position::new(
                     position.line + 1,
-                    (position.character.saturating_sub(5)) as usize,
+                    (position.character.saturating_sub(3)) as usize,
                 );
 
                 hir.read()
                     .unwrap()
                     .find_symbol_in_position(*source_id, before_pos)
                     .and_then(|(_, symbol)| {
-                        // Check if this is a QualifiedAccess (the value contains the module name)
-                        if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess)
-                            || symbol.is_ident()
-                        {
-                            // Get the module name from the QualifiedAccess value
+                        if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess) {
                             let module_name = symbol.value.as_ref()?;
 
-                            // Find the Module symbol with this name in the current scope
                             let hir_guard = hir.read().unwrap();
                             for (_, mod_symbol) in hir_guard.symbols() {
                                 if mod_symbol.is_module()
