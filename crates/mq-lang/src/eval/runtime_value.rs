@@ -49,6 +49,22 @@ impl ModuleEnv {
     }
 }
 
+impl PartialEq for ModuleEnv {
+    fn eq(&self, other: &Self) -> bool {
+        #[cfg(not(feature = "sync"))]
+        let exports = self.exports().borrow();
+        #[cfg(feature = "sync")]
+        let exports = self.exports().read().unwrap();
+
+        #[cfg(not(feature = "sync"))]
+        let other_exports = other.exports().borrow();
+        #[cfg(feature = "sync")]
+        let other_exports = other.exports().read().unwrap();
+
+        self.name == other.name && std::ptr::eq(&*exports, &*other_exports)
+    }
+}
+
 #[derive(Clone, Default)]
 pub enum RuntimeValue {
     Number(Number),
@@ -80,7 +96,7 @@ impl PartialEq for RuntimeValue {
             }
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
-            (RuntimeValue::Module(a), RuntimeValue::Module(b)) => std::ptr::eq(a, b),
+            (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
             (RuntimeValue::None, RuntimeValue::None) => true,
             _ => false,
         }
