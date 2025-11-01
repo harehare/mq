@@ -133,14 +133,30 @@ impl ModuleLoader {
         }
 
         let module_id = self.loaded_modules.len().into();
-        self.loaded_modules.alloc(module_name.into());
         let mut program = Self::parse_program(code, module_id, token_arena)?;
 
-        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(&mut program);
+        self.load_from_ast(module_name, &mut program)
+    }
+
+    pub fn load_from_ast(
+        &mut self,
+        module_name: &str,
+        program: &mut Program,
+    ) -> Result<Option<Module>, ModuleError> {
+        if self.loaded_modules.contains(module_name.into()) {
+            return Ok(None);
+        }
+
+        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(program);
 
         let modules = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Include(_)))
+            .filter(|node| {
+                matches!(
+                    *node.expr,
+                    ast::Expr::Include(_) | ast::Expr::Module(_, _) | ast::Expr::Import(_)
+                )
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -156,9 +172,13 @@ impl ModuleLoader {
             .cloned()
             .collect::<Vec<_>>();
 
-        if program.len() != functions.len() + modules.len() + vars.len() {
+        let expected_len = functions.len() + modules.len() + vars.len();
+
+        if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
         }
+
+        self.loaded_modules.alloc(module_name.into());
 
         Ok(Some(Module {
             name: module_name.to_string(),
@@ -170,11 +190,11 @@ impl ModuleLoader {
 
     pub fn load_from_file(
         &mut self,
-        module_name: &str,
+        module_path: &str,
         token_arena: TokenArena,
     ) -> Result<Option<Module>, ModuleError> {
-        let program = self.read_file(module_name)?;
-        self.load(module_name, &program, token_arena)
+        let program = self.read_file(module_path)?;
+        self.load(module_path, &program, token_arena)
     }
 
     pub fn read_file(&self, module_name: &str) -> Result<String, ModuleError> {
@@ -338,7 +358,7 @@ mod tests {
                     module_id: 1.into()
                 }))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
-            ))})]
+            ))})],
     })))]
     #[case::load3("def test(): 1;".to_string(), Ok(Some(Module{
         name: "test".to_string(),
@@ -355,7 +375,7 @@ mod tests {
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
             ]
             ))})],
-        vars: Vec::new()
+        vars: Vec::new(),
     })))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Some(Module{
         name: "test".to_string(),
@@ -388,7 +408,7 @@ mod tests {
                     ],
                 ))})]
             ))})],
-        vars: Vec::new()
+        vars: Vec::new(),
     })))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,

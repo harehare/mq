@@ -19,7 +19,6 @@
 ![](https://tokei.rs/b1/github/harehare/mq?category=code)
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-harehare%2Fmq-blue.svg?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAyCAYAAAAnWDnqAAAAAXNSR0IArs4c6QAAA05JREFUaEPtmUtyEzEQhtWTQyQLHNak2AB7ZnyXZMEjXMGeK/AIi+QuHrMnbChYY7MIh8g01fJoopFb0uhhEqqcbWTp06/uv1saEDv4O3n3dV60RfP947Mm9/SQc0ICFQgzfc4CYZoTPAswgSJCCUJUnAAoRHOAUOcATwbmVLWdGoH//PB8mnKqScAhsD0kYP3j/Yt5LPQe2KvcXmGvRHcDnpxfL2zOYJ1mFwrryWTz0advv1Ut4CJgf5uhDuDj5eUcAUoahrdY/56ebRWeraTjMt/00Sh3UDtjgHtQNHwcRGOC98BJEAEymycmYcWwOprTgcB6VZ5JK5TAJ+fXGLBm3FDAmn6oPPjR4rKCAoJCal2eAiQp2x0vxTPB3ALO2CRkwmDy5WohzBDwSEFKRwPbknEggCPB/imwrycgxX2NzoMCHhPkDwqYMr9tRcP5qNrMZHkVnOjRMWwLCcr8ohBVb1OMjxLwGCvjTikrsBOiA6fNyCrm8V1rP93iVPpwaE+gO0SsWmPiXB+jikdf6SizrT5qKasx5j8ABbHpFTx+vFXp9EnYQmLx02h1QTTrl6eDqxLnGjporxl3NL3agEvXdT0WmEost648sQOYAeJS9Q7bfUVoMGnjo4AZdUMQku50McDcMWcBPvr0SzbTAFDfvJqwLzgxwATnCgnp4wDl6Aa+Ax283gghmj+vj7feE2KBBRMW3FzOpLOADl0Isb5587h/U4gGvkt5v60Z1VLG8BhYjbzRwyQZemwAd6cCR5/XFWLYZRIMpX39AR0tjaGGiGzLVyhse5C9RKC6ai42ppWPKiBagOvaYk8lO7DajerabOZP46Lby5wKjw1HCRx7p9sVMOWGzb/vA1hwiWc6jm3MvQDTogQkiqIhJV0nBQBTU+3okKCFDy9WwferkHjtxib7t3xIUQtHxnIwtx4mpg26/HfwVNVDb4oI9RHmx5WGelRVlrtiw43zboCLaxv46AZeB3IlTkwouebTr1y2NjSpHz68WNFjHvupy3q8TFn3Hos2IAk4Ju5dCo8B3wP7VPr/FGaKiG+T+v+TQqIrOqMTL1VdWV1DdmcbO8KXBz6esmYWYKPwDL5b5FA1a0hwapHiom0r/cKaoqr+27/XcrS5UwSMbQAAAABJRU5ErkJggg==)](https://deepwiki.com/harehare/mq)
 
-
 mq is a command-line tool that processes Markdown using a syntax similar to jq.
 It's written in Rust, allowing you to easily slice, filter, map, and transform structured data.
 
@@ -60,6 +59,7 @@ curl -sSL https://mqlang.org/install.sh | bash
 ```
 
 The installer will:
+
 - Download the latest mq binary for your platform
 - Install it to `~/.mq/bin/`
 - Update your shell profile to add mq to your PATH
@@ -67,11 +67,11 @@ The installer will:
 ### Cargo
 
 ```sh
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.4.3
+cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.4.3
 # Latest Development Version
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
+cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
 # Install the debugger
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger"
+cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger"
 ```
 
 ### Binaries
@@ -80,32 +80,28 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Intel)
-$ curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-
+curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # macOS (Apple Silicon)
-$ curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-
+curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-$ curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-
+curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-$ curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-
+curl -L https://github.com/harehare/mq/releases/download/v0.4.3/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-$ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.4.3/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.4.3/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ### Homebrew
 
 ```sh
 # Using Homebrew (macOS and Linux)
-$ brew install harehare/tap/mq
+brew install harehare/tap/mq
 ```
 
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.4.3
+docker run --rm ghcr.io/harehare/mq:0.4.3
 ```
 
 ### Visual Studio Code Extension
@@ -160,8 +156,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
   -A, --aggregate
@@ -181,7 +177,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -238,19 +234,19 @@ Here's a basic example of how to use `mq`:
 
 ```sh
 # code
-$ mq '.code | select(contains("name"))'
+mq '.code | select(contains("name"))'
 # Extracts the language name from code blocks.
-$ mq '.code.lang'
+mq '.code.lang'
 # Extracts the url from link.
-$ mq '.link.url'
+mq '.link.url'
 # table
-$ mq '.[][] | select(contains("name"))'
+mq '.[][] | select(contains("name"))'
 # list or header
-$ mq 'select(.[] || .h) | select(contains("name"))'
+mq 'select(.[] || .h) | select(contains("name"))'
 # Exclude js code
-$ mq 'select(!.code("js"))'
+mq 'select(!.code("js"))'
 # CSV to markdown table
-$ mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
+mq 'include "csv" | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
 
 ### Advanced Usage
@@ -259,15 +255,15 @@ You can chain multiple operations to perform complex transformations:
 
 ```sh
 # Markdown TOC
-$ mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (!is_none(level)): to_md_list(link, level)' docs/books/**/*.md
+mq '.h | let link = to_link("#" + to_text(self), to_text(self), "") | let level = .h.level | if (!is_none(level)): to_md_list(link, level)' docs/books/**/*.md
 # String Interpolation
-$ mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
+mq 'let name = "Alice" | let age = 30 | s"Hello, my name is ${name} and I am ${age} years old."'
 # Merging Multiple Files
-$ mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
+mq -S 's"\n${__FILE__}\n"' 'identity()' docs/books/**/**.md
 # Extract all code blocks from an HTML file
-$ mq '.code' example.html
+mq '.code' example.html
 # Convert HTML to Markdown and filter headers
-$ mq 'select(.h1 || .h2)' example.html
+mq 'select(.h1 || .h2)' example.html
 ```
 
 ### Using with markitdown
@@ -276,10 +272,9 @@ You can combine `mq` with [markitdown](https://github.com/microsoft/markitdown) 
 
 ```sh
 # Extract code blocks from markdown
-$ markitdown https://github.com/harehare/mq | mq '.code'
-
+markitdown https://github.com/harehare/mq | mq '.code'
 # Extract table from markdown
-$ markitdown test.xlsx | mq '.[][]'
+markitdown test.xlsx | mq '.[][]'
 ```
 
 ## Support

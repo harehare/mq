@@ -14,7 +14,7 @@
       ],
       "outFiles": ["${workspaceFolder}/editors/vscode/dist/**/*.js"],
       "env": {
-        "_MQ_DEBUG_BIN": "mq"
+        "_MQ_DEBUG_BIN": "${workspaceFolder}/target/debug/mq"
       }
     },
     {
