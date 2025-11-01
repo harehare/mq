@@ -3036,13 +3036,6 @@ mod tests {
             RuntimeValue::String("test1".to_string()),
             RuntimeValue::String("test2".to_string()),
         ])]))]
-    #[case::compact_error(vec!["test".to_string().into()],
-        vec![
-            ast_call("compact", SmallVec::new())
-        ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
-                                                     name: "compact".to_string(),
-                                                     args: vec!["test".to_string().into()]})))]
     #[case::text_selector(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
         vec![
             ast_node(ast::Expr::Selector(ast::Selector::Text)),

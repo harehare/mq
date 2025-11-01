@@ -1066,17 +1066,14 @@ define_builtin!(
 define_builtin!(
     COMPACT,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
             std::mem::take(array)
                 .into_iter()
                 .filter(|v| !v.is_none())
                 .collect::<Vec<_>>(),
         )),
-        [a] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a)],
-        )),
+        [a] => Ok(std::mem::take(a)),
         _ => unreachable!(),
     }
 );
