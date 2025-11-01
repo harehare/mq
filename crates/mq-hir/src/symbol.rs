@@ -77,6 +77,11 @@ impl Symbol {
     }
 
     #[inline(always)]
+    pub fn is_import(&self) -> bool {
+        matches!(self.kind, SymbolKind::Import(_))
+    }
+
+    #[inline(always)]
     pub fn is_parameter(&self) -> bool {
         matches!(self.kind, SymbolKind::Parameter)
     }
