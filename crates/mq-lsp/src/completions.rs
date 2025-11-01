@@ -40,27 +40,10 @@ pub fn response(
                     .find_symbol_in_position(*source_id, before_pos)
                     .and_then(|(_, symbol)| {
                         // Check if this is a QualifiedAccess (the value contains the module name)
-                        if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess) {
+                        if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess)
+                            || symbol.is_ident()
+                        {
                             // Get the module name from the QualifiedAccess value
-                            let module_name = symbol.value.as_ref()?;
-
-                            // Find the Module symbol with this name in the current scope
-                            let hir_guard = hir.read().unwrap();
-                            for (_, mod_symbol) in hir_guard.symbols() {
-                                if mod_symbol.is_module()
-                                    && mod_symbol.value.as_ref() == Some(module_name)
-                                    && mod_symbol.scope == symbol.scope
-                                    && let mq_hir::SymbolKind::Module(module_source_id) =
-                                        mod_symbol.kind
-                                {
-                                    return Some(
-                                        hir_guard.find_symbols_in_module(module_source_id),
-                                    );
-                                }
-                            }
-                            None
-                        } else if symbol.is_ident() {
-                            // Get the module name from the Ident
                             let module_name = symbol.value.as_ref()?;
 
                             // Find the Module symbol with this name in the current scope
