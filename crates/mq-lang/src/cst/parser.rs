@@ -657,6 +657,13 @@ impl<'a> Parser<'a> {
                     NodeKind::Token,
                 )?);
 
+                if let Some(next_token) = self.tokens.peek()
+                    && !matches!(next_token.kind, TokenKind::Ident(_))
+                {
+                    node.children = children;
+                    return Ok(Shared::new(node));
+                }
+
                 // Add identifier
                 children.push(
                     self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?,
@@ -6672,6 +6679,40 @@ mod tests {
                         Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::qualified_access::empty(
+        vec![
+            Shared::new(token(TokenKind::Ident("mod1".into()))),
+            Shared::new(token(TokenKind::DoubleColon)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::QualifiedAccess,
+                    token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::DoubleColon))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
