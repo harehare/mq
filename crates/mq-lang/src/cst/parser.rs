@@ -633,7 +633,7 @@ impl<'a> Parser<'a> {
     fn parse_ident(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next().unwrap();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
 
         // Check for qualified access (module::function, module::value, or module::module2::method)
         if let Some(next_token) = self.tokens.peek()
