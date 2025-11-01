@@ -72,6 +72,7 @@ enum OutputFormat {
     Html,
     Text,
     Json,
+    None,
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
@@ -635,6 +636,7 @@ impl Cli {
                     .write_all(markdown.to_json()?.as_bytes())
                     .map_err(|e| miette!(e))?;
             }
+            OutputFormat::None => {}
         }
 
         if !self.output.unbuffered {
