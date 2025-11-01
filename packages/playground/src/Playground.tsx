@@ -589,7 +589,7 @@ export const Playground = () => {
     });
 
     monaco.languages.registerCompletionItemProvider("mq", {
-      triggerCharacters: [" ", "|"],
+      triggerCharacters: [" ", "|", ":"],
       provideCompletionItems: async (model, position) => {
         const values = await mq.definedValues("");
         const wordRange = model.getWordUntilPosition(position);
