@@ -42,8 +42,15 @@ pub fn response(
                             for (_, mod_symbol) in hir_guard.symbols() {
                                 if mod_symbol.is_module()
                                     && mod_symbol.value.as_ref() == Some(module_name)
-                                    && mod_symbol.scope == symbol.scope
                                     && let mq_hir::SymbolKind::Module(module_source_id) =
+                                        mod_symbol.kind
+                                {
+                                    return Some(
+                                        hir_guard.find_symbols_in_module(module_source_id),
+                                    );
+                                } else if mod_symbol.is_import()
+                                    && mod_symbol.value.as_ref() == Some(module_name)
+                                    && let mq_hir::SymbolKind::Import(module_source_id) =
                                         mod_symbol.kind
                                 {
                                     return Some(
@@ -212,18 +219,15 @@ mod tests {
         let url = Url::parse("file:///test.mql").unwrap();
 
         // Create a module with functions
-        let code = "module math: def add(a, b): a + b; def sub(a, b): a - b; end | math::a";
+        let code = "module math: def add(a, b): a + b; def sub(a, b): a - b; end | math::";
         let (source_id, _) = hir.add_code(Some(url.clone()), code);
 
         source_map.insert(url.to_string(), source_id);
 
-        // Position after "math::" (line 0, character after "::")
-        // The code is: "module math: def add(a, b): a + b; def sub(a, b): a - b; end | math::a"
-        // We want completion at position right after "::"
         let result = response(
             Arc::new(RwLock::new(hir)),
             url,
-            Position::new(0, 73), // Position right after "math::", before "a"
+            Position::new(0, 70), // Position right after "math::", before "a"
             source_map,
         );
 
