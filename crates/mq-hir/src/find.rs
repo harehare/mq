@@ -25,7 +25,7 @@ impl Hir {
                         && symbol
                             .source
                             .text_range
-                            .clone()
+                            .as_ref()
                             .unwrap()
                             .contains(&position)
                 })
