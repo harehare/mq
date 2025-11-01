@@ -31,7 +31,7 @@ export interface Options {
     linkUrlStyle: 'angle' | 'none' | null,
 }
 
-export function definedValues(code: string): ReadonlyArray<DefinedValue>;
+export function definedValues(code: string, module?: string): ReadonlyArray<DefinedValue>;
 export function diagnostics(code: string): ReadonlyArray<Diagnostic>;
 export function run(code: string, content: string, options: Options): string;
 "#;
@@ -41,6 +41,7 @@ pub enum DefinedValueType {
     Function,
     Selector,
     Variable,
+    Module,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -283,47 +284,69 @@ pub fn diagnostics(code: &str) -> JsValue {
 }
 
 #[wasm_bindgen(js_name=definedValues, skip_typescript)]
-pub fn defined_values(code: &str) -> Result<JsValue, JsValue> {
+pub fn defined_values(code: &str, module: Option<String>) -> Result<JsValue, JsValue> {
     let mut hir = mq_hir::Hir::default();
     hir.add_code(None, code);
 
+    // If module is specified, find the module symbol
+    let module_id = if let Some(ref module_name) = module {
+        hir.symbols().find_map(|(id, symbol)| {
+            if symbol.is_module()
+                && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name.as_str())
+            {
+                Some(id)
+            } else {
+                None
+            }
+        })
+    } else {
+        None
+    };
+
     let symbols = hir
         .symbols()
-        .filter_map(|(_, symbol)| match symbol {
-            mq_hir::Symbol {
-                kind: mq_hir::SymbolKind::Function(params),
-                value: Some(value),
-                doc,
-                ..
-            } => Some(DefinedValue {
-                name: value.to_string(),
-                args: Some(params.iter().map(|param| param.to_string()).collect()),
-                doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
-                value_type: DefinedValueType::Function,
-            }),
-            mq_hir::Symbol {
-                kind: mq_hir::SymbolKind::Selector,
-                value: Some(value),
-                doc,
-                ..
-            } => Some(DefinedValue {
-                name: value.to_string(),
-                args: None,
-                doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
-                value_type: DefinedValueType::Selector,
-            }),
-            mq_hir::Symbol {
-                kind: mq_hir::SymbolKind::Variable,
-                value: Some(value),
-                doc,
-                ..
-            } => Some(DefinedValue {
-                name: value.to_string(),
-                args: None,
-                doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
-                value_type: DefinedValueType::Variable,
-            }),
-            _ => None,
+        .filter_map(|(_symbol_id, symbol)| {
+            // Filter by module if specified
+            if module_id.is_some() && symbol.parent != module_id {
+                return None;
+            }
+
+            match symbol {
+                mq_hir::Symbol {
+                    kind: mq_hir::SymbolKind::Function(params),
+                    value: Some(value),
+                    doc,
+                    ..
+                } => Some(DefinedValue {
+                    name: value.to_string(),
+                    args: Some(params.iter().map(|param| param.to_string()).collect()),
+                    doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
+                    value_type: DefinedValueType::Function,
+                }),
+                mq_hir::Symbol {
+                    kind: mq_hir::SymbolKind::Selector,
+                    value: Some(value),
+                    doc,
+                    ..
+                } => Some(DefinedValue {
+                    name: value.to_string(),
+                    args: None,
+                    doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
+                    value_type: DefinedValueType::Selector,
+                }),
+                mq_hir::Symbol {
+                    kind: mq_hir::SymbolKind::Variable,
+                    value: Some(value),
+                    doc,
+                    ..
+                } => Some(DefinedValue {
+                    name: value.to_string(),
+                    args: None,
+                    doc: doc.iter().map(|(_, doc)| doc.to_string()).join("\n"),
+                    value_type: DefinedValueType::Variable,
+                }),
+                _ => None,
+            }
         })
         .collect::<Vec<_>>();
 
@@ -424,5 +447,64 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_script_format_invalid() {
         assert!(format("x=>").is_err());
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    fn test_defined_values_without_module() {
+        let code = r#"
+            def foo(x): x | upcase();
+            def bar(y): y | downcase();
+            let $var = 42;
+        "#;
+
+        let result = defined_values(code, None).unwrap();
+        let values: Vec<DefinedValue> = serde_wasm_bindgen::from_value(result).unwrap();
+
+        // Should return all defined values
+        assert!(values.iter().any(|v| v.name == "foo"));
+        assert!(values.iter().any(|v| v.name == "bar"));
+        assert!(values.iter().any(|v| v.name == "$var"));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    fn test_defined_values_with_module() {
+        let code = r#"
+            module mymodule:
+                def module_func(x): x | upcase();
+                def another_func(y): y | downcase();
+                let $module_var = 100;
+            end
+
+            def top_level_func(z): z;
+            let $top_level_var = 42;
+        "#;
+
+        let result = defined_values(code, Some("mymodule".to_string())).unwrap();
+        let values: Vec<DefinedValue> = serde_wasm_bindgen::from_value(result).unwrap();
+
+        // Should return only values from mymodule
+        assert!(values.iter().any(|v| v.name == "module_func"));
+        assert!(values.iter().any(|v| v.name == "another_func"));
+        assert!(values.iter().any(|v| v.name == "$module_var"));
+
+        // Should NOT return top-level values
+        assert!(!values.iter().any(|v| v.name == "top_level_func"));
+        assert!(!values.iter().any(|v| v.name == "$top_level_var"));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    fn test_defined_values_with_nonexistent_module() {
+        let code = r#"
+            def foo(x): x | upcase();
+        "#;
+
+        let result = defined_values(code, Some("nonexistent".to_string())).unwrap();
+        let values: Vec<DefinedValue> = serde_wasm_bindgen::from_value(result).unwrap();
+
+        // Should return empty array since module doesn't exist
+        assert!(!values.is_empty());
     }
 }
