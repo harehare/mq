@@ -6,7 +6,10 @@ use crate::DebuggerHandler;
 use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
-use crate::{IdentWithToken, eval::runtime_value::ModuleEnv};
+use crate::{
+    IdentWithToken,
+    eval::{env::EnvError, runtime_value::ModuleEnv},
+};
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
 
@@ -421,6 +424,10 @@ impl Evaluator {
     ) -> Result<RuntimeValue, EvalError> {
         let module_name_to_use = &ident.name.as_str();
 
+        if let Ok(value) = resolve(module_name_to_use, env) {
+            return Ok(value);
+        }
+
         // Create a new environment for the module exports
         let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
@@ -506,6 +513,8 @@ impl Evaluator {
                         &module_name_to_use,
                         module_env,
                     )))
+                } else if let Ok(value) = resolve(&module_name, env) {
+                    Ok(value)
                 } else {
                     Err(EvalError::ModuleLoadError(module::ModuleError::NotFound(
                         Cow::Owned(module_name),
@@ -1352,6 +1361,18 @@ fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeVal
     #[cfg(feature = "sync")]
     {
         env.write().unwrap().define(ident, runtime_value);
+    }
+}
+
+#[inline(always)]
+fn resolve(ident: &str, env: &Shared<SharedCell<Env>>) -> Result<RuntimeValue, EnvError> {
+    #[cfg(not(feature = "sync"))]
+    {
+        env.borrow().resolve(ident.into())
+    }
+    #[cfg(feature = "sync")]
+    {
+        env.read().unwrap().resolve(ident.into())
     }
 }
 
