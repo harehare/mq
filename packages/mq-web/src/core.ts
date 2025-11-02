@@ -6,7 +6,7 @@ interface WasmModule {
   toAst: (code: string) => string;
   format: (code: string) => string;
   diagnostics: (code: string) => readonly Diagnostic[];
-  definedValues: (code: string) => readonly DefinedValue[];
+  definedValues: (code: string, module?: string) => readonly DefinedValue[];
 }
 
 let wasmModule: WasmModule | null = null;
@@ -85,8 +85,9 @@ export async function diagnostics(
  * Get defined values from mq code
  */
 export async function definedValues(
-  code: string
+  code: string,
+  module?: string
 ): Promise<ReadonlyArray<DefinedValue>> {
   const wasm = await initWasm();
-  return await wasm.definedValues(code);
+  return await wasm.definedValues(code, module);
 }

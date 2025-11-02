@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     open: "/playground.html",
     fs: {
-      allow: [".", "../packages"],
+      allow: ["../..", ".", "../packages"],
     },
   },
 });

@@ -591,8 +591,17 @@ export const Playground = () => {
     monaco.languages.registerCompletionItemProvider("mq", {
       triggerCharacters: [" ", "|", ":"],
       provideCompletionItems: async (model, position) => {
-        const values = await mq.definedValues("");
         const wordRange = model.getWordUntilPosition(position);
+
+        let moduleName: string | undefined = undefined;
+        const lineContent = model.getLineContent(position.lineNumber);
+        const uptoCursor = lineContent.slice(0, position.column - 1);
+        const moduleMatch = uptoCursor.match(/([a-zA-Z_][\w]*)::/);
+        if (moduleMatch) {
+          moduleName = moduleMatch[1];
+        }
+
+        const values = await mq.definedValues(model.getValue(), moduleName);
         const suggestions: languages.CompletionItem[] = values.map((value) => {
           return {
             label: value.name,
@@ -731,6 +740,22 @@ export const Playground = () => {
             detail: "Match expression",
             documentation:
               "Creates a match expression that destructures the value and matches it against patterns",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "module",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "module ${1:name}:\n  ${2:body}\nend",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Module declaration",
+            documentation:
+              "Creates a module that contains a set of related functions and variables.",
             range: {
               startLineNumber: position.lineNumber,
               startColumn: wordRange.startColumn,
