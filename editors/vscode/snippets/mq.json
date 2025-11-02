@@ -47,5 +47,12 @@
             "match (${1:value}):\n  | ${2:pattern}: ${3:body}\nend"
         ],
         "description": "Match expression with patterns"
+    },
+    "module": {
+        "prefix": "module",
+        "body": [
+            "module ${1:name}:\n  ${2:body}\nend"
+        ],
+        "description": "Create a module that contains related functions and variables"
     }
 }
