@@ -551,11 +551,11 @@ mod test {
         "source code"
     )]
     #[case::module_not_found(
-        InnerError::Module(ModuleError::NotFound("test".to_string())),
+        InnerError::Module(ModuleError::NotFound(Cow::Borrowed("test"))),
         "source code"
     )]
     #[case::module_io_error(
-        InnerError::Module(ModuleError::IOError("test".to_string())),
+        InnerError::Module(ModuleError::IOError(Cow::Borrowed("test"))),
         "source code"
     )]
     #[case::module_lexer_error(
@@ -824,12 +824,8 @@ mod test {
             module_id: ArenaId::new(0),
         }, "ENV".into()))
     )]
-    #[case::module_not_found(
-        InnerError::Module(ModuleError::NotFound("mod".to_string()))
-    )]
-    #[case::module_io_error(
-        InnerError::Module(ModuleError::IOError("io".to_string()))
-    )]
+    #[case::module_not_found(InnerError::Module(ModuleError::NotFound(Cow::Borrowed("mod"))))]
+    #[case::module_io_error(InnerError::Module(ModuleError::IOError(Cow::Borrowed("io"))))]
     #[case::module_lexer_error_unexpected_token(
         InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(Token {
             range: Range::default(),

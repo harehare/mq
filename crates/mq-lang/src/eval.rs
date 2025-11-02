@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
 #[cfg(feature = "debugger")]
@@ -506,7 +508,7 @@ impl Evaluator {
                     )))
                 } else {
                     Err(EvalError::ModuleLoadError(module::ModuleError::NotFound(
-                        module_name,
+                        Cow::Owned(module_name),
                     )))
                 }
             }
@@ -1359,6 +1361,7 @@ mod tests {
     use std::vec;
 
     use crate::ast::node::{Args, IdentWithToken};
+    use crate::eval::module::ModuleError;
     use crate::number::{INFINITE, NAN};
     use crate::range::Range;
     use crate::{AstExpr, AstNode, ModuleLoader, token_alloc};
@@ -5677,6 +5680,26 @@ mod tests {
                 vec![RuntimeValue::String("".to_string())].into_iter()
             ),
             Ok(vec![RuntimeValue::Number(30.into())])
+        );
+    }
+
+    #[test]
+    fn test_import_error() {
+        let loader = ModuleLoader::default();
+        let program = vec![Shared::new(ast::Node {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Import(ast::Literal::String(
+                "not_found".to_string(),
+            ))),
+        })];
+        assert_eq!(
+            Evaluator::new(loader, token_arena()).eval(
+                &program,
+                vec![RuntimeValue::String("".to_string())].into_iter()
+            ),
+            Err(InnerError::Eval(EvalError::ModuleLoadError(
+                ModuleError::IOError(Cow::Borrowed("Module `not_found.mq` not found"))
+            )))
         );
     }
 

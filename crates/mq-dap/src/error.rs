@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use dap::prelude::Command;
 use thiserror::Error;
 
@@ -6,7 +8,7 @@ pub enum MqAdapterError {
     #[error("Unhandled command: {0:?}")]
     UnhandledCommand(Box<Command>),
     #[error("Protocol error: {0}")]
-    ProtocolError(String),
+    ProtocolError(Cow<'static, str>),
     #[error("Failed to deserialize launch arguments: {0}")]
     LaunchArgumentsError(serde_json::Error),
     #[error("Missing launch arguments")]
@@ -16,5 +18,5 @@ pub enum MqAdapterError {
     #[error("Query execution error: {0}")]
     QueryError(String),
     #[error("Evaluation error: {0}")]
-    EvaluationError(String),
+    EvaluationError(Cow<'static, str>),
 }

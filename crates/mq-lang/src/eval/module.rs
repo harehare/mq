@@ -20,9 +20,9 @@ const DEFAULT_PATHS: [&str; 4] = [
 #[derive(Debug, PartialEq, Error)]
 pub enum ModuleError {
     #[error("Module `{0}` not found")]
-    NotFound(String),
+    NotFound(Cow<'static, str>),
     #[error("IO error: {0}")]
-    IOError(String),
+    IOError(Cow<'static, str>),
     #[error(transparent)]
     LexerError(#[from] LexerError),
     #[error(transparent)]
@@ -206,8 +206,9 @@ impl ModuleLoader {
                 .to_string())
         } else {
             let file_path = Self::find(module_name, self.search_paths.clone())
-                .map_err(|e| ModuleError::IOError(e.to_string()))?;
-            fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(e.to_string()))
+                .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))?;
+            fs::read_to_string(&file_path)
+                .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
         }
     }
 
@@ -275,7 +276,7 @@ impl ModuleLoader {
                 PathBuf::from(path).join(Self::module_id(name).as_ref())
             })
             .find(|p| p.is_file())
-            .ok_or_else(|| ModuleError::NotFound(Self::module_id(name).to_string()))
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_id(name).to_string())))
     }
 
     fn module_id(name: &str) -> Cow<'static, str> {

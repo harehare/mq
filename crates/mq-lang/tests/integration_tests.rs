@@ -1708,10 +1708,11 @@ fn test_eval(
           Ok(vec![RuntimeValue::Number(42.into())].into()))]
 #[case::qualified_access_to_module("
 module math:
-  def add_one(x):
-    x + 1;
+  let y = 1
+  | def add_one(x):
+    x + y;
   def add_two(x):
-    x + 2;
+    x + y + 1;
 end
 | math::add_one(41) + math::add_two(40)",
           vec![RuntimeValue::Number(0.into())],

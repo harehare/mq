@@ -7,6 +7,7 @@ use dap::responses::{
 };
 use dap::types::Breakpoint;
 use mq_lang::Shared;
+use std::borrow::Cow;
 use std::io;
 use std::path::PathBuf;
 use std::thread;
@@ -271,9 +272,9 @@ impl MqAdapter {
         let mut engine = if let Some(ref context) = self.current_debug_context {
             mq_lang::Engine::default().switch_env(Shared::clone(&context.env))
         } else {
-            return Err(Box::new(MqAdapterError::EvaluationError(
-                "Current context not found".to_string(),
-            )) as Box<dyn std::error::Error>);
+            return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
+                "Current context not found",
+            ))) as Box<dyn std::error::Error>);
         };
 
         engine
@@ -281,7 +282,8 @@ impl MqAdapter {
             .map_err(|e| {
                 let error_msg = format!("Evaluation error: {}", e);
                 error!(error = %error_msg);
-                Box::new(MqAdapterError::EvaluationError(error_msg)) as Box<dyn std::error::Error>
+                Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg)))
+                    as Box<dyn std::error::Error>
             })
     }
 
@@ -549,9 +551,9 @@ impl MqAdapter {
 
                 let rsp = req.success(ResponseBody::Disconnect);
                 server.respond(rsp)?;
-                return Err(Box::new(MqAdapterError::ProtocolError(
-                    "Shutdown".to_string(),
-                )));
+                return Err(Box::new(MqAdapterError::ProtocolError(Cow::Borrowed(
+                    "Shutdown",
+                ))));
             }
             Command::Evaluate(args) => {
                 debug!(?args, "Received Evaluate request");
