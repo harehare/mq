@@ -1641,6 +1641,7 @@ else:
 test
 else:
 test2
+end
 "#,
         r#"while (condition()):
   let x = 1
@@ -1648,6 +1649,7 @@ test2
       test
     else:
       test2
+end
 "#
     )]
     #[case::let_with_until_multiline(
