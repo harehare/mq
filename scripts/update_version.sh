@@ -5,12 +5,8 @@ export README="../README.md"
 export INSTALL_DOC="../docs/books/src/start/install.md"
 
 # Update Cargo.toml files
-for crate in ../crates/*; do
-    if [ -f "$crate/Cargo.toml" ]; then
-        tmpfile=$(mktemp)
-        mq -I text 'include "update_version" | update_crate_version()' "$crate/Cargo.toml" > "$tmpfile" && mv "$tmpfile" "$crate/Cargo.toml"
-    fi
-done
+tmpfile=$(mktemp)
+mq -I text 'include "update_version" | update_crate_version()' "../Cargo.toml" > "$tmpfile" && mv "$tmpfile" "Cargo.toml"
 
 # Update package.json files
 for dir in ../packages ../editors; do

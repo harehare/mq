@@ -1,8 +1,5 @@
 [package]
-authors = ["Takahiro Sato <harehare1110@gmail.com>"]
-description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
-documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
-edition = "2024"
+edition.workspace = true
 exclude = [
   ".github",
   "editors/*",
@@ -14,13 +11,13 @@ exclude = [
   "docs",
   "Dockerfile",
 ]
-homepage = "https://mqlang.org/"
-keywords = ["markdown", "jq", "query"]
-license-file = "LICENSE"
+homepage.workspace = true
+keywords.workspace = true
+license-file.workspace = true
 name = "mq-cli"
-readme = "README.md"
-repository = "https://github.com/harehare/mq"
-version = "0.4.3"
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]

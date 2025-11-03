@@ -1,9 +1,12 @@
 [package]
-description = "Model Context Protocol (MCP) server implementation for mq"
-edition = "2024"
-license = "MIT"
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license-file.workspace = true
 name = "mq-mcp"
-version = "0.4.3"
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 miette.workspace = true
