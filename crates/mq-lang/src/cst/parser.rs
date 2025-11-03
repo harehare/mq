@@ -219,28 +219,39 @@ impl<'a> Parser<'a> {
                         children: Vec::new(),
                     }));
 
-                    if root {
-                        leading_trivia = self.parse_leading_trivia();
+                    leading_trivia = self.parse_leading_trivia();
 
-                        if let Some(token) = self.tokens.clone().peek() {
-                            if matches!(token.kind, TokenKind::Eof) {
+                    if let Some(token) = self.tokens.clone().peek() {
+                        if matches!(token.kind, TokenKind::Eof) {
+                            if root {
                                 break;
-                            } else if matches!(token.kind, TokenKind::Pipe) {
+                            } else {
+                                // For non-root contexts (like def, module), add Eof as a child node
                                 self.tokens.next();
                                 nodes.push(Shared::new(Node {
-                                    kind: NodeKind::Token,
+                                    kind: NodeKind::Eof,
                                     token: Some(Shared::clone(token)),
-
                                     leading_trivia,
-                                    trailing_trivia: self.parse_trailing_trivia(),
+                                    trailing_trivia: Vec::new(),
                                     children: Vec::new(),
                                 }));
-                                leading_trivia = self.parse_leading_trivia();
-                                continue;
-                            } else {
-                                self.errors
-                                    .report(ParseError::UnexpectedToken(Shared::clone(token)));
+                                break;
                             }
+                        } else if root && matches!(token.kind, TokenKind::Pipe) {
+                            self.tokens.next();
+                            nodes.push(Shared::new(Node {
+                                kind: NodeKind::Token,
+                                token: Some(Shared::clone(token)),
+
+                                leading_trivia,
+                                trailing_trivia: self.parse_trailing_trivia(),
+                                children: Vec::new(),
+                            }));
+                            leading_trivia = self.parse_leading_trivia();
+                            continue;
+                        } else if root {
+                            self.errors
+                                .report(ParseError::UnexpectedToken(Shared::clone(token)));
                         }
                     }
 
