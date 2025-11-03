@@ -160,7 +160,7 @@ impl<'a> Parser<'a> {
                     range: _,
                     kind: TokenKind::Eof,
                     ..
-                } => {
+                } if root => {
                     if !nodes.is_empty() {
                         self.tokens.next();
 

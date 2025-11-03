@@ -1293,11 +1293,11 @@ else:
         "def test():
         test1
         |test2
-        |test3",
+        |test3;",
         "def test():
   test1
   | test2
-  | test3"
+  | test3;"
     )]
     #[case("test()|test2()", "test() | test2()")]
     #[case(
