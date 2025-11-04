@@ -128,6 +128,15 @@ impl Formatter {
             mq_lang::CstNodeKind::Include => {
                 self.format_include(&node, indent_level_consider_new_line)
             }
+            mq_lang::CstNodeKind::Import => {
+                self.format_import(&node, indent_level_consider_new_line)
+            }
+            mq_lang::CstNodeKind::Module => {
+                self.format_module(&node, indent_level_consider_new_line)
+            }
+            mq_lang::CstNodeKind::QualifiedAccess => {
+                self.format_qualified_access(&node, indent_level_consider_new_line)
+            }
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
@@ -173,6 +182,44 @@ impl Formatter {
 
         node.children.iter().for_each(|child| {
             self.format_node(mq_lang::Shared::clone(child), indent_level);
+        });
+    }
+
+    fn format_import(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+        self.append_space();
+
+        for (i, child) in node.children.iter().enumerate() {
+            if i > 0 {
+                self.append_space();
+            }
+            self.format_node(mq_lang::Shared::clone(child), indent_level);
+        }
+    }
+
+    fn format_module(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        self.append_indent(indent_level);
+        self.output.push_str(&node.to_string());
+        self.append_space();
+
+        node.children.iter().for_each(|child| {
+            self.format_node(mq_lang::Shared::clone(child), indent_level + 1);
+        });
+    }
+
+    fn format_qualified_access(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        indent_level: usize,
+    ) {
+        self.append_indent(indent_level);
+        // Output module name
+        self.output.push_str(&node.to_string());
+
+        // Output children (::, identifier, optional args)
+        node.children.iter().for_each(|child| {
+            self.format_node(mq_lang::Shared::clone(child), 0);
         });
     }
 
@@ -989,7 +1036,13 @@ impl Formatter {
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
                 mq_lang::TokenKind::None => self.output.push_str(&token.to_string()),
-                _ => unreachable!(),
+                other => {
+                    eprintln!(
+                        "Warning: Unexpected token kind in append_literal: {:?}. Inserting placeholder.",
+                        other
+                    );
+                    self.output.push_str(&other.to_string());
+                }
             }
         }
     }
@@ -1240,11 +1293,11 @@ else:
         "def test():
         test1
         |test2
-        |test3",
+        |test3;",
         "def test():
   test1
   | test2
-  | test3"
+  | test3;"
     )]
     #[case("test()|test2()", "test() | test2()")]
     #[case(
@@ -1588,6 +1641,7 @@ else:
 test
 else:
 test2
+end
 "#,
         r#"while (condition()):
   let x = 1
@@ -1595,6 +1649,7 @@ test2
       test
     else:
       test2
+end
 "#
     )]
     #[case::let_with_until_multiline(
@@ -1884,6 +1939,16 @@ end"#
         r#"s"\\[${phrase}\\]\\(""#
     )]
     #[case::interpolated_string_with_backslash(r#"s"\\test""#, r#"s"\\test""#)]
+    #[case::module_with_body(
+        r#"module test:
+import "foo.mq"
+| def main(): test();
+end"#,
+        r#"module test:
+  import "foo.mq"
+  | def main(): test();
+end"#
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);

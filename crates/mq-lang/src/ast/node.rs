@@ -54,6 +54,7 @@ impl Node {
             | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Until(_, program)
+            | Expr::Module(_, program)
             | Expr::Foreach(_, _, program) => {
                 let start = program
                     .first()
@@ -116,7 +117,9 @@ impl Node {
             | Expr::Ident(_)
             | Expr::Selector(_)
             | Expr::Include(_)
+            | Expr::Import(_)
             | Expr::InterpolatedString(_)
+            | Expr::QualifiedAccess(_, _)
             | Expr::Nodes
             | Expr::Self_
             | Expr::Break
@@ -263,6 +266,19 @@ pub enum Literal {
     None,
 }
 
+impl From<&str> for Literal {
+    fn from(s: &str) -> Self {
+        Literal::String(s.to_owned())
+    }
+}
+
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone)]
+pub enum AccessTarget {
+    Call(IdentWithToken, Args),
+    Ident(IdentWithToken),
+}
+
 impl Display for Literal {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
@@ -294,6 +310,9 @@ pub enum Expr {
     If(Branches),
     Match(Shared<Node>, MatchArms),
     Include(Literal),
+    Import(Literal),
+    Module(IdentWithToken, Program),
+    QualifiedAccess(Vec<IdentWithToken>, AccessTarget),
     Self_,
     Nodes,
     Paren(Shared<Node>),

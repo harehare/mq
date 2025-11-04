@@ -24,12 +24,67 @@ pub fn response(
                 )
                 .map(|(scope_id, _)| scope_id)
                 .unwrap_or_else(|| hir.read().unwrap().find_scope_by_source(source_id));
-            let symbols = itertools::concat(vec![
-                hir.read().unwrap().find_symbols_in_scope(scope_id),
+
+            let module_completion = if position.character >= 3 {
+                let before_pos = mq_lang::Position::new(
+                    position.line + 1,
+                    (position.character.saturating_sub(3)) as usize,
+                );
+
                 hir.read()
                     .unwrap()
-                    .find_symbols_in_source(hir.read().unwrap().builtin.source_id),
-            ]);
+                    .find_symbol_in_position(*source_id, before_pos)
+                    .and_then(|(_, symbol)| {
+                        if matches!(symbol.kind, mq_hir::SymbolKind::QualifiedAccess) {
+                            let module_name = symbol.value.as_ref()?;
+
+                            let hir_guard = hir.read().unwrap();
+                            for (_, mod_symbol) in hir_guard.symbols() {
+                                if mod_symbol.is_module()
+                                    && mod_symbol.value.as_ref() == Some(module_name)
+                                    && let mq_hir::SymbolKind::Module(module_source_id) =
+                                        mod_symbol.kind
+                                {
+                                    return Some(
+                                        hir_guard.find_symbols_in_module(module_source_id),
+                                    );
+                                } else if mod_symbol.is_import()
+                                    && mod_symbol.value.as_ref() == Some(module_name)
+                                    && let mq_hir::SymbolKind::Import(module_source_id) =
+                                        mod_symbol.kind
+                                {
+                                    return Some(
+                                        hir_guard.find_symbols_in_module(module_source_id),
+                                    );
+                                }
+                            }
+                            None
+                        } else if symbol.is_module() {
+                            // Direct module reference
+                            if let mq_hir::SymbolKind::Module(module_source_id) = symbol.kind {
+                                Some(hir.read().unwrap().find_symbols_in_module(module_source_id))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+            } else {
+                None
+            };
+
+            let symbols = if let Some(module_symbols) = module_completion {
+                module_symbols
+            } else {
+                let hir_guard = hir.read().unwrap();
+
+                itertools::concat(vec![
+                    hir_guard.find_symbols_in_scope(scope_id),
+                    hir_guard.find_symbols_in_source(hir_guard.builtin.source_id),
+                ])
+            };
+
             Some(CompletionResponse::Array(
                 symbols
                     .iter()
@@ -132,6 +187,97 @@ mod tests {
 
         if let Some(CompletionResponse::Array(items)) = result {
             assert!(items.iter().any(|item| item.label == "add"));
+        }
+    }
+
+    #[test]
+    fn test_completion_response_returns_symbols_in_module() {
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let url = Url::parse("file:///unknown.mql").unwrap();
+        let (source_id, _) = hir.add_code(Some(url.clone()), "module mod1: def func1(): 1; end");
+
+        source_map.insert(url.to_string(), source_id);
+
+        let result = response(
+            Arc::new(RwLock::new(hir)),
+            url,
+            Position::new(0, 0),
+            source_map,
+        );
+        assert!(result.is_some());
+
+        if let Some(CompletionResponse::Array(items)) = result {
+            assert!(items.iter().any(|item| item.label == "func1"));
+        }
+    }
+
+    #[test]
+    fn test_completion_qualified_access() {
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let url = Url::parse("file:///test.mql").unwrap();
+
+        // Create a module with functions
+        let code = "module math: def add(a, b): a + b; def sub(a, b): a - b; end | math::";
+        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+
+        source_map.insert(url.to_string(), source_id);
+
+        let result = response(
+            Arc::new(RwLock::new(hir)),
+            url,
+            Position::new(0, 70), // Position right after "math::", before "a"
+            source_map,
+        );
+
+        assert!(result.is_some());
+
+        if let Some(CompletionResponse::Array(items)) = result {
+            // Should include functions from the math module
+            assert!(
+                items.iter().any(|item| item.label == "add"),
+                "Should include 'add' function"
+            );
+            assert!(
+                items.iter().any(|item| item.label == "sub"),
+                "Should include 'sub' function"
+            );
+
+            // Should NOT include builtin functions when in qualified access mode
+            assert!(
+                !items.iter().any(|item| item.label == "map"),
+                "Should not include builtin 'map' function"
+            );
+        }
+    }
+
+    #[test]
+    fn test_completion_qualified_access_with_nested_module() {
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let url = Url::parse("file:///test.mql").unwrap();
+
+        // Create a module with functions
+        let code = "module utils: def helper(): 1; end | utils::";
+        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+
+        source_map.insert(url.to_string(), source_id);
+
+        let result = response(
+            Arc::new(RwLock::new(hir)),
+            url,
+            Position::new(0, 46), // Position right after "utils::"
+            source_map,
+        );
+
+        assert!(result.is_some());
+
+        if let Some(CompletionResponse::Array(items)) = result {
+            assert!(
+                items.iter().any(|item| item.label == "helper"),
+                "Should include 'helper' function from utils module"
+            );
         }
     }
 }

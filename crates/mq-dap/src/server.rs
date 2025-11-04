@@ -1,4 +1,5 @@
 use dap::prelude::*;
+use std::borrow::Cow;
 use std::io::{self, BufReader, BufWriter};
 use tracing::{debug, error, info};
 
@@ -32,9 +33,9 @@ pub fn start() -> DynResult<()> {
     let req = match server.poll_request()? {
         Some(req) => req,
         None => {
-            return Err(Box::new(MqAdapterError::ProtocolError(
-                "Missing initialize request".to_string(),
-            )));
+            return Err(Box::new(MqAdapterError::ProtocolError(Cow::Borrowed(
+                "Missing initialize request",
+            ))));
         }
     };
 
@@ -51,9 +52,9 @@ pub fn start() -> DynResult<()> {
         server.respond(rsp)?;
         server.send_event(Event::Initialized)?;
     } else {
-        return Err(Box::new(MqAdapterError::ProtocolError(
-            "Expected initialize request".to_string(),
-        )));
+        return Err(Box::new(MqAdapterError::ProtocolError(Cow::Borrowed(
+            "Expected initialize request",
+        ))));
     }
 
     loop {

@@ -16,15 +16,15 @@ use std::{fs, path::PathBuf};
 #[command(name = "mq")]
 #[command(author = env!("CARGO_PKG_AUTHORS"))]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(after_help = "Examples:\n\n\
-    To filter markdown nodes:\n\
-    $ mq 'query' file.md\n\n\
-    To read query from file:\n\
-    $ mq -f 'file' file.md\n\n\
-    To start a REPL session:\n\
-    $ mq repl\n\n\
-    To format mq file:\n\
-    $ mq fmt --check file.mq")]
+#[command(after_help = "# Examples:\n\n\
+    ## To filter markdown nodes:\n\
+    mq 'query' file.md\n\n\
+    ## To read query from file:\n\
+    mq -f 'file' file.md\n\n\
+    ## To start a REPL session:\n\
+    mq repl\n\n\
+    ## To format mq file:\n\
+    mq fmt --check file.mq")]
 #[command(
     about = "mq is a markdown processor that can filter markdown nodes by using jq-like syntax.",
     long_about = None

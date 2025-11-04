@@ -34,6 +34,7 @@ pub enum SymbolKind {
     Else,
     Foreach,
     Function(Params),
+    Ident,
     If,
     Include(SourceId),
     Keyword,
@@ -54,6 +55,9 @@ pub enum SymbolKind {
     Until,
     Try,
     Catch,
+    Import(SourceId),
+    Module(SourceId),
+    QualifiedAccess,
 }
 
 impl Symbol {
@@ -65,6 +69,16 @@ impl Symbol {
     #[inline(always)]
     pub fn is_variable(&self) -> bool {
         matches!(self.kind, SymbolKind::Variable)
+    }
+
+    #[inline(always)]
+    pub fn is_module(&self) -> bool {
+        matches!(self.kind, SymbolKind::Module(_))
+    }
+
+    #[inline(always)]
+    pub fn is_import(&self) -> bool {
+        matches!(self.kind, SymbolKind::Import(_))
     }
 
     #[inline(always)]
@@ -80,6 +94,11 @@ impl Symbol {
     #[inline(always)]
     pub fn is_pattern_variable(&self) -> bool {
         matches!(self.kind, SymbolKind::PatternVariable)
+    }
+
+    #[inline(always)]
+    pub fn is_ident(&self) -> bool {
+        matches!(self.kind, SymbolKind::Ident)
     }
 
     #[inline(always)]

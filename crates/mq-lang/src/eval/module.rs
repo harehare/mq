@@ -19,10 +19,12 @@ const DEFAULT_PATHS: [&str; 4] = [
 
 #[derive(Debug, PartialEq, Error)]
 pub enum ModuleError {
+    #[error("Module `{0}` is already loaded")]
+    AlreadyLoaded(Cow<'static, str>),
     #[error("Module `{0}` not found")]
-    NotFound(String),
+    NotFound(Cow<'static, str>),
     #[error("IO error: {0}")]
-    IOError(String),
+    IOError(Cow<'static, str>),
     #[error(transparent)]
     LexerError(#[from] LexerError),
     #[error(transparent)]
@@ -127,20 +129,40 @@ impl ModuleLoader {
         module_name: &str,
         code: &str,
         token_arena: TokenArena,
-    ) -> Result<Option<Module>, ModuleError> {
+    ) -> Result<Module, ModuleError> {
         if self.loaded_modules.contains(module_name.into()) {
-            return Ok(None);
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(
+                module_name.to_string(),
+            )));
         }
 
         let module_id = self.loaded_modules.len().into();
-        self.loaded_modules.alloc(module_name.into());
         let mut program = Self::parse_program(code, module_id, token_arena)?;
 
-        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(&mut program);
+        self.load_from_ast(module_name, &mut program)
+    }
+
+    pub fn load_from_ast(
+        &mut self,
+        module_name: &str,
+        program: &mut Program,
+    ) -> Result<Module, ModuleError> {
+        if self.loaded_modules.contains(module_name.into()) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(
+                module_name.to_string(),
+            )));
+        }
+
+        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(program);
 
         let modules = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Include(_)))
+            .filter(|node| {
+                matches!(
+                    *node.expr,
+                    ast::Expr::Include(_) | ast::Expr::Module(_, _) | ast::Expr::Import(_)
+                )
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -156,25 +178,29 @@ impl ModuleLoader {
             .cloned()
             .collect::<Vec<_>>();
 
-        if program.len() != functions.len() + modules.len() + vars.len() {
+        let expected_len = functions.len() + modules.len() + vars.len();
+
+        if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
         }
 
-        Ok(Some(Module {
+        self.loaded_modules.alloc(module_name.into());
+
+        Ok(Module {
             name: module_name.to_string(),
             functions,
             modules,
             vars,
-        }))
+        })
     }
 
     pub fn load_from_file(
         &mut self,
-        module_name: &str,
+        module_path: &str,
         token_arena: TokenArena,
-    ) -> Result<Option<Module>, ModuleError> {
-        let program = self.read_file(module_name)?;
-        self.load(module_name, &program, token_arena)
+    ) -> Result<Module, ModuleError> {
+        let program = self.read_file(module_path)?;
+        self.load(module_path, &program, token_arena)
     }
 
     pub fn read_file(&self, module_name: &str) -> Result<String, ModuleError> {
@@ -186,12 +212,13 @@ impl ModuleLoader {
                 .to_string())
         } else {
             let file_path = Self::find(module_name, self.search_paths.clone())
-                .map_err(|e| ModuleError::IOError(e.to_string()))?;
-            fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(e.to_string()))
+                .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))?;
+            fs::read_to_string(&file_path)
+                .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
         }
     }
 
-    pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Option<Module>, ModuleError> {
+    pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
         self.load(Module::BUILTIN_MODULE, Self::BUILTIN_FILE, token_arena)
     }
 
@@ -255,7 +282,7 @@ impl ModuleLoader {
                 PathBuf::from(path).join(Self::module_id(name).as_ref())
             })
             .find(|p| p.is_file())
-            .ok_or_else(|| ModuleError::NotFound(Self::module_id(name).to_string()))
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_id(name).to_string())))
     }
 
     fn module_id(name: &str) -> Cow<'static, str> {
@@ -326,7 +353,7 @@ mod tests {
 
     #[rstest]
     #[case::load1("test".to_string(), Err(ModuleError::InvalidModule))]
-    #[case::load2("let test = \"value\"".to_string(), Ok(Some(Module{
+    #[case::load2("let test = \"value\"".to_string(), Ok(Module{
         name: "test".to_string(),
         functions: Vec::new(),
         modules: Vec::new(),
@@ -338,9 +365,9 @@ mod tests {
                     module_id: 1.into()
                 }))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
-            ))})]
-    })))]
-    #[case::load3("def test(): 1;".to_string(), Ok(Some(Module{
+            ))})],
+    }))]
+    #[case::load3("def test(): 1;".to_string(), Ok(Module{
         name: "test".to_string(),
         modules: Vec::new(),
         functions: vec![
@@ -355,9 +382,9 @@ mod tests {
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
             ]
             ))})],
-        vars: Vec::new()
-    })))]
-    #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Some(Module{
+        vars: Vec::new(),
+    }))]
+    #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Module{
         name: "test".to_string(),
         modules: Vec::new(),
         functions: vec![
@@ -388,12 +415,12 @@ mod tests {
                     ],
                 ))})]
             ))})],
-        vars: Vec::new()
-    })))]
+        vars: Vec::new(),
+    }))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
         #[case] program: String,
-        #[case] expected: Result<Option<Module>, ModuleError>,
+        #[case] expected: Result<Module, ModuleError>,
     ) {
         assert_eq!(
             ModuleLoader::default().load("test", &program, token_arena),
@@ -402,34 +429,28 @@ mod tests {
     }
 
     #[rstest]
-    #[case::load_standard_csv("csv", Ok(Some(Module {
+    #[case::load_standard_csv("csv", Ok(Module {
         name: "csv".to_string(),
         functions: Vec::new(),
         modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
         vars: Vec::new(),
-    })))]
+    }))]
     fn test_load_standard_module(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
         #[case] module_name: &str,
-        #[case] expected: Result<Option<Module>, ModuleError>,
+        #[case] expected: Result<Module, ModuleError>,
     ) {
         let mut loader = ModuleLoader::default();
         let result = loader.load_from_file(module_name, token_arena.clone());
         // Only check that loading does not return NotFound error and returns Some(Module)
         match expected {
-            Ok(Some(_)) => {
+            Ok(_) => {
                 assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-                assert!(
-                    result.as_ref().unwrap().is_some(),
-                    "Expected Some(Module), got {:?}",
-                    result
-                );
-                assert_eq!(result.unwrap().unwrap().name, module_name);
+                assert_eq!(result.unwrap().name, module_name);
             }
             Err(ref e) => {
                 assert_eq!(result.unwrap_err(), *e);
             }
-            _ => {}
         }
     }
 

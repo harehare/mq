@@ -72,6 +72,7 @@ impl Error {
                 EvalError::EnvNotFound(_, _) => None,
             },
             InnerError::Module(err) => match err {
+                ModuleError::AlreadyLoaded(_) => None,
                 ModuleError::NotFound(_) => None,
                 ModuleError::IOError(_) => None,
                 ModuleError::LexerError(LexerError::UnexpectedToken(token)) => Some(token),
@@ -179,116 +180,21 @@ impl Error {
     }
 }
 
+fn type_name<T>(_: &T) -> &'static str {
+    std::any::type_name::<T>()
+}
+
 impl Diagnostic for Error {
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
-        let c: Cow<'static, str> = match self.cause {
-            InnerError::Lexer(LexerError::UnexpectedToken(_)) => {
-                Cow::Borrowed("LexerError::UnexpectedToken")
+        Some(Box::new(
+            match &self.cause {
+                InnerError::Eval(e) => type_name(&e),
+                InnerError::Lexer(e) => type_name(&e),
+                InnerError::Parse(e) => type_name(&e),
+                InnerError::Module(e) => type_name(&e),
             }
-            InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => {
-                Cow::Borrowed("LexerError::UnexpectedEOFDetected")
-            }
-            InnerError::Parse(ParseError::EnvNotFound(_, _)) => {
-                Cow::Borrowed("ParseError::EnvNotFound")
-            }
-            InnerError::Parse(ParseError::UnexpectedToken(_)) => {
-                Cow::Borrowed("ParseError::UnexpectedToken")
-            }
-            InnerError::Parse(ParseError::UnexpectedEOFDetected(_)) => {
-                Cow::Borrowed("ParseError::UnexpectedEOFDetected")
-            }
-            InnerError::Parse(ParseError::InsufficientTokens(_)) => {
-                Cow::Borrowed("ParseError::InsufficientTokens")
-            }
-            InnerError::Parse(ParseError::ExpectedClosingParen(_)) => {
-                Cow::Borrowed("ParseError::ExpectedClosingParen")
-            }
-            InnerError::Parse(ParseError::ExpectedClosingBrace(_)) => {
-                Cow::Borrowed("ParseError::ExpectedClosingBrace")
-            }
-            InnerError::Parse(ParseError::ExpectedClosingBracket(_)) => {
-                Cow::Borrowed("ParseError::ExpectedClosingBracket")
-            }
-            InnerError::Eval(EvalError::RecursionError(_)) => {
-                Cow::Borrowed("EvalError::RecursionError")
-            }
-            InnerError::Eval(EvalError::ModuleLoadError(_)) => {
-                Cow::Borrowed("EvalError::ModuleLoadError")
-            }
-            InnerError::Eval(EvalError::UserDefined { .. }) => {
-                Cow::Borrowed("EvalError::UserDefined")
-            }
-            InnerError::Eval(EvalError::InvalidBase64String(_, _)) => {
-                Cow::Borrowed("EvalError::InvalidBase64String")
-            }
-            InnerError::Eval(EvalError::NotDefined(_, _)) => Cow::Borrowed("EvalError::NotDefined"),
-            InnerError::Eval(EvalError::DateTimeFormatError(_, _)) => {
-                Cow::Borrowed("EvalError::DateTimeFormatError")
-            }
-            InnerError::Eval(EvalError::IndexOutOfBounds(_, _)) => {
-                Cow::Borrowed("EvalError::IndexOutOfBounds")
-            }
-            InnerError::Eval(EvalError::InvalidDefinition(_, _)) => {
-                Cow::Borrowed("EvalError::InvalidDefinition")
-            }
-            InnerError::Eval(EvalError::InvalidTypes { .. }) => {
-                Cow::Borrowed("EvalError::InvalidTypes")
-            }
-            InnerError::Eval(EvalError::InvalidNumberOfArguments(_, _, _, _)) => {
-                Cow::Borrowed("EvalError::InvalidNumberOfArguments")
-            }
-            InnerError::Eval(EvalError::InvalidRegularExpression(_, _)) => {
-                Cow::Borrowed("EvalError::InvalidRegularExpression")
-            }
-            InnerError::Eval(EvalError::InternalError(_)) => {
-                Cow::Borrowed("EvalError::InternalError")
-            }
-            InnerError::Eval(EvalError::RuntimeError(_, _)) => {
-                Cow::Borrowed("EvalError::RuntimeError")
-            }
-            InnerError::Eval(EvalError::ZeroDivision(_)) => {
-                Cow::Borrowed("EvalError::ZeroDivision")
-            }
-            InnerError::Eval(EvalError::Break(_)) => Cow::Borrowed("EvalError::Break"),
-            InnerError::Eval(EvalError::Continue(_)) => Cow::Borrowed("EvalError::Continue"),
-            InnerError::Eval(EvalError::EnvNotFound(_, _)) => {
-                Cow::Borrowed("EvalError::EnvNotFound")
-            }
-            InnerError::Module(ModuleError::NotFound(_)) => Cow::Borrowed("ModuleError::NotFound"),
-            InnerError::Module(ModuleError::IOError(_)) => Cow::Borrowed("ModuleError::IOError"),
-            InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {
-                Cow::Borrowed("ModuleError::LexerError::UnexpectedToken")
-            }
-            InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_))) => {
-                Cow::Borrowed("ModuleError::LexerError::UnexpectedEOFDetected")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(_, _))) => {
-                Cow::Borrowed("ModuleError::ParseError::EnvNotFound")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(_))) => {
-                Cow::Borrowed("ModuleError::ParseError::UnexpectedToken")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(_))) => {
-                Cow::Borrowed("ModuleError::ParseError::UnexpectedEOFDetected")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
-                Cow::Borrowed("ModuleError::ParseError::InsufficientTokens")
-            }
-            InnerError::Module(ModuleError::InvalidModule) => {
-                Cow::Borrowed("ModuleError::InvalidModule")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingParen(_))) => {
-                Cow::Borrowed("ModuleError::ExpectedClosingParen")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(_))) => {
-                Cow::Borrowed("ModuleError::ExpectedClosingBrace")
-            }
-            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(_))) => {
-                Cow::Borrowed("ModuleError::ExpectedClosingBracket")
-            }
-        };
-
-        Some(Box::new(c))
+            .replace("&mq_lang::", ""),
+        ) as Box<dyn std::fmt::Display>)
     }
 
     fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
@@ -551,11 +457,11 @@ mod test {
         "source code"
     )]
     #[case::module_not_found(
-        InnerError::Module(ModuleError::NotFound("test".to_string())),
+        InnerError::Module(ModuleError::NotFound(Cow::Borrowed("test"))),
         "source code"
     )]
     #[case::module_io_error(
-        InnerError::Module(ModuleError::IOError("test".to_string())),
+        InnerError::Module(ModuleError::IOError(Cow::Borrowed("test"))),
         "source code"
     )]
     #[case::module_lexer_error(
@@ -824,12 +730,8 @@ mod test {
             module_id: ArenaId::new(0),
         }, "ENV".into()))
     )]
-    #[case::module_not_found(
-        InnerError::Module(ModuleError::NotFound("mod".to_string()))
-    )]
-    #[case::module_io_error(
-        InnerError::Module(ModuleError::IOError("io".to_string()))
-    )]
+    #[case::module_not_found(InnerError::Module(ModuleError::NotFound(Cow::Borrowed("mod"))))]
+    #[case::module_io_error(InnerError::Module(ModuleError::IOError(Cow::Borrowed("io"))))]
     #[case::module_lexer_error_unexpected_token(
         InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(Token {
             range: Range::default(),

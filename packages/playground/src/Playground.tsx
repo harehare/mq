@@ -589,10 +589,19 @@ export const Playground = () => {
     });
 
     monaco.languages.registerCompletionItemProvider("mq", {
-      triggerCharacters: [" ", "|"],
+      triggerCharacters: [" ", "|", ":"],
       provideCompletionItems: async (model, position) => {
-        const values = await mq.definedValues("");
         const wordRange = model.getWordUntilPosition(position);
+
+        let moduleName: string | undefined = undefined;
+        const lineContent = model.getLineContent(position.lineNumber);
+        const uptoCursor = lineContent.slice(0, position.column - 1);
+        const moduleMatch = uptoCursor.match(/([a-zA-Z_][\w]*)::/);
+        if (moduleMatch) {
+          moduleName = moduleMatch[1];
+        }
+
+        const values = await mq.definedValues(model.getValue(), moduleName);
         const suggestions: languages.CompletionItem[] = values.map((value) => {
           return {
             label: value.name,
@@ -738,6 +747,22 @@ export const Playground = () => {
               endColumn: wordRange.endColumn,
             },
           },
+          {
+            label: "module",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "module ${1:name}:\n  ${2:body}\nend",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Module declaration",
+            documentation:
+              "Creates a module that contains a set of related functions and variables.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
         ];
 
         return { suggestions: [...suggestions, ...snippets] };
@@ -749,7 +774,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue)\b/,
+            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue|import|module)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
@@ -862,7 +887,10 @@ export const Playground = () => {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <img src="https://img.shields.io/github/stars/harehare/mq?style=social" alt="GitHub stars" />
+              <img
+                src="https://img.shields.io/github/stars/harehare/mq?style=social"
+                alt="GitHub stars"
+              />
             </a>
           </div>
         </header>

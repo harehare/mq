@@ -212,3 +212,15 @@ fn eval_json_parse() -> mq_lang::RuntimeValues {
         )
         .unwrap()
 }
+
+#[divan::bench()]
+fn eval_qualified_access_to_csv_module() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+       .eval(
+            r#"import "csv" | csv::csv_parse(true)"#,
+            vec![mq_lang::RuntimeValue::String("a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n".to_string())].into_iter(),
+        )
+        .unwrap()
+}
