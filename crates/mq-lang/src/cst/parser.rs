@@ -219,15 +219,13 @@ impl<'a> Parser<'a> {
                         children: Vec::new(),
                     }));
 
-                    leading_trivia = self.parse_leading_trivia();
+                    if root {
+                        leading_trivia = self.parse_leading_trivia();
 
-                    if let Some(token) = self.tokens.clone().peek() {
-                        if matches!(token.kind, TokenKind::Eof) {
-                            if root {
-                                break;
-                            } else {
-                                // For non-root contexts (like def, module), add Eof as a child node
+                        if let Some(token) = self.tokens.clone().peek() {
+                            if matches!(token.kind, TokenKind::Eof) {
                                 self.tokens.next();
+
                                 nodes.push(Shared::new(Node {
                                     kind: NodeKind::Eof,
                                     token: Some(Shared::clone(token)),
@@ -236,22 +234,22 @@ impl<'a> Parser<'a> {
                                     children: Vec::new(),
                                 }));
                                 break;
-                            }
-                        } else if root && matches!(token.kind, TokenKind::Pipe) {
-                            self.tokens.next();
-                            nodes.push(Shared::new(Node {
-                                kind: NodeKind::Token,
-                                token: Some(Shared::clone(token)),
+                            } else if matches!(token.kind, TokenKind::Pipe) {
+                                self.tokens.next();
+                                nodes.push(Shared::new(Node {
+                                    kind: NodeKind::Token,
+                                    token: Some(Shared::clone(token)),
 
-                                leading_trivia,
-                                trailing_trivia: self.parse_trailing_trivia(),
-                                children: Vec::new(),
-                            }));
-                            leading_trivia = self.parse_leading_trivia();
-                            continue;
-                        } else if root {
-                            self.errors
-                                .report(ParseError::UnexpectedToken(Shared::clone(token)));
+                                    leading_trivia,
+                                    trailing_trivia: self.parse_trailing_trivia(),
+                                    children: Vec::new(),
+                                }));
+                                leading_trivia = self.parse_leading_trivia();
+                                continue;
+                            } else {
+                                self.errors
+                                    .report(ParseError::UnexpectedToken(Shared::clone(token)));
+                            }
                         }
                     }
 
@@ -2548,14 +2546,14 @@ mod tests {
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
-                        Shared::new(Node {
-                            kind: NodeKind::Eof,
-                            token: Some(Shared::new(token(TokenKind::Eof))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
-                            children: Vec::new(),
-                        }),
                     ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6765,6 +6763,7 @@ mod tests {
             Shared::new(token(TokenKind::Colon)),
             Shared::new(token(TokenKind::StringLiteral("bar".into()))),
             Shared::new(token(TokenKind::End)),
+            Shared::new(token(TokenKind::End)),
             Shared::new(token(TokenKind::Eof)),
         ],
         (
@@ -6866,16 +6865,23 @@ mod tests {
                                     trailing_trivia: Vec::new(),
                                     children: Vec::new(),
                                 }),
-                                Shared::new(Node {
-                                    kind: NodeKind::Eof,
-                                    token: Some(Shared::new(token(TokenKind::Eof))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
-                                    children: Vec::new(),
-                                }),
                             ],
                         }),
+                        Shared::new(Node {
+                            kind: NodeKind::End,
+                            token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
                     ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
                 }),
             ],
             ErrorReporter::default()
