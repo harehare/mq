@@ -1,10 +1,10 @@
-use assert_cmd::Command;
+use assert_cmd::cargo;
 use mq_test::defer;
 use rstest::rstest;
 
 #[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
 
     let assert = cmd
         .arg("--unbuffered")
@@ -177,7 +177,7 @@ fn test_cli_commands(
     #[case] input: &str,
     #[case] expected_output: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let mut assert = cmd.args(args);
 
     if !input.is_empty() {
@@ -206,7 +206,7 @@ fn test_cli_run_with_raw_file_and_stdin() -> Result<(), Box<dyn std::error::Erro
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
 
     let assert = cmd
         .arg("--unbuffered")
@@ -235,7 +235,7 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg(r#".h | select(contains("title"))"#)
@@ -260,7 +260,7 @@ fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>>
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg("--from-file")
@@ -284,7 +284,7 @@ fn test_cli_run_with_csv_input() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg("-I")
@@ -327,7 +327,7 @@ fn test_cli_run_with_html_input() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg(".h1")
@@ -358,7 +358,7 @@ In {year}, the snowfall was above average.
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg("-I")
@@ -408,7 +408,7 @@ Content of section 3.
     }
 
     // Test extracting top-level sections (n=1)
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg("nodes | sections(1)")
@@ -423,7 +423,7 @@ Content of section 3.
     assert.success().code(0).stdout(expected);
 
     // Test extracting second-level sections (n=2)
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg("nodes | sections(2)")
@@ -449,7 +449,7 @@ fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut cmd = Command::cargo_bin("mq")?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
         .arg(format!(
