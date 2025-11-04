@@ -114,11 +114,4 @@ deps:
 
 # Update documentation
 docs:
-  cargo readme --project-root crates/mq-lang --output README.md
-  cargo readme --project-root crates/mq-lsp --output README.md
-  cargo readme --project-root crates/mq-repl --output README.md
-  cargo readme --project-root crates/mq-hir --output README.md
-  cargo readme --project-root crates/mq-markdown --output README.md
-  cargo readme --project-root crates/mq-formatter --output README.md
-  cargo readme --project-root crates/mq-wasm --output README.md
   ./scripts/update_doc.sh

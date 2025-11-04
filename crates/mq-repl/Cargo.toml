@@ -1,14 +1,12 @@
 [package]
-authors = ["Takahiro Sato <harehare1110@gmail.com>"]
-documentation = "https://github.com/harehare/mq/blob/master/docs/README.md"
-edition = "2024"
-homepage = "https://mqlang.org/"
-keywords = ["markdown", "jq", "query"]
-license-file = "LICENSE"
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license-file.workspace = true
 name = "mq-repl"
-readme = "README.md"
-repository = "https://github.com/harehare/mq"
-version = "0.4.3"
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 arboard.workspace = true

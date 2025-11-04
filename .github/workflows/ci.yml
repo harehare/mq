@@ -25,7 +25,7 @@ jobs:
       - name: Install tools
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest,cargo-readme,cargo-llvm-cov
+          tool: nextest,cargo-llvm-cov
       - name: Build
         run: just build
       - name: Run tests

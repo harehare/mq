@@ -1,7 +1,12 @@
 [package]
-edition = "2021"
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license-file.workspace = true
 name = "mq-c-api"
-version = "0.4.3"
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 libc = "0.2"

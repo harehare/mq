@@ -1,6 +1,6 @@
 let version = $MQ_VERSION
 | def update_crate_version():
-    if (and(ne("[package]"), starts_with("["))):
+    if (and(ne("[workspace.package]"), starts_with("["))):
       s"
 ${self}"
     elif (starts_with("version = ")):

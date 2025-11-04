@@ -27,12 +27,12 @@ unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::
         // but robust error handling would be better.
         return Ok("");
     }
-    CStr::from_ptr(s).to_str()
+    unsafe { CStr::from_ptr(s).to_str() }
 }
 
 /// Creates a new mq_lang engine.
 /// The caller is responsible for destroying the engine using `mq_destroy`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mq_create() -> *mut MqContext {
     let mut engine = Engine::default();
     engine.load_builtin_module();
@@ -41,7 +41,7 @@ pub extern "C" fn mq_create() -> *mut MqContext {
 }
 
 /// Destroys an mq_lang engine.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mq_destroy(engine_ptr: *mut MqContext) {
     if engine_ptr.is_null() {
         return;
@@ -63,7 +63,7 @@ pub extern "C" fn mq_destroy(engine_ptr: *mut MqContext) {
 /// - `input_format_c` must be a valid pointer to a null-terminated C string
 /// - All string pointers must remain valid for the duration of this function call
 /// - The returned `MqResult` must be freed using `mq_free_result` to avoid memory leaks
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_eval(
     engine_ptr: *mut MqContext,
     code_c: *const c_char,
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn mq_eval(
 /// - `s` must not be used after calling this function (use-after-free protection)
 /// - This function must only be called once per pointer (double-free protection)
 /// - If `s` is null, the function safely returns without performing any operations
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_free_string(s: *mut c_char) {
     if s.is_null() {
         return;
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn mq_free_string(s: *mut c_char) {
 }
 
 /// Frees the MqResult structure including its contents.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mq_free_result(result: MqResult) {
     if !result.error_msg.is_null() {
         unsafe {
@@ -239,7 +239,7 @@ mod tests {
         if ptr.is_null() {
             return String::new();
         }
-        let c_str = CStr::from_ptr(ptr);
+        let c_str = unsafe { CStr::from_ptr(ptr) };
         c_str.to_string_lossy().into_owned()
     }
 

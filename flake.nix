@@ -44,7 +44,6 @@
             cargo-deny
             cargo-edit
             cargo-llvm-cov
-            cargo-readme
             cargo-udeps
             cargo-nextest
             cargo-watch

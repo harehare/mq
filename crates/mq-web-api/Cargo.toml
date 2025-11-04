@@ -1,7 +1,12 @@
 [package]
-edition = "2024"
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license-file.workspace = true
 name = "mq-web-api"
-version = "0.4.3"
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 async-trait = "0.1.83"

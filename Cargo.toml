@@ -1,3 +1,15 @@
+[workspace.package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+description = "mq is a Markdown processing tool that can filter markdown nodes by using jq-like syntax."
+documentation = "https://mqlang.org/book/"
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.4.3"
+
 [workspace]
 members = [
   "crates/mq-c-api",
