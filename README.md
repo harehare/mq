@@ -156,8 +156,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
   -A, --aggregate
@@ -177,7 +177,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-
+          
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -191,7 +191,7 @@ Options:
       --test
           Include the built-in test module
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, none]
   -U, --update
           Update the input markdown
       --unbuffered
@@ -213,19 +213,19 @@ Options:
   -V, --version
           Print version
 
-Examples:
+# Examples:
 
-To filter markdown nodes:
-$ mq 'query' file.md
+## To filter markdown nodes:
+mq 'query' file.md
 
-To read query from file:
-$ mq -f 'file' file.md
+## To read query from file:
+mq -f 'file' file.md
 
-To start a REPL session:
-$ mq repl
+## To start a REPL session:
+mq repl
 
-To format mq file:
-$ mq fmt --check file.mq
+## To format mq file:
+mq fmt --check file.mq
 ```
 
 </details>

@@ -50,7 +50,7 @@ Options:
       --test
           Include the built-in test module
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, none]
   -U, --update
           Update the input markdown
       --unbuffered
@@ -72,17 +72,17 @@ Options:
   -V, --version
           Print version
 
-Examples:
+# Examples:
 
-To filter markdown nodes:
-$ mq 'query' file.md
+## To filter markdown nodes:
+mq 'query' file.md
 
-To read query from file:
-$ mq -f 'file' file.md
+## To read query from file:
+mq -f 'file' file.md
 
-To start a REPL session:
-$ mq repl
+## To start a REPL session:
+mq repl
 
-To format mq file:
-$ mq fmt --check file.mq
+## To format mq file:
+mq fmt --check file.mq
 ```
