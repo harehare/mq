@@ -575,7 +575,7 @@ export const Playground = () => {
           monaco.editor.setModelMarkers(
             model,
             "mq",
-            errors.map((error) => ({
+            errors.map((error: mq.Diagnostic) => ({
               startLineNumber: error.startLine,
               startColumn: error.startColumn,
               endLineNumber: error.endLine,
@@ -602,7 +602,7 @@ export const Playground = () => {
         }
 
         const values = await mq.definedValues(model.getValue(), moduleName);
-        const suggestions: languages.CompletionItem[] = values.map((value) => {
+        const suggestions: languages.CompletionItem[] = values.map((value: mq.DefinedValue) => {
           return {
             label: value.name,
             kind:
@@ -617,7 +617,7 @@ export const Playground = () => {
               value.valueType === "Function"
                 ? `${value.name}(${
                     value.args
-                      ?.map((name, i) => `$\{${i}:${name}}`)
+                      ?.map((name: string, i: number) => `$\{${i}:${name}}`)
                       .join(", ") || ""
                   })`
                 : value.name,
