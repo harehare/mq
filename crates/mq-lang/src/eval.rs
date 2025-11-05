@@ -783,8 +783,8 @@ impl Evaluator {
                 self.eval_call_dynamic(runtime_value, callable, args, env)
             }
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
-            ast::Expr::Break => Err(self.eval_break(Shared::clone(node))),
-            ast::Expr::Continue => Err(self.eval_continue(Shared::clone(node))),
+            ast::Expr::Break => Err(EvalError::Break),
+            ast::Expr::Continue => Err(EvalError::Continue),
             ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident.name, node.token_id, env),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
@@ -838,21 +838,11 @@ impl Evaluator {
     }
 
     #[inline(always)]
-    fn eval_break(&self, node: Shared<ast::Node>) -> EvalError {
-        EvalError::Break((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone())
-    }
-
-    #[inline(always)]
-    fn eval_continue(&self, node: Shared<ast::Node>) -> EvalError {
-        EvalError::Continue((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone())
-    }
-
-    #[inline(always)]
     fn eval_literal(&self, literal: &ast::Literal) -> RuntimeValue {
         match literal {
             ast::Literal::None => RuntimeValue::None,
             ast::Literal::Bool(b) => RuntimeValue::Boolean(*b),
-            ast::Literal::String(s) => RuntimeValue::String(s.clone()),
+            ast::Literal::String(s) => RuntimeValue::String(s.to_owned()),
             ast::Literal::Symbol(i) => RuntimeValue::Symbol(*i),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
         }
@@ -878,8 +868,8 @@ impl Evaluator {
                     define(&env, ident, value.clone());
                     match self.eval_program(body, value, Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(EvalError::Break(_)) => break,
-                        Err(EvalError::Continue(_)) => continue,
+                        Err(EvalError::Break) => break,
+                        Err(EvalError::Continue) => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -898,8 +888,8 @@ impl Evaluator {
                         Shared::clone(&env),
                     ) {
                         Ok(result) => results.push(result),
-                        Err(EvalError::Break(_)) => break,
-                        Err(EvalError::Continue(_)) => continue,
+                        Err(EvalError::Break) => break,
+                        Err(EvalError::Continue) => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -941,16 +931,16 @@ impl Evaluator {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
                 }
-                Err(EvalError::Break(_)) if first => {
+                Err(EvalError::Break) if first => {
                     runtime_value = RuntimeValue::NONE;
                     break;
                 }
-                Err(EvalError::Break(_)) => break,
-                Err(EvalError::Continue(_)) if first => {
+                Err(EvalError::Break) => break,
+                Err(EvalError::Continue) if first => {
                     runtime_value = RuntimeValue::NONE;
                     continue;
                 }
-                Err(EvalError::Continue(_)) => continue,
+                Err(EvalError::Continue) => continue,
                 Err(e) => return Err(e),
             }
 
@@ -988,8 +978,8 @@ impl Evaluator {
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
                     values.push(runtime_value.clone());
                 }
-                Err(EvalError::Break(_)) => break,
-                Err(EvalError::Continue(_)) => continue,
+                Err(EvalError::Break) => break,
+                Err(EvalError::Continue) => continue,
                 Err(e) => return Err(e),
             }
         }
