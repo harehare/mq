@@ -65,8 +65,8 @@ impl Error {
                 EvalError::InternalError(token) => Some(token),
                 EvalError::RuntimeError(token, _) => Some(token),
                 EvalError::ZeroDivision(token) => Some(token),
-                EvalError::Break(token) => Some(token),
-                EvalError::Continue(token) => Some(token),
+                EvalError::Break => None,
+                EvalError::Continue => None,
                 EvalError::RecursionError(_) => None,
                 EvalError::ModuleLoadError(_) => None,
                 EvalError::EnvNotFound(_, _) => None,
@@ -709,20 +709,8 @@ mod test {
             module_id: ArenaId::new(0),
         }))
     )]
-    #[case::eval_break(
-        InnerError::Eval(EvalError::Break(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }))
-    )]
-    #[case::eval_continue(
-        InnerError::Eval(EvalError::Continue(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }))
-    )]
+    #[case::eval_break(InnerError::Eval(EvalError::Break))]
+    #[case::eval_continue(InnerError::Eval(EvalError::Continue))]
     #[case::eval_env_not_found(
         InnerError::Eval(EvalError::EnvNotFound(Token {
             range: Range::default(),

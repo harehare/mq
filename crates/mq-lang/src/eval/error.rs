@@ -44,9 +44,9 @@ pub enum EvalError {
     #[error("Divided by 0")]
     ZeroDivision(ErrorToken),
     #[error("Unexpected token break")]
-    Break(ErrorToken),
+    Break,
     #[error("Unexpected token continue")]
-    Continue(ErrorToken),
+    Continue,
     #[error("Not found env `{1}`")]
     EnvNotFound(Token, SmolStr),
 }
