@@ -842,7 +842,7 @@ impl Evaluator {
         match literal {
             ast::Literal::None => RuntimeValue::None,
             ast::Literal::Bool(b) => RuntimeValue::Boolean(*b),
-            ast::Literal::String(s) => RuntimeValue::String(s.to_owned()),
+            ast::Literal::String(s) => RuntimeValue::String(s.clone()),
             ast::Literal::Symbol(i) => RuntimeValue::Symbol(*i),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
         }
