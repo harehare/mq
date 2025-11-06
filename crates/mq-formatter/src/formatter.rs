@@ -9,6 +9,7 @@ const NEW_LINE: &str = "\n";
 pub struct Formatter {
     config: FormatterConfig,
     output: String,
+    indent_cache: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -27,6 +28,7 @@ impl Formatter {
         Self {
             config: config.unwrap_or_default(),
             output: String::new(),
+            indent_cache: Vec::new(),
         }
     }
 
@@ -53,13 +55,26 @@ impl Formatter {
         }
 
         let mut result = String::with_capacity(self.output.len());
+        let mut start = 0;
 
-        for line in self.output.lines() {
+        // Process each line by finding newlines
+        while let Some(newline_pos) = self.output[start..].find('\n') {
+            let line_end = start + newline_pos;
+            let line = &self.output[start..line_end];
             result.push_str(line.trim_end());
             result.push('\n');
+            start = line_end + 1;
         }
 
-        if result.ends_with('\n') && !self.output.ends_with('\n') {
+        // Handle the last line (if any) that doesn't end with newline
+        if start < self.output.len() {
+            let last_line = &self.output[start..];
+            result.push_str(last_line.trim_end());
+            // Only add newline if original ended with newline
+            if self.output.ends_with('\n') {
+                result.push('\n');
+            }
+        } else if result.ends_with('\n') && !self.output.ends_with('\n') {
             result.pop();
         }
 
@@ -340,7 +355,7 @@ impl Formatter {
                         if node.has_new_line() {
                             self.append_indent(block_indent_level);
                         }
-                        self.output.push_str(format!("{}", token).as_str());
+                        self.output.push_str(&token.to_string());
                     }
                     mq_lang::CstNode {
                         kind: mq_lang::CstNodeKind::BinaryOp(_),
@@ -353,7 +368,9 @@ impl Formatter {
                             self.append_indent(block_indent_level);
                         }
 
-                        self.output.push_str(format!(" {} ", token).as_str());
+                        self.output.push(' ');
+                        self.output.push_str(&token.to_string());
+                        self.output.push(' ');
                     }
                     _ => unreachable!(),
                 }
@@ -854,7 +871,9 @@ impl Formatter {
             match &token.kind {
                 mq_lang::TokenKind::StringLiteral(s) => {
                     let escaped = Self::escape_string(s);
-                    self.output.push_str(&format!(r#""{}""#, escaped));
+                    self.output.push('"');
+                    self.output.push_str(&escaped);
+                    self.output.push('"');
                 }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
@@ -937,7 +956,8 @@ impl Formatter {
                             && let Some(next_token) = &next.token
                             && matches!(next_token.kind, mq_lang::TokenKind::Colon)
                         {
-                            self.output.push_str(&format!("{} ", next_token));
+                            self.output.push_str(&next_token.to_string());
+                            self.output.push(' ');
                             i += 2; // Skip colon
 
                             // Format the pattern after colon
@@ -998,8 +1018,14 @@ impl Formatter {
     }
 
     fn append_indent(&mut self, level: usize) {
-        self.output
-            .push_str(&" ".repeat(level * self.config.indent_width));
+        // Ensure cache has enough entries
+        while self.indent_cache.len() <= level {
+            let next_level = self.indent_cache.len();
+            let indent_str = " ".repeat(next_level * self.config.indent_width);
+            self.indent_cache.push(indent_str);
+        }
+
+        self.output.push_str(&self.indent_cache[level]);
     }
 
     fn append_env(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
@@ -1031,7 +1057,9 @@ impl Formatter {
             match &token.kind {
                 mq_lang::TokenKind::StringLiteral(s) => {
                     let escaped = Self::escape_string(s);
-                    self.output.push_str(&format!(r#""{}""#, escaped));
+                    self.output.push('"');
+                    self.output.push_str(&escaped);
+                    self.output.push('"');
                 }
                 mq_lang::TokenKind::NumberLiteral(n) => self.output.push_str(&n.to_string()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.output.push_str(&b.to_string()),
@@ -1057,7 +1085,9 @@ impl Formatter {
                     mq_lang::TokenKind::Ident(s) => self.output.push_str(s),
                     mq_lang::TokenKind::StringLiteral(s) => {
                         let escaped = Self::escape_string(s);
-                        self.output.push_str(&format!(r#""{}""#, escaped));
+                        self.output.push('"');
+                        self.output.push_str(&escaped);
+                        self.output.push('"');
                     }
                     _ => {}
                 }
@@ -1077,15 +1107,15 @@ impl Formatter {
         } = &**node
         {
             self.append_indent(indent_level);
-            self.output.push_str(&format!(
-                "s\"{}\"",
-                token
-                    .to_string()
-                    .replace("\\", "\\\\") // Must be first to avoid double-escaping
-                    .replace("\"", "\\\"")
-                    .replace("\t", "\\t")
-                    .replace("\r", "\\r")
-            ))
+            self.output.push_str("s\"");
+            let escaped = token
+                .to_string()
+                .replace("\\", "\\\\") // Must be first to avoid double-escaping
+                .replace("\"", "\\\"")
+                .replace("\t", "\\t")
+                .replace("\r", "\\r");
+            self.output.push_str(&escaped);
+            self.output.push('"');
         }
     }
 
@@ -1145,20 +1175,28 @@ impl Formatter {
                     if node.has_new_line() {
                         self.append_leading_trivia(node, indent_level);
                         self.append_indent(indent_level);
-                        self.output.push_str(&format!("{}", token))
+                        self.output.push_str(&token.to_string());
                     } else {
-                        self.output.push_str(&format!("{} ", token))
+                        self.output.push_str(&token.to_string());
+                        self.output.push(' ');
                     }
                 }
-                mq_lang::TokenKind::Colon => self.output.push_str(&format!("{}", token)),
-                mq_lang::TokenKind::Equal => self.output.push_str(&format!(" {} ", token)),
+                mq_lang::TokenKind::Colon => self.output.push_str(&token.to_string()),
+                mq_lang::TokenKind::Equal => {
+                    self.output.push(' ');
+                    self.output.push_str(&token.to_string());
+                    self.output.push(' ');
+                }
                 mq_lang::TokenKind::Pipe => {
                     if node.has_new_line() {
                         self.append_leading_trivia(node, indent_level);
                         self.append_indent(indent_level);
-                        self.output.push_str(&format!("{} ", token))
+                        self.output.push_str(&token.to_string());
+                        self.output.push(' ');
                     } else {
-                        self.output.push_str(&format!(" {} ", token))
+                        self.output.push(' ');
+                        self.output.push_str(&token.to_string());
+                        self.output.push(' ');
                     }
                 }
                 mq_lang::TokenKind::RParen => {
@@ -1192,40 +1230,29 @@ impl Formatter {
     }
 
     #[inline(always)]
-    pub fn prev_line_indent(&self) -> usize {
-        let mut lines = self.output.lines().rev();
-        lines.next();
-        if let Some(prev_line) = lines.next() {
-            prev_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
-        } else {
-            0
-        }
-    }
-
-    #[inline(always)]
     pub fn current_line_indent(&self) -> usize {
-        if let Some(last_line) = self.output.lines().last() {
-            last_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
-        } else {
-            0
-        }
+        // Find the last newline position
+        let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
+        let last_line = &self.output[start..];
+        last_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
     }
 
     #[inline(always)]
     pub fn is_last_line_pipe(&self) -> bool {
         let output = self.output.trim_end_matches('\n');
-        let lines = output.lines();
-
-        if let Some(last_line) = lines.last() {
-            last_line.trim_start().starts_with('|')
-        } else {
-            false
-        }
+        // Find the last newline position
+        let start = output.rfind('\n').map_or(0, |pos| pos + 1);
+        let last_line = &output[start..];
+        last_line.trim_start().starts_with('|')
     }
 
     #[inline(always)]
     fn is_let_line(&self) -> bool {
-        if let Some(last_line) = self.output.lines().last() {
+        // Find the last newline position
+        let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
+
+        if start < self.output.len() {
+            let last_line = &self.output[start..];
             (!last_line.starts_with("let ") && last_line.trim().starts_with("let "))
                 || last_line.trim().replace(" ", "").starts_with("|let")
         } else {
