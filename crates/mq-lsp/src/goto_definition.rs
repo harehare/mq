@@ -1,6 +1,10 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
-use tower_lsp::lsp_types::{GotoDefinitionResponse, Location, Position, Range, Url};
+use tower_lsp_server::lsp_types::{self, GotoDefinitionResponse, Location, Position, Range};
+use url::Url;
 
 pub fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
@@ -16,7 +20,7 @@ pub fn response(
         ) {
             symbol.source.text_range.map(|text_range| {
                 GotoDefinitionResponse::Scalar(Location {
-                    uri: url,
+                    uri: lsp_types::Uri::from_str(url.as_ref()).unwrap(),
                     range: Range {
                         start: Position {
                             line: text_range.start.line - 1,
@@ -38,9 +42,8 @@ pub fn response(
 }
 #[cfg(test)]
 mod tests {
-    use mq_hir::Hir;
-
     use super::*;
+    use mq_hir::Hir;
 
     #[test]
     fn test_goto_definition_found() {
@@ -52,7 +55,7 @@ mod tests {
 
         assert!(result.is_some());
         if let Some(GotoDefinitionResponse::Scalar(location)) = result {
-            assert_eq!(location.uri, url);
+            assert_eq!(location.uri.to_string(), url.to_string());
             assert_eq!(location.range.start, Position::new(0, 4));
             assert_eq!(location.range.end, Position::new(0, 9));
         } else {

@@ -1,7 +1,10 @@
 use std::sync::{Arc, RwLock};
 
 use itertools::Itertools;
-use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range, Url};
+use tower_lsp_server::lsp_types::{
+    Hover, HoverContents, MarkupContent, MarkupKind, Position, Range,
+};
+use url::Url;
 
 pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<Hover> {
     let source = hir.write().unwrap().source_by_url(&url);
@@ -59,6 +62,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use tower_lsp_server::lsp_types;
 
     use super::*;
 
@@ -138,8 +142,8 @@ mod tests {
         assert!(hover.is_some());
         let hover = hover.unwrap();
 
-        if let tower_lsp::lsp_types::HoverContents::Markup(content) = hover.contents {
-            assert_eq!(content.kind, tower_lsp::lsp_types::MarkupKind::Markdown);
+        if let lsp_types::HoverContents::Markup(content) = hover.contents {
+            assert_eq!(content.kind, lsp_types::MarkupKind::Markdown);
             // Check that the hover contains the function signature and description
             assert!(content.value.contains("len(value)"));
             assert!(

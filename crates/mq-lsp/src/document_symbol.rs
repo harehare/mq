@@ -1,9 +1,10 @@
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
-use tower_lsp::lsp_types::{
-    DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind, Url,
+use tower_lsp_server::lsp_types::{
+    DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind,
 };
+use url::Url;
 
 #[allow(deprecated)]
 pub fn response(

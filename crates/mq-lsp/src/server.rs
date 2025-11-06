@@ -1,45 +1,24 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
 use dashmap::DashMap;
-
-use tower_lsp::jsonrpc::{ErrorCode, Result};
-use tower_lsp::lsp_types::CompletionParams;
-use tower_lsp::lsp_types::CompletionResponse;
-use tower_lsp::lsp_types::Diagnostic;
-use tower_lsp::lsp_types::DiagnosticSeverity;
-use tower_lsp::lsp_types::DidChangeTextDocumentParams;
-use tower_lsp::lsp_types::DidCloseTextDocumentParams;
-use tower_lsp::lsp_types::DidOpenTextDocumentParams;
-use tower_lsp::lsp_types::DidSaveTextDocumentParams;
-use tower_lsp::lsp_types::DocumentFormattingParams;
-use tower_lsp::lsp_types::DocumentSymbolParams;
-use tower_lsp::lsp_types::DocumentSymbolResponse;
-use tower_lsp::lsp_types::GotoDefinitionParams;
-use tower_lsp::lsp_types::GotoDefinitionResponse;
-use tower_lsp::lsp_types::Hover;
-use tower_lsp::lsp_types::HoverParams;
-use tower_lsp::lsp_types::InitializeParams;
-use tower_lsp::lsp_types::InitializeResult;
-use tower_lsp::lsp_types::Location;
-use tower_lsp::lsp_types::MessageType;
-use tower_lsp::lsp_types::Position;
-use tower_lsp::lsp_types::Range;
-use tower_lsp::lsp_types::ReferenceParams;
-use tower_lsp::lsp_types::SemanticTokens;
-use tower_lsp::lsp_types::SemanticTokensParams;
-use tower_lsp::lsp_types::SemanticTokensRangeParams;
-use tower_lsp::lsp_types::SemanticTokensRangeResult;
-use tower_lsp::lsp_types::SemanticTokensResult;
-use tower_lsp::lsp_types::TextEdit;
-use tower_lsp::lsp_types::Url;
-use tower_lsp::{Client, LanguageServer, LspService, Server};
+use url::Url;
 
 use crate::{
     capabilities, completions, document_symbol, execute_command, goto_definition, hover,
     references, semantic_tokens,
 };
+use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, lsp_types};
+
+fn to_url(uri: &lsp_types::Uri) -> Url {
+    Url::parse(&uri.to_string()).unwrap()
+}
+
+fn to_uri(uri: &Url) -> lsp_types::Uri {
+    lsp_types::Uri::from_str(uri.as_ref()).unwrap()
+}
 
 #[derive(Debug)]
 struct Backend {
@@ -50,42 +29,48 @@ struct Backend {
     cst_nodes_map: DashMap<String, Vec<Arc<mq_lang::CstNode>>>,
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(
+        &self,
+        _: lsp_types::InitializeParams,
+    ) -> jsonrpc::Result<lsp_types::InitializeResult> {
         self.client
-            .log_message(MessageType::INFO, "Server initialized")
+            .log_message(lsp_types::MessageType::INFO, "Server initialized")
             .await;
-        Ok(InitializeResult {
+        Ok(lsp_types::InitializeResult {
             capabilities: capabilities::server_capabilities(),
             ..Default::default()
         })
     }
 
-    async fn shutdown(&self) -> Result<()> {
+    async fn shutdown(&self) -> jsonrpc::Result<()> {
         Ok(())
     }
 
-    async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        self.on_change(params.text_document.uri.clone(), params.text_document.text)
+    async fn did_open(&self, params: lsp_types::DidOpenTextDocumentParams) {
+        self.on_change(to_url(&params.text_document.uri), params.text_document.text)
             .await;
-        self.diagnostics(params.text_document.uri, Some(params.text_document.version))
-            .await;
+        self.diagnostics(
+            to_url(&params.text_document.uri),
+            Some(params.text_document.version),
+        )
+        .await;
     }
 
-    async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
+    async fn did_change(&self, mut params: lsp_types::DidChangeTextDocumentParams) {
         self.on_change(
-            params.text_document.uri,
+            to_url(&params.text_document.uri),
             std::mem::take(&mut params.content_changes[0].text),
         )
         .await
     }
 
-    async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.diagnostics(params.text_document.uri, None).await;
+    async fn did_save(&self, params: lsp_types::DidSaveTextDocumentParams) {
+        self.diagnostics(to_url(&params.text_document.uri), None)
+            .await;
     }
 
-    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+    async fn did_close(&self, params: lsp_types::DidCloseTextDocumentParams) {
         let uri_string = params.text_document.uri.to_string();
 
         // Remove error information for the closed file
@@ -103,49 +88,56 @@ impl LanguageServer for Backend {
 
     async fn semantic_tokens_full(
         &self,
-        params: SemanticTokensParams,
-    ) -> Result<Option<SemanticTokensResult>> {
-        let url = params.text_document.uri;
+        params: lsp_types::SemanticTokensParams,
+    ) -> jsonrpc::Result<Option<lsp_types::SemanticTokensResult>> {
+        let uri = params.text_document.uri;
 
-        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
-            result_id: None,
-            data: semantic_tokens::response(Arc::clone(&self.hir), url),
-        })))
+        Ok(Some(lsp_types::SemanticTokensResult::Tokens(
+            lsp_types::SemanticTokens {
+                result_id: None,
+                data: semantic_tokens::response(Arc::clone(&self.hir), to_url(&uri)),
+            },
+        )))
     }
 
     async fn semantic_tokens_range(
         &self,
-        params: SemanticTokensRangeParams,
-    ) -> Result<Option<SemanticTokensRangeResult>> {
+        params: lsp_types::SemanticTokensRangeParams,
+    ) -> jsonrpc::Result<Option<lsp_types::SemanticTokensRangeResult>> {
         let url = params.text_document.uri;
 
-        Ok(Some(SemanticTokensRangeResult::Tokens(SemanticTokens {
-            result_id: None,
-            data: semantic_tokens::response(Arc::clone(&self.hir), url),
-        })))
+        Ok(Some(lsp_types::SemanticTokensRangeResult::Tokens(
+            lsp_types::SemanticTokens {
+                result_id: None,
+                data: semantic_tokens::response(Arc::clone(&self.hir), to_url(&url)),
+            },
+        )))
     }
 
     async fn goto_definition(
         &self,
-        params: GotoDefinitionParams,
-    ) -> Result<Option<GotoDefinitionResponse>> {
+        params: lsp_types::GotoDefinitionParams,
+    ) -> jsonrpc::Result<Option<lsp_types::GotoDefinitionResponse>> {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
         Ok(goto_definition::response(
             Arc::clone(&self.hir),
-            url,
+            to_url(&url),
             position,
         ))
     }
 
-    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+    async fn references(
+        &self,
+        params: lsp_types::ReferenceParams,
+    ) -> jsonrpc::Result<Option<Vec<lsp_types::Location>>> {
         let url = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
         Ok(references::response(
             Arc::clone(&self.hir),
-            url,
+            to_url(&url),
             position,
             self.source_map.read().unwrap().clone(),
         ))
@@ -153,30 +145,40 @@ impl LanguageServer for Backend {
 
     async fn document_symbol(
         &self,
-        params: DocumentSymbolParams,
-    ) -> Result<Option<DocumentSymbolResponse>> {
-        let url = params.text_document.uri;
+        params: lsp_types::DocumentSymbolParams,
+    ) -> jsonrpc::Result<Option<lsp_types::DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
         Ok(document_symbol::response(
             Arc::clone(&self.hir),
-            url,
+            to_url(&uri),
             self.source_map.read().unwrap().clone(),
         ))
     }
 
-    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+    async fn hover(
+        &self,
+        params: lsp_types::HoverParams,
+    ) -> jsonrpc::Result<Option<lsp_types::Hover>> {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        Ok(hover::response(Arc::clone(&self.hir), url, position))
+        Ok(hover::response(
+            Arc::clone(&self.hir),
+            to_url(&url),
+            position,
+        ))
     }
 
-    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+    async fn completion(
+        &self,
+        params: lsp_types::CompletionParams,
+    ) -> jsonrpc::Result<Option<lsp_types::CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
         Ok(completions::response(
             Arc::clone(&self.hir),
-            uri,
+            to_url(&uri),
             position,
             self.source_map.read().unwrap().clone(),
         ))
@@ -184,12 +186,15 @@ impl LanguageServer for Backend {
 
     async fn execute_command(
         &self,
-        params: tower_lsp::lsp_types::ExecuteCommandParams,
-    ) -> Result<Option<serde_json::Value>> {
+        params: lsp_types::ExecuteCommandParams,
+    ) -> jsonrpc::Result<Option<serde_json::Value>> {
         execute_command::response(params)
     }
 
-    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+    async fn formatting(
+        &self,
+        params: lsp_types::DocumentFormattingParams,
+    ) -> jsonrpc::Result<Option<Vec<lsp_types::TextEdit>>> {
         if !self
             .error_map
             .get(&params.text_document.uri.to_string())
@@ -206,12 +211,12 @@ impl LanguageServer for Backend {
         let formatted_text =
             mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 }))
                 .format_with_cst(nodes.to_vec())
-                .map_err(|_| tower_lsp::jsonrpc::Error::new(ErrorCode::ParseError))?;
+                .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
 
-        Ok(Some(vec![TextEdit {
-            range: Range::new(
-                Position::new(0, 0),
-                Position::new(formatted_text.lines().count() as u32, u32::MAX),
+        Ok(Some(vec![lsp_types::TextEdit {
+            range: lsp_types::Range::new(
+                lsp_types::Position::new(0, 0),
+                lsp_types::Position::new(formatted_text.lines().count() as u32, u32::MAX),
             ),
             new_text: formatted_text,
         }]))
@@ -247,13 +252,13 @@ impl Backend {
         // Add parsing errors if they exist
         if let Some(errors) = file_errors {
             diagnostics.extend(errors.iter().cloned().map(|(message, item)| {
-                Diagnostic::new_simple(
-                    Range::new(
-                        Position {
+                lsp_types::Diagnostic::new_simple(
+                    lsp_types::Range::new(
+                        lsp_types::Position {
                             line: item.start.line - 1,
                             character: (item.start.column - 1) as u32,
                         },
-                        Position {
+                        lsp_types::Position {
                             line: item.end.line - 1,
                             character: (item.end.column - 1) as u32,
                         },
@@ -282,13 +287,13 @@ impl Backend {
                         });
 
                         if has_error_in_this_file {
-                            Some(Diagnostic::new_simple(
-                                Range::new(
-                                    Position {
+                            Some(lsp_types::Diagnostic::new_simple(
+                                lsp_types::Range::new(
+                                    lsp_types::Position {
                                         line: item.start.line - 1,
                                         character: (item.start.column - 1) as u32,
                                     },
-                                    Position {
+                                    lsp_types::Position {
                                         line: item.end.line - 1,
                                         character: (item.end.column - 1) as u32,
                                     },
@@ -306,13 +311,13 @@ impl Backend {
             let unused_functions = hir.unused_functions(*source_id);
             for (_, symbol) in unused_functions {
                 if let Some(text_range) = &symbol.source.text_range {
-                    let mut diagnostic = Diagnostic::new_simple(
-                        Range::new(
-                            Position {
+                    let mut diagnostic = lsp_types::Diagnostic::new_simple(
+                        lsp_types::Range::new(
+                            lsp_types::Position {
                                 line: text_range.start.line - 1,
                                 character: (text_range.start.column - 1) as u32,
                             },
-                            Position {
+                            lsp_types::Position {
                                 line: text_range.end.line - 1,
                                 character: (text_range.end.column - 1) as u32,
                             },
@@ -322,7 +327,7 @@ impl Backend {
                             symbol.value.as_ref().unwrap_or(&"<anonymous>".into())
                         ),
                     );
-                    diagnostic.severity = Some(DiagnosticSeverity::WARNING);
+                    diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
                     diagnostics.push(diagnostic);
                 }
             }
@@ -339,20 +344,20 @@ impl Backend {
                         });
 
                         if has_warning_in_this_file {
-                            let mut diagnostic = Diagnostic::new_simple(
-                                Range::new(
-                                    Position {
+                            let mut diagnostic = lsp_types::Diagnostic::new_simple(
+                                lsp_types::Range::new(
+                                    lsp_types::Position {
                                         line: item.start.line - 1,
                                         character: (item.start.column - 1) as u32,
                                     },
-                                    Position {
+                                    lsp_types::Position {
                                         line: item.end.line - 1,
                                         character: (item.end.column - 1) as u32,
                                     },
                                 ),
                                 message,
                             );
-                            diagnostic.severity = Some(DiagnosticSeverity::WARNING);
+                            diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
                             Some(diagnostic)
                         } else {
                             None
@@ -362,7 +367,7 @@ impl Backend {
         }
 
         self.client
-            .publish_diagnostics(uri, diagnostics, version)
+            .publish_diagnostics(to_uri(&uri), diagnostics, version)
             .await;
     }
 }
@@ -402,7 +407,7 @@ pub async fn start(config: LspConfig) {
 
 #[cfg(test)]
 mod tests {
-    use tower_lsp::lsp_types::{SemanticToken, TextDocumentItem};
+    use tower_lsp_server::lsp_types;
 
     use super::*;
 
@@ -420,9 +425,9 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         backend
-            .did_open(DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: uri.clone(),
+            .did_open(lsp_types::DidOpenTextDocumentParams {
+                text_document: lsp_types::TextDocumentItem {
+                    uri: to_uri(&uri),
                     language_id: "mq".to_string(),
                     version: 1,
                     text: "def main(): 1;".to_string(),
@@ -476,9 +481,9 @@ mod tests {
             .insert(uri.to_string(), errors.error_ranges(text));
 
         let result = backend
-            .formatting(DocumentFormattingParams {
-                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri: uri.clone() },
-                options: tower_lsp::lsp_types::FormattingOptions {
+            .formatting(lsp_types::DocumentFormattingParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                options: lsp_types::FormattingOptions {
                     tab_size: 2,
                     insert_spaces: true,
                     ..Default::default()
@@ -507,10 +512,10 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         let result = backend
-            .completion(CompletionParams {
-                text_document_position: tower_lsp::lsp_types::TextDocumentPositionParams {
-                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
-                    position: Position::new(0, 0),
+            .completion(lsp_types::CompletionParams {
+                text_document_position: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: lsp_types::Position::new(0, 0),
                 },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
@@ -535,10 +540,10 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         let result = backend
-            .goto_definition(GotoDefinitionParams {
-                text_document_position_params: tower_lsp::lsp_types::TextDocumentPositionParams {
-                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
-                    position: Position::new(0, 0),
+            .goto_definition(lsp_types::GotoDefinitionParams {
+                text_document_position_params: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: lsp_types::Position::new(0, 0),
                 },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
@@ -562,10 +567,10 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         let result = backend
-            .hover(HoverParams {
-                text_document_position_params: tower_lsp::lsp_types::TextDocumentPositionParams {
-                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
-                    position: Position::new(0, 0),
+            .hover(lsp_types::HoverParams {
+                text_document_position_params: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: lsp_types::Position::new(0, 0),
                 },
                 work_done_progress_params: Default::default(),
             })
@@ -594,8 +599,8 @@ mod tests {
             .add_code(Some(uri.clone()), "def main(): 1;");
 
         let result = backend
-            .semantic_tokens_full(SemanticTokensParams {
-                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+            .semantic_tokens_full(lsp_types::SemanticTokensParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
             })
@@ -603,24 +608,24 @@ mod tests {
 
         assert_eq!(
             result.unwrap().unwrap(),
-            SemanticTokensResult::Tokens(SemanticTokens {
+            lsp_types::SemanticTokensResult::Tokens(lsp_types::SemanticTokens {
                 result_id: None,
                 data: vec![
-                    SemanticToken {
+                    lsp_types::SemanticToken {
                         delta_line: 0,
                         delta_start: 0,
                         length: 3,
                         token_type: 2,
                         token_modifiers_bitset: 0
                     },
-                    SemanticToken {
+                    lsp_types::SemanticToken {
                         delta_line: 0,
                         delta_start: 4,
                         length: 4,
                         token_type: 1,
                         token_modifiers_bitset: 0
                     },
-                    SemanticToken {
+                    lsp_types::SemanticToken {
                         delta_line: 0,
                         delta_start: 8,
                         length: 1,
@@ -656,15 +661,13 @@ mod tests {
             .insert(uri.to_string(), source_id);
 
         let result = backend
-            .references(ReferenceParams {
-                text_document_position: tower_lsp::lsp_types::TextDocumentPositionParams {
-                    text_document: tower_lsp::lsp_types::TextDocumentIdentifier {
-                        uri: uri.clone(),
-                    },
-                    position: Position::new(0, 6),
+            .references(lsp_types::ReferenceParams {
+                text_document_position: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                    position: lsp_types::Position::new(0, 6),
                 },
                 work_done_progress_params: Default::default(),
-                context: tower_lsp::lsp_types::ReferenceContext {
+                context: lsp_types::ReferenceContext {
                     include_declaration: true,
                 },
                 partial_result_params: Default::default(),
@@ -698,8 +701,8 @@ mod tests {
             .insert(uri.to_string(), source_id);
 
         let result = backend
-            .document_symbol(DocumentSymbolParams {
-                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+            .document_symbol(lsp_types::DocumentSymbolParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
             })
@@ -709,7 +712,7 @@ mod tests {
 
         let symbols = result.unwrap().unwrap();
 
-        if let DocumentSymbolResponse::Nested(symbols) = symbols {
+        if let lsp_types::DocumentSymbolResponse::Nested(symbols) = symbols {
             let symbol_names: Vec<String> = symbols.iter().map(|s| s.name.clone()).collect();
 
             assert!(symbol_names.contains(&"test_func".to_string()));
@@ -734,9 +737,9 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         backend
-            .did_open(DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: uri.clone(),
+            .did_open(lsp_types::DidOpenTextDocumentParams {
+                text_document: lsp_types::TextDocumentItem {
+                    uri: to_uri(&uri),
                     language_id: "mq".to_string(),
                     version: 1,
                     text: "def main(): 1;".to_string(),
@@ -745,12 +748,12 @@ mod tests {
             .await;
 
         backend
-            .did_change(DidChangeTextDocumentParams {
-                text_document: tower_lsp::lsp_types::VersionedTextDocumentIdentifier {
-                    uri: uri.clone(),
+            .did_change(lsp_types::DidChangeTextDocumentParams {
+                text_document: lsp_types::VersionedTextDocumentIdentifier {
+                    uri: to_uri(&uri),
                     version: 2,
                 },
-                content_changes: vec![tower_lsp::lsp_types::TextDocumentContentChangeEvent {
+                content_changes: vec![lsp_types::TextDocumentContentChangeEvent {
                     range: None,
                     range_length: None,
                     text: "def main(): 2;".to_string(),
@@ -778,9 +781,9 @@ mod tests {
 
         // Open and setup a file with content
         backend
-            .did_open(DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: uri.clone(),
+            .did_open(lsp_types::DidOpenTextDocumentParams {
+                text_document: lsp_types::TextDocumentItem {
+                    uri: to_uri(&uri),
                     language_id: "mq".to_string(),
                     version: 1,
                     text: "def main(): invalid_syntax".to_string(),
@@ -800,11 +803,11 @@ mod tests {
         );
 
         // Close the file
-        use tower_lsp::lsp_types::DidCloseTextDocumentParams;
-        use tower_lsp::lsp_types::TextDocumentIdentifier;
+        use lsp_types::DidCloseTextDocumentParams;
+        use lsp_types::TextDocumentIdentifier;
         backend
             .did_close(DidCloseTextDocumentParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
             })
             .await;
 
@@ -849,8 +852,8 @@ mod tests {
 
         // Trigger save
         backend
-            .did_save(DidSaveTextDocumentParams {
-                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
+            .did_save(lsp_types::DidSaveTextDocumentParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
                 text: None,
             })
             .await;
@@ -872,7 +875,9 @@ mod tests {
         let backend = service.inner();
 
         // Test initialize
-        let init_result = backend.initialize(InitializeParams::default()).await;
+        let init_result = backend
+            .initialize(lsp_types::InitializeParams::default())
+            .await;
 
         assert!(init_result.is_ok());
         let capabilities = init_result.unwrap().capabilities;
@@ -905,14 +910,14 @@ mod tests {
             .add_code(Some(uri.clone()), "def main(): 1;");
 
         let result = backend
-            .semantic_tokens_range(SemanticTokensRangeParams {
-                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri },
-                range: Range {
-                    start: Position {
+            .semantic_tokens_range(lsp_types::SemanticTokensRangeParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                range: lsp_types::Range {
+                    start: lsp_types::Position {
                         line: 0,
                         character: 0,
                     },
-                    end: Position {
+                    end: lsp_types::Position {
                         line: 0,
                         character: 12,
                     },
@@ -1027,9 +1032,9 @@ mod tests {
         );
 
         let result = backend
-            .formatting(DocumentFormattingParams {
-                text_document: tower_lsp::lsp_types::TextDocumentIdentifier { uri: uri.clone() },
-                options: tower_lsp::lsp_types::FormattingOptions {
+            .formatting(lsp_types::DocumentFormattingParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                options: lsp_types::FormattingOptions {
                     tab_size: 2,
                     insert_spaces: true,
                     ..Default::default()
