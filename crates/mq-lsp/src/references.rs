@@ -1,7 +1,11 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 use bimap::BiMap;
-use tower_lsp::lsp_types::{Location, Position, Range, Url};
+use tower_lsp_server::lsp_types::{self, Location, Position, Range};
+use url::Url;
 
 pub fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
@@ -25,7 +29,7 @@ pub fn response(
                     symbol.source.text_range.clone().and_then(|text_range| {
                         symbol.source.source_id.and_then(|id| {
                             source_map.get_by_right(&id).map(|url| Location {
-                                uri: Url::parse(url).unwrap(),
+                                uri: lsp_types::Uri::from_str(url).unwrap(),
                                 range: Range {
                                     start: Position {
                                         line: text_range.start.line - 1,

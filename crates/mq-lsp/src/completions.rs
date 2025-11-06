@@ -2,10 +2,11 @@ use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
 use itertools::Itertools;
-use tower_lsp::lsp_types::{
+use tower_lsp_server::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind, Position, Url,
+    MarkupContent, MarkupKind, Position,
 };
+use url::Url;
 
 pub fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
