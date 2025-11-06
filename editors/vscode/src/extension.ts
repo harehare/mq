@@ -547,14 +547,14 @@ const startLspServer = async () => {
   }
 
   const workspaceFolders = vscode.workspace.workspaceFolders;
-  const cwd =
+  const workspacePaths =
     workspaceFolders && workspaceFolders.length > 0
-      ? workspaceFolders[0].uri.fsPath
-      : process.cwd();
+      ? workspaceFolders.map((folder) => folder.uri.fsPath)
+      : [process.cwd()];
 
   const run: lc.Executable = {
     command: lspPath,
-    args: ["lsp", "-M", cwd],
+    args: ["lsp", "-M", ...workspacePaths],
     options: {},
   };
 
