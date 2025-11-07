@@ -134,8 +134,30 @@ impl<'a> Parser<'a> {
         self.parse_program(true, false)
     }
 
+    #[inline(always)]
+    fn token_kind_to_binary_op(kind: &TokenKind) -> Option<BinaryOp> {
+        match kind {
+            TokenKind::And => Some(BinaryOp::And),
+            TokenKind::Asterisk => Some(BinaryOp::Multiplication),
+            TokenKind::Coalesce => Some(BinaryOp::Coalesce),
+            TokenKind::EqEq => Some(BinaryOp::Equal),
+            TokenKind::Gte => Some(BinaryOp::Gte),
+            TokenKind::Gt => Some(BinaryOp::Gt),
+            TokenKind::Lte => Some(BinaryOp::Lte),
+            TokenKind::Lt => Some(BinaryOp::Lt),
+            TokenKind::Minus => Some(BinaryOp::Minus),
+            TokenKind::NeEq => Some(BinaryOp::NotEqual),
+            TokenKind::Or => Some(BinaryOp::Or),
+            TokenKind::Percent => Some(BinaryOp::Modulo),
+            TokenKind::Plus => Some(BinaryOp::Plus),
+            TokenKind::RangeOp => Some(BinaryOp::RangeOp),
+            TokenKind::Slash => Some(BinaryOp::Division),
+            _ => None,
+        }
+    }
+
     fn parse_program(&mut self, root: bool, in_loop: bool) -> (Vec<Shared<Node>>, ErrorReporter) {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(self.tokens.len());
+        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(self.tokens.len() / 4);
         let mut leading_trivia = self.parse_leading_trivia();
 
         while self.tokens.peek().is_some() {
@@ -302,107 +324,13 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let mut lhs = self.parse_primary_expr(leading_trivia, root, in_loop)?;
 
-        while self.try_next_token(|kind| {
-            matches!(
-                kind,
-                TokenKind::And
-                    | TokenKind::Asterisk
-                    | TokenKind::Coalesce
-                    | TokenKind::EqEq
-                    | TokenKind::Gte
-                    | TokenKind::Gt
-                    | TokenKind::Lt
-                    | TokenKind::Lte
-                    | TokenKind::Minus
-                    | TokenKind::NeEq
-                    | TokenKind::Or
-                    | TokenKind::Percent
-                    | TokenKind::Plus
-                    | TokenKind::RangeOp
-                    | TokenKind::Slash
-            )
-        }) {
+        while self.try_next_token(|kind| Self::token_kind_to_binary_op(kind).is_some()) {
             let leading_trivia = self.parse_leading_trivia();
             let operator_token = self.tokens.next().unwrap();
+            let binary_op = Self::token_kind_to_binary_op(&operator_token.kind).unwrap();
+
             let mut op = Node {
-                kind: match &**operator_token {
-                    Token {
-                        range: _,
-                        kind: TokenKind::And,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::And),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Asterisk,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Multiplication),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Coalesce,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Coalesce),
-                    Token {
-                        range: _,
-                        kind: TokenKind::EqEq,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Equal),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Gte,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Gte),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Gt,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Gt),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Lte,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Lte),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Lt,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Lt),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Minus,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Minus),
-                    Token {
-                        range: _,
-                        kind: TokenKind::NeEq,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::NotEqual),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Or,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Or),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Percent,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Modulo),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Plus,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Plus),
-                    Token {
-                        range: _,
-                        kind: TokenKind::RangeOp,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::RangeOp),
-                    Token {
-                        range: _,
-                        kind: TokenKind::Slash,
-                        ..
-                    } => NodeKind::BinaryOp(BinaryOp::Division),
-                    _ => unreachable!(),
-                },
+                kind: NodeKind::BinaryOp(binary_op),
                 token: Some(Shared::clone(operator_token)),
                 leading_trivia,
                 trailing_trivia: self.parse_trailing_trivia(),
@@ -425,178 +353,50 @@ impl<'a> Parser<'a> {
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
-        if let Some(token) = &self.tokens.peek() {
-            match &****token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Def,
-                    ..
-                } => self.parse_def(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Do,
-                    ..
-                } => self.parse_block(leading_trivia, in_loop),
-                Token {
-                    range: _,
-                    kind: TokenKind::Fn,
-                    ..
-                } => self.parse_fn(leading_trivia, in_loop),
-                Token {
-                    range: _,
-                    kind: TokenKind::If,
-                    ..
-                } => self.parse_if(leading_trivia, in_loop),
-                Token {
-                    range: _,
-                    kind: TokenKind::Foreach,
-                    ..
-                } => self.parse_foreach(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Include,
-                    ..
-                } => self.parse_include(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Import,
-                    ..
-                } => self.parse_import(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Module,
-                    ..
-                } => self.parse_module(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::While,
-                    ..
-                } => self.parse_while(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Until,
-                    ..
-                } => self.parse_until(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Try,
-                    ..
-                } => self.parse_try(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Match,
-                    ..
-                } => self.parse_match(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Ident(_),
-                    ..
-                } => self.parse_ident(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Self_,
-                    ..
-                } => self.parse_self(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Let,
-                    ..
-                } => self.parse_let(leading_trivia, in_loop),
-                Token {
-                    range: _,
-                    kind: TokenKind::Selector(_),
-                    ..
-                } => self.parse_selector(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::StringLiteral(_),
-                    ..
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::NumberLiteral(_),
-                    ..
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::BoolLiteral(_),
-                    ..
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::None,
-                    ..
-                } => self.parse_node(NodeKind::Literal, leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::InterpolatedString(_),
-                    ..
-                } => self.parse_interpolated_string(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::LBracket,
-                    ..
-                } => self.parse_array(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::LBrace,
-                    ..
-                } => self.parse_dict(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::LParen,
-                    ..
-                } => self.parse_group_expr(leading_trivia, root, in_loop),
-                Token {
-                    range: _,
-                    kind: TokenKind::Nodes,
-                    ..
-                } if root => self.parse_nodes(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Env(_),
-                    ..
-                } => self.parse_node(NodeKind::Env, leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Not,
-                    ..
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Minus,
-                    ..
-                } => self.parse_unary_op(leading_trivia, root),
-                Token {
-                    range: _,
-                    kind: TokenKind::Break,
-                    ..
-                } if in_loop => self.parse_node(NodeKind::Break, leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Continue,
-                    ..
-                } if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Colon,
-                    ..
-                } => self.parse_symbol(leading_trivia),
-                Token {
-                    range: _,
-                    kind: TokenKind::Eof,
-                    ..
-                } => {
-                    self.tokens.next();
-                    Err(ParseError::UnexpectedEOFDetected)
-                }
-                token => {
-                    self.tokens.next();
-                    Err(ParseError::UnexpectedToken(Shared::new(token.clone())))
-                }
+        let token = self
+            .tokens
+            .peek()
+            .ok_or(ParseError::UnexpectedEOFDetected)?;
+
+        match &token.kind {
+            TokenKind::Def => self.parse_def(leading_trivia),
+            TokenKind::Do => self.parse_block(leading_trivia, in_loop),
+            TokenKind::Fn => self.parse_fn(leading_trivia, in_loop),
+            TokenKind::If => self.parse_if(leading_trivia, in_loop),
+            TokenKind::Foreach => self.parse_foreach(leading_trivia),
+            TokenKind::Include => self.parse_include(leading_trivia),
+            TokenKind::Import => self.parse_import(leading_trivia),
+            TokenKind::Module => self.parse_module(leading_trivia),
+            TokenKind::While => self.parse_while(leading_trivia),
+            TokenKind::Until => self.parse_until(leading_trivia),
+            TokenKind::Try => self.parse_try(leading_trivia),
+            TokenKind::Match => self.parse_match(leading_trivia),
+            TokenKind::Ident(_) => self.parse_ident(leading_trivia),
+            TokenKind::Self_ => self.parse_self(leading_trivia),
+            TokenKind::Let => self.parse_let(leading_trivia, in_loop),
+            TokenKind::Selector(_) => self.parse_selector(leading_trivia),
+            TokenKind::StringLiteral(_)
+            | TokenKind::NumberLiteral(_)
+            | TokenKind::BoolLiteral(_)
+            | TokenKind::None => self.parse_node(NodeKind::Literal, leading_trivia),
+            TokenKind::InterpolatedString(_) => self.parse_interpolated_string(leading_trivia),
+            TokenKind::LBracket => self.parse_array(leading_trivia),
+            TokenKind::LBrace => self.parse_dict(leading_trivia),
+            TokenKind::LParen => self.parse_group_expr(leading_trivia, root, in_loop),
+            TokenKind::Nodes if root => self.parse_nodes(leading_trivia),
+            TokenKind::Env(_) => self.parse_node(NodeKind::Env, leading_trivia),
+            TokenKind::Not | TokenKind::Minus => self.parse_unary_op(leading_trivia, root),
+            TokenKind::Break if in_loop => self.parse_node(NodeKind::Break, leading_trivia),
+            TokenKind::Continue if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
+            TokenKind::Colon => self.parse_symbol(leading_trivia),
+            TokenKind::Eof => {
+                self.tokens.next();
+                Err(ParseError::UnexpectedEOFDetected)
             }
-        } else {
-            Err(ParseError::UnexpectedEOFDetected)
+            _ => {
+                let token = self.tokens.next().unwrap();
+                Err(ParseError::UnexpectedToken(Shared::clone(token)))
+            }
         }
     }
 
@@ -614,7 +414,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(64);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(3);
 
         children.push(self.next_node(
             |token_kind| matches!(token_kind, TokenKind::LParen),
@@ -642,7 +442,7 @@ impl<'a> Parser<'a> {
     fn parse_ident(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next().unwrap();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         // Check for qualified access (module::function, module::value, or module::module2::method)
         if let Some(next_token) = self.tokens.peek()
@@ -813,7 +613,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_args(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(64);
+        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(8);
 
         nodes.push(self.next_node(
             |token_kind| matches!(token_kind, TokenKind::LParen),
@@ -994,7 +794,7 @@ impl<'a> Parser<'a> {
     fn parse_def(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
         let mut node = Node {
             kind: NodeKind::Def,
@@ -1026,7 +826,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::Fn,
@@ -1055,19 +855,15 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
+        let (program, _) = self.parse_program(false, in_loop);
 
-        let mut node = Node {
+        Ok(Shared::new(Node {
             kind: NodeKind::Block,
             token: Some(Shared::clone(token.unwrap())),
             leading_trivia,
             trailing_trivia,
-            children: Vec::new(),
-        };
-
-        let (program, _) = self.parse_program(false, in_loop);
-
-        node.children = program;
-        Ok(Shared::new(node))
+            children: program,
+        }))
     }
 
     fn parse_selector(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
@@ -1209,7 +1005,7 @@ impl<'a> Parser<'a> {
 
                 match token.kind {
                     TokenKind::LParen => {
-                        let mut children: Vec<Shared<Node>> = Vec::with_capacity(64);
+                        let mut children: Vec<Shared<Node>> = Vec::with_capacity(8);
                         let mut args = self.parse_args()?;
 
                         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
@@ -1230,52 +1026,41 @@ impl<'a> Parser<'a> {
     fn parse_include(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+        let child = self.next_node(
+            |kind| matches!(kind, TokenKind::StringLiteral(_)),
+            NodeKind::Literal,
+        )?;
 
-        let mut node = Node {
+        Ok(Shared::new(Node {
             kind: NodeKind::Include,
             token: Some(Shared::clone(token.unwrap())),
             leading_trivia,
             trailing_trivia,
-            children: Vec::new(),
-        };
-
-        children.push(self.next_node(
-            |kind| matches!(kind, TokenKind::StringLiteral(_)),
-            NodeKind::Literal,
-        )?);
-
-        node.children = children;
-        Ok(Shared::new(node))
+            children: vec![child],
+        }))
     }
 
     fn parse_import(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+        let child = self.next_node(
+            |kind| matches!(kind, TokenKind::StringLiteral(_)),
+            NodeKind::Literal,
+        )?;
 
-        let mut node = Node {
+        Ok(Shared::new(Node {
             kind: NodeKind::Import,
             token: Some(Shared::clone(token.unwrap())),
             leading_trivia,
             trailing_trivia,
-            children: Vec::new(),
-        };
-
-        // Parse module path (string literal)
-        children.push(self.next_node(
-            |kind| matches!(kind, TokenKind::StringLiteral(_)),
-            NodeKind::Literal,
-        )?);
-
-        node.children = children;
-        Ok(Shared::new(node))
+            children: vec![child],
+        }))
     }
 
     fn parse_module(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(100);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(16);
 
         let mut node = Node {
             kind: NodeKind::Module,
@@ -1312,7 +1097,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::If,
@@ -1362,7 +1147,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::Elif,
@@ -1395,7 +1180,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::Else,
@@ -1433,7 +1218,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(64);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
         children.push(self.next_node(
             |token_kind| matches!(token_kind, TokenKind::LBracket),
@@ -1536,7 +1321,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_dict(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(64);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
         children.push(self.next_node(
             |token_kind| matches!(token_kind, TokenKind::LBrace),
@@ -1678,7 +1463,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::Let,
@@ -1773,7 +1558,7 @@ impl<'a> Parser<'a> {
     fn parse_foreach(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::Foreach,
@@ -1804,7 +1589,7 @@ impl<'a> Parser<'a> {
     fn parse_while(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::While,
@@ -1833,7 +1618,7 @@ impl<'a> Parser<'a> {
     fn parse_until(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         let mut node = Node {
             kind: NodeKind::Until,
@@ -2329,7 +2114,7 @@ impl<'a> Parser<'a> {
 
     #[inline(always)]
     fn parse_leading_trivia(&mut self) -> Vec<Trivia> {
-        let mut trivia = Vec::with_capacity(100);
+        let mut trivia = Vec::with_capacity(4);
 
         while let Some(token) = self.tokens.peek() {
             match &token.kind {
@@ -2345,29 +2130,26 @@ impl<'a> Parser<'a> {
         trivia
     }
 
-    fn try_parse_leading_trivia(
-        tokens: &mut Peekable<core::slice::Iter<'a, Shared<Token>>>,
-    ) -> Vec<Trivia> {
-        let mut trivia = Vec::with_capacity(100);
-
+    fn skip_leading_trivia(tokens: &mut Peekable<core::slice::Iter<'a, Shared<Token>>>) {
         while let Some(token) = tokens.peek() {
-            match &token.kind {
-                TokenKind::Whitespace(_) => trivia.push(Trivia::Whitespace(Shared::clone(token))),
-                TokenKind::Tab(_) => trivia.push(Trivia::Tab(Shared::clone(token))),
-                TokenKind::Comment(_) => trivia.push(Trivia::Comment(Shared::clone(token))),
-                TokenKind::NewLine => trivia.push(Trivia::NewLine),
-                _ => break,
-            };
-            tokens.next();
+            if matches!(
+                token.kind,
+                TokenKind::Whitespace(_)
+                    | TokenKind::Tab(_)
+                    | TokenKind::Comment(_)
+                    | TokenKind::NewLine
+            ) {
+                tokens.next();
+            } else {
+                break;
+            }
         }
-
-        trivia
     }
 
     #[inline(always)]
     fn try_next_token(&mut self, match_token_kind: fn(&TokenKind) -> bool) -> bool {
         let tokens = &mut self.tokens.clone();
-        Self::try_parse_leading_trivia(tokens);
+        Self::skip_leading_trivia(tokens);
 
         let token = tokens.peek().ok_or(ParseError::UnexpectedEOFDetected);
 
@@ -2380,7 +2162,7 @@ impl<'a> Parser<'a> {
 
     #[inline(always)]
     fn parse_trailing_trivia(&mut self) -> Vec<Trivia> {
-        let mut trivia = Vec::with_capacity(10);
+        let mut trivia = Vec::with_capacity(2);
 
         while let Some(token) = self.tokens.peek() {
             match &token.kind {
