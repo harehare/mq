@@ -1,9 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use itertools::Itertools;
-use tower_lsp_server::lsp_types::{
-    Hover, HoverContents, MarkupContent, MarkupKind, Position, Range,
-};
+use tower_lsp_server::lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
 use url::Url;
 
 pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<Hover> {
@@ -39,14 +37,8 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
                     }),
                     range: symbol.source.text_range.map(|text_range| {
                         Range::new(
-                            Position::new(
-                                text_range.start.line - 1,
-                                (text_range.start.column - 1) as u32,
-                            ),
-                            Position::new(
-                                text_range.end.line - 1,
-                                (text_range.end.column - 1) as u32,
-                            ),
+                            Position::new(text_range.start.line - 1, (text_range.start.column - 1) as u32),
+                            Position::new(text_range.end.line - 1, (text_range.end.column - 1) as u32),
                         )
                     }),
                 }),

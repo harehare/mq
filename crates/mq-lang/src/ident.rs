@@ -14,12 +14,7 @@ impl Ident {
     }
 
     pub fn as_str(&self) -> String {
-        STRING_INTERNER
-            .lock()
-            .unwrap()
-            .resolve(self.0)
-            .unwrap()
-            .to_string()
+        STRING_INTERNER.lock().unwrap().resolve(self.0).unwrap().to_string()
     }
 
     pub fn resolve_with<F, R>(&self, f: F) -> R

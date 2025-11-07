@@ -34,10 +34,8 @@ pub struct Range {
 
 impl Range {
     pub fn contains(&self, position: &Position) -> bool {
-        (self.start.line < position.line
-            || (self.start.line == position.line && self.start.column <= position.column))
-            && (self.end.line > position.line
-                || (self.end.line == position.line && self.end.column >= position.column))
+        (self.start.line < position.line || (self.start.line == position.line && self.start.column <= position.column))
+            && (self.end.line > position.line || (self.end.line == position.line && self.end.column >= position.column))
     }
 }
 

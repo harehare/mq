@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 use bimap::BiMap;
 use itertools::Itertools;
 use tower_lsp_server::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind, Position,
+    CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
+    Position,
 };
 use url::Url;
 
@@ -27,10 +27,8 @@ pub fn response(
                 .unwrap_or_else(|| hir.read().unwrap().find_scope_by_source(source_id));
 
             let module_completion = if position.character >= 3 {
-                let before_pos = mq_lang::Position::new(
-                    position.line + 1,
-                    (position.character.saturating_sub(3)) as usize,
-                );
+                let before_pos =
+                    mq_lang::Position::new(position.line + 1, (position.character.saturating_sub(3)) as usize);
 
                 hir.read()
                     .unwrap()
@@ -43,20 +41,14 @@ pub fn response(
                             for (_, mod_symbol) in hir_guard.symbols() {
                                 if mod_symbol.is_module()
                                     && mod_symbol.value.as_ref() == Some(module_name)
-                                    && let mq_hir::SymbolKind::Module(module_source_id) =
-                                        mod_symbol.kind
+                                    && let mq_hir::SymbolKind::Module(module_source_id) = mod_symbol.kind
                                 {
-                                    return Some(
-                                        hir_guard.find_symbols_in_module(module_source_id),
-                                    );
+                                    return Some(hir_guard.find_symbols_in_module(module_source_id));
                                 } else if mod_symbol.is_import()
                                     && mod_symbol.value.as_ref() == Some(module_name)
-                                    && let mq_hir::SymbolKind::Import(module_source_id) =
-                                        mod_symbol.kind
+                                    && let mq_hir::SymbolKind::Import(module_source_id) = mod_symbol.kind
                                 {
-                                    return Some(
-                                        hir_guard.find_symbols_in_module(module_source_id),
-                                    );
+                                    return Some(hir_guard.find_symbols_in_module(module_source_id));
                                 }
                             }
                             None
@@ -106,28 +98,20 @@ pub fn response(
                             insert_text_format: Some(InsertTextFormat::SNIPPET),
                             documentation: Some(Documentation::MarkupContent(MarkupContent {
                                 kind: MarkupKind::Markdown,
-                                value: format!(
-                                    "```md\n{}\n```",
-                                    symbol.doc.iter().map(|(_, doc)| doc).join("\n")
-                                ),
+                                value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                             })),
                             ..Default::default()
                         }),
-                        mq_hir::SymbolKind::Parameter | mq_hir::SymbolKind::Variable => {
-                            Some(CompletionItem {
-                                label: symbol.value.clone().unwrap_or_default().to_string(),
-                                kind: Some(CompletionItemKind::VARIABLE),
-                                detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                                documentation: Some(Documentation::MarkupContent(MarkupContent {
-                                    kind: MarkupKind::Markdown,
-                                    value: format!(
-                                        "```md\n{}\n```",
-                                        symbol.doc.iter().map(|(_, doc)| doc).join("\n")
-                                    ),
-                                })),
-                                ..Default::default()
-                            })
-                        }
+                        mq_hir::SymbolKind::Parameter | mq_hir::SymbolKind::Variable => Some(CompletionItem {
+                            label: symbol.value.clone().unwrap_or_default().to_string(),
+                            kind: Some(CompletionItemKind::VARIABLE),
+                            detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                            documentation: Some(Documentation::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                            })),
+                            ..Default::default()
+                        }),
                         mq_hir::SymbolKind::Selector => Some(CompletionItem {
                             label: symbol.value.clone().unwrap_or_default().to_string(),
                             kind: Some(CompletionItemKind::METHOD),
@@ -136,10 +120,7 @@ pub fn response(
                             insert_text_format: Some(InsertTextFormat::SNIPPET),
                             documentation: Some(Documentation::MarkupContent(MarkupContent {
                                 kind: MarkupKind::Markdown,
-                                value: format!(
-                                    "```md\n{}\n```",
-                                    symbol.doc.iter().map(|(_, doc)| doc).join("\n")
-                                ),
+                                value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                             })),
                             ..Default::default()
                         }),
@@ -178,12 +159,7 @@ mod tests {
 
         source_map.insert(url.to_string(), source_id);
 
-        let result = response(
-            Arc::new(RwLock::new(hir)),
-            url,
-            Position::new(0, 0),
-            source_map,
-        );
+        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), source_map);
         assert!(result.is_some());
 
         if let Some(CompletionResponse::Array(items)) = result {
@@ -200,12 +176,7 @@ mod tests {
 
         source_map.insert(url.to_string(), source_id);
 
-        let result = response(
-            Arc::new(RwLock::new(hir)),
-            url,
-            Position::new(0, 0),
-            source_map,
-        );
+        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), source_map);
         assert!(result.is_some());
 
         if let Some(CompletionResponse::Array(items)) = result {

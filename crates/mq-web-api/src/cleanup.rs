@@ -28,10 +28,7 @@ impl CleanupService {
         let interval_duration = self.cleanup_interval;
 
         let handle = tokio::spawn(async move {
-            info!(
-                "Starting cleanup service with interval: {:?}",
-                interval_duration
-            );
+            info!("Starting cleanup service with interval: {:?}", interval_duration);
 
             let mut cleanup_interval = interval(interval_duration);
 
@@ -67,10 +64,7 @@ impl CleanupService {
     }
 
     pub fn is_running(&self) -> bool {
-        self.handle
-            .as_ref()
-            .map(|h| !h.is_finished())
-            .unwrap_or(false)
+        self.handle.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
     }
 }
 

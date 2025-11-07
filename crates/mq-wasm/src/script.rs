@@ -183,11 +183,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
 
     engine.load_builtin_module();
 
-    let input = match options
-        .input_format
-        .as_ref()
-        .unwrap_or(&InputFormat::Markdown)
-    {
+    let input = match options.input_format.as_ref().unwrap_or(&InputFormat::Markdown) {
         InputFormat::Text => mq_lang::parse_text_input(content),
         InputFormat::Html => mq_lang::parse_html_input(content),
         InputFormat::Mdx => mq_lang::parse_mdx_input(content),
@@ -201,8 +197,7 @@ pub fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValu
         .eval(code, input.clone().into_iter())
         .map_err(|e| JsValue::from_str(&format!("{}", &e.cause)))
         .map(|result_values| {
-            let values = if matches!(options.input_format, Some(InputFormat::Markdown)) && is_update
-            {
+            let values = if matches!(options.input_format, Some(InputFormat::Markdown)) && is_update {
                 let values: mq_lang::RuntimeValues = input.into();
                 values.update_with(result_values)
             } else {
@@ -253,8 +248,7 @@ pub fn to_ast(code: &str) -> Result<String, JsValue> {
     mq_lang::parse(code, token_arena)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse code: {}", e)))
         .and_then(|json| {
-            serde_json::to_string(&json)
-                .map_err(|e| JsValue::from_str(&format!("Failed to serialize AST: {}", e)))
+            serde_json::to_string(&json).map_err(|e| JsValue::from_str(&format!("Failed to serialize AST: {}", e)))
         })
 }
 
@@ -291,9 +285,7 @@ pub fn defined_values(code: &str, module: Option<String>) -> Result<JsValue, JsV
     // If module is specified, find the module symbol
     let module_id = if let Some(ref module_name) = module {
         hir.symbols().find_map(|(id, symbol)| {
-            if symbol.is_module()
-                && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name.as_str())
-            {
+            if symbol.is_module() && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name.as_str()) {
                 Some(id)
             } else {
                 None
@@ -437,10 +429,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_script_format() {
         let result = format(r#"downcase()|ltrimstr("hello")|upcase()|trim()"#).unwrap();
-        assert_eq!(
-            result,
-            r#"downcase() | ltrimstr("hello") | upcase() | trim()"#
-        );
+        assert_eq!(result, r#"downcase() | ltrimstr("hello") | upcase() | trim()"#);
     }
 
     #[allow(unused)]

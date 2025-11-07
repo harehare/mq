@@ -2,8 +2,7 @@ use colored::*;
 use miette::IntoDiagnostic;
 use mq_lang::{DebugContext, Shared};
 use rustyline::{
-    At, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers,
-    Movement, Word,
+    At, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::Completer,
     error::ReadlineError,
     highlight::{CmdKind, Highlighter},
@@ -63,31 +62,16 @@ impl Command {
             Command::Backtrace => {
                 format!("{:<20}{}", "backtrace or bt", "Print the current backtrace")
             }
-            Command::Breakpoint(_) => format!(
-                "{:<20}{}",
-                "b[reakpoint]", "Set a breakpoint at the specified line"
-            ),
+            Command::Breakpoint(_) => format!("{:<20}{}", "b[reakpoint]", "Set a breakpoint at the specified line"),
             Command::Continue => {
                 format!("{:<20}{}", "c[ontinue]", "Continue execution")
             }
-            Command::Clear(_) => format!(
-                "{:<20}{}",
-                "cl[ear]", "Clear breakpoints at a specific identifier"
-            ),
+            Command::Clear(_) => format!("{:<20}{}", "cl[ear]", "Clear breakpoints at a specific identifier"),
             Command::Eval(_) | Command::Error(_) => "".to_string(),
-            Command::Finish => format!(
-                "{:<20}{}",
-                "f[inish]", "Finish execution and return to the caller"
-            ),
+            Command::Finish => format!("{:<20}{}", "f[inish]", "Finish execution and return to the caller"),
             Command::Help => format!("{:<20}{}", "h[elp]", "Print command help"),
-            Command::Info => format!(
-                "{:<20}{}",
-                "i[nfo]", "Print information about the current context"
-            ),
-            Command::List => format!(
-                "{:<20}{}",
-                "l[ist]", "List source code around the current line"
-            ),
+            Command::Info => format!("{:<20}{}", "i[nfo]", "Print information about the current context"),
+            Command::List => format!("{:<20}{}", "l[ist]", "List source code around the current line"),
             Command::LongList => {
                 format!("{:<20}{}", "long-list or ll", "List all source code lines")
             }
@@ -106,12 +90,7 @@ impl Command {
 
 impl From<String> for Command {
     fn from(s: String) -> Self {
-        match s
-            .as_str()
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .as_slice()
-        {
+        match s.as_str().split_whitespace().collect::<Vec<&str>>().as_slice() {
             ["backtrace"] | ["bt"] => Command::Backtrace,
             ["breakpoint", line] | ["b", line] => Command::Breakpoint(line.parse().ok()),
             ["breakpoint"] | ["b"] => Command::Breakpoint(None),
@@ -153,14 +132,12 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
         _breakpoint: &mq_lang::Breakpoint,
         context: &mq_lang::DebugContext,
     ) -> mq_lang::DebuggerAction {
-        self.run_debug(context)
-            .unwrap_or(mq_lang::DebuggerAction::Continue)
+        self.run_debug(context).unwrap_or(mq_lang::DebuggerAction::Continue)
     }
 
     /// Called when stepping through execution.
     fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
-        self.run_debug(context)
-            .unwrap_or(mq_lang::DebuggerAction::Continue)
+        self.run_debug(context).unwrap_or(mq_lang::DebuggerAction::Continue)
     }
 }
 
@@ -169,10 +146,7 @@ impl DebuggerHandler {
         Self { engine }
     }
 
-    pub fn run_debug(
-        &self,
-        context: &mq_lang::DebugContext,
-    ) -> miette::Result<mq_lang::DebuggerAction> {
+    pub fn run_debug(&self, context: &mq_lang::DebugContext) -> miette::Result<mq_lang::DebuggerAction> {
         let config = Config::builder()
             .history_ignore_space(true)
             .completion_type(CompletionType::List)
@@ -192,8 +166,7 @@ impl DebuggerHandler {
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
 
-        let (start, snippet) =
-            self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
+        let (start, snippet) = self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
         Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
 
         loop {
@@ -210,9 +183,7 @@ impl DebuggerHandler {
                         .call_stack
                         .iter()
                         .filter_map(|frame| {
-                            let range = self.engine.token_arena().read().unwrap()[frame.token_id]
-                                .range
-                                .clone();
+                            let range = self.engine.token_arena().read().unwrap()[frame.token_id].range.clone();
 
                             match &*frame.expr {
                                 mq_lang::AstExpr::Call(ident, _) => Some(format!(
@@ -237,20 +208,12 @@ impl DebuggerHandler {
                     return Ok(mq_lang::DebuggerAction::Clear(line_opt));
                 }
                 Command::List => {
-                    let (start, snippet) = self.get_source_code_with_context(
-                        context,
-                        context.token.range.start.line as usize,
-                        5,
-                    );
-                    Self::print_source_code(
-                        start,
-                        context.token.range.start.line as usize + 1,
-                        snippet,
-                    );
+                    let (start, snippet) =
+                        self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
+                    Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
                 }
                 Command::LongList => {
-                    let lines: Vec<String> =
-                        context.source.code.lines().map(|s| s.to_string()).collect();
+                    let lines: Vec<String> = context.source.code.lines().map(|s| s.to_string()).collect();
                     Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
                 }
                 Command::Info => {
@@ -335,11 +298,7 @@ impl DebuggerHandler {
                     line_number_width = line_number_width - 2
                 )
             } else {
-                format!(
-                    "{:>line_number_width$}| {}",
-                    line_number.to_string().blue(),
-                    line
-                )
+                format!("{:>line_number_width$}| {}", line_number.to_string().blue(), line)
             }
         });
 
@@ -368,8 +327,7 @@ impl DebuggerHandler {
 fn highlight_syntax(line: &str) -> Cow<'_, str> {
     let mut result = line.to_string();
 
-    let commands_pattern =
-        r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|)\b";
+    let commands_pattern = r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|)\b";
     if let Ok(re) = regex_lite::Regex::new(commands_pattern) {
         result = re
             .replace_all(&result, |caps: &regex_lite::Captures| {
@@ -378,12 +336,11 @@ fn highlight_syntax(line: &str) -> Cow<'_, str> {
             .to_string();
     }
 
-    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None)\b";
+    let keywords_pattern =
+        r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None)\b";
     if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
         result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_blue().to_string()
-            })
+            .replace_all(&result, |caps: &regex_lite::Captures| caps[0].bright_blue().to_string())
             .to_string();
     }
 
@@ -430,11 +387,7 @@ impl Completer for DebuggerLineHelper {
 }
 
 impl Highlighter for DebuggerLineHelper {
-    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
-        &'s self,
-        prompt: &'p str,
-        _default: bool,
-    ) -> Cow<'b, str> {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
         prompt.cyan().to_string().into()
     }
 
@@ -514,33 +467,18 @@ mod tests {
 
     #[test]
     fn test_command_from_string_basic() {
-        assert!(matches!(
-            Command::from("backtrace".to_string()),
-            Command::Backtrace
-        ));
-        assert!(matches!(
-            Command::from("bt".to_string()),
-            Command::Backtrace
-        ));
-        assert!(matches!(
-            Command::from("continue".to_string()),
-            Command::Continue
-        ));
+        assert!(matches!(Command::from("backtrace".to_string()), Command::Backtrace));
+        assert!(matches!(Command::from("bt".to_string()), Command::Backtrace));
+        assert!(matches!(Command::from("continue".to_string()), Command::Continue));
         assert!(matches!(Command::from("c".to_string()), Command::Continue));
-        assert!(matches!(
-            Command::from("finish".to_string()),
-            Command::Finish
-        ));
+        assert!(matches!(Command::from("finish".to_string()), Command::Finish));
         assert!(matches!(Command::from("f".to_string()), Command::Finish));
         assert!(matches!(Command::from("help".to_string()), Command::Help));
         assert!(matches!(Command::from("info".to_string()), Command::Info));
         assert!(matches!(Command::from("i".to_string()), Command::Info));
         assert!(matches!(Command::from("list".to_string()), Command::List));
         assert!(matches!(Command::from("l".to_string()), Command::List));
-        assert!(matches!(
-            Command::from("long-list".to_string()),
-            Command::LongList
-        ));
+        assert!(matches!(Command::from("long-list".to_string()), Command::LongList));
         assert!(matches!(Command::from("ll".to_string()), Command::LongList));
         assert!(matches!(Command::from("next".to_string()), Command::Next));
         assert!(matches!(Command::from("n".to_string()), Command::Next));
@@ -556,19 +494,10 @@ mod tests {
             Command::from("breakpoint 10".to_string()),
             Command::Breakpoint(Some(10))
         );
-        assert_eq!(
-            Command::from("b 20".to_string()),
-            Command::Breakpoint(Some(20))
-        );
-        assert_eq!(
-            Command::from("breakpoint".to_string()),
-            Command::Breakpoint(None)
-        );
+        assert_eq!(Command::from("b 20".to_string()), Command::Breakpoint(Some(20)));
+        assert_eq!(Command::from("breakpoint".to_string()), Command::Breakpoint(None));
         assert_eq!(Command::from("b".to_string()), Command::Breakpoint(None));
-        assert_eq!(
-            Command::from("clear 3".to_string()),
-            Command::Clear(Some(3))
-        );
+        assert_eq!(Command::from("clear 3".to_string()), Command::Clear(Some(3)));
         assert_eq!(Command::from("cl 4".to_string()), Command::Clear(Some(4)));
         assert_eq!(Command::from("clear".to_string()), Command::Clear(None));
         assert_eq!(Command::from("cl".to_string()), Command::Clear(None));
@@ -580,10 +509,7 @@ mod tests {
             Command::from("eval foo + 1".to_string()),
             Command::Eval("foo + 1".to_string())
         );
-        assert_eq!(
-            Command::from("e bar".to_string()),
-            Command::Eval("bar".to_string())
-        );
+        assert_eq!(Command::from("e bar".to_string()), Command::Eval("bar".to_string()));
         assert_eq!(
             Command::from("eval".to_string()),
             Command::Error("No expression provided for eval".to_string())
@@ -715,10 +641,7 @@ mod tests {
         // Large context size
         let (start, snippet) = handler.get_source_code_with_context(&context, 1, 10);
         assert_eq!(start, 0);
-        assert_eq!(
-            snippet,
-            vec!["a".to_string(), "b".to_string(), "c".to_string()]
-        );
+        assert_eq!(snippet, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
     }
 
     #[test]
@@ -736,10 +659,7 @@ mod tests {
             Command::from("breakpoint invalid".to_string()),
             Command::Breakpoint(None)
         );
-        assert_eq!(
-            Command::from("clear not_a_number".to_string()),
-            Command::Clear(None)
-        );
+        assert_eq!(Command::from("clear not_a_number".to_string()), Command::Clear(None));
         assert_eq!(Command::from("b -1".to_string()), Command::Breakpoint(None));
     }
 

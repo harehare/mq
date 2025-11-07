@@ -15,9 +15,7 @@ fn main() {
         engine
             .eval(
                 code,
-                mq_lang::parse_markdown_input(markdown_content)
-                    .unwrap()
-                    .into_iter()
+                mq_lang::parse_markdown_input(markdown_content).unwrap().into_iter()
             )
             .unwrap()
     );

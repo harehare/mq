@@ -202,9 +202,7 @@ mod tests {
         // Verify message was sent
         let received_message = message_rx.try_recv().unwrap();
         match received_message {
-            DebuggerMessage::BreakpointHit {
-                thread_id, line, ..
-            } => {
+            DebuggerMessage::BreakpointHit { thread_id, line, .. } => {
                 assert_eq!(thread_id, 1);
                 assert_eq!(line, 10);
             }
@@ -346,9 +344,7 @@ mod tests {
         // Verify message was sent
         let received_message = message_rx.try_recv().unwrap();
         match received_message {
-            DebuggerMessage::StepCompleted {
-                thread_id, line, ..
-            } => {
+            DebuggerMessage::StepCompleted { thread_id, line, .. } => {
                 assert_eq!(thread_id, 1);
                 assert_eq!(line, 2); // context.token.range.start.line is 1, so +1 = 2
             }

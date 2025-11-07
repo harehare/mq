@@ -22,11 +22,7 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
             .allow_headers(Any)
             .allow_origin(Any)
     } else {
-        let origins: Result<Vec<_>, _> = config
-            .cors_origins
-            .iter()
-            .map(|origin| origin.parse())
-            .collect();
+        let origins: Result<Vec<_>, _> = config.cors_origins.iter().map(|origin| origin.parse()).collect();
 
         match origins {
             Ok(origins) => CorsLayer::new()
@@ -47,14 +43,7 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
         .route("/api/query", get(get_query_api).post(post_query_api))
         .route("/api/query/diagnostics", get(get_diagnostics_api))
         .route("/openapi.json", get(openapi_json))
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(cors),
-        )
-        .layer(middleware::from_fn_with_state(
-            rate_limiter,
-            rate_limit_middleware,
-        ))
+        .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()).layer(cors))
+        .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
         .with_state(state)
 }

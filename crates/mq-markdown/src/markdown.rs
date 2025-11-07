@@ -84,8 +84,7 @@ impl Markdown {
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
-        let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx())
-            .map_err(|e| miette!(e.reason))?;
+        let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx()).map_err(|e| miette!(e.reason))?;
         let nodes = Node::from_mdast_node(root);
 
         Ok(Self {
@@ -114,8 +113,7 @@ impl Markdown {
             .iter()
             .filter(|node| !node.is_empty() && !node.is_empty_fragment())
             .collect::<Vec<_>>();
-        serde_json::to_string_pretty(&nodes)
-            .map_err(|e| miette!("Failed to serialize to JSON: {}", e))
+        serde_json::to_string_pretty(&nodes).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
     #[cfg(feature = "html-to-markdown")]
@@ -124,10 +122,7 @@ impl Markdown {
     }
 
     #[cfg(feature = "html-to-markdown")]
-    pub fn from_html_str_with_options(
-        content: &str,
-        options: ConversionOptions,
-    ) -> miette::Result<Self> {
+    pub fn from_html_str_with_options(content: &str, options: ConversionOptions) -> miette::Result<Self> {
         html_to_markdown::convert_html_to_markdown(content, options)
             .map_err(|e| miette!(e))
             .and_then(|md_string| Self::from_markdown_str(&md_string))
@@ -236,11 +231,7 @@ mod tests {
         7,
         "|Column1|Column2|Column3|\n|:---|:---:|---:|\n|Left|Center|Right|\n"
     )]
-    fn test_markdown_from_str(
-        #[case] input: &str,
-        #[case] expected_nodes: usize,
-        #[case] expected_output: &str,
-    ) {
+    fn test_markdown_from_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = input.parse::<Markdown>().unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);
@@ -250,21 +241,13 @@ mod tests {
     #[case::mdx("{test}", 1, "{test}\n")]
     #[case::mdx("<a />", 1, "<a />\n")]
     #[case::mdx("<MyComponent {...props}/>", 1, "<MyComponent {...props} />\n")]
-    #[case::mdx(
-        "text<MyComponent {...props}/>text",
-        3,
-        "text<MyComponent {...props} />text\n"
-    )]
+    #[case::mdx("text<MyComponent {...props}/>text", 3, "text<MyComponent {...props} />text\n")]
     #[case::mdx(
         "<Chart color=\"#fcb32c\" year={year} />",
         1,
         "<Chart color=\"#fcb32c\" year={year} />\n"
     )]
-    fn test_markdown_from_mdx_str(
-        #[case] input: &str,
-        #[case] expected_nodes: usize,
-        #[case] expected_output: &str,
-    ) {
+    fn test_markdown_from_mdx_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = Markdown::from_mdx_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);
@@ -313,9 +296,7 @@ mod tests {
 
     #[test]
     fn test_display_with_newlines() {
-        let md = "# Header\n\nParagraph 1\n\nParagraph 2"
-            .parse::<Markdown>()
-            .unwrap();
+        let md = "# Header\n\nParagraph 1\n\nParagraph 2".parse::<Markdown>().unwrap();
         assert_eq!(md.to_string(), "# Header\n\nParagraph 1\n\nParagraph 2\n");
     }
 
@@ -342,9 +323,7 @@ mod tests {
 
     #[test]
     fn test_display_with_ordered_list() {
-        let md = "1. Item 1\n2. Item 2\n\n3. Item 2"
-            .parse::<Markdown>()
-            .unwrap();
+        let md = "1. Item 1\n2. Item 2\n\n3. Item 2".parse::<Markdown>().unwrap();
         let formatted = md.to_string();
 
         assert!(formatted.contains("1. Item 1"));
@@ -396,9 +375,7 @@ mod json_tests {
 
     #[test]
     fn test_to_json_table() {
-        let md = "| A | B |\n|---|---|\n| 1 | 2 |"
-            .parse::<Markdown>()
-            .unwrap();
+        let md = "| A | B |\n|---|---|\n| 1 | 2 |".parse::<Markdown>().unwrap();
         let json = md.to_json().unwrap();
 
         assert!(json.contains("\"type\": \"TableCell\""));
@@ -412,17 +389,9 @@ mod json_tests {
     #[case("<blockquote>Quote</blockquote>", 1, "> Quote\n")]
     #[case("<code>inline</code>", 1, "`inline`\n")]
     #[case("<pre><code>block</code></pre>", 1, "```\nblock\n```\n")]
-    #[case(
-        "<table><tr><td>A</td><td>B</td></tr></table>",
-        3,
-        "|A|B|\n|---|---|\n"
-    )]
+    #[case("<table><tr><td>A</td><td>B</td></tr></table>", 3, "|A|B|\n|---|---|\n")]
     #[cfg(feature = "html-to-markdown")]
-    fn test_markdown_from_html(
-        #[case] input: &str,
-        #[case] expected_nodes: usize,
-        #[case] expected_output: &str,
-    ) {
+    fn test_markdown_from_html(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = Markdown::from_html_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);
         assert_eq!(md.to_string(), expected_output);

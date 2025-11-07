@@ -17,10 +17,7 @@ pub enum HirError {
         similar_name: Option<Vec<SmolStr>>,
     },
     #[error("Included module not found: {module_name}")]
-    ModuleNotFound {
-        symbol: Symbol,
-        module_name: SmolStr,
-    },
+    ModuleNotFound { symbol: Symbol, module_name: SmolStr },
 }
 
 #[derive(Debug, Error)]
@@ -40,17 +37,12 @@ impl Hir {
                     } else {
                         Some(HirError::UnresolvedSymbol {
                             symbol: symbol.clone(),
-                            similar_name: self
-                                .find_similar_names(&symbol.clone().value.unwrap_or_default()),
+                            similar_name: self.find_similar_names(&symbol.clone().value.unwrap_or_default()),
                         })
                     }
                 }
                 SymbolKind::Include(_) => {
-                    let module_name = symbol
-                        .clone()
-                        .value
-                        .unwrap_or(SmolStr::new("unknown"))
-                        .clone();
+                    let module_name = symbol.clone().value.unwrap_or(SmolStr::new("unknown")).clone();
                     match self.module_loader.read_file(&module_name) {
                         Ok(_) => None,
                         Err(_) => Some(HirError::ModuleNotFound {
@@ -71,9 +63,7 @@ impl Hir {
         let halt_calls: Vec<_> = self
             .symbols
             .iter()
-            .filter(|(_, symbol)| {
-                matches!(symbol.kind, SymbolKind::Call) && symbol.value.as_deref() == Some("halt")
-            })
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Call) && symbol.value.as_deref() == Some("halt"))
             .collect();
 
         for (halt_symbol_id, halt_symbol) in halt_calls {
@@ -120,9 +110,7 @@ impl Hir {
                         HirError::UnresolvedSymbol { symbol, .. } => {
                             symbol.source.text_range.clone().unwrap_or_default()
                         }
-                        HirError::ModuleNotFound { symbol, .. } => {
-                            symbol.source.text_range.clone().unwrap_or_default()
-                        }
+                        HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.clone().unwrap_or_default(),
                     },
                 )
             })
@@ -136,9 +124,7 @@ impl Hir {
                 (
                     w.to_string(),
                     match w {
-                        HirWarning::UnreachableCode { symbol } => {
-                            symbol.source.text_range.clone().unwrap_or_default()
-                        }
+                        HirWarning::UnreachableCode { symbol } => symbol.source.text_range.clone().unwrap_or_default(),
                     },
                 )
             })
@@ -150,17 +136,12 @@ impl Hir {
             .symbols
             .iter()
             .filter_map(|(_, symbol)| {
-                if (matches!(&symbol.kind, SymbolKind::Function(_))
-                    || matches!(&symbol.kind, SymbolKind::Variable))
+                if (matches!(&symbol.kind, SymbolKind::Function(_)) || matches!(&symbol.kind, SymbolKind::Variable))
                     && symbol.value.as_ref().is_some_and(|name| name != target)
                 {
                     let name = symbol.value.as_deref().unwrap_or("");
                     let similarity = strsim::jaro_winkler(target, name);
-                    if similarity > 0.85 {
-                        symbol.value.clone()
-                    } else {
-                        None
-                    }
+                    if similarity > 0.85 { symbol.value.clone() } else { None }
                 } else {
                     None
                 }
@@ -201,10 +182,7 @@ mod tests {
         let errors = hir.errors();
         assert_eq!(errors.len(), 1);
         match &errors[0] {
-            HirError::UnresolvedSymbol {
-                symbol,
-                similar_name,
-            } => {
+            HirError::UnresolvedSymbol { symbol, similar_name } => {
                 assert_eq!(symbol.value.as_deref(), Some("unknown_var"));
                 assert!(similar_name.is_none());
             }

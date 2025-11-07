@@ -46,11 +46,7 @@ pub fn response(
                 })
                 .collect::<Vec<_>>();
 
-            if locations.is_empty() {
-                None
-            } else {
-                Some(locations)
-            }
+            if locations.is_empty() { None } else { Some(locations) }
         } else {
             None
         }

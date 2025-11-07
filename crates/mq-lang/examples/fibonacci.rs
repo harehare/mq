@@ -6,10 +6,5 @@ fn main() {
         x
       else:
         fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)";
-    println!(
-        "{:?}",
-        engine
-            .eval(code, mq_lang::null_input().into_iter())
-            .unwrap()
-    );
+    println!("{:?}", engine.eval(code, mq_lang::null_input().into_iter()).unwrap());
 }

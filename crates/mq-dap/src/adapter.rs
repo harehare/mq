@@ -1,9 +1,8 @@
 use crossbeam_channel::{Receiver, Sender};
 use dap::prelude::*;
 use dap::responses::{
-    ContinueResponse, EvaluateResponse, ScopesResponse, SetBreakpointsResponse,
-    SetExceptionBreakpointsResponse, SetVariableResponse, StackTraceResponse, ThreadsResponse,
-    VariablesResponse,
+    ContinueResponse, EvaluateResponse, ScopesResponse, SetBreakpointsResponse, SetExceptionBreakpointsResponse,
+    SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
 };
 use dap::types::Breakpoint;
 use mq_lang::Shared;
@@ -118,11 +117,7 @@ impl MqAdapter {
     }
 
     /// Send log output to the DAP client
-    pub fn send_log_output(
-        &self,
-        message: &str,
-        server: &mut Server<impl io::Read, impl io::Write>,
-    ) -> DynResult<()> {
+    pub fn send_log_output(&self, message: &str, server: &mut Server<impl io::Read, impl io::Write>) -> DynResult<()> {
         let event = Event::Output(events::OutputEventBody {
             output: message.to_string(),
             category: Some(types::OutputEventCategory::Console),
@@ -251,9 +246,7 @@ impl MqAdapter {
     /// Get source file name for a given module
     #[inline(always)]
     fn get_source_file_name(&self, module_id: Option<mq_lang::ModuleId>) -> String {
-        if module_id.unwrap_or(mq_lang::Module::TOP_LEVEL_MODULE_ID)
-            == mq_lang::Module::TOP_LEVEL_MODULE_ID
-        {
+        if module_id.unwrap_or(mq_lang::Module::TOP_LEVEL_MODULE_ID) == mq_lang::Module::TOP_LEVEL_MODULE_ID {
             self.query_file
                 .as_ref()
                 .and_then(|query_file| {
@@ -277,14 +270,11 @@ impl MqAdapter {
             ))) as Box<dyn std::error::Error>);
         };
 
-        engine
-            .eval(code, mq_lang::null_input().into_iter())
-            .map_err(|e| {
-                let error_msg = format!("Evaluation error: {}", e);
-                error!(error = %error_msg);
-                Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg)))
-                    as Box<dyn std::error::Error>
-            })
+        engine.eval(code, mq_lang::null_input().into_iter()).map_err(|e| {
+            let error_msg = format!("Evaluation error: {}", e);
+            error!(error = %error_msg);
+            Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
+        })
     }
 
     /// Handle DAP request and send appropriate response
@@ -300,8 +290,8 @@ impl MqAdapter {
                     .as_ref()
                     .ok_or(MqAdapterError::MissingLaunchArguments)?;
 
-                let args: LaunchArgs = serde_json::from_value(additional_data.clone())
-                    .map_err(MqAdapterError::LaunchArgumentsError)?;
+                let args: LaunchArgs =
+                    serde_json::from_value(additional_data.clone()).map_err(MqAdapterError::LaunchArgumentsError)?;
 
                 debug!(?args, "Received launch request");
 
@@ -315,12 +305,9 @@ impl MqAdapter {
                     let message_tx_clone = message_tx.clone();
 
                     thread::spawn(move || {
-                        if let Err(e) = executor::execute_query(
-                            engine_clone,
-                            args.query_file,
-                            args.input_file,
-                            message_tx_clone,
-                        ) {
+                        if let Err(e) =
+                            executor::execute_query(engine_clone, args.query_file, args.input_file, message_tx_clone)
+                        {
                             error!(error = %e, "Failed to execute query in background thread");
                         }
                     });
@@ -331,9 +318,9 @@ impl MqAdapter {
             }
             Command::SetExceptionBreakpoints(_) => {
                 debug!("Received SetExceptionBreakpoints request");
-                let rsp = req.success(ResponseBody::SetExceptionBreakpoints(
-                    SetExceptionBreakpointsResponse { breakpoints: None },
-                ));
+                let rsp = req.success(ResponseBody::SetExceptionBreakpoints(SetExceptionBreakpointsResponse {
+                    breakpoints: None,
+                }));
                 server.respond(rsp)?;
             }
             Command::SetBreakpoints(args) => {
@@ -342,30 +329,21 @@ impl MqAdapter {
                 let is_query_file = if let (Some(source_path), Some(query_file)) =
                     (args.source.path.as_ref(), self.query_file.as_ref())
                 {
-                    let source_abs = std::fs::canonicalize(source_path)
-                        .unwrap_or_else(|_| std::path::PathBuf::from(source_path));
-                    let query_abs = std::fs::canonicalize(query_file)
-                        .unwrap_or_else(|_| std::path::PathBuf::from(query_file));
+                    let source_abs =
+                        std::fs::canonicalize(source_path).unwrap_or_else(|_| std::path::PathBuf::from(source_path));
+                    let query_abs =
+                        std::fs::canonicalize(query_file).unwrap_or_else(|_| std::path::PathBuf::from(query_file));
                     source_abs == query_abs
                 } else {
                     false
                 };
 
                 let breakpoints_vec = args.breakpoints.as_ref().cloned().unwrap_or_default();
-                let mut breakpoints_response: Vec<Breakpoint> =
-                    Vec::with_capacity(breakpoints_vec.len());
+                let mut breakpoints_response: Vec<Breakpoint> = Vec::with_capacity(breakpoints_vec.len());
 
-                let source = if is_query_file {
-                    None
-                } else {
-                    args.source.name.clone()
-                };
+                let source = if is_query_file { None } else { args.source.name.clone() };
 
-                self.engine
-                    .debugger()
-                    .write()
-                    .unwrap()
-                    .remove_breakpoints(&source);
+                self.engine.debugger().write().unwrap().remove_breakpoints(&source);
 
                 for breakpoint in &breakpoints_vec {
                     let id = self.engine.debugger().write().unwrap().add_breakpoint(
@@ -428,25 +406,18 @@ impl MqAdapter {
                                 } else {
                                     (
                                         self.get_source_file_name(None),
-                                        self.engine.token_arena().read().unwrap()[frame.token_id]
-                                            .range
-                                            .clone(),
+                                        self.engine.token_arena().read().unwrap()[frame.token_id].range.clone(),
                                     )
                                 }
                             } else {
                                 (
                                     self.get_source_file_name(None),
-                                    self.engine.token_arena().read().unwrap()[frame.token_id]
-                                        .range
-                                        .clone(),
+                                    self.engine.token_arena().read().unwrap()[frame.token_id].range.clone(),
                                 )
                             };
                             types::StackFrame {
                                 id: i as i64 + 1,
-                                name: format!(
-                                    "{} ({}:{})",
-                                    frame.expr, file_name, token_range.start.line,
-                                ),
+                                name: format!("{} ({}:{})", frame.expr, file_name, token_range.start.line,),
                                 line: token_range.start.line as i64,
                                 column: token_range.start.column as i64,
                                 source: source.clone(),
@@ -551,9 +522,7 @@ impl MqAdapter {
 
                 let rsp = req.success(ResponseBody::Disconnect);
                 server.respond(rsp)?;
-                return Err(Box::new(MqAdapterError::ProtocolError(Cow::Borrowed(
-                    "Shutdown",
-                ))));
+                return Err(Box::new(MqAdapterError::ProtocolError(Cow::Borrowed("Shutdown"))));
             }
             Command::Evaluate(args) => {
                 debug!(?args, "Received Evaluate request");
@@ -622,9 +591,7 @@ impl MqAdapter {
                 server.respond(rsp)?;
             }
             command => {
-                return Err(Box::new(MqAdapterError::UnhandledCommand(Box::new(
-                    command.clone(),
-                ))));
+                return Err(Box::new(MqAdapterError::UnhandledCommand(Box::new(command.clone()))));
             }
         }
         Ok(())
@@ -711,12 +678,7 @@ mod tests {
         let adapter = MqAdapter::new();
         let result = adapter.eval("1 + 1");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Current context not found")
-        );
+        assert!(result.unwrap_err().to_string().contains("Current context not found"));
     }
 
     #[test]
@@ -1153,9 +1115,7 @@ mod tests {
         let mut context = mq_lang::DebugContext::default();
 
         context.call_stack.push(Shared::new(mq_lang::AstNode {
-            expr: Shared::new(mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(
-                42.into(),
-            ))),
+            expr: Shared::new(mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(42.into()))),
             token_id: 0u32.into(),
         }));
         adapter.current_debug_context = Some(context);

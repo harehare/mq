@@ -136,6 +136,7 @@ impl Engine {
             .load_builtin_module()
             .expect("Failed to load builtin module");
     }
+
     /// Load an external module by name.
     ///
     /// The module will be searched for in the configured search paths
@@ -145,9 +146,8 @@ impl Engine {
             .evaluator
             .module_loader
             .load_from_file(module_name, Shared::clone(&self.token_arena));
-        let module = module.map_err(|e| {
-            error::Error::from_error("", e.into(), self.evaluator.module_loader.clone())
-        })?;
+        let module =
+            module.map_err(|e| error::Error::from_error("", e.into(), self.evaluator.module_loader.clone()))?;
 
         self.evaluator.load_module(module).map_err(|e| {
             Box::new(error::Error::from_error(
@@ -187,20 +187,12 @@ impl Engine {
         Optimizer::with_level(level).optimize(&mut program);
 
         #[cfg(feature = "debugger")]
-        self.evaluator
-            .module_loader
-            .set_source_code(code.to_string());
+        self.evaluator.module_loader.set_source_code(code.to_string());
 
         self.evaluator
             .eval(&program, input.into_iter())
             .map(|values| values.into())
-            .map_err(|e| {
-                Box::new(error::Error::from_error(
-                    code,
-                    e,
-                    self.evaluator.module_loader.clone(),
-                ))
-            })
+            .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
     }
 
     /// The main engine for evaluating mq code.
@@ -261,13 +253,7 @@ impl Engine {
         self.evaluator
             .eval(&program, input.into_iter())
             .map(|values| values.into())
-            .map_err(|e| {
-                Box::new(error::Error::from_error(
-                    "",
-                    e,
-                    self.evaluator.module_loader.clone(),
-                ))
-            })
+            .map_err(|e| Box::new(error::Error::from_error("", e, self.evaluator.module_loader.clone())))
     }
 
     /// Returns a reference to the debugger instance.
@@ -314,14 +300,8 @@ impl Engine {
     }
 
     #[cfg(feature = "debugger")]
-    pub fn get_source_code_for_debug(
-        &self,
-        module_id: ModuleId,
-    ) -> Result<String, Box<error::Error>> {
-        let source_code = self
-            .evaluator
-            .module_loader
-            .get_source_code_for_debug(module_id);
+    pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, Box<error::Error>> {
+        let source_code = self.evaluator.module_loader.get_source_code_for_debug(module_id);
 
         source_code.map_err(|e| {
             Box::new(error::Error::from_error(
@@ -460,16 +440,12 @@ mod tests {
         let engine = Engine::default();
         let env = Shared::new(SharedCell::new(Env::default()));
 
-        env.write()
-            .unwrap()
-            .define("runtime".into(), RuntimeValue::NONE);
+        env.write().unwrap().define("runtime".into(), RuntimeValue::NONE);
 
         let mut new_engine = engine.switch_env(env);
 
         assert_eq!(
-            new_engine
-                .eval("runtime", null_input().into_iter())
-                .unwrap()[0],
+            new_engine.eval("runtime", null_input().into_iter()).unwrap()[0],
             RuntimeValue::NONE
         );
     }

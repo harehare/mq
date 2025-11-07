@@ -72,11 +72,7 @@ impl CrawlResult {
             OutputFormat::Text => {
                 let _ = writeln!(handle, "\n=== Crawl Statistics ===");
                 let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
-                let _ = writeln!(
-                    handle,
-                    "Pages skipped (robots.txt): {}",
-                    self.pages_skipped_robots
-                );
+                let _ = writeln!(handle, "Pages skipped (robots.txt): {}", self.pages_skipped_robots);
                 let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
                 let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
                 let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
@@ -221,12 +217,7 @@ impl Crawler {
         }
 
         // Use the stored custom_robots_path
-        let robots = RobotsTxt::fetch(
-            &self.http_client,
-            url_to_check,
-            self.custom_robots_path.as_deref(),
-        )
-        .await?;
+        let robots = RobotsTxt::fetch(&self.http_client, url_to_check, self.custom_robots_path.as_deref()).await?;
         let arc_robots = Arc::new(robots);
 
         // Cache the result
@@ -258,12 +249,8 @@ impl Crawler {
         if let Some(ref output_dir_str) = self.output_path {
             let output_dir = Path::new(output_dir_str);
             if !output_dir.exists() {
-                fs::create_dir_all(output_dir).map_err(|e| {
-                    format!(
-                        "Failed to create output directory '{}': {}",
-                        output_dir_str, e
-                    )
-                })?;
+                fs::create_dir_all(output_dir)
+                    .map_err(|e| format!("Failed to create output directory '{}': {}", output_dir_str, e))?;
                 tracing::info!("Created output directory: {:?}", output_dir);
             } else if !output_dir.is_dir() {
                 return Err(format!(
@@ -297,9 +284,7 @@ impl Crawler {
             let mut valid_urls = Vec::with_capacity(self.concurrency);
 
             for (url, depth) in urls_to_process {
-                if !self.should_skip_url_without_visited_check(&url)
-                    && self.visited.insert(url.clone())
-                {
+                if !self.should_skip_url_without_visited_check(&url) && self.visited.insert(url.clone()) {
                     valid_urls.push((url, depth));
                 }
             }
@@ -367,21 +352,11 @@ impl Crawler {
                 let current_url_clone = current_url.clone();
                 let self_clone = self.clone();
                 let new_links = tokio::task::spawn_blocking(move || {
-                    if let Err(e) =
-                        Self::execute_query(&query, &html_content_clone, conversion_options).map(
-                            |md| {
-                                if let Err(e) =
-                                    self_clone.output_markdown(&current_url_clone, md.as_str())
-                                {
-                                    tracing::error!(
-                                        "Failed to output markdown for {}: {}",
-                                        current_url_clone,
-                                        e
-                                    );
-                                }
-                            },
-                        )
-                    {
+                    if let Err(e) = Self::execute_query(&query, &html_content_clone, conversion_options).map(|md| {
+                        if let Err(e) = self_clone.output_markdown(&current_url_clone, md.as_str()) {
+                            tracing::error!("Failed to output markdown for {}: {}", current_url_clone, e);
+                        }
+                    }) {
                         tracing::error!(
                             "Failed to execute mq query on content from {}: {}",
                             current_url_clone,
@@ -414,11 +389,7 @@ impl Crawler {
                         }
                     }
                     Err(e) => {
-                        tracing::error!(
-                            "Failed to execute mq query on content from {}: {}",
-                            current_url,
-                            e
-                        );
+                        tracing::error!("Failed to execute mq query on content from {}: {}", current_url, e);
                     }
                 }
             }
@@ -432,11 +403,7 @@ impl Crawler {
         }
     }
 
-    fn execute_query(
-        query: &str,
-        input: &str,
-        conversion_options: ConversionOptions,
-    ) -> miette::Result<String> {
+    fn execute_query(query: &str, input: &str, conversion_options: ConversionOptions) -> miette::Result<String> {
         let input = mq_lang::parse_html_input_with_options(input, conversion_options)?;
         let mut mq_engine = mq_lang::Engine::default();
         mq_engine.load_builtin_module();
@@ -496,23 +463,11 @@ impl Crawler {
             let output_file_path = output_dir.join(&filename);
             tracing::info!("Saving markdown for {} to: {:?}", url, output_file_path);
 
-            let mut file = fs::File::create(&output_file_path).map_err(|e| {
-                format!(
-                    "Failed to create output file '{:?}': {}",
-                    output_file_path, e
-                )
-            })?;
-            file.write_all(markdown.as_bytes()).map_err(|e| {
-                format!(
-                    "Failed to write markdown to file '{:?}': {}",
-                    output_file_path, e
-                )
-            })?;
-            tracing::debug!(
-                "Successfully wrote {} bytes to {:?}",
-                markdown.len(),
-                output_file_path
-            );
+            let mut file = fs::File::create(&output_file_path)
+                .map_err(|e| format!("Failed to create output file '{:?}': {}", output_file_path, e))?;
+            file.write_all(markdown.as_bytes())
+                .map_err(|e| format!("Failed to write markdown to file '{:?}': {}", output_file_path, e))?;
+            tracing::debug!("Successfully wrote {} bytes to {:?}", markdown.len(), output_file_path);
         } else {
             let stdout = io::stdout();
             let mut handle = stdout.lock();
@@ -600,11 +555,7 @@ mod tests {
         "http://example.com",
         vec![]
     )]
-    fn test_extract_links(
-        #[case] html: &str,
-        #[case] base_url: &str,
-        #[case] expected_urls: Vec<&str>,
-    ) {
+    fn test_extract_links(#[case] html: &str, #[case] base_url: &str, #[case] expected_urls: Vec<&str>) {
         let base = Url::parse(base_url).unwrap();
         let links = extract_links(html, &base);
 
@@ -634,11 +585,7 @@ mod tests {
     #[case("___", 10, "___")]
     #[case("foo bar-baz_123", 20, "foobar-baz_123")]
     #[case("日本語テスト", 10, "日本語テスト")]
-    fn test_sanitize_filename_component(
-        #[case] input: &str,
-        #[case] max_len: usize,
-        #[case] expected: &str,
-    ) {
+    fn test_sanitize_filename_component(#[case] input: &str, #[case] max_len: usize, #[case] expected: &str) {
         let result = sanitize_filename_component(input, max_len);
         assert_eq!(result, expected, "input: {}", input);
     }

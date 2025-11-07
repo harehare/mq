@@ -206,10 +206,7 @@ mod tests {
         StringSegment::Text("hello".to_string(), Range::default()),
         "hello"
     )]
-    #[case(
-        StringSegment::Ident(SmolStr::new("world"), Range::default()),
-        "${world}"
-    )]
+    #[case(StringSegment::Ident(SmolStr::new("world"), Range::default()), "${world}")]
     #[case(
         StringSegment::Text("".to_string(), Range::default()),
         ""

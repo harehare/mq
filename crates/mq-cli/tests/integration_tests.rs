@@ -223,10 +223,8 @@ fn test_cli_run_with_raw_file_and_stdin() -> Result<(), Box<dyn std::error::Erro
 
 #[test]
 fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
-    let (_, temp_file_path) = mq_test::create_file(
-        "test_cli_run_with_file_input.md",
-        "# **title**\n\n- test1\n- test2",
-    );
+    let (_, temp_file_path) =
+        mq_test::create_file("test_cli_run_with_file_input.md", "# **title**\n\n- test1\n- test2");
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -317,8 +315,7 @@ fn test_cli_run_with_html_input() -> Result<(), Box<dyn std::error::Error>> {
 </body>
 </html>
 "#;
-    let (_, temp_file_path) =
-        mq_test::create_file("test_cli_run_with_html_input.html", html_content);
+    let (_, temp_file_path) = mq_test::create_file("test_cli_run_with_html_input.html", html_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -397,8 +394,7 @@ Content of section 2.
 
 Content of section 3.
 "#;
-    let (_, temp_file_path) =
-        mq_test::create_file("test_cli_sections_n_with_file_input.md", markdown_content);
+    let (_, temp_file_path) = mq_test::create_file("test_cli_sections_n_with_file_input.md", markdown_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -452,10 +448,7 @@ fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
-        .arg(format!(
-            r#"read_file("{}")"#,
-            temp_file_path.to_string_lossy(),
-        ))
+        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy(),))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 

@@ -10,12 +10,7 @@ use smol_str::SmolStr;
 use std::{borrow::Cow, fs, path::PathBuf, sync::LazyLock};
 use thiserror::Error;
 
-const DEFAULT_PATHS: [&str; 4] = [
-    "$HOME/.mq",
-    "$ORIGIN/../lib/mq",
-    "$ORIGIN/../lib",
-    "$ORIGIN",
-];
+const DEFAULT_PATHS: [&str; 4] = ["$HOME/.mq", "$ORIGIN/../lib/mq", "$ORIGIN/../lib", "$ORIGIN"];
 
 #[derive(Debug, PartialEq, Error)]
 pub enum ModuleError {
@@ -55,9 +50,9 @@ pub struct Module {
 }
 
 impl Module {
-    pub const TOP_LEVEL_MODULE_ID: ArenaId<ModuleName> = ArenaId::new(0);
-    pub const TOP_LEVEL_MODULE: &str = "top-level";
     pub const BUILTIN_MODULE: &str = "builtin";
+    pub const TOP_LEVEL_MODULE: &str = "top-level";
+    pub const TOP_LEVEL_MODULE_ID: ArenaId<ModuleName> = ArenaId::new(0);
 }
 
 pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
@@ -68,10 +63,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
             fn $name() -> &'static str {
                 include_str!(concat!("../../modules/", stringify!($name), ".mq"))
             }
-            map.insert(
-                SmolStr::new(stringify!($name)),
-                $name as fn() -> &'static str,
-            );
+            map.insert(SmolStr::new(stringify!($name)), $name as fn() -> &'static str);
         };
     }
 
@@ -124,16 +116,9 @@ impl ModuleLoader {
         self.source_code = Some(source_code);
     }
 
-    pub fn load(
-        &mut self,
-        module_name: &str,
-        code: &str,
-        token_arena: TokenArena,
-    ) -> Result<Module, ModuleError> {
+    pub fn load(&mut self, module_name: &str, code: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         if self.loaded_modules.contains(module_name.into()) {
-            return Err(ModuleError::AlreadyLoaded(Cow::Owned(
-                module_name.to_string(),
-            )));
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
         let module_id = self.loaded_modules.len().into();
@@ -142,15 +127,9 @@ impl ModuleLoader {
         self.load_from_ast(module_name, &mut program)
     }
 
-    pub fn load_from_ast(
-        &mut self,
-        module_name: &str,
-        program: &mut Program,
-    ) -> Result<Module, ModuleError> {
+    pub fn load_from_ast(&mut self, module_name: &str, program: &mut Program) -> Result<Module, ModuleError> {
         if self.loaded_modules.contains(module_name.into()) {
-            return Err(ModuleError::AlreadyLoaded(Cow::Owned(
-                module_name.to_string(),
-            )));
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
         Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(program);
@@ -194,27 +173,18 @@ impl ModuleLoader {
         })
     }
 
-    pub fn load_from_file(
-        &mut self,
-        module_path: &str,
-        token_arena: TokenArena,
-    ) -> Result<Module, ModuleError> {
+    pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         let program = self.read_file(module_path)?;
         self.load(module_path, &program, token_arena)
     }
 
     pub fn read_file(&self, module_name: &str) -> Result<String, ModuleError> {
         if STANDARD_MODULES.contains_key(module_name) {
-            Ok(STANDARD_MODULES
-                .get(module_name)
-                .map(|f| f())
-                .unwrap()
-                .to_string())
+            Ok(STANDARD_MODULES.get(module_name).map(|f| f()).unwrap().to_string())
         } else {
             let file_path = Self::find(module_name, self.search_paths.clone())
                 .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))?;
-            fs::read_to_string(&file_path)
-                .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
+            fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
         }
     }
 
@@ -225,20 +195,14 @@ impl ModuleLoader {
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
         match self.module_name(module_id) {
-            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => {
-                Ok(self.source_code.clone().unwrap_or_default())
-            }
+            Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(self.source_code.clone().unwrap_or_default()),
             Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
             Cow::Borrowed(module_name) => self.read_file(module_name),
             Cow::Owned(module_name) => self.read_file(&module_name),
         }
     }
 
-    pub fn get_source_code(
-        &self,
-        module_id: ModuleId,
-        source_code: String,
-    ) -> Result<String, ModuleError> {
+    pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
         match self.module_name(module_id) {
             Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(source_code),
             Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
@@ -262,13 +226,7 @@ impl ModuleLoader {
                     .map(|p| p.to_str().map(|p| p.to_string()).unwrap_or_default())
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(|| {
-                DEFAULT_PATHS
-                    .to_vec()
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect()
-            })
+            .unwrap_or_else(|| DEFAULT_PATHS.to_vec().iter().map(|p| p.to_string()).collect())
             .iter()
             .map(|path| {
                 let path = origin
@@ -299,11 +257,7 @@ impl ModuleLoader {
         }
     }
 
-    fn parse_program(
-        code: &str,
-        module_id: ModuleId,
-        token_arena: TokenArena,
-    ) -> Result<Program, ModuleError> {
+    fn parse_program(code: &str, module_id: ModuleId, token_arena: TokenArena) -> Result<Program, ModuleError> {
         let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
         let mut token_arena = {
             #[cfg(not(feature = "sync"))]
@@ -318,11 +272,7 @@ impl ModuleLoader {
         };
 
         let program = Parser::new(
-            tokens
-                .into_iter()
-                .map(Shared::new)
-                .collect::<Vec<_>>()
-                .iter(),
+            tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
             &mut token_arena,
             module_id,
         )
@@ -422,10 +372,7 @@ mod tests {
         #[case] program: String,
         #[case] expected: Result<Module, ModuleError>,
     ) {
-        assert_eq!(
-            ModuleLoader::default().load("test", &program, token_arena),
-            expected
-        );
+        assert_eq!(ModuleLoader::default().load("test", &program, token_arena), expected);
     }
 
     #[rstest]

@@ -213,8 +213,7 @@ pub extern "C" fn mq_free_result(result: MqResult) {
         unsafe {
             // Reconstruct the Vec from the raw parts to properly deallocate it
             // along with its elements.
-            let values_vec =
-                Vec::from_raw_parts(result.values, result.values_len, result.values_len);
+            let values_vec = Vec::from_raw_parts(result.values, result.values_len, result.values_len);
             for value_ptr in values_vec {
                 if !value_ptr.is_null() {
                     // This was already a CString, so free it with mq_free_string
@@ -395,38 +394,17 @@ mod tests {
         let engine = mq_create();
 
         // Test with null code
-        let result = unsafe {
-            mq_eval(
-                engine,
-                ptr::null(),
-                make_c_string("test"),
-                make_c_string("text"),
-            )
-        };
+        let result = unsafe { mq_eval(engine, ptr::null(), make_c_string("test"), make_c_string("text")) };
         assert!(!result.error_msg.is_null());
         mq_free_result(result);
 
         // Test with null input
-        let result = unsafe {
-            mq_eval(
-                engine,
-                make_c_string("."),
-                ptr::null(),
-                make_c_string("text"),
-            )
-        };
+        let result = unsafe { mq_eval(engine, make_c_string("."), ptr::null(), make_c_string("text")) };
         assert!(!result.error_msg.is_null());
         mq_free_result(result);
 
         // Test with null format
-        let result = unsafe {
-            mq_eval(
-                engine,
-                make_c_string("."),
-                make_c_string("test"),
-                ptr::null(),
-            )
-        };
+        let result = unsafe { mq_eval(engine, make_c_string("."), make_c_string("test"), ptr::null()) };
         assert!(!result.error_msg.is_null());
         mq_free_result(result);
 

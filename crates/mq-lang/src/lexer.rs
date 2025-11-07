@@ -103,13 +103,11 @@ impl Lexer {
                     Err(LexerError::UnexpectedEOFDetected(module_id))
                 }
             }
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-                Err(LexerError::UnexpectedToken(Token {
-                    range: e.input.into(),
-                    kind: TokenKind::Eof,
-                    module_id,
-                }))
-            }
+            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(LexerError::UnexpectedToken(Token {
+                range: e.input.into(),
+                kind: TokenKind::Eof,
+                module_id,
+            })),
             _ => unreachable!(),
         }
     }
@@ -136,10 +134,7 @@ fn unicode(input: Span) -> IResult<Span, char> {
 fn hex_escape(input: Span) -> IResult<Span, char> {
     map_opt(
         map_res(
-            preceded(
-                char('x'),
-                take_while_m_n(2, 2, |c: char| c.is_ascii_hexdigit()),
-            ),
+            preceded(char('x'), take_while_m_n(2, 2, |c: char| c.is_ascii_hexdigit())),
             |span: Span| u8::from_str_radix(span.fragment(), 16),
         ),
         |byte| char::from_u32(byte as u32),
@@ -154,9 +149,7 @@ fn inline_comment(input: Span) -> IResult<Span, Token> {
     let (span, end) = position(span)?;
 
     let module_id = start.extra;
-    let comment_str = comment_text
-        .map(|s: Span| s.fragment().to_string())
-        .unwrap_or_default();
+    let comment_str = comment_text.map(|s: Span| s.fragment().to_string()).unwrap_or_default();
 
     Ok((
         span,
@@ -217,11 +210,7 @@ define_token_parser!(double_colon, "::", TokenKind::DoubleColon);
 define_keyword_parser!(elif, "elif", TokenKind::Elif);
 define_keyword_parser!(else_, "else", TokenKind::Else);
 define_keyword_parser!(end, "end", TokenKind::End);
-define_token_parser!(
-    empty_string,
-    "\"\"",
-    TokenKind::StringLiteral(String::new())
-);
+define_token_parser!(empty_string, "\"\"", TokenKind::StringLiteral(String::new()));
 define_token_parser!(eq_eq, "==", TokenKind::EqEq);
 define_token_parser!(equal, "=", TokenKind::Equal);
 define_keyword_parser!(break_, "break", TokenKind::Break);
@@ -300,8 +289,7 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, do_, let_, match_, while_, until, if_, elif, else_, end, foreach, fn_, break_,
-        continue_, try_, catch_,
+        def, do_, let_, match_, while_, until, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_,
     ))
     .parse(input)
 }
@@ -504,13 +492,7 @@ fn string_literal(input: Span) -> IResult<Span, Token> {
 }
 
 fn literals(input: Span) -> IResult<Span, Token> {
-    alt((
-        string_literal,
-        interpolated_string,
-        empty_string,
-        number_literal,
-    ))
-    .parse(input)
+    alt((string_literal, interpolated_string, empty_string, number_literal)).parse(input)
 }
 
 fn ident(input: Span) -> IResult<Span, Token> {
@@ -564,18 +546,15 @@ fn ident(input: Span) -> IResult<Span, Token> {
 fn env(input: Span) -> IResult<Span, Token> {
     preceded(
         tag("$"),
-        map(
-            recognize(many1(alt((alphanumeric1, tag("_"))))),
-            |span: Span| {
-                let kind = TokenKind::Env(SmolStr::new(span.fragment()));
-                let module_id = span.extra;
-                Token {
-                    range: span.into(),
-                    kind,
-                    module_id,
-                }
-            },
-        ),
+        map(recognize(many1(alt((alphanumeric1, tag("_"))))), |span: Span| {
+            let kind = TokenKind::Env(SmolStr::new(span.fragment()));
+            let module_id = span.extra;
+            Token {
+                range: span.into(),
+                kind,
+                module_id,
+            }
+        }),
     )
     .parse(input)
 }
@@ -593,16 +572,7 @@ fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
 }
 
 fn token(input: Span) -> IResult<Span, Token> {
-    alt((
-        keywords,
-        env,
-        literals,
-        punctuations,
-        binary_op,
-        unary_op,
-        ident,
-    ))
-    .parse(input)
+    alt((keywords, env, literals, punctuations, binary_op, unary_op, ident)).parse(input)
 }
 
 fn token_include_spaces(input: Span) -> IResult<Span, Token> {
@@ -1107,11 +1077,7 @@ mod tests {
             }
         ])
     )]
-    fn test_parse(
-        #[case] input: &str,
-        #[case] options: Options,
-        #[case] expected: Result<Vec<Token>, LexerError>,
-    ) {
+    fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, LexerError>) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
     }
 }

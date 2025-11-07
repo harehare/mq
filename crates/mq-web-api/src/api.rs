@@ -52,10 +52,7 @@ pub fn query(request: ApiRequest) -> miette::Result<QueryApiResponse> {
     let results = execute_query(request);
     match results {
         Ok(values) => {
-            let response = values
-                .into_iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>();
+            let response = values.into_iter().map(|v| v.to_string()).collect::<Vec<_>>();
 
             Ok(QueryApiResponse { results: response })
         }

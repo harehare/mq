@@ -23,16 +23,10 @@ impl Parse for MqArgs {
 
         // Check if there are any more tokens (which would be an error)
         if !input.is_empty() {
-            return Err(syn::Error::new(
-                input.span(),
-                "Expected exactly 2 arguments",
-            ));
+            return Err(syn::Error::new(input.span(), "Expected exactly 2 arguments"));
         }
 
-        Ok(MqArgs {
-            code,
-            input: content,
-        })
+        Ok(MqArgs { code, input: content })
     }
 }
 
@@ -49,9 +43,7 @@ pub fn mq_eval(input: TokenStream) -> TokenStream {
     }
 
     if let Err(e) = mq_markdown::Markdown::from_markdown_str(&mq_args.input.value()) {
-        return syn::Error::new_spanned(mq_args.input, e)
-            .to_compile_error()
-            .into();
+        return syn::Error::new_spanned(mq_args.input, e).to_compile_error().into();
     }
 
     let code_lit = mq_args.code;

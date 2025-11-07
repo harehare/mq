@@ -104,9 +104,7 @@ impl Symbol {
     #[inline(always)]
     pub fn is_internal_function(&self) -> bool {
         if matches!(self.kind, SymbolKind::Function(_)) {
-            self.value
-                .as_ref()
-                .is_some_and(|value| value.as_str().starts_with("_"))
+            self.value.as_ref().is_some_and(|value| value.as_str().starts_with("_"))
         } else {
             false
         }

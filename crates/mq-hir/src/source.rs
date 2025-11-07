@@ -21,9 +21,6 @@ pub struct SourceInfo {
 
 impl SourceInfo {
     pub fn new(source_id: Option<SourceId>, text_range: Option<mq_lang::Range>) -> Self {
-        Self {
-            source_id,
-            text_range,
-        }
+        Self { source_id, text_range }
     }
 }

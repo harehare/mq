@@ -36,9 +36,7 @@ fn map_node_to_html_node(node_ref: ego_tree::NodeRef<Node>) -> miette::Result<Op
     }
 }
 
-pub fn map_nodes_to_html_nodes(
-    nodes: Vec<ego_tree::NodeRef<Node>>,
-) -> miette::Result<Vec<HtmlNode>> {
+pub fn map_nodes_to_html_nodes(nodes: Vec<ego_tree::NodeRef<Node>>) -> miette::Result<Vec<HtmlNode>> {
     let mut html_nodes = Vec::new();
     for node in nodes {
         match map_node_to_html_node(node) {

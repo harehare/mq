@@ -72,9 +72,7 @@ fn parse_input_data(file_path: &str, input: &str) -> DynResult<Vec<mq_lang::Runt
         .to_lowercase()
         .as_str()
     {
-        "json" | "csv" | "tsv" | "xml" | "toml" | "yaml" | "yml" | "txt" => {
-            Ok(mq_lang::raw_input(input))
-        }
+        "json" | "csv" | "tsv" | "xml" | "toml" | "yaml" | "yml" | "txt" => Ok(mq_lang::raw_input(input)),
         "html" | "htm" => mq_lang::parse_html_input(input).map_err(|e| {
             let error_msg = format!("Failed to parse input file '{}': {}", file_path, e);
             error!(error = %error_msg);
@@ -275,12 +273,7 @@ version: 1.0.0
         let engine = mq_lang::Engine::default();
         let (tx, _rx) = unbounded::<DebuggerMessage>();
 
-        let result = execute_query(
-            engine,
-            query_file_path.to_string_lossy().to_string(),
-            None,
-            tx,
-        );
+        let result = execute_query(engine, query_file_path.to_string_lossy().to_string(), None, tx);
 
         // The result might succeed or fail depending on the query execution
         assert!(result.is_ok() || result.is_err());
@@ -294,12 +287,7 @@ version: 1.0.0
         let result = execute_query(engine, "nonexistent.mq".to_string(), None, tx);
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to read query file")
-        );
+        assert!(result.unwrap_err().to_string().contains("Failed to read query file"));
     }
 
     #[test]
@@ -321,12 +309,7 @@ version: 1.0.0
         );
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to read input file")
-        );
+        assert!(result.unwrap_err().to_string().contains("Failed to read input file"));
     }
 
     #[test]
@@ -340,12 +323,7 @@ version: 1.0.0
         let engine = mq_lang::Engine::default();
         let (tx, rx) = unbounded::<DebuggerMessage>();
 
-        let result = execute_query(
-            engine,
-            query_file_path.to_string_lossy().to_string(),
-            None,
-            tx,
-        );
+        let result = execute_query(engine, query_file_path.to_string_lossy().to_string(), None, tx);
 
         // Whether the execution succeeds or fails, a Terminated message should be sent
         if result.is_ok() {

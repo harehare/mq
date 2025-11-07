@@ -189,10 +189,8 @@ fn convert_html_table_to_markdown(table_element: &HtmlElement) -> miette::Result
 
 fn process_url_for_markdown(url: &str) -> String {
     let processed_url = url.replace(" ", "%20");
-    let needs_angle_brackets = url.is_empty()
-        || url.contains(' ')
-        || processed_url.contains('(')
-        || processed_url.contains(')');
+    let needs_angle_brackets =
+        url.is_empty() || url.contains(' ') || processed_url.contains('(') || processed_url.contains(')');
     if needs_angle_brackets {
         format!("<{}>", processed_url)
     } else {
@@ -203,11 +201,7 @@ fn process_url_for_markdown(url: &str) -> String {
 fn handle_heading_element(element: &HtmlElement) -> miette::Result<String> {
     let children_content_str = convert_children_to_string(&element.children)?;
     let marker_level = element.tag_name[1..].parse().unwrap_or(1);
-    Ok(format!(
-        "{} {}",
-        "#".repeat(marker_level),
-        children_content_str
-    ))
+    Ok(format!("{} {}", "#".repeat(marker_level), children_content_str))
 }
 
 fn handle_paragraph_element(element: &HtmlElement) -> miette::Result<String> {
@@ -218,33 +212,21 @@ fn handle_hr_element() -> miette::Result<String> {
     Ok("---".to_string())
 }
 
-fn handle_list_element(
-    element: &HtmlElement,
-    options: ConversionOptions,
-) -> miette::Result<String> {
+fn handle_list_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<String> {
     convert_html_list_to_markdown(element, 0, options)
 }
 
-fn handle_blockquote_element(
-    element: &HtmlElement,
-    options: ConversionOptions,
-) -> miette::Result<String> {
+fn handle_blockquote_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<String> {
     let inner_markdown = convert_nodes_to_markdown(&element.children, options)?;
     if !inner_markdown.is_empty() {
-        let quoted_lines: Vec<String> = inner_markdown
-            .lines()
-            .map(|line| format!("> {}", line))
-            .collect();
+        let quoted_lines: Vec<String> = inner_markdown.lines().map(|line| format!("> {}", line)).collect();
         Ok(quoted_lines.join("\n"))
     } else {
         Ok(">".to_string())
     }
 }
 
-fn handle_pre_element(
-    element: &HtmlElement,
-    _options: ConversionOptions,
-) -> miette::Result<String> {
+fn handle_pre_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
     let mut lang_specifier = String::new();
     let mut content_nodes = &element.children;
     if let Some(HtmlNode::Element(code_element)) = element.children.first()
@@ -275,10 +257,7 @@ fn handle_pre_element(
     ))
 }
 
-fn handle_table_element(
-    element: &HtmlElement,
-    _options: ConversionOptions,
-) -> miette::Result<String> {
+fn handle_table_element(element: &HtmlElement, _options: ConversionOptions) -> miette::Result<String> {
     convert_html_table_to_markdown(element)
 }
 
@@ -293,18 +272,15 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
             HtmlNode::Element(dd_el) if dd_el.tag_name == "dd" => {
                 let dd_markdown_block = convert_nodes_to_markdown(&dd_el.children, options)?;
                 if !dd_markdown_block.is_empty() {
-                    let indented_dd_lines: Vec<String> = dd_markdown_block
-                        .lines()
-                        .map(|line| format!("  {}", line))
-                        .collect();
+                    let indented_dd_lines: Vec<String> =
+                        dd_markdown_block.lines().map(|line| format!("  {}", line)).collect();
                     dl_content_parts.push(indented_dd_lines.join("\n"));
                 }
             }
             HtmlNode::Text(text) if text.trim().is_empty() => {}
             HtmlNode::Comment(_) => {}
             _ => {
-                let unexpected_block =
-                    convert_nodes_to_markdown(std::slice::from_ref(child_node), options)?;
+                let unexpected_block = convert_nodes_to_markdown(std::slice::from_ref(child_node), options)?;
                 if !unexpected_block.is_empty() {
                     dl_content_parts.push(unexpected_block);
                 }
@@ -318,26 +294,16 @@ fn handle_dl_element(element: &HtmlElement, options: ConversionOptions) -> miett
     }
 }
 
-fn handle_script_element(
-    element: &HtmlElement,
-    options: ConversionOptions,
-) -> miette::Result<Option<String>> {
+fn handle_script_element(element: &HtmlElement, options: ConversionOptions) -> miette::Result<Option<String>> {
     if options.extract_scripts_as_code_blocks {
-        if element
-            .attributes
-            .get("src")
-            .and_then(|opt| opt.as_ref())
-            .is_none()
-        {
+        if element.attributes.get("src").and_then(|opt| opt.as_ref()).is_none() {
             let type_attr = element
                 .attributes
                 .get("type")
                 .and_then(|opt| opt.as_ref())
                 .map(|s| s.to_lowercase());
             let lang_specifier = match type_attr.as_deref() {
-                Some("text/javascript") | Some("application/javascript") | Some("module") => {
-                    "javascript".to_string()
-                }
+                Some("text/javascript") | Some("application/javascript") | Some("module") => "javascript".to_string(),
                 Some("application/json") | Some("application/ld+json") => "json".to_string(),
                 _ => "".to_string(),
             };
@@ -346,10 +312,7 @@ fn handle_script_element(
                 script_content.remove(0);
             }
             let final_content = script_content.trim_end_matches('\n');
-            Ok(Some(format!(
-                "```{}\n{}\n```",
-                lang_specifier, final_content
-            )))
+            Ok(Some(format!("```{}\n{}\n```", lang_specifier, final_content)))
         } else {
             Ok(None)
         }
@@ -363,17 +326,9 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
     let mut src_url: Option<String> = None;
     let mut additional_info = String::new();
     match tag_name {
-        "iframe" | "embed" => {
-            src_url = element
-                .attributes
-                .get("src")
-                .and_then(|opt| opt.as_ref().cloned())
-        }
+        "iframe" | "embed" => src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned()),
         "video" | "audio" => {
-            src_url = element
-                .attributes
-                .get("src")
-                .and_then(|opt| opt.as_ref().cloned());
+            src_url = element.attributes.get("src").and_then(|opt| opt.as_ref().cloned());
             if src_url.is_none() {
                 for child_node in &element.children {
                     if let HtmlNode::Element(source_el) = child_node
@@ -392,12 +347,7 @@ fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Opti
                 additional_info = format!(" (Poster: {})", poster_url);
             }
         }
-        "object" => {
-            src_url = element
-                .attributes
-                .get("data")
-                .and_then(|opt| opt.as_ref().cloned())
-        }
+        "object" => src_url = element.attributes.get("data").and_then(|opt| opt.as_ref().cloned()),
         _ => {}
     }
     if let Some(url) = src_url {
@@ -481,10 +431,7 @@ fn convert_html_list_to_markdown(
                         m
                     }
                     _ => {
-                        return Err(miette!(
-                            "Unexpected list tag name: {}",
-                            list_element.tag_name,
-                        ));
+                        return Err(miette!("Unexpected list tag name: {}", list_element.tag_name,));
                     }
                 };
                 let li_content_markdown = convert_nodes_to_markdown(&li_element.children, options)?;
@@ -494,13 +441,11 @@ fn convert_html_list_to_markdown(
                     let mut first_line_in_li = true;
                     for line in li_content_markdown.lines() {
                         if first_line_in_li {
-                            markdown_items
-                                .push(format!("{}{}{}", base_indent, marker_prefix, line));
+                            markdown_items.push(format!("{}{}{}", base_indent, marker_prefix, line));
                             first_line_in_li = false;
                         } else {
                             let continuation_indent = " ".repeat(marker_prefix.len());
-                            markdown_items
-                                .push(format!("{}{}{}", base_indent, continuation_indent, line));
+                            markdown_items.push(format!("{}{}{}", base_indent, continuation_indent, line));
                         }
                     }
                 }
@@ -510,10 +455,7 @@ fn convert_html_list_to_markdown(
         {
         }
     }
-    Ok(markdown_items
-        .iter()
-        .filter(|item| !item.trim().is_empty())
-        .join("\n"))
+    Ok(markdown_items.iter().filter(|item| !item.trim().is_empty()).join("\n"))
 }
 
 pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> {
@@ -610,12 +552,7 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
                                 "text" | "number" | "button" | "url" | "email" => {
                                     if element.attributes.contains_key("value") {
                                         parts.push(
-                                            element
-                                                .attributes
-                                                .get("value")
-                                                .cloned()
-                                                .unwrap()
-                                                .unwrap_or_default(),
+                                            element.attributes.get("value").cloned().unwrap().unwrap_or_default(),
                                         );
                                     }
                                 }
@@ -642,10 +579,7 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
     Ok(parts.join("").to_string())
 }
 
-pub fn convert_nodes_to_markdown(
-    nodes: &[HtmlNode],
-    options: ConversionOptions,
-) -> miette::Result<String> {
+pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: ConversionOptions) -> miette::Result<String> {
     let mut markdown_blocks: Vec<MarkdownBlock> = Vec::new();
     for node in nodes {
         match node {
@@ -656,8 +590,8 @@ pub fn convert_nodes_to_markdown(
             }
             HtmlNode::Element(element) => {
                 match element.tag_name.as_str() {
-                    "html" | "head" | "header" | "footer" | "body" | "div" | "nav" | "main"
-                    | "article" | "section" | "hgroup" => {
+                    "html" | "head" | "header" | "footer" | "body" | "div" | "nav" | "main" | "article" | "section"
+                    | "hgroup" => {
                         let markdown_block = convert_nodes_to_markdown(&element.children, options)?;
 
                         if !markdown_block.is_empty() {
@@ -669,18 +603,14 @@ pub fn convert_nodes_to_markdown(
                     }
                     "p" => markdown_blocks.push((handle_paragraph_element(element)?, false)),
                     "hr" => markdown_blocks.push((handle_hr_element()?, false)),
-                    "ul" | "ol" => {
-                        markdown_blocks.push((handle_list_element(element, options)?, false))
-                    }
+                    "ul" | "ol" => markdown_blocks.push((handle_list_element(element, options)?, false)),
                     "title" if options.use_title_as_h1 => {
                         let children_content_str = convert_children_to_string(&element.children)?;
                         if !children_content_str.is_empty() {
                             markdown_blocks.push((format!("# {}", children_content_str), false));
                         }
                     }
-                    "blockquote" => {
-                        markdown_blocks.push((handle_blockquote_element(element, options)?, false))
-                    }
+                    "blockquote" => markdown_blocks.push((handle_blockquote_element(element, options)?, false)),
                     "pre" => markdown_blocks.push((handle_pre_element(element, options)?, false)),
                     "table" => {
                         let table_md = handle_table_element(element, options)?;
@@ -706,10 +636,9 @@ pub fn convert_nodes_to_markdown(
                         }
                     }
                     "svg" => markdown_blocks.push((handle_svg_element(element)?, false)),
-                    "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s"
-                    | "strike" | "del" | "kbd" => {
-                        let inline_md =
-                            convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
+                    "strong" | "em" | "a" | "code" | "span" | "img" | "br" | "input" | "s" | "strike" | "del"
+                    | "kbd" => {
+                        let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if !inline_md.is_empty() {
                             markdown_blocks.push((inline_md.trim().to_string(), true));
                         }
