@@ -86,11 +86,11 @@ fn eval_boolean_folding() -> mq_lang::RuntimeValues {
             r#"
             let t = true
             | let f = false
-            | let r1 = and(t, f)
-            | let r2 = or(t, f)
-            | let r3 = not(t)
-            | let r4 = not(f)
-            | let r5 = or(and(t, not(f)), and(not(t), f))
+            | let r1 = t && f
+            | let r2 = t || f
+            | let r3 = !t
+            | let r4 = !f
+            | let r5 = (t && !f) || (!t && f)
             | r5
             "#, // No semicolons between lets, final variable is the result
             vec!["".into()].into_iter(),
@@ -221,6 +221,35 @@ fn eval_qualified_access_to_csv_module() -> mq_lang::RuntimeValues {
        .eval(
             r#"import "csv" | csv::csv_parse(true)"#,
             vec![mq_lang::RuntimeValue::String("a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n".to_string())].into_iter(),
+        )
+        .unwrap()
+}
+
+#[divan::bench()]
+fn eval_string_equality() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::Engine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"
+let a1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
+| let a2 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2"
+| let a3 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3"
+| let a4 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4"
+| let a5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5"
+| let a6 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6"
+| let a7 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7"
+| let a8 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa8"
+| a1 == a1 |  a1 == a2 |  a1 == a3 |  a1 == a4 |  a1 == a5 |  a1 == a6 |  a1 == a7 |  a1 == a8
+| a2 == a1 |  a2 == a2 |  a2 == a3 |  a2 == a4 |  a2 == a5 |  a2 == a6 |  a2 == a7 |  a2 == a8
+| a3 == a1 |  a3 == a2 |  a3 == a3 |  a3 == a4 |  a3 == a5 |  a3 == a6 |  a3 == a7 |  a3 == a8
+| a4 == a1 |  a4 == a2 |  a4 == a3 |  a4 == a4 |  a4 == a5 |  a4 == a6 |  a4 == a7 |  a4 == a8
+| a5 == a1 |  a5 == a2 |  a5 == a3 |  a5 == a4 |  a5 == a5 |  a5 == a6 |  a5 == a7 |  a5 == a8
+| a6 == a1 |  a6 == a2 |  a6 == a3 |  a6 == a4 |  a6 == a5 |  a6 == a6 |  a6 == a7 |  a6 == a8
+| a7 == a1 |  a7 == a2 |  a7 == a3 |  a7 == a4 |  a7 == a5 |  a7 == a6 |  a7 == a7 |  a7 == a8
+| a8 == a1 |  a8 == a2 |  a8 == a3 |  a8 == a4 |  a8 == a5 |  a8 == a6 |  a8 == a7 |  a8 == a8
+"#,
+            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
         )
         .unwrap()
 }
