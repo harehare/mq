@@ -29,7 +29,6 @@ The mq project follows this main directory structure:
   - `mq-hir` - High-level Internal Representation (HIR)
   - `mq-lang` - Implementation of the mq
   - `mq-lsp` - Language Server Protocol implementation
-  - `mq-macros` - Procedural macros for mq
   - `mq-markdown` - Markdown parser and manipulation utilities
   - `mq-mcp` - MCP implementation for mq
   - `mq-python` - Python bindings for integrating mq functionality into Python applications

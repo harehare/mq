@@ -2773,16 +2773,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mq-macros"
-version = "0.5.0"
-dependencies = [
- "mq-lang",
- "mq-markdown",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "mq-markdown"
 version = "0.5.0"
 dependencies = [
