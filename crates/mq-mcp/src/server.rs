@@ -66,33 +66,20 @@ impl Server {
     #[tool(
         description = "Executes an mq query on the provided HTML content and returns the result as Markdown. Selectors and functions listed in the available_selectors and available_functions tools can be used."
     )]
-    fn html_to_markdown(
-        &self,
-        Parameters(QueryForHtml { html, query }): Parameters<QueryForHtml>,
-    ) -> McpResult {
+    fn html_to_markdown(&self, Parameters(QueryForHtml { html, query }): Parameters<QueryForHtml>) -> McpResult {
         let mut engine = mq_lang::Engine::default();
         engine.load_builtin_module();
 
         let markdown = mq_markdown::Markdown::from_html_str(&html).map_err(|e| {
-            ErrorData::parse_error(
-                "Failed to parse html",
-                Some(serde_json::Value::String(e.to_string())),
-            )
+            ErrorData::parse_error("Failed to parse html", Some(serde_json::Value::String(e.to_string())))
         })?;
         let values = engine
             .eval(
                 &query.unwrap_or("identity()".to_string()),
-                markdown
-                    .nodes
-                    .clone()
-                    .into_iter()
-                    .map(mq_lang::RuntimeValue::from),
+                markdown.nodes.clone().into_iter().map(mq_lang::RuntimeValue::from),
             )
             .map_err(|e| {
-                ErrorData::invalid_request(
-                    "Failed to query",
-                    Some(serde_json::Value::String(e.to_string())),
-                )
+                ErrorData::invalid_request("Failed to query", Some(serde_json::Value::String(e.to_string())))
             })?;
 
         Ok(CallToolResult::success(
@@ -128,17 +115,10 @@ impl Server {
         let values = engine
             .eval(
                 &query,
-                markdown
-                    .nodes
-                    .clone()
-                    .into_iter()
-                    .map(mq_lang::RuntimeValue::from),
+                markdown.nodes.clone().into_iter().map(mq_lang::RuntimeValue::from),
             )
             .map_err(|e| {
-                ErrorData::invalid_request(
-                    "Failed to query",
-                    Some(serde_json::Value::String(e.to_string())),
-                )
+                ErrorData::invalid_request("Failed to query", Some(serde_json::Value::String(e.to_string())))
             })?;
 
         Ok(CallToolResult::success(
@@ -221,9 +201,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
-            instructions: Some(
-                "mq is a tool for processing markdown content with a jq-like syntax.".into(),
-            ),
+            instructions: Some("mq is a tool for processing markdown content with a jq-like syntax.".into()),
             capabilities: ServerCapabilities::builder()
                 .enable_logging()
                 .enable_tools()
@@ -285,10 +263,7 @@ mod tests {
         },
         Err("Failed to query")
     )]
-    fn test_html_to_markdown(
-        #[case] query: QueryForHtml,
-        #[case] expected: Result<&'static str, &'static str>,
-    ) {
+    fn test_html_to_markdown(#[case] query: QueryForHtml, #[case] expected: Result<&'static str, &'static str>) {
         let server = Server::new().expect("Failed to create server");
         let result = server.html_to_markdown(Parameters(query));
         match expected {
@@ -351,10 +326,7 @@ mod tests {
         },
         Ok("")
     )]
-    fn test_extract_markdown(
-        #[case] query: QueryForMarkdown,
-        #[case] expected: Result<&'static str, &'static str>,
-    ) {
+    fn test_extract_markdown(#[case] query: QueryForMarkdown, #[case] expected: Result<&'static str, &'static str>) {
         let server = Server::new().expect("Failed to create server");
         let result = server.extract_markdown(Parameters(query));
         match expected {

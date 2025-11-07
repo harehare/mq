@@ -135,12 +135,7 @@ impl Debugger {
     }
 
     /// Add a breakpoint at the specified line
-    pub fn add_breakpoint(
-        &mut self,
-        line: usize,
-        column: Option<usize>,
-        source: Option<String>,
-    ) -> usize {
+    pub fn add_breakpoint(&mut self, line: usize, column: Option<usize>, source: Option<String>) -> usize {
         let breakpoint = Breakpoint {
             id: self.next_breakpoint_id,
             line,
@@ -200,11 +195,7 @@ impl Debugger {
     }
 
     /// Returns the breakpoint that was hit at the current token location, if any.
-    pub fn get_hit_breakpoint(
-        &self,
-        context: &DebugContext,
-        token: Shared<Token>,
-    ) -> Option<Breakpoint> {
+    pub fn get_hit_breakpoint(&self, context: &DebugContext, token: Shared<Token>) -> Option<Breakpoint> {
         if !self.active {
             return None;
         }
@@ -301,14 +292,8 @@ impl Debugger {
                                 "  [{}] {}:{}{}",
                                 bp.id,
                                 bp.line,
-                                bp.column
-                                    .map(|col| col.to_string())
-                                    .unwrap_or_else(|| "-".to_string()),
-                                if bp.enabled {
-                                    " (enabled)"
-                                } else {
-                                    " (disabled)"
-                                },
+                                bp.column.map(|col| col.to_string()).unwrap_or_else(|| "-".to_string()),
+                                if bp.enabled { " (enabled)" } else { " (disabled)" },
                             )
                         })
                         .join("\n")
@@ -329,12 +314,7 @@ impl Debugger {
         }
     }
 
-    fn find_active_breakpoint(
-        &self,
-        line: usize,
-        column: usize,
-        source: &Source,
-    ) -> Option<Breakpoint> {
+    fn find_active_breakpoint(&self, line: usize, column: usize, source: &Source) -> Option<Breakpoint> {
         for breakpoint in &self.breakpoints {
             if !breakpoint.enabled {
                 continue;
@@ -423,11 +403,7 @@ impl From<DebuggerAction> for DebuggerCommand {
 
 pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     // Called when a breakpoint is hit.
-    fn on_breakpoint_hit(
-        &self,
-        _breakpoint: &Breakpoint,
-        _context: &DebugContext,
-    ) -> DebuggerAction {
+    fn on_breakpoint_hit(&self, _breakpoint: &Breakpoint, _context: &DebugContext) -> DebuggerAction {
         // Default behavior: continue execution
         DebuggerAction::Continue
     }
@@ -504,11 +480,7 @@ mod tests {
     #[case(DebuggerCommand::Continue, false, "Continue: should not break")]
     #[case(DebuggerCommand::Quit, false, "Quit: should not break and deactivate")]
     #[case(DebuggerCommand::StepInto, true, "StepInto: should break once")]
-    fn test_should_break_basic(
-        #[case] command: DebuggerCommand,
-        #[case] expected_hit: bool,
-        #[case] _desc: &str,
-    ) {
+    fn test_should_break_basic(#[case] command: DebuggerCommand, #[case] expected_hit: bool, #[case] _desc: &str) {
         let mut dbg = Debugger::new();
         dbg.activate();
         dbg.set_command(command);
@@ -518,10 +490,7 @@ mod tests {
         assert_eq!(hit, expected_hit);
 
         if command == DebuggerCommand::Quit {
-            assert!(
-                !dbg.is_active(),
-                "Debugger should be deactivated after Quit"
-            );
+            assert!(!dbg.is_active(), "Debugger should be deactivated after Quit");
         }
     }
 

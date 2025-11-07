@@ -91,9 +91,7 @@ impl Hir {
                 match &symbol.kind {
                     SymbolKind::Call => {
                         // Check if the call symbol directly matches the function name
-                        if symbol.value.as_ref() == Some(func_name)
-                            && symbol.source.source_id == Some(source_id)
-                        {
+                        if symbol.value.as_ref() == Some(func_name) && symbol.source.source_id == Some(source_id) {
                             return true;
                         }
                         // Also check if they have argument symbols that match our function name
@@ -105,8 +103,7 @@ impl Hir {
                         })
                     }
                     SymbolKind::Ref | SymbolKind::Argument => {
-                        symbol.value.as_ref() == Some(func_name)
-                            && symbol.source.source_id == Some(source_id)
+                        symbol.value.as_ref() == Some(func_name) && symbol.source.source_id == Some(source_id)
                     }
                     _ => false,
                 }
@@ -204,29 +201,25 @@ impl Hir {
             });
         });
 
-        self.builtin
-            .internal_functions
-            .clone()
-            .keys()
-            .for_each(|name| {
-                self.add_symbol(Symbol {
-                    value: Some(name.clone()),
-                    kind: SymbolKind::Function(
-                        mq_lang::INTERNAL_FUNCTION_DOC[name]
-                            .params
-                            .iter()
-                            .map(SmolStr::new)
-                            .collect::<Vec<_>>(),
-                    ),
-                    source: SourceInfo::new(Some(self.builtin.source_id), None),
-                    scope: self.builtin.scope_id,
-                    doc: vec![(
-                        mq_lang::Range::default(),
-                        mq_lang::INTERNAL_FUNCTION_DOC[name].description.to_string(),
-                    )],
-                    parent: None,
-                });
+        self.builtin.internal_functions.clone().keys().for_each(|name| {
+            self.add_symbol(Symbol {
+                value: Some(name.clone()),
+                kind: SymbolKind::Function(
+                    mq_lang::INTERNAL_FUNCTION_DOC[name]
+                        .params
+                        .iter()
+                        .map(SmolStr::new)
+                        .collect::<Vec<_>>(),
+                ),
+                source: SourceInfo::new(Some(self.builtin.source_id), None),
+                scope: self.builtin.scope_id,
+                doc: vec![(
+                    mq_lang::Range::default(),
+                    mq_lang::INTERNAL_FUNCTION_DOC[name].description.to_string(),
+                )],
+                parent: None,
             });
+        });
 
         self.builtin.selectors.clone().keys().for_each(|name| {
             self.add_symbol(Symbol {
@@ -245,11 +238,7 @@ impl Hir {
         self.builtin.loaded = true;
     }
 
-    pub fn add_nodes(
-        &mut self,
-        url: Url,
-        nodes: &[mq_lang::Shared<mq_lang::CstNode>],
-    ) -> (SourceId, ScopeId) {
+    pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
         self.add_builtin();
 
         let source_id = self
@@ -279,11 +268,9 @@ impl Hir {
     }
 
     pub fn source_by_url(&self, url: &Url) -> Option<SourceId> {
-        self.sources.iter().find_map(|(s, data)| {
-            data.url
-                .as_ref()
-                .and_then(|u| if *u == *url { Some(s) } else { None })
-        })
+        self.sources
+            .iter()
+            .find_map(|(s, data)| data.url.as_ref().and_then(|u| if *u == *url { Some(s) } else { None }))
     }
 
     fn scope_by_source(&self, source_id: &SourceId) -> Option<ScopeId> {
@@ -1331,9 +1318,7 @@ impl Hir {
             });
 
             for entry in node.children_without_token() {
-                if let (Some(key_node), Some(value_node)) =
-                    (entry.children.first(), entry.children.get(2))
-                {
+                if let (Some(key_node), Some(value_node)) = (entry.children.first(), entry.children.get(2)) {
                     let key_symbol_id = self.add_symbol(Symbol {
                         value: key_node.name(),
                         kind: match &key_node.token {
@@ -1549,26 +1534,16 @@ mod tests {
     #[rstest]
     #[case::def("# test
 def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec![SymbolKind::Keyword, SymbolKind::Function(Vec::new()), SymbolKind::Number])]
-    fn test_symbols(
-        #[case] code: &str,
-        #[case] expected_doc: Vec<String>,
-        #[case] expected_kind: Vec<SymbolKind>,
-    ) {
+    fn test_symbols(#[case] code: &str, #[case] expected_doc: Vec<String>, #[case] expected_kind: Vec<SymbolKind>) {
         let mut hir = Hir::default();
 
         hir.builtin.disabled = true;
         hir.add_code(None, code);
 
-        let symbols = hir
-            .symbols()
-            .map(|(_, symbol)| symbol.clone())
-            .collect::<Vec<_>>();
+        let symbols = hir.symbols().map(|(_, symbol)| symbol.clone()).collect::<Vec<_>>();
 
         assert_eq!(
-            symbols
-                .iter()
-                .map(|symbol| symbol.clone().kind)
-                .collect::<Vec<_>>(),
+            symbols.iter().map(|symbol| symbol.clone().kind).collect::<Vec<_>>(),
             expected_kind
         );
 
@@ -1633,17 +1608,9 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
     #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern)]
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
-    #[case::module(
-        "module a: def b(): 1; end",
-        "a",
-        SymbolKind::Module(SourceId::default())
-    )]
+    #[case::module("module a: def b(): 1; end", "a", SymbolKind::Module(SourceId::default()))]
     #[case::module_name_ident("module math: def add(): 1; end", "math", SymbolKind::Ident)]
-    fn test_add_code(
-        #[case] code: &str,
-        #[case] expected_name: &str,
-        #[case] expected_kind: SymbolKind,
-    ) {
+    fn test_add_code(#[case] code: &str, #[case] expected_name: &str, #[case] expected_kind: SymbolKind) {
         let mut hir = Hir::default();
         hir.builtin.loaded = true;
         hir.add_code(None, code);
@@ -1681,24 +1648,9 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         "foo",
         SymbolKind::Function(Vec::new())
     )]
-    #[case::if_(
-        "if (true): 1 else: 2;",
-        mq_lang::Position::new(1, 1),
-        "if",
-        SymbolKind::If
-    )]
-    #[case::while_(
-        "while (true): 1;",
-        mq_lang::Position::new(1, 1),
-        "while",
-        SymbolKind::While
-    )]
-    #[case::foreach_(
-        "foreach(x, y): 1",
-        mq_lang::Position::new(1, 1),
-        "foreach",
-        SymbolKind::Foreach
-    )]
+    #[case::if_("if (true): 1 else: 2;", mq_lang::Position::new(1, 1), "if", SymbolKind::If)]
+    #[case::while_("while (true): 1;", mq_lang::Position::new(1, 1), "while", SymbolKind::While)]
+    #[case::foreach_("foreach(x, y): 1", mq_lang::Position::new(1, 1), "foreach", SymbolKind::Foreach)]
     #[case::call(
         "def foo():1; | foo()",
         mq_lang::Position::new(1, 16),
@@ -1812,10 +1764,7 @@ end"#;
             .find(|(_, symbol)| symbol.value == Some("hello".into()))
             .map(|(_, symbol)| symbol);
 
-        assert!(
-            string_symbol.is_some(),
-            "String literal symbol should exist"
-        );
+        assert!(string_symbol.is_some(), "String literal symbol should exist");
 
         if let Some(string_sym) = string_symbol {
             assert!(matches!(string_sym.kind, SymbolKind::String));
@@ -1887,15 +1836,15 @@ end"#;
         hir.add_code(None, code);
 
         // Check for PatternVariable
-        let pattern_var = hir.symbols().find(|(_, symbol)| {
-            symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x")
-        });
+        let pattern_var = hir
+            .symbols()
+            .find(|(_, symbol)| symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x"));
         assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
 
         // Check for Ref to 'x' in the body
-        let x_ref = hir.symbols().find(|(_, symbol)| {
-            symbol.kind == SymbolKind::Ref && symbol.value.as_deref() == Some("x")
-        });
+        let x_ref = hir
+            .symbols()
+            .find(|(_, symbol)| symbol.kind == SymbolKind::Ref && symbol.value.as_deref() == Some("x"));
         assert!(x_ref.is_some(), "Should have a Ref to 'x'");
 
         // Check that MatchArm has its own scope
@@ -1919,11 +1868,7 @@ end"#;
             .symbols()
             .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
             .collect();
-        assert_eq!(
-            pattern_vars.len(),
-            3,
-            "Should have 3 PatternVariables (a, b, c)"
-        );
+        assert_eq!(pattern_vars.len(), 3, "Should have 3 PatternVariables (a, b, c)");
 
         // Verify the names
         let names: Vec<_> = pattern_vars
@@ -1948,11 +1893,7 @@ end"#;
             .symbols()
             .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::PatternVariable))
             .collect();
-        assert_eq!(
-            pattern_vars.len(),
-            0,
-            "Wildcard should not create PatternVariables"
-        );
+        assert_eq!(pattern_vars.len(), 0, "Wildcard should not create PatternVariables");
 
         // But should still have a Pattern symbol
         let patterns: Vec<_> = hir
@@ -1973,18 +1914,14 @@ end"#;
         // Find the PatternVariable 'x'
         let pattern_var = hir
             .symbols()
-            .find(|(_, symbol)| {
-                symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x")
-            })
+            .find(|(_, symbol)| symbol.kind == SymbolKind::PatternVariable && symbol.value.as_deref() == Some("x"))
             .map(|(id, _)| id);
         assert!(pattern_var.is_some(), "Should have a PatternVariable 'x'");
 
         // Find the Ref to 'x' in the body
         let x_ref = hir
             .symbols()
-            .find(|(_, symbol)| {
-                symbol.kind == SymbolKind::Ref && symbol.value.as_deref() == Some("x")
-            })
+            .find(|(_, symbol)| symbol.kind == SymbolKind::Ref && symbol.value.as_deref() == Some("x"))
             .map(|(id, _)| id);
         assert!(x_ref.is_some(), "Should have a Ref to 'x'");
 
@@ -2035,10 +1972,7 @@ end"#;
                 SymbolKind::PatternVariable,
                 "Should resolve to PatternVariable"
             );
-            assert_eq!(
-                resolved_symbol.value, ref_name,
-                "Resolved variable name should match"
-            );
+            assert_eq!(resolved_symbol.value, ref_name, "Resolved variable name should match");
         }
 
         // Verify no unresolved errors

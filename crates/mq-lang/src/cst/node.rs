@@ -159,10 +159,7 @@ impl Node {
     }
 
     pub fn range(&self) -> Range {
-        self.token
-            .as_ref()
-            .map(|token| token.range.clone())
-            .unwrap_or_default()
+        self.token.as_ref().map(|token| token.range.clone()).unwrap_or_default()
     }
 
     pub fn node_range(&self) -> Range {

@@ -14,16 +14,8 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 }
 
 #[rstest]
-#[case::br_in_paragraph(
-    "<p>line1<br>line2</p>",
-    ConversionOptions::default(),
-    "line1  \nline2"
-)]
-#[case::br_multiple_in_paragraph(
-    "<p>line1<br><br>line2</p>",
-    ConversionOptions::default(),
-    "line1  \n  \nline2"
-)]
+#[case::br_in_paragraph("<p>line1<br>line2</p>", ConversionOptions::default(), "line1  \nline2")]
+#[case::br_multiple_in_paragraph("<p>line1<br><br>line2</p>", ConversionOptions::default(), "line1  \n  \nline2")]
 #[case::br_standalone("<br>", ConversionOptions::default(), "\n")]
 #[case::table_with_alignments(
     concat!(
@@ -37,11 +29,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| Left | Center | Right | Default |\n|:---|:---:|---:|---|\n| 1 | 2 | 3 | 4 |"
 )]
-#[case::script_tag_ignored_when_option_is_false(
-    "<script>alert('ignored');</script>",
-    ConversionOptions::default(),
-    ""
-)]
+#[case::script_tag_ignored_when_option_is_false("<script>alert('ignored');</script>", ConversionOptions::default(), "")]
 #[case::script_tag_ignored_when_option_is_false_external(
     "<script src=\"ext.js\"></script>",
     ConversionOptions::default(),
@@ -242,23 +230,11 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H1 | H2 |\n|---:|:---:|\n| c1 | c2 |"
 )]
-#[case::br_in_paragraph(
-    "<p>line1<br>line2</p>",
-    ConversionOptions::default(),
-    "line1  \nline2"
-)]
-#[case::br_multiple_in_paragraph(
-    "<p>line1<br><br>line2</p>",
-    ConversionOptions::default(),
-    "line1  \n  \nline2"
-)]
+#[case::br_in_paragraph("<p>line1<br>line2</p>", ConversionOptions::default(), "line1  \nline2")]
+#[case::br_multiple_in_paragraph("<p>line1<br><br>line2</p>", ConversionOptions::default(), "line1  \n  \nline2")]
 #[case::br_standalone("<br>", ConversionOptions::default(), "\n")]
 #[case::hr_simple("<hr>", ConversionOptions::default(), "---")]
-#[case::hr_with_attributes(
-    "<hr class=\"fancy\" id=\"divider\">",
-    ConversionOptions::default(),
-    "---"
-)]
+#[case::hr_with_attributes("<hr class=\"fancy\" id=\"divider\">", ConversionOptions::default(), "---")]
 #[case::hr_between_blocks(
     "<h1>Title</h1><hr><p>Text</p>",
     ConversionOptions::default(),
@@ -308,16 +284,8 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 )]
 #[case::ul_empty("<ul></ul>", ConversionOptions::default(), "")]
 #[case::ol_empty("<ol></ol>", ConversionOptions::default(), "")]
-#[case::ul_with_empty_li(
-    "<ul><li></li><li>Item 2</li></ul>",
-    ConversionOptions::default(),
-    "* \n* Item 2"
-)]
-#[case::ol_with_empty_li(
-    "<ol><li>Item 1</li><li></li></ol>",
-    ConversionOptions::default(),
-    "1. Item 1\n2. "
-)]
+#[case::ul_with_empty_li("<ul><li></li><li>Item 2</li></ul>", ConversionOptions::default(), "* \n* Item 2")]
+#[case::ol_with_empty_li("<ol><li>Item 1</li><li></li></ol>", ConversionOptions::default(), "1. Item 1\n2. ")]
 #[case::ul_nested(
     "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>",
     ConversionOptions::default(),
@@ -470,11 +438,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "[Embedded Iframe](https://example.com/embed)"
 )]
-#[case::iframe_no_src(
-    "<iframe title=\"My Embed\"></iframe>",
-    ConversionOptions::default(),
-    ""
-)]
+#[case::iframe_no_src("<iframe title=\"My Embed\"></iframe>", ConversionOptions::default(), "")]
 #[case::video_simple_src(
     "<video src=\"movie.mp4\" title=\"My Movie\"></video>",
     ConversionOptions::default(),
@@ -495,11 +459,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "[My Movie](movie.mp4 \"My Movie\") (Poster: poster.jpg)"
 )]
-#[case::video_no_src_no_source(
-    "<video title=\"My Movie\"></video>",
-    ConversionOptions::default(),
-    ""
-)]
+#[case::video_no_src_no_source("<video title=\"My Movie\"></video>", ConversionOptions::default(), "")]
 #[case::audio_simple_src(
     "<audio src=\"sound.mp3\" title=\"My Sound\"></audio>",
     ConversionOptions::default(),
@@ -530,11 +490,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "[Embedded Object](data.pdf)"
 )]
-#[case::object_no_data(
-    "<object title=\"My Object\"></object>",
-    ConversionOptions::default(),
-    ""
-)]
+#[case::object_no_data("<object title=\"My Object\"></object>", ConversionOptions::default(), "")]
 #[case::svg_with_title(
     "<svg><title>My Awesome Icon</title><circle cx=\"50\" cy=\"50\" r=\"40\" /></svg>",
     ConversionOptions::default(),
@@ -567,11 +523,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "[SVG: First Title]"
 )]
 #[case::checkbox_unchecked("<input type=\"checkbox\">", ConversionOptions::default(), "[ ]")]
-#[case::checkbox_checked(
-    "<input type=\"checkbox\" checked>",
-    ConversionOptions::default(),
-    "[x]"
-)]
+#[case::checkbox_checked("<input type=\"checkbox\" checked>", ConversionOptions::default(), "[x]")]
 #[case::checkbox_checked_explicit_value(
     "<input type=\"checkbox\" checked=\"checked\">",
     ConversionOptions::default(),
@@ -592,11 +544,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "* [x] Done"
 )]
-#[case::input_other_type_ignored(
-    "<input type=\"text\" value=\"Hello\">",
-    ConversionOptions::default(),
-    "Hello"
-)]
+#[case::input_other_type_ignored("<input type=\"text\" value=\"Hello\">", ConversionOptions::default(), "Hello")]
 #[case::dl_simple(
     "<dl><dt>Term 1</dt><dd>Definition 1</dd></dl>",
     ConversionOptions::default(),
@@ -633,16 +581,8 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "****\n  Definition"
 )]
-#[case::dl_dd_empty(
-    "<dl><dt>Term</dt><dd></dd></dl>",
-    ConversionOptions::default(),
-    "**Term**"
-)]
-#[case::dl_dd_empty_explicit(
-    "<dl><dt>Term</dt><dd> </dd></dl>",
-    ConversionOptions::default(),
-    "**Term**"
-)]
+#[case::dl_dd_empty("<dl><dt>Term</dt><dd></dd></dl>", ConversionOptions::default(), "**Term**")]
+#[case::dl_dd_empty_explicit("<dl><dt>Term</dt><dd> </dd></dl>", ConversionOptions::default(), "**Term**")]
 #[case::dl_with_list_in_dd(
     "<dl><dt>Topic</dt><dd><ul><li>Point 1</li><li>Point 2</li></ul></dd></dl>",
     ConversionOptions::default(),
@@ -842,11 +782,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Del</kbd>"
 )]
 #[case::kbd_empty("<kbd></kbd>", ConversionOptions::default(), "<kbd></kbd>")]
-#[case::kbd_with_nested_inline(
-    "<kbd><em>File</em></kbd>",
-    ConversionOptions::default(),
-    "<kbd>*File*</kbd>"
-)]
+#[case::kbd_with_nested_inline("<kbd><em>File</em></kbd>", ConversionOptions::default(), "<kbd>*File*</kbd>")]
 #[case::style_tag_is_ignored(
     "<style>body { font-size: 16px; }</style><p>Text</p>",
     ConversionOptions::default(),
@@ -857,11 +793,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "Next"
 )]
-#[case::style_tag_empty_is_ignored(
-    "<style></style><p>Content</p>",
-    ConversionOptions::default(),
-    "Content"
-)]
+#[case::style_tag_empty_is_ignored("<style></style><p>Content</p>", ConversionOptions::default(), "Content")]
 #[case::u_tag_simple("<u>underlined</u>", ConversionOptions::default(), "underlined")]
 #[case::u_tag_empty("<u></u>", ConversionOptions::default(), "")]
 #[case::u_tag_with_nested_inline(
@@ -927,42 +859,26 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 )]
 #[case::pre_empty("<pre></pre>", ConversionOptions::default(), "```\n\n```")]
 #[case::pre_code_empty("<pre><code></code></pre>", ConversionOptions::default(), "```\n\n```")]
-#[case::pre_leading_newline_stripping_1(
-    "<pre>\nCode here</pre>",
-    ConversionOptions::default(),
-    "```\nCode here\n```"
-)]
+#[case::pre_leading_newline_stripping_1("<pre>\nCode here</pre>", ConversionOptions::default(), "```\nCode here\n```")]
 #[case::pre_leading_newline_stripping_2(
     "<pre><code>\nCode here</code></pre>",
     ConversionOptions::default(),
     "```\nCode here\n```"
 )]
-#[case::pre_trailing_newline_handling_1(
-    "<pre>Code here\n</pre>",
-    ConversionOptions::default(),
-    "```\nCode here\n```"
-)]
+#[case::pre_trailing_newline_handling_1("<pre>Code here\n</pre>", ConversionOptions::default(), "```\nCode here\n```")]
 #[case::pre_trailing_newline_handling_2(
     "<pre>Code here\n\n</pre>",
     ConversionOptions::default(),
     "```\nCode here\n```"
 )]
-#[case::pre_with_br_tags(
-    "<pre>Line1<br>Line2</pre>",
-    ConversionOptions::default(),
-    "```\nLine1\nLine2\n```"
-)]
+#[case::pre_with_br_tags("<pre>Line1<br>Line2</pre>", ConversionOptions::default(), "```\nLine1\nLine2\n```")]
 #[case::pre_code_with_multiple_classes(
     "<pre><code class=\"foo language-python bar\">print('hello')</code></pre>",
     ConversionOptions::default(),
     "```python\nprint('hello')\n```"
 )]
 #[case::img_no_alt("<img src=\"foo.gif\">", ConversionOptions::default(), "![](foo.gif)")]
-#[case::img_empty_alt(
-    "<img src=\"bar.jpeg\" alt=\"\">",
-    ConversionOptions::default(),
-    "![](bar.jpeg)"
-)]
+#[case::img_empty_alt("<img src=\"bar.jpeg\" alt=\"\">", ConversionOptions::default(), "![](bar.jpeg)")]
 #[case::img_no_title(
     "<img src=\"image.png\" alt=\"My Alt Text\">",
     ConversionOptions::default(),
@@ -997,37 +913,17 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 )]
 #[case::h1_simple("<h1>Hello World</h1>", ConversionOptions::default(), "# Hello World")]
 #[case::h2_simple("<h2>Hello World</h2>", ConversionOptions::default(), "## Hello World")]
-#[case::h3_simple(
-    "<h3>Hello World</h3>",
-    ConversionOptions::default(),
-    "### Hello World"
-)]
-#[case::h4_simple(
-    "<h4>Hello World</h4>",
-    ConversionOptions::default(),
-    "#### Hello World"
-)]
-#[case::h5_simple(
-    "<h5>Hello World</h5>",
-    ConversionOptions::default(),
-    "##### Hello World"
-)]
-#[case::h6_simple(
-    "<h6>Hello World</h6>",
-    ConversionOptions::default(),
-    "###### Hello World"
-)]
+#[case::h3_simple("<h3>Hello World</h3>", ConversionOptions::default(), "### Hello World")]
+#[case::h4_simple("<h4>Hello World</h4>", ConversionOptions::default(), "#### Hello World")]
+#[case::h5_simple("<h5>Hello World</h5>", ConversionOptions::default(), "##### Hello World")]
+#[case::h6_simple("<h6>Hello World</h6>", ConversionOptions::default(), "###### Hello World")]
 #[case::h1_with_attributes(
     "<h1 id=\"main-title\" class=\"important\">Hello</h1>",
     ConversionOptions::default(),
     "# Hello"
 )]
 #[case::h2_empty("<h2></h2>", ConversionOptions::default(), "## ")] // Or just "##" - common practice is a space after #
-#[case::h3_with_whitespace(
-    "<h3>  Spaced Out  </h3>",
-    ConversionOptions::default(),
-    "###  Spaced Out "
-)]
+#[case::h3_with_whitespace("<h3>  Spaced Out  </h3>", ConversionOptions::default(), "###  Spaced Out ")]
 #[case::multiple_headings(
     "<h1>First</h1><h2>Second</h2>",
     ConversionOptions::default(),
@@ -1038,28 +934,16 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "# Hello **World**"
 )]
-#[case::heading_with_inline_em(
-    "<h2>Hello <em>World</em></h2>",
-    ConversionOptions::default(),
-    "## Hello *World*"
-)]
+#[case::heading_with_inline_em("<h2>Hello <em>World</em></h2>", ConversionOptions::default(), "## Hello *World*")]
 #[case::heading_mixed_content(
     "<h3>Part1 <strong>bold</strong> Part2</h3>",
     ConversionOptions::default(),
     "### Part1 **bold** Part2"
 )]
-#[case::h1_malformed_open(
-    "<h1>Hello World</h_oops>",
-    ConversionOptions::default(),
-    "# Hello World"
-)]
+#[case::h1_malformed_open("<h1>Hello World</h_oops>", ConversionOptions::default(), "# Hello World")]
 #[case::strong_simple("<strong>Hello</strong>", ConversionOptions::default(), "**Hello**")]
 #[case::em_simple("<em>World</em>", ConversionOptions::default(), "*World*")]
-#[case::strong_with_attributes(
-    "<strong class=\"bold\">Text</strong>",
-    ConversionOptions::default(),
-    "**Text**"
-)]
+#[case::strong_with_attributes("<strong class=\"bold\">Text</strong>", ConversionOptions::default(), "**Text**")]
 #[case::em_empty("<em></em>", ConversionOptions::default(), "")]
 #[case::strong_in_paragraph(
     "<p>This is <strong>bold</strong> text.</p>",
@@ -1101,11 +985,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "### Part1 **bold** and *italic* Part2"
 )]
-#[case::strong_with_internal_whitespace(
-    "<strong>  spaced  </strong>",
-    ConversionOptions::default(),
-    "** spaced **"
-)]
+#[case::strong_with_internal_whitespace("<strong>  spaced  </strong>", ConversionOptions::default(), "** spaced **")]
 #[case::em_around_strong(
     "<em>Emphasis around <strong>bold</strong> text.</em>",
     ConversionOptions::default(),
@@ -1133,11 +1013,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "[](https://example.com)"
 )]
 #[case::link_href_empty_processed("<a href=\"\"></a>", ConversionOptions::default(), "[](<>)")]
-#[case::link_no_href(
-    "<a name=\"anchor\">Anchor Text</a>",
-    ConversionOptions::default(),
-    "Anchor Text"
-)]
+#[case::link_no_href("<a name=\"anchor\">Anchor Text</a>", ConversionOptions::default(), "Anchor Text")]
 #[case::link_with_emphasized_text(
     "<a href=\"/foo\"><em>italic link</em></a>",
     ConversionOptions::default(),
@@ -1226,11 +1102,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     },
     "My Document\n\nBody text"
 )]
-fn test_html_to_markdown(
-    #[case] html: &str,
-    #[case] options: ConversionOptions,
-    #[case] expected: &str,
-) {
+fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
 }
 

@@ -24,10 +24,7 @@ impl Write for DebugConsoleWriter {
         {
             // Channel is closed, but we still need to return success
             // to avoid breaking the logging infrastructure
-            eprintln!(
-                "Warning: Log channel is closed, message dropped: {}",
-                message
-            );
+            eprintln!("Warning: Log channel is closed, message dropped: {}", message);
         }
 
         Ok(buf.len())

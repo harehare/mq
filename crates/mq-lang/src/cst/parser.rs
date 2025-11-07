@@ -46,10 +46,7 @@ impl ErrorReporter {
         let mut h = BTreeSet::new();
         h.extend(errors);
 
-        Self {
-            errors: h,
-            max_errors,
-        }
+        Self { errors: h, max_errors }
     }
 
     pub fn report(&mut self, error: ParseError) {
@@ -269,8 +266,7 @@ impl<'a> Parser<'a> {
                                 leading_trivia = self.parse_leading_trivia();
                                 continue;
                             } else {
-                                self.errors
-                                    .report(ParseError::UnexpectedToken(Shared::clone(token)));
+                                self.errors.report(ParseError::UnexpectedToken(Shared::clone(token)));
                             }
                         }
                     }
@@ -297,9 +293,7 @@ impl<'a> Parser<'a> {
 
         if nodes.is_empty() {
             match self.tokens.peek() {
-                Some(token) => self
-                    .errors
-                    .report(ParseError::UnexpectedToken(Shared::clone(token))),
+                Some(token) => self.errors.report(ParseError::UnexpectedToken(Shared::clone(token))),
                 None => self.errors.report(ParseError::UnexpectedEOFDetected),
             };
         }
@@ -353,10 +347,7 @@ impl<'a> Parser<'a> {
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
-        let token = self
-            .tokens
-            .peek()
-            .ok_or(ParseError::UnexpectedEOFDetected)?;
+        let token = self.tokens.peek().ok_or(ParseError::UnexpectedEOFDetected)?;
 
         match &token.kind {
             TokenKind::Def => self.parse_def(leading_trivia),
@@ -375,10 +366,9 @@ impl<'a> Parser<'a> {
             TokenKind::Self_ => self.parse_self(leading_trivia),
             TokenKind::Let => self.parse_let(leading_trivia, in_loop),
             TokenKind::Selector(_) => self.parse_selector(leading_trivia),
-            TokenKind::StringLiteral(_)
-            | TokenKind::NumberLiteral(_)
-            | TokenKind::BoolLiteral(_)
-            | TokenKind::None => self.parse_node(NodeKind::Literal, leading_trivia),
+            TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
+                self.parse_node(NodeKind::Literal, leading_trivia)
+            }
             TokenKind::InterpolatedString(_) => self.parse_interpolated_string(leading_trivia),
             TokenKind::LBracket => self.parse_array(leading_trivia),
             TokenKind::LBrace => self.parse_dict(leading_trivia),
@@ -416,10 +406,7 @@ impl<'a> Parser<'a> {
 
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(3);
 
-        children.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::LParen),
-            NodeKind::Token,
-        )?);
+        children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
         match self.tokens.peek() {
             Some(token) => Shared::clone(token),
@@ -429,10 +416,7 @@ impl<'a> Parser<'a> {
         let leading_trivia = self.parse_leading_trivia();
 
         children.push(self.parse_expr(leading_trivia, root, in_loop)?);
-        children.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::RParen),
-            NodeKind::Token,
-        )?);
+        children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::RParen), NodeKind::Token)?);
 
         node.children = children;
 
@@ -461,10 +445,7 @@ impl<'a> Parser<'a> {
                 && matches!(peek_token.kind, TokenKind::DoubleColon)
             {
                 // Add double colon token
-                children.push(self.next_node(
-                    |kind| matches!(kind, TokenKind::DoubleColon),
-                    NodeKind::Token,
-                )?);
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::DoubleColon), NodeKind::Token)?);
 
                 if let Some(next_token) = self.tokens.peek()
                     && !matches!(next_token.kind, TokenKind::Ident(_))
@@ -474,9 +455,7 @@ impl<'a> Parser<'a> {
                 }
 
                 // Add identifier
-                children.push(
-                    self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?,
-                );
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
 
                 // Check if there's another :: or if we're at a function call
                 if let Some(next_peek) = self.tokens.peek() {
@@ -510,28 +489,21 @@ impl<'a> Parser<'a> {
                 children.append(&mut args);
 
                 if self.try_next_token(|kind| matches!(kind, TokenKind::Question)) {
-                    children.push(self.next_node(
-                        |token_kind| matches!(token_kind, TokenKind::Question),
-                        NodeKind::Token,
-                    )?);
+                    children
+                        .push(self.next_node(|token_kind| matches!(token_kind, TokenKind::Question), NodeKind::Token)?);
                 }
 
                 node.kind = NodeKind::Call;
                 node.children = children;
 
                 // Check for bracket access after function call (e.g., foo()[0])
-                if matches!(
-                    self.tokens.peek().map(|t| &t.kind),
-                    Some(TokenKind::LBracket)
-                ) {
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     self.parse_bracket_access(node)
                 } else {
                     Ok(Shared::new(node))
                 }
             }
-            Some(token) if matches!(token.kind, TokenKind::LBracket) => {
-                self.parse_bracket_access(node)
-            }
+            Some(token) if matches!(token.kind, TokenKind::LBracket) => self.parse_bracket_access(node),
             _ => Ok(Shared::new(node)),
         }
     }
@@ -541,25 +513,18 @@ impl<'a> Parser<'a> {
         let mut children: Vec<Shared<Node>> = node.children;
 
         // Parse bracket access: ident[key] -> get(ident, key) or ident[start:end] -> slice(ident, start, end)
-        children.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::LBracket),
-            NodeKind::Token,
-        )?);
+        children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBracket), NodeKind::Token)?);
 
         // Parse the first expression
         let first_expr = self.parse_expr(Vec::new(), false, false)?;
         children.push(first_expr);
 
         // Check if this is a slice operation (contains ':')
-        let is_slice =
-            matches!(self.tokens.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
+        let is_slice = matches!(self.tokens.peek(), Some(token) if matches!(token.kind, TokenKind::Colon));
 
         if is_slice {
             // Add the colon token
-            children.push(self.next_node(
-                |token_kind| matches!(token_kind, TokenKind::Colon),
-                NodeKind::Token,
-            )?);
+            children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::Colon), NodeKind::Token)?);
 
             // Parse the second expression (end index)
             let second_expr = self.parse_expr(Vec::new(), false, false)?;
@@ -569,10 +534,7 @@ impl<'a> Parser<'a> {
         // Expect closing bracket
         match self.tokens.peek() {
             Some(token) if matches!(token.kind, TokenKind::RBracket) => {
-                children.push(self.next_node(
-                    |token_kind| matches!(token_kind, TokenKind::RBracket),
-                    NodeKind::Token,
-                )?);
+                children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::RBracket), NodeKind::Token)?);
             }
             Some(token) => {
                 return Err(ParseError::ExpectedClosingBracket(Shared::clone(token)));
@@ -586,10 +548,7 @@ impl<'a> Parser<'a> {
         node.children = children;
 
         // Check for additional bracket access (nested indexing)
-        let final_node = if matches!(
-            self.tokens.peek().map(|t| &t.kind),
-            Some(TokenKind::LBracket)
-        ) {
+        let final_node = if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
             self.parse_bracket_access(node)?
         } else {
             Shared::new(node)
@@ -615,10 +574,7 @@ impl<'a> Parser<'a> {
     fn parse_args(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
         let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(8);
 
-        nodes.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::LParen),
-            NodeKind::Token,
-        )?);
+        nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
         let token = match self.tokens.peek() {
             Some(token) => Shared::clone(token),
@@ -819,11 +775,7 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
-    fn parse_fn(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_fn(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
@@ -848,11 +800,7 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
-    fn parse_block(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_block(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let (program, _) = self.parse_program(false, in_loop);
@@ -887,9 +835,7 @@ impl<'a> Parser<'a> {
                 let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
                 // []
-                children.push(
-                    self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?,
-                );
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
 
                 let token = match self.tokens.peek() {
                     Some(token) => Shared::clone(token),
@@ -902,10 +848,8 @@ impl<'a> Parser<'a> {
                     ..
                 } = &*token
                 {
-                    children.push(self.next_node(
-                        |kind| matches!(kind, TokenKind::NumberLiteral(_)),
-                        NodeKind::Literal,
-                    )?);
+                    children
+                        .push(self.next_node(|kind| matches!(kind, TokenKind::NumberLiteral(_)), NodeKind::Literal)?);
                 }
 
                 let token = match self.tokens.peek() {
@@ -919,12 +863,7 @@ impl<'a> Parser<'a> {
                     ..
                 } = &*token
                 {
-                    children.push(
-                        self.next_node(
-                            |kind| matches!(kind, TokenKind::RBracket),
-                            NodeKind::Token,
-                        )?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                 } else {
                     return Err(ParseError::UnexpectedToken(Shared::clone(&token)));
                 }
@@ -941,12 +880,7 @@ impl<'a> Parser<'a> {
                     ..
                 } = &*token
                 {
-                    children.push(
-                        self.next_node(
-                            |kind| matches!(kind, TokenKind::LBracket),
-                            NodeKind::Token,
-                        )?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
                 } else {
                     node.children = children;
                     return Ok(Shared::new(node));
@@ -963,10 +897,8 @@ impl<'a> Parser<'a> {
                     ..
                 } = &*token
                 {
-                    children.push(self.next_node(
-                        |kind| matches!(kind, TokenKind::NumberLiteral(_)),
-                        NodeKind::Literal,
-                    )?);
+                    children
+                        .push(self.next_node(|kind| matches!(kind, TokenKind::NumberLiteral(_)), NodeKind::Literal)?);
                 }
 
                 let token = match self.tokens.peek() {
@@ -980,12 +912,7 @@ impl<'a> Parser<'a> {
                     ..
                 } = &*token
                 {
-                    children.push(
-                        self.next_node(
-                            |kind| matches!(kind, TokenKind::RBracket),
-                            NodeKind::Token,
-                        )?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                 } else {
                     return Err(ParseError::UnexpectedToken(Shared::clone(&token)));
                 }
@@ -1026,10 +953,7 @@ impl<'a> Parser<'a> {
     fn parse_include(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let child = self.next_node(
-            |kind| matches!(kind, TokenKind::StringLiteral(_)),
-            NodeKind::Literal,
-        )?;
+        let child = self.next_node(|kind| matches!(kind, TokenKind::StringLiteral(_)), NodeKind::Literal)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Include,
@@ -1043,10 +967,7 @@ impl<'a> Parser<'a> {
     fn parse_import(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let child = self.next_node(
-            |kind| matches!(kind, TokenKind::StringLiteral(_)),
-            NodeKind::Literal,
-        )?;
+        let child = self.next_node(|kind| matches!(kind, TokenKind::StringLiteral(_)), NodeKind::Literal)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Import,
@@ -1090,11 +1011,7 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
-    fn parse_if(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_if(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
@@ -1140,11 +1057,7 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
-    fn parse_elif(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_elif(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
@@ -1173,11 +1086,7 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(node))
     }
 
-    fn parse_else(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_else(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
@@ -1200,11 +1109,7 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn parse_node(
-        &mut self,
-        node_kind: NodeKind,
-        leading_trivia: Vec<Trivia>,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_node(&mut self, node_kind: NodeKind, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
 
@@ -1220,10 +1125,7 @@ impl<'a> Parser<'a> {
     fn parse_array(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
-        children.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::LBracket),
-            NodeKind::Token,
-        )?);
+        children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBracket), NodeKind::Token)?);
 
         loop {
             if self.try_next_token(|kind| matches!(kind, TokenKind::RBracket)) {
@@ -1323,10 +1225,7 @@ impl<'a> Parser<'a> {
     fn parse_dict(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
-        children.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::LBrace),
-            NodeKind::Token,
-        )?);
+        children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBrace), NodeKind::Token)?);
 
         let token = match self.tokens.peek() {
             Some(token) => Shared::clone(token),
@@ -1369,10 +1268,7 @@ impl<'a> Parser<'a> {
                 self.parse_dict_key(leading_trivia)
             }?;
 
-            let colon_node = self.next_node(
-                |token_kind| matches!(token_kind, TokenKind::Colon),
-                NodeKind::Token,
-            )?;
+            let colon_node = self.next_node(|token_kind| matches!(token_kind, TokenKind::Colon), NodeKind::Token)?;
 
             let value_node = {
                 let leading_trivia = self.parse_leading_trivia();
@@ -1431,10 +1327,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_interpolated_string(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_interpolated_string(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next().unwrap();
         let trailing_trivia = self.parse_trailing_trivia();
 
@@ -1456,11 +1349,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_let(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_let(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
@@ -1498,9 +1387,7 @@ impl<'a> Parser<'a> {
         };
 
         match self.tokens.peek() {
-            Some(token) if matches!(token.kind, TokenKind::LBracket) => {
-                self.parse_bracket_access(node)
-            }
+            Some(token) if matches!(token.kind, TokenKind::LBracket) => self.parse_bracket_access(node),
             _ => Ok(Shared::new(node)),
         }
     }
@@ -1726,9 +1613,7 @@ impl<'a> Parser<'a> {
 
             match self.tokens.peek() {
                 Some(token) if matches!(token.kind, TokenKind::End) => {
-                    children.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::End), NodeKind::End)?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::End), NodeKind::End)?);
                     break;
                 }
                 Some(token) if matches!(token.kind, TokenKind::Eof) => {
@@ -1820,10 +1705,7 @@ impl<'a> Parser<'a> {
                 }))
             }
             // Literal patterns (string, number, bool, none)
-            TokenKind::StringLiteral(_)
-            | TokenKind::NumberLiteral(_)
-            | TokenKind::BoolLiteral(_)
-            | TokenKind::None => {
+            TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
                 self.tokens.next();
                 let trailing_trivia = self.parse_trailing_trivia();
                 Ok(Shared::new(Node {
@@ -1857,10 +1739,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_pattern(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_array_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
 
         // Parse [
@@ -1873,32 +1752,20 @@ impl<'a> Parser<'a> {
             // Check for ]
             if let Some(token) = self.tokens.peek() {
                 if matches!(token.kind, TokenKind::RBracket) {
-                    children.push(
-                        self.next_node(
-                            |kind| matches!(kind, TokenKind::RBracket),
-                            NodeKind::Token,
-                        )?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                     break;
                 }
 
                 // Check for rest pattern: ..rest
                 if matches!(token.kind, TokenKind::RangeOp) {
-                    children.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::RangeOp), NodeKind::Token)?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::RangeOp), NodeKind::Token)?);
 
                     // Parse rest identifier
                     let rest_leading_trivia = self.parse_leading_trivia();
                     children.push(self.parse_pattern(rest_leading_trivia)?);
 
                     // Expect ]
-                    children.push(
-                        self.next_node(
-                            |kind| matches!(kind, TokenKind::RBracket),
-                            NodeKind::Token,
-                        )?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                     break;
                 }
             }
@@ -1909,9 +1776,7 @@ impl<'a> Parser<'a> {
             // Check for comma or ]
             if let Some(token) = self.tokens.peek() {
                 if matches!(token.kind, TokenKind::Comma) {
-                    children.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
                 } else if matches!(token.kind, TokenKind::RBracket) {
                     // Will be consumed in next iteration
                     continue;
@@ -1928,10 +1793,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_dict_pattern(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_dict_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
 
         // Parse {
@@ -1945,23 +1807,18 @@ impl<'a> Parser<'a> {
             if let Some(token) = self.tokens.peek()
                 && matches!(token.kind, TokenKind::RBrace)
             {
-                children.push(
-                    self.next_node(|kind| matches!(kind, TokenKind::RBrace), NodeKind::Token)?,
-                );
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::RBrace), NodeKind::Token)?);
                 break;
             }
 
             // Parse key (identifier)
-            children
-                .push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
 
             // Check for colon (key: pattern) or just key
             if let Some(token) = self.tokens.peek()
                 && matches!(token.kind, TokenKind::Colon)
             {
-                children.push(
-                    self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?,
-                );
+                children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
                 let pattern_leading_trivia = self.parse_leading_trivia();
                 children.push(self.parse_pattern(pattern_leading_trivia)?);
@@ -1970,9 +1827,7 @@ impl<'a> Parser<'a> {
             // Check for comma or }
             if let Some(token) = self.tokens.peek() {
                 if matches!(token.kind, TokenKind::Comma) {
-                    children.push(
-                        self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?,
-                    );
+                    children.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
                 } else if matches!(token.kind, TokenKind::RBrace) {
                     // Will be consumed in next iteration
                     continue;
@@ -1989,11 +1844,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_unary_op(
-        &mut self,
-        leading_trivia: Vec<Trivia>,
-        root: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_unary_op(&mut self, leading_trivia: Vec<Trivia>, root: bool) -> Result<Shared<Node>, ParseError> {
         let operator_token = self.tokens.next().unwrap();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(2);
@@ -2030,10 +1881,7 @@ impl<'a> Parser<'a> {
     fn parse_params(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
         let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(8);
 
-        nodes.push(self.next_node(
-            |token_kind| matches!(token_kind, TokenKind::LParen),
-            NodeKind::Token,
-        )?);
+        nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
         let token = match self.tokens.peek() {
             Some(token) => Shared::clone(token),
@@ -2134,10 +1982,7 @@ impl<'a> Parser<'a> {
         while let Some(token) = tokens.peek() {
             if matches!(
                 token.kind,
-                TokenKind::Whitespace(_)
-                    | TokenKind::Tab(_)
-                    | TokenKind::Comment(_)
-                    | TokenKind::NewLine
+                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
             ) {
                 tokens.next();
             } else {
@@ -2206,15 +2051,8 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn next_token(
-        &mut self,
-        match_token_kind: fn(&TokenKind) -> bool,
-    ) -> Result<Shared<Token>, ParseError> {
-        let token = self
-            .tokens
-            .peek()
-            .cloned()
-            .ok_or(ParseError::UnexpectedEOFDetected)?;
+    fn next_token(&mut self, match_token_kind: fn(&TokenKind) -> bool) -> Result<Shared<Token>, ParseError> {
+        let token = self.tokens.peek().cloned().ok_or(ParseError::UnexpectedEOFDetected)?;
 
         if match_token_kind(&token.kind) {
             self.tokens.next();
@@ -6770,10 +6608,7 @@ mod tests {
             ErrorReporter::default()
         )
     )]
-    fn test_parse(
-        #[case] input: Vec<Shared<Token>>,
-        #[case] expected: (Vec<Shared<Node>>, ErrorReporter),
-    ) {
+    fn test_parse(#[case] input: Vec<Shared<Token>>, #[case] expected: (Vec<Shared<Node>>, ErrorReporter)) {
         let (nodes, errors) = Parser::new(input.iter()).parse();
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);
@@ -6793,9 +6628,7 @@ mod tests {
             kind: TokenKind::Ident("foo".into()),
             module_id: 1.into(),
         });
-        reporter.report(ParseError::UnexpectedToken(Shared::clone(
-            &unexpected_token,
-        )));
+        reporter.report(ParseError::UnexpectedToken(Shared::clone(&unexpected_token)));
 
         let insufficient_token = Shared::new(Token {
             range: Range {
@@ -6805,9 +6638,7 @@ mod tests {
             kind: TokenKind::Ident("bar".into()),
             module_id: 1.into(),
         });
-        reporter.report(ParseError::InsufficientTokens(Shared::clone(
-            &insufficient_token,
-        )));
+        reporter.report(ParseError::InsufficientTokens(Shared::clone(&insufficient_token)));
 
         reporter.report(ParseError::UnexpectedEOFDetected);
 

@@ -22,12 +22,7 @@ impl Hir {
                     symbol.source.source_id.is_some()
                         && symbol.source.text_range.is_some()
                         && symbol.source.source_id.unwrap() == source_id
-                        && symbol
-                            .source
-                            .text_range
-                            .as_ref()
-                            .unwrap()
-                            .contains(&position)
+                        && symbol.source.text_range.as_ref().unwrap().contains(&position)
                 })
                 .and_then(|(symbol_id, symbol)| match symbol.kind {
                     SymbolKind::Ref | SymbolKind::Call => {
@@ -43,11 +38,7 @@ impl Hir {
         })
     }
 
-    pub fn find_scope_in_position(
-        &self,
-        source_id: SourceId,
-        position: mq_lang::Position,
-    ) -> Option<(ScopeId, Scope)> {
+    pub fn find_scope_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<(ScopeId, Scope)> {
         let source = self.sources.get(source_id);
 
         source.and_then(|_| {
@@ -60,12 +51,7 @@ impl Hir {
                     scope.source.source_id.is_some()
                         && scope.source.text_range.is_some()
                         && scope.source.source_id.unwrap() == source_id
-                        && scope
-                            .source
-                            .text_range
-                            .as_ref()
-                            .unwrap()
-                            .contains(&position)
+                        && scope.source.text_range.as_ref().unwrap().contains(&position)
                 })
                 .map(|(scope_id, scope)| (scope_id, scope.clone()))
         })
@@ -118,24 +104,16 @@ impl Hir {
     }
 
     /// Finds a module symbol by name in the given scope and its parent scopes
-    pub fn find_module_by_name(
-        &self,
-        scope_id: ScopeId,
-        module_name: &str,
-    ) -> Option<(SymbolId, Symbol)> {
+    pub fn find_module_by_name(&self, scope_id: ScopeId, module_name: &str) -> Option<(SymbolId, Symbol)> {
         let symbols = self.find_symbols_in_scope(scope_id);
 
         symbols
             .iter()
-            .find(|symbol| {
-                symbol.is_module() && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name)
-            })
+            .find(|symbol| symbol.is_module() && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name))
             .and_then(|_symbol| {
                 self.symbols
                     .iter()
-                    .find(|(_, s)| {
-                        s.is_module() && s.value.as_ref().map(|v| v.as_str()) == Some(module_name)
-                    })
+                    .find(|(_, s)| s.is_module() && s.value.as_ref().map(|v| v.as_str()) == Some(module_name))
                     .map(|(id, s)| (id, s.clone()))
             })
     }
@@ -155,10 +133,7 @@ impl Hir {
             let mut symbols = Vec::new();
             self.symbols.iter().for_each(|(_, symbol)| {
                 if symbol.scope == scope_id
-                    && (symbol.is_function()
-                        || symbol.is_parameter()
-                        || symbol.is_variable()
-                        || symbol.is_argument())
+                    && (symbol.is_function() || symbol.is_parameter() || symbol.is_variable() || symbol.is_argument())
                 {
                     symbols.push(Arc::new(symbol.clone()));
                 }
@@ -188,11 +163,7 @@ mod tests {
         let (source_id, _) = hir.add_code(None, "def example(): 5;");
         let pos = mq_lang::Position::new(1, 18);
 
-        assert!(
-            hir.find_scope_in_position(source_id, pos)
-                .map(|(id, _)| id)
-                .is_some()
-        );
+        assert!(hir.find_scope_in_position(source_id, pos).map(|(id, _)| id).is_some());
     }
 
     #[test]

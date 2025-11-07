@@ -136,10 +136,7 @@ impl Node {
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct IdentWithToken {
     pub name: Ident,
-    #[cfg_attr(
-        feature = "ast-json",
-        serde(skip_serializing_if = "Option::is_none", default)
-    )]
+    #[cfg_attr(feature = "ast-json", serde(skip_serializing_if = "Option::is_none", default))]
     pub token: Option<Shared<Token>>,
 }
 

@@ -100,10 +100,7 @@ pub async fn post_query_api(
     Json(request): Json<ApiRequest>,
 ) -> Result<Json<QueryApiResponse>, StatusCode> {
     debug!("POST /query called with query: {}", request.query);
-    debug!(
-        "Processing request with input_format: {:?}",
-        request.input_format
-    );
+    debug!("Processing request with input_format: {:?}", request.input_format);
 
     match crate::api::query(request.clone()) {
         Ok(response) => {

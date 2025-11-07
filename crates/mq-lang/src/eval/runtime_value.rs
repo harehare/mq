@@ -91,9 +91,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a == b,
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
-            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => {
-                a1 == a2 && b1 == b2
-            }
+            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => a1 == a2 && b1 == b2,
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
@@ -198,14 +196,12 @@ impl PartialOrd for RuntimeValue {
                 let b = b.to_string();
                 a.to_string().partial_cmp(&b)
             }
-            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => {
-                match a1.partial_cmp(a2) {
-                    Some(Ordering::Equal) => b1.partial_cmp(b2),
-                    Some(Ordering::Greater) => Some(Ordering::Greater),
-                    Some(Ordering::Less) => Some(Ordering::Less),
-                    _ => None,
-                }
-            }
+            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => match a1.partial_cmp(a2) {
+                Some(Ordering::Equal) => b1.partial_cmp(b2),
+                Some(Ordering::Greater) => Some(Ordering::Greater),
+                Some(Ordering::Less) => Some(Ordering::Less),
+                _ => None,
+            },
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a.name.partial_cmp(&b.name),
@@ -244,10 +240,10 @@ impl std::fmt::Debug for RuntimeValue {
 }
 
 impl RuntimeValue {
+    pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
+    pub const FALSE: RuntimeValue = Self::Boolean(false);
     pub const NONE: RuntimeValue = Self::None;
     pub const TRUE: RuntimeValue = Self::Boolean(true);
-    pub const FALSE: RuntimeValue = Self::Boolean(false);
-    pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
 
     #[inline(always)]
     pub fn new_dict() -> RuntimeValue {
@@ -355,9 +351,7 @@ impl RuntimeValue {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {
                 RuntimeValue::Markdown(n.with_children_value(value, *i), Some(Selector::Index(*i)))
             }
-            RuntimeValue::Markdown(n, selector) => {
-                RuntimeValue::Markdown(n.with_value(value), selector.clone())
-            }
+            RuntimeValue::Markdown(n, selector) => RuntimeValue::Markdown(n.with_value(value), selector.clone()),
             _ => RuntimeValue::NONE,
         }
     }
@@ -386,10 +380,7 @@ impl RuntimeValue {
             Self::Symbol(i) => Cow::Owned(format!(":{}", i)),
             Self::Array(a) => Cow::Owned(format!(
                 "[{}]",
-                a.iter()
-                    .map(|v| v.string())
-                    .collect::<Vec<Cow<str>>>()
-                    .join(", ")
+                a.iter().map(|v| v.string()).collect::<Vec<Cow<str>>>().join(", ")
             )),
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
@@ -432,8 +423,8 @@ impl IndexMut<usize> for RuntimeValues {
 }
 
 impl IntoIterator for RuntimeValues {
-    type Item = RuntimeValue;
     type IntoIter = std::vec::IntoIter<RuntimeValue>;
+    type Item = RuntimeValue;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -478,9 +469,7 @@ impl RuntimeValues {
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
                         RuntimeValue::Markdown(node, _) => {
                             if node.is_fragment() {
-                                if let RuntimeValue::Markdown(mut current_node, selector) =
-                                    current_value
-                                {
+                                if let RuntimeValue::Markdown(mut current_node, selector) = current_value {
                                     current_node.apply_fragment(node.clone());
                                     RuntimeValue::Markdown(current_node, selector)
                                 } else {
@@ -490,20 +479,14 @@ impl RuntimeValues {
                                 updated_value
                             }
                         }
-                        RuntimeValue::String(s) => {
-                            RuntimeValue::Markdown(node.clone().with_value(s), None)
+                        RuntimeValue::String(s) => RuntimeValue::Markdown(node.clone().with_value(s), None),
+                        RuntimeValue::Symbol(i) => RuntimeValue::Markdown(node.clone().with_value(&i.as_str()), None),
+                        RuntimeValue::Boolean(b) => {
+                            RuntimeValue::Markdown(node.clone().with_value(b.to_string().as_str()), None)
                         }
-                        RuntimeValue::Symbol(i) => {
-                            RuntimeValue::Markdown(node.clone().with_value(&i.as_str()), None)
+                        RuntimeValue::Number(n) => {
+                            RuntimeValue::Markdown(node.clone().with_value(n.to_string().as_str()), None)
                         }
-                        RuntimeValue::Boolean(b) => RuntimeValue::Markdown(
-                            node.clone().with_value(b.to_string().as_str()),
-                            None,
-                        ),
-                        RuntimeValue::Number(n) => RuntimeValue::Markdown(
-                            node.clone().with_value(n.to_string().as_str()),
-                            None,
-                        ),
                         RuntimeValue::Array(array) => RuntimeValue::Array(
                             array
                                 .iter()
@@ -525,10 +508,7 @@ impl RuntimeValues {
                                 if !v.is_none() && !v.is_empty() {
                                     new_dict.insert(
                                         *k,
-                                        RuntimeValue::Markdown(
-                                            node.clone().with_value(v.to_string().as_str()),
-                                            None,
-                                        ),
+                                        RuntimeValue::Markdown(node.clone().with_value(v.to_string().as_str()), None),
                                     );
                                 }
                             }
@@ -589,14 +569,8 @@ mod tests {
     #[test]
     fn test_runtime_value_display() {
         assert_eq!(format!("{}", RuntimeValue::Boolean(true)), "true");
-        assert_eq!(
-            format!("{}", RuntimeValue::Number(Number::from(42.0))),
-            "42"
-        );
-        assert_eq!(
-            format!("{}", RuntimeValue::String(String::from("test"))),
-            "test"
-        );
+        assert_eq!(format!("{}", RuntimeValue::Number(Number::from(42.0))), "42");
+        assert_eq!(format!("{}", RuntimeValue::String(String::from("test"))), "test");
         assert_eq!(format!("{}", RuntimeValue::None), "");
         let map_val = RuntimeValue::Dict(BTreeMap::default());
         assert_eq!(format!("{}", map_val), "{}");
@@ -605,28 +579,16 @@ mod tests {
     #[test]
     fn test_runtime_value_debug() {
         assert_eq!(format!("{:?}", RuntimeValue::Boolean(true)), "true");
-        assert_eq!(
-            format!("{:?}", RuntimeValue::Number(Number::from(42.0))),
-            "42"
-        );
-        assert_eq!(
-            format!("{:?}", RuntimeValue::String(String::from("test"))),
-            "\"test\""
-        );
+        assert_eq!(format!("{:?}", RuntimeValue::Number(Number::from(42.0))), "42");
+        assert_eq!(format!("{:?}", RuntimeValue::String(String::from("test"))), "\"test\"");
         assert_eq!(format!("{:?}", RuntimeValue::None), "None");
 
         let mut map = BTreeMap::default();
         map.insert(Ident::new("name"), RuntimeValue::String("MQ".to_string()));
-        map.insert(
-            Ident::new("version"),
-            RuntimeValue::Number(Number::from(1.0)),
-        );
+        map.insert(Ident::new("version"), RuntimeValue::Number(Number::from(1.0)));
         let map_val = RuntimeValue::Dict(map);
         let debug_str = format!("{:?}", map_val);
-        assert!(
-            debug_str == r#"{"name": "MQ", "version": 1}"#
-                || debug_str == r#"{"version": 1, "name": "MQ"}"#
-        );
+        assert!(debug_str == r#"{"name": "MQ", "version": 1}"# || debug_str == r#"{"version": 1, "name": "MQ"}"#);
     }
 
     #[test]
@@ -710,9 +672,7 @@ mod tests {
     fn test_runtime_value_partial_ord() {
         assert!(RuntimeValue::Number(Number::from(1.0)) < RuntimeValue::Number(Number::from(2.0)));
         assert!(RuntimeValue::String(String::from("a")) < RuntimeValue::String(String::from("b")));
-        assert!(
-            RuntimeValue::Array(Vec::new()) < RuntimeValue::Array(vec!["a".to_string().into()])
-        );
+        assert!(RuntimeValue::Array(Vec::new()) < RuntimeValue::Array(vec!["a".to_string().into()]));
         assert!(
             RuntimeValue::Markdown(
                 mq_markdown::Node::Text(mq_markdown::Text {
@@ -830,8 +790,7 @@ mod tests {
             position: None,
         });
 
-        let markdown_with_selector =
-            RuntimeValue::Markdown(parent.clone(), Some(Selector::Index(1)));
+        let markdown_with_selector = RuntimeValue::Markdown(parent.clone(), Some(Selector::Index(1)));
 
         let selected = markdown_with_selector.markdown_node();
         assert!(selected.is_some());
@@ -861,10 +820,7 @@ mod tests {
             RuntimeValue::Boolean(true).update_markdown_value("test"),
             RuntimeValue::NONE
         );
-        assert_eq!(
-            RuntimeValue::None.update_markdown_value("test"),
-            RuntimeValue::NONE
-        );
+        assert_eq!(RuntimeValue::None.update_markdown_value("test"), RuntimeValue::NONE);
     }
 
     #[test]

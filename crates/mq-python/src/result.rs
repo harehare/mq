@@ -18,13 +18,7 @@ impl MQResult {
     pub fn values(&self) -> Vec<String> {
         self.values
             .iter()
-            .filter_map(|value| {
-                if value.__len__() == 0 {
-                    None
-                } else {
-                    Some(value.text())
-                }
-            })
+            .filter_map(|value| if value.__len__() == 0 { None } else { Some(value.text()) })
             .collect::<Vec<String>>()
     }
 
@@ -61,10 +55,7 @@ impl MQResult {
             return false;
         }
 
-        self.values
-            .iter()
-            .zip(other.values.iter())
-            .all(|(a, b)| a.__eq__(b))
+        self.values.iter().zip(other.values.iter()).all(|(a, b)| a.__eq__(b))
     }
 
     fn __ne__(&self, other: &Self) -> bool {
@@ -76,10 +67,7 @@ impl MQResult {
             return self.values.len() < other.values.len();
         }
 
-        self.values
-            .iter()
-            .zip(other.values.iter())
-            .all(|(a, b)| a.__lt__(b))
+        self.values.iter().zip(other.values.iter()).all(|(a, b)| a.__lt__(b))
     }
 
     fn __gt__(&self, other: &Self) -> bool {
@@ -87,10 +75,7 @@ impl MQResult {
             return self.values.len() > other.values.len();
         }
 
-        self.values
-            .iter()
-            .zip(other.values.iter())
-            .all(|(a, b)| a.__gt__(b))
+        self.values.iter().zip(other.values.iter()).all(|(a, b)| a.__gt__(b))
     }
 }
 

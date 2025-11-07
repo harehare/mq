@@ -45,10 +45,7 @@ impl fmt::Display for Command {
 impl Command {
     pub fn help(&self) -> String {
         match self {
-            Command::Copy => format!(
-                "{:<12}{}",
-                "/copy", "Copy the execution results to the clipboard"
-            ),
+            Command::Copy => format!("{:<12}{}", "/copy", "Copy the execution results to the clipboard"),
             Command::Env(_, _) => {
                 format!("{:<12}{}", "/env", "Set environment variables (key value)")
             }
@@ -65,12 +62,7 @@ impl Command {
 
 impl From<String> for Command {
     fn from(s: String) -> Self {
-        match s
-            .as_str()
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .as_slice()
-        {
+        match s.as_str().split_whitespace().collect::<Vec<&str>>().as_slice() {
             ["/copy"] => Command::Copy,
             ["/env", name, value] => Command::Env(name.to_string(), value.to_string()),
             ["/help"] => Command::Help,
@@ -114,11 +106,7 @@ impl CommandContext {
         self.hir
             .symbols()
             .filter_map(|(_, symbol)| {
-                let name = symbol
-                    .value
-                    .as_ref()
-                    .map(|name| name.to_string())
-                    .unwrap_or_default();
+                let name = symbol.value.as_ref().map(|name| name.to_string()).unwrap_or_default();
 
                 if name.contains(src) { Some(name) } else { None }
             })
@@ -168,19 +156,17 @@ impl CommandContext {
                 std::process::exit(0);
             }
             Command::NotFound(s) => Err(miette!(format!("Command not found: {}", s))),
-            Command::LoadFile(file_path) => fs::read_to_string(file_path)
-                .into_diagnostic()
-                .and_then(|markdown_content| {
-                    let markdown: mq_markdown::Markdown =
-                        mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
+            Command::LoadFile(file_path) => {
+                fs::read_to_string(file_path)
+                    .into_diagnostic()
+                    .and_then(|markdown_content| {
+                        let markdown: mq_markdown::Markdown =
+                            mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
 
-                    self.input = markdown
-                        .nodes
-                        .into_iter()
-                        .map(mq_lang::RuntimeValue::from)
-                        .collect();
-                    Ok(CommandOutput::None)
-                }),
+                        self.input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from).collect();
+                        Ok(CommandOutput::None)
+                    })
+            }
             Command::Vars => Ok(CommandOutput::String(
                 self.hir
                     .symbols()
@@ -190,11 +176,7 @@ impl CommandContext {
                         } else {
                             match &symbol.kind {
                                 mq_hir::SymbolKind::Function(_) if symbol.parent.is_none() => {
-                                    let name = symbol
-                                        .value
-                                        .as_ref()
-                                        .map(|name| name.to_string())
-                                        .unwrap_or_default();
+                                    let name = symbol.value.as_ref().map(|name| name.to_string()).unwrap_or_default();
                                     Some(format!("{}: {}", name, symbol))
                                 }
                                 mq_hir::SymbolKind::Call
@@ -203,8 +185,9 @@ impl CommandContext {
                                 | mq_hir::SymbolKind::Number
                                 | mq_hir::SymbolKind::Boolean
                                 | mq_hir::SymbolKind::None => symbol.parent.and_then(|parent| {
-                                    self.hir.symbol(parent).and_then(|parent_symbol| {
-                                        match parent_symbol.kind {
+                                    self.hir
+                                        .symbol(parent)
+                                        .and_then(|parent_symbol| match parent_symbol.kind {
                                             mq_hir::SymbolKind::Variable => {
                                                 let name = parent_symbol
                                                     .value
@@ -214,8 +197,7 @@ impl CommandContext {
                                                 Some(format!("{}: {}", name, symbol))
                                             }
                                             _ => None,
-                                        }
-                                    })
+                                        })
                                 }),
                                 _ => None,
                             }
@@ -223,9 +205,7 @@ impl CommandContext {
                     })
                     .collect(),
             )),
-            Command::Version => Ok(CommandOutput::String(vec![
-                mq_lang::Engine::version().to_string(),
-            ])),
+            Command::Version => Ok(CommandOutput::String(vec![mq_lang::Engine::version().to_string()])),
             Command::Eval(code) => {
                 if code.is_empty() {
                     return Ok(CommandOutput::None);
@@ -235,8 +215,7 @@ impl CommandContext {
 
                 result
                     .map(|result| {
-                        self.hir
-                            .add_line_of_code(self.source_id, self.scope_id, &code);
+                        self.hir.add_line_of_code(self.source_id, self.scope_id, &code);
                         self.input = result.values().clone();
                         Ok(CommandOutput::Value(result.values().clone()))
                     })
@@ -257,10 +236,7 @@ mod tests {
         assert!(matches!(Command::from("/help".to_string()), Command::Help));
         assert!(matches!(Command::from("/quit".to_string()), Command::Quit));
         assert!(matches!(Command::from("/vars".to_string()), Command::Vars));
-        assert!(matches!(
-            Command::from("/version".to_string()),
-            Command::Version
-        ));
+        assert!(matches!(Command::from("/version".to_string()), Command::Version));
 
         if let Command::Eval(code) = Command::from("add(1, 2)".to_string()) {
             assert_eq!(code, "add(1, 2)");
@@ -289,10 +265,7 @@ mod tests {
         assert_eq!(format!("{}", Command::Quit), "/quit");
         assert_eq!(format!("{}", Command::Vars), "/vars");
         assert_eq!(format!("{}", Command::Version), "/version");
-        assert_eq!(
-            format!("{}", Command::LoadFile("test.md".to_string())),
-            "/load"
-        );
+        assert_eq!(format!("{}", Command::LoadFile("test.md".to_string())), "/load");
         assert_eq!(
             format!("{}", Command::Env("key".to_string(), "value".to_string())),
             "/env"
@@ -406,11 +379,7 @@ mod tests {
         let result = ctx.execute(&format!("/load {}", temp_file_path.to_str().unwrap()));
         assert!(matches!(result, Ok(CommandOutput::None)));
 
-        let list_items = ctx
-            .input
-            .iter()
-            .filter(|v| v.to_string().contains("List item"))
-            .count();
+        let list_items = ctx.input.iter().filter(|v| v.to_string().contains("List item")).count();
         assert_eq!(list_items, 2);
     }
 

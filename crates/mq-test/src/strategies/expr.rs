@@ -2,22 +2,17 @@ use proptest::prelude::*;
 
 /// Strategy for generating simple arithmetic expressions that can be fully constant-folded.
 pub fn arb_arithmetic_expr() -> impl Strategy<Value = (String, f64)> {
-    (
-        0i32..100,
-        0i32..100,
-        prop::sample::select(vec!["add", "sub", "mul"]),
-    )
-        .prop_map(|(a, b, op)| {
-            let a = a as f64;
-            let b = b as f64;
-            let expected = match op {
-                "add" => a + b,
-                "sub" => a - b,
-                "mul" => a * b,
-                _ => unreachable!(),
-            };
-            (format!("{}({}, {})", op, a, b), expected)
-        })
+    (0i32..100, 0i32..100, prop::sample::select(vec!["add", "sub", "mul"])).prop_map(|(a, b, op)| {
+        let a = a as f64;
+        let b = b as f64;
+        let expected = match op {
+            "add" => a + b,
+            "sub" => a - b,
+            "mul" => a * b,
+            _ => unreachable!(),
+        };
+        (format!("{}({}, {})", op, a, b), expected)
+    })
 }
 
 /// Strategy for generating nested arithmetic expressions.
@@ -36,11 +31,7 @@ pub fn arb_string_concat_expr() -> impl Strategy<Value = String> {
 
 /// Strategy for generating comparison expressions.
 pub fn arb_comparison_expr() -> impl Strategy<Value = String> {
-    (
-        0i32..100,
-        0i32..100,
-        prop::sample::select(vec!["eq", "ne", "gt", "lt"]),
-    )
+    (0i32..100, 0i32..100, prop::sample::select(vec!["eq", "ne", "gt", "lt"]))
         .prop_map(|(a, b, op)| format!("{}({}, {})", op, a, b))
 }
 
@@ -92,8 +83,7 @@ pub fn arb_function_def_expr() -> impl Strategy<Value = String> {
 
 /// Strategy for generating complex expressions combining multiple patterns.
 pub fn arb_complex_expr() -> impl Strategy<Value = String> {
-    (0i32..20, 0i32..20, 1i32..10)
-        .prop_map(|(a, b, c)| format!("let x = add({}, {}) | mul(x, {})", a, b, c))
+    (0i32..20, 0i32..20, 1i32..10).prop_map(|(a, b, c)| format!("let x = add({}, {}) | mul(x, {})", a, b, c))
 }
 
 /// Strategy for generating array literal expressions.
@@ -101,29 +91,21 @@ pub fn arb_array_expr() -> impl Strategy<Value = String> {
     prop::collection::vec(0i32..100, 1..5).prop_map(|nums| {
         format!(
             "[{}]",
-            nums.iter()
-                .map(|n| n.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            nums.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
         )
     })
 }
 
 /// Strategy for generating if expressions.
 pub fn arb_if_expr() -> impl Strategy<Value = String> {
-    (0i32..100, 0i32..100, 0i32..100, 0i32..100).prop_map(|(a, b, then_val, else_val)| {
-        format!("if (eq({}, {})): {} else: {}", a, b, then_val, else_val)
-    })
+    (0i32..100, 0i32..100, 0i32..100, 0i32..100)
+        .prop_map(|(a, b, then_val, else_val)| format!("if (eq({}, {})): {} else: {}", a, b, then_val, else_val))
 }
 
 /// Strategy for generating while loop expressions.
 pub fn arb_while_expr() -> impl Strategy<Value = String> {
-    (1i32..20, 1i32..10).prop_map(|(init, step)| {
-        format!(
-            "let x = {} | while(gt(x, 0)): let x = sub(x, {}) | x",
-            init, step
-        )
-    })
+    (1i32..20, 1i32..10)
+        .prop_map(|(init, step)| format!("let x = {} | while(gt(x, 0)): let x = sub(x, {}) | x", init, step))
 }
 
 /// Strategy for generating until loop expressions.
@@ -141,11 +123,7 @@ pub fn arb_foreach_expr() -> impl Strategy<Value = String> {
     (prop::collection::vec(1i32..20, 2..5), 1i32..10).prop_map(|(items, multiplier)| {
         format!(
             "foreach(x, [{}]): mul(x, {})",
-            items
-                .iter()
-                .map(|n| n.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
+            items.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", "),
             multiplier
         )
     })
@@ -158,8 +136,7 @@ pub fn arb_lambda_expr() -> impl Strategy<Value = String> {
 
 /// Strategy for generating try-catch expressions.
 pub fn arb_try_catch_expr() -> impl Strategy<Value = String> {
-    (1i32..100, 0i32..2, 0i32..100)
-        .prop_map(|(a, b, fallback)| format!("try: div({}, {}) catch: {}", a, b, fallback))
+    (1i32..100, 0i32..2, 0i32..100).prop_map(|(a, b, fallback)| format!("try: div({}, {}) catch: {}", a, b, fallback))
 }
 
 /// Strategy for generating not expressions.
@@ -169,11 +146,7 @@ pub fn arb_not_expr() -> impl Strategy<Value = String> {
 
 /// Strategy for generating ge/le comparison expressions.
 pub fn arb_ge_le_expr() -> impl Strategy<Value = String> {
-    (
-        0i32..100,
-        0i32..100,
-        prop::sample::select(vec!["gte", "lte"]),
-    )
+    (0i32..100, 0i32..100, prop::sample::select(vec!["gte", "lte"]))
         .prop_map(|(a, b, op)| format!("{}({}, {})", op, a, b))
 }
 
@@ -194,9 +167,8 @@ pub fn arb_nested_if_expr() -> impl Strategy<Value = String> {
 
 /// Strategy for generating chained comparison expressions.
 pub fn arb_chained_comparison_expr() -> impl Strategy<Value = String> {
-    (0i32..100, 0i32..50, 50i32..100).prop_map(|(x, lower, upper)| {
-        format!("let x = {} | and(gt(x, {}), lt(x, {}))", x, lower, upper)
-    })
+    (0i32..100, 0i32..50, 50i32..100)
+        .prop_map(|(x, lower, upper)| format!("let x = {} | and(gt(x, {}), lt(x, {}))", x, lower, upper))
 }
 
 /// Strategy for generating a single base expression (non-recursive, suitable for piping).

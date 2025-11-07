@@ -98,10 +98,7 @@ impl Optimizer {
         used_idents
     }
 
-    fn collect_used_identifiers_in_node(
-        node: &Shared<ast::Node>,
-        used_idents: &mut FxHashSet<Ident>,
-    ) {
+    fn collect_used_identifiers_in_node(node: &Shared<ast::Node>, used_idents: &mut FxHashSet<Ident>) {
         match &*node.expr {
             ast::Expr::Ident(ident) => {
                 used_idents.insert(ident.name);
@@ -121,9 +118,7 @@ impl Optimizer {
             ast::Expr::Let(_, value_node) => {
                 Self::collect_used_identifiers_in_node(value_node, used_idents);
             }
-            ast::Expr::Block(program_nodes)
-            | ast::Expr::Def(_, _, program_nodes)
-            | ast::Expr::Fn(_, program_nodes) => {
+            ast::Expr::Block(program_nodes) | ast::Expr::Def(_, _, program_nodes) | ast::Expr::Fn(_, program_nodes) => {
                 for stmt in program_nodes {
                     Self::collect_used_identifiers_in_node(stmt, used_idents);
                 }
@@ -136,8 +131,7 @@ impl Optimizer {
                     Self::collect_used_identifiers_in_node(body_node, used_idents);
                 }
             }
-            ast::Expr::While(cond_node, program_nodes)
-            | ast::Expr::Until(cond_node, program_nodes) => {
+            ast::Expr::While(cond_node, program_nodes) | ast::Expr::Until(cond_node, program_nodes) => {
                 Self::collect_used_identifiers_in_node(cond_node, used_idents);
                 for stmt in program_nodes {
                     Self::collect_used_identifiers_in_node(stmt, used_idents);
@@ -506,10 +500,7 @@ impl Optimizer {
                     }
                     ast::AccessTarget::Ident(_) => access_target.clone(),
                 };
-                Shared::new(ast::Expr::QualifiedAccess(
-                    module_path.clone(),
-                    new_access_target,
-                ))
+                Shared::new(ast::Expr::QualifiedAccess(module_path.clone(), new_access_target))
             }
             _ => Shared::clone(&node.expr),
         };
@@ -558,10 +549,7 @@ impl Optimizer {
                     }
                     ast::AccessTarget::Ident(_) => access_target.clone(),
                 };
-                Shared::new(ast::Expr::QualifiedAccess(
-                    module_path.clone(),
-                    new_access_target,
-                ))
+                Shared::new(ast::Expr::QualifiedAccess(module_path.clone(), new_access_target))
             }
             _ => node.expr.clone(),
         };
@@ -582,71 +570,54 @@ impl Optimizer {
                     self.optimize_node(arg);
                 }
 
-                let new_expr =
-                    ident
-                        .name
-                        .resolve_with(|name_str| match (name_str, args.as_slice()) {
-                            ("add", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                                (
-                                    ast::Expr::Literal(ast::Literal::Number(a)),
-                                    ast::Expr::Literal(ast::Literal::Number(b)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a + *b))),
-                                (
-                                    ast::Expr::Literal(ast::Literal::String(a)),
-                                    ast::Expr::Literal(ast::Literal::String(b)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::String(format!(
-                                    "{}{}",
-                                    a, b
-                                )))),
-                                _ => None,
-                            },
-                            ("sub", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                                (
-                                    ast::Expr::Literal(ast::Literal::Number(a)),
-                                    ast::Expr::Literal(ast::Literal::Number(b)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a - *b))),
-                                _ => None,
-                            },
-                            ("div", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                                (
-                                    ast::Expr::Literal(ast::Literal::Number(a)),
-                                    ast::Expr::Literal(ast::Literal::Number(b)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a / *b))),
-                                _ => None,
-                            },
-                            ("mul", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                                (
-                                    ast::Expr::Literal(ast::Literal::Number(a)),
-                                    ast::Expr::Literal(ast::Literal::Number(b)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a * *b))),
-                                _ => None,
-                            },
-                            ("mod", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                                (
-                                    ast::Expr::Literal(ast::Literal::Number(a)),
-                                    ast::Expr::Literal(ast::Literal::Number(b)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::Number(*a % *b))),
-                                _ => None,
-                            },
-                            ("repeat", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
-                                (
-                                    ast::Expr::Literal(ast::Literal::String(s)),
-                                    ast::Expr::Literal(ast::Literal::Number(n)),
-                                ) => Some(ast::Expr::Literal(ast::Literal::String(
-                                    s.repeat(n.value() as usize),
-                                ))),
-                                _ => None,
-                            },
-                            ("reverse", [arg1]) => match &*arg1.expr {
-                                ast::Expr::Literal(ast::Literal::String(s)) => {
-                                    Some(ast::Expr::Literal(ast::Literal::String(
-                                        s.chars().rev().collect::<String>(),
-                                    )))
-                                }
-                                _ => None,
-                            },
-                            _ => None,
-                        });
+                let new_expr = ident.name.resolve_with(|name_str| match (name_str, args.as_slice()) {
+                    ("add", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (ast::Expr::Literal(ast::Literal::Number(a)), ast::Expr::Literal(ast::Literal::Number(b))) => {
+                            Some(ast::Expr::Literal(ast::Literal::Number(*a + *b)))
+                        }
+                        (ast::Expr::Literal(ast::Literal::String(a)), ast::Expr::Literal(ast::Literal::String(b))) => {
+                            Some(ast::Expr::Literal(ast::Literal::String(format!("{}{}", a, b))))
+                        }
+                        _ => None,
+                    },
+                    ("sub", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (ast::Expr::Literal(ast::Literal::Number(a)), ast::Expr::Literal(ast::Literal::Number(b))) => {
+                            Some(ast::Expr::Literal(ast::Literal::Number(*a - *b)))
+                        }
+                        _ => None,
+                    },
+                    ("div", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (ast::Expr::Literal(ast::Literal::Number(a)), ast::Expr::Literal(ast::Literal::Number(b))) => {
+                            Some(ast::Expr::Literal(ast::Literal::Number(*a / *b)))
+                        }
+                        _ => None,
+                    },
+                    ("mul", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (ast::Expr::Literal(ast::Literal::Number(a)), ast::Expr::Literal(ast::Literal::Number(b))) => {
+                            Some(ast::Expr::Literal(ast::Literal::Number(*a * *b)))
+                        }
+                        _ => None,
+                    },
+                    ("mod", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (ast::Expr::Literal(ast::Literal::Number(a)), ast::Expr::Literal(ast::Literal::Number(b))) => {
+                            Some(ast::Expr::Literal(ast::Literal::Number(*a % *b)))
+                        }
+                        _ => None,
+                    },
+                    ("repeat", [arg1, arg2]) => match (&*arg1.expr, &*arg2.expr) {
+                        (ast::Expr::Literal(ast::Literal::String(s)), ast::Expr::Literal(ast::Literal::Number(n))) => {
+                            Some(ast::Expr::Literal(ast::Literal::String(s.repeat(n.value() as usize))))
+                        }
+                        _ => None,
+                    },
+                    ("reverse", [arg1]) => match &*arg1.expr {
+                        ast::Expr::Literal(ast::Literal::String(s)) => Some(ast::Expr::Literal(ast::Literal::String(
+                            s.chars().rev().collect::<String>(),
+                        ))),
+                        _ => None,
+                    },
+                    _ => None,
+                });
                 if let Some(expr) = new_expr {
                     mut_node.expr = Shared::new(expr);
                 }
@@ -1810,9 +1781,7 @@ mod tests {
                                 }),
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(AstExpr::Literal(Literal::Number(
-                                        2.0.into()
-                                    ))),
+                                    expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                 }),
                             ],
                         )),
@@ -1872,9 +1841,7 @@ mod tests {
                                 }),
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(AstExpr::Literal(Literal::Number(
-                                        2.0.into()
-                                    ))),
+                                    expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                 }),
                             ],
                         )),
@@ -1944,9 +1911,7 @@ mod tests {
                                 }),
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(AstExpr::Literal(Literal::Number(
-                                        2.0.into()
-                                    ))),
+                                    expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                 }),
                             ],
                         )),
@@ -2008,9 +1973,7 @@ mod tests {
                                     }),
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(AstExpr::Literal(Literal::Number(
-                                            2.0.into()
-                                        ))),
+                                        expr: Shared::new(AstExpr::Literal(Literal::Number(2.0.into()))),
                                     }),
                                 ],
                             )),
@@ -2108,10 +2071,7 @@ mod tests {
             )),
         });
 
-        assert!(Optimizer::contains_function_call(
-            func_name,
-            &while_body_node
-        ));
+        assert!(Optimizer::contains_function_call(func_name, &while_body_node));
     }
 
     #[test]
@@ -2150,10 +2110,7 @@ mod tests {
             )),
         });
 
-        assert!(Optimizer::contains_function_call(
-            func_name,
-            &until_body_node
-        ));
+        assert!(Optimizer::contains_function_call(func_name, &until_body_node));
     }
 
     #[test]
@@ -2176,10 +2133,7 @@ mod tests {
             )),
         });
 
-        assert!(Optimizer::contains_function_call(
-            func_name,
-            &foreach_collection_node
-        ));
+        assert!(Optimizer::contains_function_call(func_name, &foreach_collection_node));
 
         // Test function call in foreach body
         let foreach_body_node = Shared::new(Node {
@@ -2197,10 +2151,7 @@ mod tests {
             )),
         });
 
-        assert!(Optimizer::contains_function_call(
-            func_name,
-            &foreach_body_node
-        ));
+        assert!(Optimizer::contains_function_call(func_name, &foreach_body_node));
     }
 
     #[test]
@@ -2220,10 +2171,7 @@ mod tests {
                     expr: Shared::new(AstExpr::If(smallvec![(
                         Some(Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(AstExpr::Call(
-                                IdentWithToken::new("test_func"),
-                                smallvec![],
-                            )),
+                            expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![],)),
                         })),
                         Shared::new(Node {
                             token_id: 4.into(),

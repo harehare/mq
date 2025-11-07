@@ -11,10 +11,5 @@ fn main() {
             | s"${first_char}${rest_str}";
         | join("");
     | snake_to_camel("CAMEL_CASE")"#;
-    println!(
-        "{:?}",
-        engine
-            .eval(code, mq_lang::null_input().into_iter())
-            .unwrap()
-    );
+    println!("{:?}", engine.eval(code, mq_lang::null_input().into_iter()).unwrap());
 }

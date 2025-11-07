@@ -480,11 +480,7 @@ pub enum MdxAttributeValue {
 
 /// Represents a typed attribute value that can be returned from or passed to attr/set_attr methods.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(
-    feature = "json",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(untagged)
-)]
+#[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize), serde(untagged))]
 pub enum AttrValue {
     String(String),
     Number(f64),
@@ -764,14 +760,10 @@ impl PartialOrd for Node {
         let other_pos = other_node.position();
 
         match (self_pos, other_pos) {
-            (Some(self_pos), Some(other_pos)) => {
-                match self_pos.start.line.cmp(&other_pos.start.line) {
-                    std::cmp::Ordering::Equal => {
-                        self_pos.start.column.partial_cmp(&other_pos.start.column)
-                    }
-                    ordering => Some(ordering),
-                }
-            }
+            (Some(self_pos), Some(other_pos)) => match self_pos.start.line.cmp(&other_pos.start.line) {
+                std::cmp::Ordering::Equal => self_pos.start.column.partial_cmp(&other_pos.start.column),
+                ordering => Some(ordering),
+            },
             (Some(_), None) => Some(std::cmp::Ordering::Less),
             (None, Some(_)) => Some(std::cmp::Ordering::Greater),
             (None, None) => Some(self.name().cmp(&other.name())),
@@ -818,10 +810,7 @@ impl From<markdown::unist::Position> for Position {
 
 impl From<String> for Node {
     fn from(value: String) -> Self {
-        Self::Text(Text {
-            value,
-            position: None,
-        })
+        Self::Text(Text { value, position: None })
     }
 }
 
@@ -949,9 +938,7 @@ impl Node {
                     } else {
                         options.list_style.to_string()
                     },
-                    checked
-                        .map(|it| if it { "[x] " } else { "[ ] " })
-                        .unwrap_or_else(|| ""),
+                    checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| ""),
                     Self::values_to_string(values, options)
                 )
             }
@@ -985,10 +972,7 @@ impl Node {
                 meta,
                 ..
             }) => {
-                let meta = meta
-                    .as_deref()
-                    .map(|meta| format!(" {}", meta))
-                    .unwrap_or_default();
+                let meta = meta.as_deref().map(|meta| format!(" {}", meta)).unwrap_or_default();
 
                 match lang {
                     Some(lang) => format!("```{}{}\n{}\n```", lang, meta, value),
@@ -1034,17 +1018,13 @@ impl Node {
                 )
             }
             Self::Html(Html { value, .. }) => value,
-            Self::Image(Image {
-                alt, url, title, ..
-            }) => format!(
+            Self::Image(Image { alt, url, title, .. }) => format!(
                 "![{}]({}{})",
                 alt,
                 url.replace(' ', "%20"),
                 title.map(|it| format!(" \"{}\"", it)).unwrap_or_default()
             ),
-            Self::ImageRef(ImageRef {
-                alt, ident, label, ..
-            }) => {
+            Self::ImageRef(ImageRef { alt, ident, label, .. }) => {
                 if alt == ident {
                     format!("![{}]", ident)
                 } else {
@@ -1057,9 +1037,7 @@ impl Node {
             Self::MathInline(MathInline { value, .. }) => {
                 format!("${}$", value)
             }
-            Self::Link(Link {
-                url, title, values, ..
-            }) => {
+            Self::Link(Link { url, title, values, .. }) => {
                 format!(
                     "[{}]({}{})",
                     Self::values_to_string(values, options),
@@ -1346,8 +1324,7 @@ impl Node {
             Self::Text(t) => t.position.clone(),
             Self::HorizontalRule(h) => h.position.clone(),
             Self::Fragment(v) => {
-                let positions: Vec<Position> =
-                    v.values.iter().filter_map(|node| node.position()).collect();
+                let positions: Vec<Position> = v.values.iter().filter_map(|node| node.position()).collect();
 
                 match (positions.first(), positions.last()) {
                     (Some(start), Some(end)) => Some(Position {
@@ -1379,11 +1356,7 @@ impl Node {
 
     fn _fragment_inner_nodes(node: &Node) -> Vec<Node> {
         if let Self::Fragment(fragment) = node {
-            fragment
-                .values
-                .iter()
-                .flat_map(Self::_fragment_inner_nodes)
-                .collect()
+            fragment.values.iter().flat_map(Self::_fragment_inner_nodes).collect()
         } else {
             vec![node.clone()]
         }
@@ -1502,10 +1475,7 @@ impl Node {
     }
 
     pub fn is_code(&self, lang: Option<SmolStr>) -> bool {
-        if let Self::Code(Code {
-            lang: node_lang, ..
-        }) = &self
-        {
+        if let Self::Code(Code { lang: node_lang, .. }) = &self {
             if lang.is_none() {
                 true
             } else {
@@ -1518,8 +1488,7 @@ impl Node {
 
     pub fn is_heading(&self, depth: Option<u8>) -> bool {
         if let Self::Heading(Heading {
-            depth: heading_depth,
-            ..
+            depth: heading_depth, ..
         }) = &self
         {
             depth.is_none() || *heading_depth == depth.unwrap()
@@ -1833,25 +1802,19 @@ impl Node {
                 "value" | "text" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
-            Node::Image(Image {
-                alt, url, title, ..
-            }) => match attr {
+            Node::Image(Image { alt, url, title, .. }) => match attr {
                 "alt" => Some(AttrValue::String(alt.clone())),
                 "url" => Some(AttrValue::String(url.clone())),
                 "title" => title.clone().map(AttrValue::String),
                 _ => None,
             },
-            Node::ImageRef(ImageRef {
-                alt, ident, label, ..
-            }) => match attr {
+            Node::ImageRef(ImageRef { alt, ident, label, .. }) => match attr {
                 "alt" => Some(AttrValue::String(alt.clone())),
                 "ident" => Some(AttrValue::String(ident.clone())),
                 "label" => label.clone().map(AttrValue::String),
                 _ => None,
             },
-            Node::Link(Link {
-                url, title, values, ..
-            }) => match attr {
+            Node::Link(Link { url, title, values, .. }) => match attr {
                 "url" => Some(AttrValue::String(url.as_str().to_string())),
                 "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
                 "value" | "text" => Some(AttrValue::String(Self::values_to_string(
@@ -1929,11 +1892,7 @@ impl Node {
             },
             Node::TableHeader(TableHeader { align, .. }) => match attr {
                 "align" => Some(AttrValue::String(
-                    align
-                        .iter()
-                        .map(|a| a.to_string())
-                        .collect::<Vec<_>>()
-                        .join(","),
+                    align.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(","),
                 )),
                 _ => None,
             },
@@ -1958,11 +1917,7 @@ impl Node {
                 _ => None,
             },
             Node::Break(_) | Node::HorizontalRule(_) | Node::Fragment(_) | Node::Empty => None,
-            Node::Blockquote(_)
-            | Node::Delete(_)
-            | Node::Emphasis(_)
-            | Node::Strong(_)
-            | Node::TableRow(_) => None,
+            Node::Blockquote(_) | Node::Delete(_) | Node::Emphasis(_) | Node::Strong(_) | Node::TableRow(_) => None,
         }
     }
 
@@ -1986,18 +1941,10 @@ impl Node {
                     c.value = value_str;
                 }
                 "lang" => {
-                    c.lang = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    c.lang = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 "meta" => {
-                    c.meta = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    c.meta = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 "fence" => {
                     c.fence = match value {
@@ -2030,11 +1977,7 @@ impl Node {
                     i.url = value_str;
                 }
                 "title" => {
-                    i.title = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    i.title = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 _ => (),
             },
@@ -2046,11 +1989,7 @@ impl Node {
                     i.ident = value_str;
                 }
                 "label" => {
-                    i.label = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    i.label = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 _ => (),
             },
@@ -2072,11 +2011,7 @@ impl Node {
                     l.ident = value_str;
                 }
                 "label" => {
-                    l.label = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    l.label = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 _ => (),
             },
@@ -2085,11 +2020,7 @@ impl Node {
                     f.ident = value_str;
                 }
                 "label" => {
-                    f.label = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    f.label = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 _ => (),
             },
@@ -2108,11 +2039,7 @@ impl Node {
                     };
                 }
                 "label" => {
-                    d.label = if value_str.is_empty() {
-                        None
-                    } else {
-                        Some(value_str)
-                    };
+                    d.label = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 _ => (),
             },
@@ -2202,11 +2129,7 @@ impl Node {
                 m.value = value_str.into();
             }
             Node::MdxJsxFlowElement(m) if attr == "name" => {
-                m.name = if value_str.is_empty() {
-                    None
-                } else {
-                    Some(value_str)
-                };
+                m.name = if value_str.is_empty() { None } else { Some(value_str) };
             }
             Node::MdxJsxTextElement(m) if attr == "name" => {
                 m.name = if value_str.is_empty() {
@@ -2248,10 +2171,8 @@ impl Node {
                                         vec![Self::TableCell(TableCell {
                                             row,
                                             column,
-                                            last_cell_in_row: table_row.children.len() - 1
-                                                == column,
-                                            last_cell_of_in_table: table_row.children.len() - 1
-                                                == column
+                                            last_cell_in_row: table_row.children.len() - 1 == column,
+                                            last_cell_of_in_table: table_row.children.len() - 1 == column
                                                 && table.children.len() - 1 == row,
                                             values: Self::mdast_children_to_node(node.clone()),
                                             position: node.position().map(|p| p.clone().into()),
@@ -2263,11 +2184,7 @@ impl Node {
                                 .collect(),
                             if row == 0 {
                                 vec![Self::TableHeader(TableHeader {
-                                    align: table
-                                        .align
-                                        .iter()
-                                        .map(|a| (*a).into())
-                                        .collect::<Vec<_>>(),
+                                    align: table.align.iter().map(|a| (*a).into()).collect::<Vec<_>>(),
                                     position: n.position().map(|p| Position {
                                         start: Point {
                                             line: p.start.line + 1,
@@ -2342,9 +2259,7 @@ impl Node {
                     position: position.map(|p| p.clone().into()),
                 })]
             }
-            mdast::Node::Heading(mdast::Heading {
-                depth, position, ..
-            }) => {
+            mdast::Node::Heading(mdast::Heading { depth, position, .. }) => {
                 vec![Self::Heading(Heading {
                     values: Self::mdast_children_to_node(node),
                     depth,
@@ -2424,9 +2339,7 @@ impl Node {
                     position: position.map(|p| p.clone().into()),
                 })]
             }
-            mdast::Node::InlineCode(mdast::InlineCode {
-                value, position, ..
-            }) => {
+            mdast::Node::InlineCode(mdast::InlineCode { value, position, .. }) => {
                 vec![Self::CodeInline(CodeInline {
                     value: value.into(),
                     position: position.map(|p| p.clone().into()),
@@ -2448,10 +2361,7 @@ impl Node {
                 vec![Self::Link(Link {
                     url: Url(url),
                     title: title.map(Title),
-                    values: children
-                        .into_iter()
-                        .flat_map(Self::from_mdast_node)
-                        .collect::<Vec<_>>(),
+                    values: children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>(),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
@@ -2464,17 +2374,12 @@ impl Node {
             }) => {
                 vec![Self::LinkRef(LinkRef {
                     ident: identifier,
-                    values: children
-                        .into_iter()
-                        .flat_map(Self::from_mdast_node)
-                        .collect::<Vec<_>>(),
+                    values: children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>(),
                     label,
                     position: position.map(|p| p.clone().into()),
                 })]
             }
-            mdast::Node::Math(mdast::Math {
-                value, position, ..
-            }) => {
+            mdast::Node::Math(mdast::Math { value, position, .. }) => {
                 vec![Self::Math(Math {
                     value,
                     position: position.map(|p| p.clone().into()),
@@ -2488,10 +2393,7 @@ impl Node {
             }) => {
                 vec![Self::Footnote(Footnote {
                     ident: identifier,
-                    values: children
-                        .into_iter()
-                        .flat_map(Self::from_mdast_node)
-                        .collect::<Vec<_>>(),
+                    values: children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>(),
                     position: position.map(|p| p.clone().into()),
                 })]
             }
@@ -2526,24 +2428,23 @@ impl Node {
                         .attributes
                         .iter()
                         .map(|attr| match attr {
-                            mdast::AttributeContent::Expression(
-                                mdast::MdxJsxExpressionAttribute { value, .. },
-                            ) => MdxAttributeContent::Expression(value.into()),
-                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute {
-                                value,
-                                name,
-                                ..
-                            }) => MdxAttributeContent::Property(MdxJsxAttribute {
-                                name: name.into(),
-                                value: value.as_ref().map(|value| match value {
-                                    mdast::AttributeValue::Literal(value) => {
-                                        MdxAttributeValue::Literal(value.into())
-                                    }
-                                    mdast::AttributeValue::Expression(
-                                        mdast::AttributeValueExpression { value, .. },
-                                    ) => MdxAttributeValue::Expression(value.into()),
-                                }),
-                            }),
+                            mdast::AttributeContent::Expression(mdast::MdxJsxExpressionAttribute { value, .. }) => {
+                                MdxAttributeContent::Expression(value.into())
+                            }
+                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute { value, name, .. }) => {
+                                MdxAttributeContent::Property(MdxJsxAttribute {
+                                    name: name.into(),
+                                    value: value.as_ref().map(|value| match value {
+                                        mdast::AttributeValue::Literal(value) => {
+                                            MdxAttributeValue::Literal(value.into())
+                                        }
+                                        mdast::AttributeValue::Expression(mdast::AttributeValueExpression {
+                                            value,
+                                            ..
+                                        }) => MdxAttributeValue::Expression(value.into()),
+                                    }),
+                                })
+                            }
                         })
                         .collect(),
                 })]
@@ -2561,24 +2462,23 @@ impl Node {
                         .attributes
                         .iter()
                         .map(|attr| match attr {
-                            mdast::AttributeContent::Expression(
-                                mdast::MdxJsxExpressionAttribute { value, .. },
-                            ) => MdxAttributeContent::Expression(value.into()),
-                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute {
-                                value,
-                                name,
-                                ..
-                            }) => MdxAttributeContent::Property(MdxJsxAttribute {
-                                name: name.into(),
-                                value: value.as_ref().map(|value| match value {
-                                    mdast::AttributeValue::Literal(value) => {
-                                        MdxAttributeValue::Literal(value.into())
-                                    }
-                                    mdast::AttributeValue::Expression(
-                                        mdast::AttributeValueExpression { value, .. },
-                                    ) => MdxAttributeValue::Expression(value.into()),
-                                }),
-                            }),
+                            mdast::AttributeContent::Expression(mdast::MdxJsxExpressionAttribute { value, .. }) => {
+                                MdxAttributeContent::Expression(value.into())
+                            }
+                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute { value, name, .. }) => {
+                                MdxAttributeContent::Property(MdxJsxAttribute {
+                                    name: name.into(),
+                                    value: value.as_ref().map(|value| match value {
+                                        mdast::AttributeValue::Literal(value) => {
+                                            MdxAttributeValue::Literal(value.into())
+                                        }
+                                        mdast::AttributeValue::Expression(mdast::AttributeValueExpression {
+                                            value,
+                                            ..
+                                        }) => MdxAttributeValue::Expression(value.into()),
+                                    }),
+                                })
+                            }
                         })
                         .collect(),
                 })]
@@ -2595,18 +2495,15 @@ impl Node {
                     position: mdx.position.map(|position| position.into()),
                 })]
             }
-            mdast::Node::Text(mdast::Text {
-                position, value, ..
-            }) => {
+            mdast::Node::Text(mdast::Text { position, value, .. }) => {
                 vec![Self::Text(Text {
                     value,
                     position: position.map(|p| p.clone().into()),
                 })]
             }
-            mdast::Node::Paragraph(mdast::Paragraph { children, .. }) => children
-                .into_iter()
-                .flat_map(Self::from_mdast_node)
-                .collect::<Vec<_>>(),
+            mdast::Node::Paragraph(mdast::Paragraph { children, .. }) => {
+                children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>()
+            }
             _ => Vec::new(),
         }
     }
@@ -2725,12 +2622,8 @@ impl Node {
             MdxAttributeContent::Expression(value) => format!("{{{}}}", value).into(),
             MdxAttributeContent::Property(property) => match property.value {
                 Some(value) => match value {
-                    MdxAttributeValue::Expression(value) => {
-                        format!("{}={{{}}}", property.name, value).into()
-                    }
-                    MdxAttributeValue::Literal(literal) => {
-                        format!("{}=\"{}\"", property.name, literal).into()
-                    }
+                    MdxAttributeValue::Expression(value) => format!("{}={{{}}}", property.name, value).into(),
+                    MdxAttributeValue::Literal(literal) => format!("{}=\"{}\"", property.name, literal).into(),
                 },
                 None => property.name,
             },
@@ -2763,11 +2656,7 @@ impl Node {
                     pre_position = Some(pos);
 
                     if space.is_empty() {
-                        format!(
-                            "{}{}",
-                            "\n".repeat(new_line_count),
-                            value.to_string_with(options)
-                        )
+                        format!("{}{}", "\n".repeat(new_line_count), value.to_string_with(options))
                     } else {
                         format!(
                             "{}{}",
@@ -3119,12 +3008,7 @@ mod tests {
             ],
             position: None
         }))]
-    fn test_with_children_value(
-        #[case] node: Node,
-        #[case] value: &str,
-        #[case] index: usize,
-        #[case] expected: Node,
-    ) {
+    fn test_with_children_value(#[case] node: Node, #[case] value: &str, #[case] index: usize, #[case] expected: Node) {
         assert_eq!(node.with_children_value(value, index), expected);
     }
 
@@ -3469,11 +3353,7 @@ mod tests {
         value: "import React from 'react'".into(),
         position: None,
     }), RenderOptions::default(), "import React from 'react'")]
-    fn test_to_string_with(
-        #[case] node: Node,
-        #[case] options: RenderOptions,
-        #[case] expected: &str,
-    ) {
+    fn test_to_string_with(#[case] node: Node, #[case] options: RenderOptions, #[case] expected: &str) {
         assert_eq!(node.to_string_with(&options), expected);
     }
 
@@ -3491,10 +3371,7 @@ mod tests {
             value: "test2".to_string(),
             position: Some(Position {
                 start: Point { line: 1, column: 6 },
-                end: Point {
-                    line: 1,
-                    column: 10,
-                },
+                end: Point { line: 1, column: 10 },
             }),
         });
 
@@ -3717,11 +3594,7 @@ mod tests {
     #[case(Node::Text(Text{value: "plain text".to_string(), position: None}), 0, None)]
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}), 0, None)]
     #[case(Node::Html(Html{value: "<div>".to_string(), position: None}), 0, None)]
-    fn test_find_at_index(
-        #[case] node: Node,
-        #[case] index: usize,
-        #[case] expected: Option<Node>,
-    ) {
+    fn test_find_at_index(#[case] node: Node, #[case] index: usize, #[case] expected: Option<Node>) {
         assert_eq!(node.find_at_index(index), expected);
     }
 
@@ -3938,11 +3811,7 @@ mod tests {
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None})
     )]
-    fn test_apply_fragment(
-        #[case] node: &mut Node,
-        #[case] fragment: Node,
-        #[case] expected: Node,
-    ) {
+    fn test_apply_fragment(#[case] node: &mut Node, #[case] fragment: Node, #[case] expected: Node) {
         node.apply_fragment(fragment);
         assert_eq!(*node, expected);
     }
@@ -4077,11 +3946,7 @@ mod tests {
                 children: vec![Node::Text(Text{value: "content".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 20}})})],
                 position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 20}})
             }))]
-    fn test_set_position(
-        #[case] mut node: Node,
-        #[case] position: Position,
-        #[case] expected: Node,
-    ) {
+    fn test_set_position(#[case] mut node: Node, #[case] position: Position, #[case] expected: Node) {
         node.set_position(Some(position));
         assert_eq!(node, expected);
     }
@@ -4114,11 +3979,7 @@ mod tests {
     #[case(Url::new("https://example.com".to_string()), RenderOptions{link_url_style: UrlSurroundStyle::None, ..Default::default()}, "https://example.com")]
     #[case(Url::new("https://example.com".to_string()), RenderOptions{link_url_style: UrlSurroundStyle::Angle, ..Default::default()}, "<https://example.com>")]
     #[case(Url::new("".to_string()), RenderOptions::default(), "")]
-    fn test_url_to_string_with(
-        #[case] url: Url,
-        #[case] options: RenderOptions,
-        #[case] expected: &str,
-    ) {
+    fn test_url_to_string_with(#[case] url: Url, #[case] options: RenderOptions, #[case] expected: &str) {
         assert_eq!(url.to_string_with(&options), expected);
     }
 
@@ -4130,11 +3991,7 @@ mod tests {
     #[case(Title::new("title".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Single, ..Default::default()}, "'title'")]
     #[case(Title::new("title with 'quotes'".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Double, ..Default::default()}, "\"title with 'quotes'\"")]
     #[case(Title::new("title".to_string()), RenderOptions{link_title_style: TitleSurroundStyle::Paren, ..Default::default()}, "(title)")]
-    fn test_title_to_string_with(
-        #[case] title: Title,
-        #[case] options: RenderOptions,
-        #[case] expected: &str,
-    ) {
+    fn test_title_to_string_with(#[case] title: Title, #[case] options: RenderOptions, #[case] expected: &str) {
         assert_eq!(title.to_string_with(&options), expected);
     }
 
@@ -4545,12 +4402,7 @@ mod tests {
         "ignored",
         Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None})
     )]
-    fn test_set_attr(
-        #[case] mut node: Node,
-        #[case] attr: &str,
-        #[case] value: &str,
-        #[case] expected: Node,
-    ) {
+    fn test_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
         node.set_attr(attr, value);
         assert_eq!(node, expected);
     }

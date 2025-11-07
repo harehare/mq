@@ -78,8 +78,7 @@ pub fn start() -> DynResult<()> {
             Some(req) => {
                 if let Err(e) = adapter.handle_request(req, &mut server) {
                     error!(error = %e, "Failed to handle DAP request");
-                    if let Some(MqAdapterError::ProtocolError(msg)) =
-                        e.downcast_ref::<MqAdapterError>()
+                    if let Some(MqAdapterError::ProtocolError(msg)) = e.downcast_ref::<MqAdapterError>()
                         && msg == "Shutdown"
                     {
                         break;

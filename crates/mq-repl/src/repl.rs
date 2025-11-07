@@ -1,8 +1,7 @@
 use colored::*;
 use miette::IntoDiagnostic;
 use rustyline::{
-    At, Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent,
-    Modifiers, Movement, Word,
+    At, Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::{Completer, FilenameCompleter, Pair},
     error::ReadlineError,
     highlight::{CmdKind, Highlighter},
@@ -29,9 +28,7 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|until|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do)\b";
     if let Ok(re) = regex_lite::Regex::new(keywords_pattern) {
         result = re
-            .replace_all(&result, |caps: &regex_lite::Captures| {
-                caps[0].bright_blue().to_string()
-            })
+            .replace_all(&result, |caps: &regex_lite::Captures| caps[0].bright_blue().to_string())
             .to_string();
     }
 
@@ -120,11 +117,7 @@ impl Hinter for MqLineHelper {
 }
 
 impl Highlighter for MqLineHelper {
-    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
-        &'s self,
-        prompt: &'p str,
-        _default: bool,
-    ) -> Cow<'b, str> {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
         prompt.cyan().to_string().into()
     }
 
@@ -158,12 +151,8 @@ impl Validator for MqLineHelper {
 
 impl Completer for MqLineHelper {
     type Candidate = Pair;
-    fn complete(
-        &self,
-        line: &str,
-        pos: usize,
-        _ctx: &Context<'_>,
-    ) -> Result<(usize, Vec<Pair>), ReadlineError> {
+
+    fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Result<(usize, Vec<Pair>), ReadlineError> {
         let mut completions = self
             .command_context
             .borrow()
@@ -210,10 +199,7 @@ impl Repl {
         );
         println!();
         println!("  Welcome to mq. Start by typing commands or expressions.");
-        println!(
-            "  Type {} to see available commands.",
-            "/help".bright_cyan()
-        );
+        println!("  Type {} to see available commands.", "/help".bright_cyan());
         println!();
     }
 
@@ -300,9 +286,7 @@ impl Repl {
 
             if let Some(config_dir) = &config_dir {
                 let history = config_dir.join("history.txt");
-                editor
-                    .save_history(&history.to_string_lossy().to_string())
-                    .unwrap();
+                editor.save_history(&history.to_string_lossy().to_string()).unwrap();
             }
         }
 
@@ -318,10 +302,7 @@ mod tests {
     fn test_config_dir() {
         unsafe { std::env::set_var("MDQ_CONFIG_DIR", "/tmp/test_mq_config") };
         let config_dir = Repl::config_dir();
-        assert_eq!(
-            config_dir,
-            Some(std::path::PathBuf::from("/tmp/test_mq_config"))
-        );
+        assert_eq!(config_dir, Some(std::path::PathBuf::from("/tmp/test_mq_config")));
 
         unsafe { std::env::remove_var("MDQ_CONFIG_DIR") };
         let config_dir = Repl::config_dir();

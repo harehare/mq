@@ -1,8 +1,7 @@
 use tower_lsp_server::lsp_types::{
-    CompletionOptions, ExecuteCommandOptions, HoverProviderCapability, OneOf,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind,
+    CompletionOptions, ExecuteCommandOptions, HoverProviderCapability, OneOf, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;

@@ -56,14 +56,12 @@ impl RateLimiter {
     pub async fn new(config: RateLimitConfig) -> Result<Self, RateLimitError> {
         // Create deadpool config based on database type
         let database = match config.database_auth_token.as_ref() {
-            Some(token) => {
-                deadpool_libsql::config::Database::Remote(deadpool_libsql::config::Remote {
-                    url: config.database_url.clone(),
-                    auth_token: token.clone(),
-                    namespace: None,
-                    remote_encryption: None,
-                })
-            }
+            Some(token) => deadpool_libsql::config::Database::Remote(deadpool_libsql::config::Remote {
+                url: config.database_url.clone(),
+                auth_token: token.clone(),
+                namespace: None,
+                remote_encryption: None,
+            }),
             None => deadpool_libsql::config::Database::Local(deadpool_libsql::config::Local {
                 path: PathBuf::from(&config.database_url),
                 encryption_config: None,

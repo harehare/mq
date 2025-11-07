@@ -7,8 +7,7 @@ use dashmap::DashMap;
 use url::Url;
 
 use crate::{
-    capabilities, completions, document_symbol, execute_command, goto_definition, hover,
-    references, semantic_tokens,
+    capabilities, completions, document_symbol, execute_command, goto_definition, hover, references, semantic_tokens,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, lsp_types};
 
@@ -30,10 +29,7 @@ struct Backend {
 }
 
 impl LanguageServer for Backend {
-    async fn initialize(
-        &self,
-        _: lsp_types::InitializeParams,
-    ) -> jsonrpc::Result<lsp_types::InitializeResult> {
+    async fn initialize(&self, _: lsp_types::InitializeParams) -> jsonrpc::Result<lsp_types::InitializeResult> {
         self.client
             .log_message(lsp_types::MessageType::INFO, "Server initialized")
             .await;
@@ -50,11 +46,8 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: lsp_types::DidOpenTextDocumentParams) {
         self.on_change(to_url(&params.text_document.uri), params.text_document.text)
             .await;
-        self.diagnostics(
-            to_url(&params.text_document.uri),
-            Some(params.text_document.version),
-        )
-        .await;
+        self.diagnostics(to_url(&params.text_document.uri), Some(params.text_document.version))
+            .await;
     }
 
     async fn did_change(&self, mut params: lsp_types::DidChangeTextDocumentParams) {
@@ -66,8 +59,7 @@ impl LanguageServer for Backend {
     }
 
     async fn did_save(&self, params: lsp_types::DidSaveTextDocumentParams) {
-        self.diagnostics(to_url(&params.text_document.uri), None)
-            .await;
+        self.diagnostics(to_url(&params.text_document.uri), None).await;
     }
 
     async fn did_close(&self, params: lsp_types::DidCloseTextDocumentParams) {
@@ -121,11 +113,7 @@ impl LanguageServer for Backend {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        Ok(goto_definition::response(
-            Arc::clone(&self.hir),
-            to_url(&url),
-            position,
-        ))
+        Ok(goto_definition::response(Arc::clone(&self.hir), to_url(&url), position))
     }
 
     async fn references(
@@ -155,18 +143,11 @@ impl LanguageServer for Backend {
         ))
     }
 
-    async fn hover(
-        &self,
-        params: lsp_types::HoverParams,
-    ) -> jsonrpc::Result<Option<lsp_types::Hover>> {
+    async fn hover(&self, params: lsp_types::HoverParams) -> jsonrpc::Result<Option<lsp_types::Hover>> {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        Ok(hover::response(
-            Arc::clone(&self.hir),
-            to_url(&url),
-            position,
-        ))
+        Ok(hover::response(Arc::clone(&self.hir), to_url(&url), position))
     }
 
     async fn completion(
@@ -204,14 +185,10 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
-        let nodes = self
-            .cst_nodes_map
-            .get(&params.text_document.uri.to_string())
-            .unwrap();
-        let formatted_text =
-            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 }))
-                .format_with_cst(nodes.to_vec())
-                .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
+        let nodes = self.cst_nodes_map.get(&params.text_document.uri.to_string()).unwrap();
+        let formatted_text = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 }))
+            .format_with_cst(nodes.to_vec())
+            .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
 
         Ok(Some(vec![lsp_types::TextEdit {
             range: lsp_types::Range::new(
@@ -232,13 +209,9 @@ impl Backend {
         };
         let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        self.source_map
-            .write()
-            .unwrap()
-            .insert(uri.to_string(), source_id);
+        self.source_map.write().unwrap().insert(uri.to_string(), source_id);
         self.cst_nodes_map.insert(uri.to_string(), nodes);
-        self.error_map
-            .insert(uri.to_string(), errors.error_ranges(&text));
+        self.error_map.insert(uri.to_string(), errors.error_ranges(&text));
     }
 
     async fn diagnostics(&self, uri: Url, version: Option<i32>) {
@@ -333,37 +306,32 @@ impl Backend {
             }
 
             // Add HIR warnings (including unreachable code warnings)
-            diagnostics.extend(
-                hir.warning_ranges()
-                    .into_iter()
-                    .filter_map(|(message, item)| {
-                        // Only include warnings if they are related to this file's source
-                        let has_warning_in_this_file = hir.symbols().any(|(_, symbol)| {
-                            symbol.source.source_id == Some(*source_id)
-                                && symbol.source.text_range.as_ref() == Some(&item)
-                        });
+            diagnostics.extend(hir.warning_ranges().into_iter().filter_map(|(message, item)| {
+                // Only include warnings if they are related to this file's source
+                let has_warning_in_this_file = hir.symbols().any(|(_, symbol)| {
+                    symbol.source.source_id == Some(*source_id) && symbol.source.text_range.as_ref() == Some(&item)
+                });
 
-                        if has_warning_in_this_file {
-                            let mut diagnostic = lsp_types::Diagnostic::new_simple(
-                                lsp_types::Range::new(
-                                    lsp_types::Position {
-                                        line: item.start.line - 1,
-                                        character: (item.start.column - 1) as u32,
-                                    },
-                                    lsp_types::Position {
-                                        line: item.end.line - 1,
-                                        character: (item.end.column - 1) as u32,
-                                    },
-                                ),
-                                message,
-                            );
-                            diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
-                            Some(diagnostic)
-                        } else {
-                            None
-                        }
-                    }),
-            );
+                if has_warning_in_this_file {
+                    let mut diagnostic = lsp_types::Diagnostic::new_simple(
+                        lsp_types::Range::new(
+                            lsp_types::Position {
+                                line: item.start.line - 1,
+                                character: (item.start.column - 1) as u32,
+                            },
+                            lsp_types::Position {
+                                line: item.end.line - 1,
+                                character: (item.end.column - 1) as u32,
+                            },
+                        ),
+                        message,
+                    );
+                    diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
+                    Some(diagnostic)
+                } else {
+                    None
+                }
+            }));
         }
 
         self.client
@@ -435,25 +403,14 @@ mod tests {
             })
             .await;
 
-        assert!(
-            backend
-                .source_map
-                .read()
-                .unwrap()
-                .contains_left(&uri.to_string())
-        );
+        assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
         assert!(
             backend
                 .hir
                 .read()
                 .unwrap()
                 .symbols()
-                .map(|(_, s)| {
-                    s.value
-                        .as_ref()
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| "".into())
-                })
+                .map(|(_, s)| { s.value.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "".into()) })
                 .collect::<Vec<_>>()
                 .contains(&"main".into()),
         );
@@ -476,9 +433,7 @@ mod tests {
 
         let (nodes, errors) = mq_lang::parse_recovery(text);
         backend.cst_nodes_map.insert(uri.to_string(), nodes);
-        backend
-            .error_map
-            .insert(uri.to_string(), errors.error_ranges(text));
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         let result = backend
             .formatting(lsp_types::DocumentFormattingParams {
@@ -654,11 +609,7 @@ mod tests {
         let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        backend
-            .source_map
-            .write()
-            .unwrap()
-            .insert(uri.to_string(), source_id);
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
 
         let result = backend
             .references(lsp_types::ReferenceParams {
@@ -694,11 +645,7 @@ mod tests {
         let (nodes, _) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        backend
-            .source_map
-            .write()
-            .unwrap()
-            .insert(uri.to_string(), source_id);
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
 
         let result = backend
             .document_symbol(lsp_types::DocumentSymbolParams {
@@ -794,13 +741,7 @@ mod tests {
         // Verify data exists before close
         assert!(backend.error_map.contains_key(&uri.to_string()));
         assert!(backend.cst_nodes_map.contains_key(&uri.to_string()));
-        assert!(
-            backend
-                .source_map
-                .read()
-                .unwrap()
-                .contains_left(&uri.to_string())
-        );
+        assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
 
         // Close the file
         use lsp_types::DidCloseTextDocumentParams;
@@ -814,13 +755,7 @@ mod tests {
         // Verify data is cleaned up after close
         assert!(!backend.error_map.contains_key(&uri.to_string()));
         assert!(!backend.cst_nodes_map.contains_key(&uri.to_string()));
-        assert!(
-            !backend
-                .source_map
-                .read()
-                .unwrap()
-                .contains_left(&uri.to_string())
-        );
+        assert!(!backend.source_map.read().unwrap().contains_left(&uri.to_string()));
     }
 
     #[tokio::test]
@@ -840,9 +775,7 @@ mod tests {
         let text = "def main(): invalid_syntax";
         let (nodes, errors) = mq_lang::parse_recovery(text);
         backend.cst_nodes_map.insert(uri.to_string(), nodes);
-        backend
-            .error_map
-            .insert(uri.to_string(), errors.error_ranges(text));
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         backend
             .source_map
@@ -875,9 +808,7 @@ mod tests {
         let backend = service.inner();
 
         // Test initialize
-        let init_result = backend
-            .initialize(lsp_types::InitializeParams::default())
-            .await;
+        let init_result = backend.initialize(lsp_types::InitializeParams::default()).await;
 
         assert!(init_result.is_ok());
         let capabilities = init_result.unwrap().capabilities;
@@ -913,14 +844,8 @@ mod tests {
             .semantic_tokens_range(lsp_types::SemanticTokensRangeParams {
                 text_document: lsp_types::TextDocumentIdentifier { uri: to_uri(&uri) },
                 range: lsp_types::Range {
-                    start: lsp_types::Position {
-                        line: 0,
-                        character: 0,
-                    },
-                    end: lsp_types::Position {
-                        line: 0,
-                        character: 12,
-                    },
+                    start: lsp_types::Position { line: 0, character: 0 },
+                    end: lsp_types::Position { line: 0, character: 12 },
                 },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
@@ -948,9 +873,7 @@ mod tests {
         let text = "def main() 1;"; // Missing colon
         let (nodes, errors) = mq_lang::parse_recovery(text);
         backend.cst_nodes_map.insert(uri.to_string(), nodes);
-        backend
-            .error_map
-            .insert(uri.to_string(), errors.error_ranges(text));
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
         // but we can verify the code doesn't panic
@@ -975,15 +898,9 @@ mod tests {
         let (nodes, errors) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        backend
-            .source_map
-            .write()
-            .unwrap()
-            .insert(uri.to_string(), source_id);
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.cst_nodes_map.insert(uri.to_string(), nodes);
-        backend
-            .error_map
-            .insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unused functions are detected
         {
@@ -1019,14 +936,8 @@ mod tests {
             vec![(
                 "Syntax error".to_string(),
                 mq_lang::Range {
-                    start: mq_lang::Position {
-                        line: 1,
-                        column: 10,
-                    },
-                    end: mq_lang::Position {
-                        line: 1,
-                        column: 11,
-                    },
+                    start: mq_lang::Position { line: 1, column: 10 },
+                    end: mq_lang::Position { line: 1, column: 11 },
                 },
             )],
         );
@@ -1064,15 +975,9 @@ mod tests {
         let (nodes, errors) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        backend
-            .source_map
-            .write()
-            .unwrap()
-            .insert(uri.to_string(), source_id);
+        backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
         backend.cst_nodes_map.insert(uri.to_string(), nodes);
-        backend
-            .error_map
-            .insert(uri.to_string(), errors.error_ranges(code));
+        backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unreachable code warnings are detected
         {

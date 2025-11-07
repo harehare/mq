@@ -31,11 +31,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             }
 
             let delta_line = line - pre_line;
-            let delta_start = if delta_line == 0 {
-                start - pre_start
-            } else {
-                start
-            };
+            let delta_start = if delta_line == 0 { start - pre_start } else { start };
 
             pre_line = line;
             pre_start = start;
@@ -45,9 +41,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 delta_start,
                 length,
                 token_type,
-                token_modifiers_bitset: token_modifier(
-                    lsp_types::SemanticTokenModifier::DOCUMENTATION,
-                ),
+                token_modifiers_bitset: token_modifier(lsp_types::SemanticTokenModifier::DOCUMENTATION),
             });
         }
 
@@ -57,23 +51,17 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             let length = if range.start.line == range.end.line {
                 ((range.end.column - 1) - (range.start.column - 1)) as u32
             } else {
-                symbol
-                    .value
-                    .as_ref()
-                    .map(|name| name.len())
-                    .unwrap_or_default() as u32
+                symbol.value.as_ref().map(|name| name.len()).unwrap_or_default() as u32
             };
             let token_type = match symbol.kind {
                 mq_hir::SymbolKind::Argument => token_type(lsp_types::SemanticTokenType::PARAMETER),
                 mq_hir::SymbolKind::BinaryOp | mq_hir::SymbolKind::UnaryOp => {
                     token_type(lsp_types::SemanticTokenType::OPERATOR)
                 }
-                mq_hir::SymbolKind::Dict
-                | mq_hir::SymbolKind::Boolean
-                | mq_hir::SymbolKind::Array => token_type(lsp_types::SemanticTokenType::TYPE),
-                mq_hir::SymbolKind::Call
-                | mq_hir::SymbolKind::CallDynamic
-                | mq_hir::SymbolKind::QualifiedAccess => {
+                mq_hir::SymbolKind::Dict | mq_hir::SymbolKind::Boolean | mq_hir::SymbolKind::Array => {
+                    token_type(lsp_types::SemanticTokenType::TYPE)
+                }
+                mq_hir::SymbolKind::Call | mq_hir::SymbolKind::CallDynamic | mq_hir::SymbolKind::QualifiedAccess => {
                     token_type(lsp_types::SemanticTokenType::METHOD)
                 }
 
@@ -92,13 +80,9 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 | mq_hir::SymbolKind::Import(_)
                 | mq_hir::SymbolKind::Module(_)
                 | mq_hir::SymbolKind::While => token_type(lsp_types::SemanticTokenType::KEYWORD),
-                mq_hir::SymbolKind::Function(_) => {
-                    token_type(lsp_types::SemanticTokenType::FUNCTION)
-                }
+                mq_hir::SymbolKind::Function(_) => token_type(lsp_types::SemanticTokenType::FUNCTION),
                 mq_hir::SymbolKind::Number => token_type(lsp_types::SemanticTokenType::NUMBER),
-                mq_hir::SymbolKind::Parameter => {
-                    token_type(lsp_types::SemanticTokenType::PARAMETER)
-                }
+                mq_hir::SymbolKind::Parameter => token_type(lsp_types::SemanticTokenType::PARAMETER),
                 mq_hir::SymbolKind::Ref => token_type(lsp_types::SemanticTokenType::VARIABLE),
                 mq_hir::SymbolKind::Selector => token_type(lsp_types::SemanticTokenType::METHOD),
                 mq_hir::SymbolKind::String => token_type(lsp_types::SemanticTokenType::STRING),
@@ -111,11 +95,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             };
 
             let delta_line = line - pre_line;
-            let delta_start = if delta_line == 0 {
-                start - pre_start
-            } else {
-                start
-            };
+            let delta_start = if delta_line == 0 { start - pre_start } else { start };
 
             pre_line = line;
             pre_start = start;
@@ -144,10 +124,7 @@ fn token_type(token_type: lsp_types::SemanticTokenType) -> u32 {
 
 #[inline(always)]
 fn token_modifier(token_modifier: lsp_types::SemanticTokenModifier) -> u32 {
-    TOKEN_MODIFIER
-        .iter()
-        .position(|t| t == &token_modifier)
-        .unwrap() as u32
+    TOKEN_MODIFIER.iter().position(|t| t == &token_modifier).unwrap() as u32
 }
 
 pub const TOKEN_TYPE: &[lsp_types::SemanticTokenType] = &[

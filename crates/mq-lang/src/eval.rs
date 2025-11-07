@@ -134,29 +134,19 @@ impl Evaluator {
         }
     }
 
-    pub(crate) fn eval<I>(
-        &mut self,
-        program: &Program,
-        input: I,
-    ) -> Result<Vec<RuntimeValue>, InnerError>
+    pub(crate) fn eval<I>(&mut self, program: &Program, input: I) -> Result<Vec<RuntimeValue>, InnerError>
     where
         I: Iterator<Item = RuntimeValue>,
     {
         let mut program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
-            |mut nodes: Vec<Shared<ast::Node>>,
-             node: &Shared<ast::Node>|
-             -> Result<_, InnerError> {
+            |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
                     ast::Expr::Def(ident, params, program) => {
                         define(
                             &self.env,
                             ident.name,
-                            RuntimeValue::Function(
-                                params.clone(),
-                                program.clone(),
-                                Shared::clone(&self.env),
-                            ),
+                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&self.env)),
                         );
                     }
                     ast::Expr::Include(module_id) => {
@@ -214,11 +204,7 @@ impl Evaluator {
     }
 
     #[inline(always)]
-    fn eval_markdown_node(
-        &mut self,
-        program: &Program,
-        node: &mq_markdown::Node,
-    ) -> Result<RuntimeValue, InnerError> {
+    fn eval_markdown_node(&mut self, program: &Program, node: &mq_markdown::Node) -> Result<RuntimeValue, InnerError> {
         node.map_values(&mut |child_node| {
             let value = self.eval_program(
                 program,
@@ -228,9 +214,9 @@ impl Evaluator {
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
-                RuntimeValue::Function(_, _, _)
-                | RuntimeValue::NativeFunction(_)
-                | RuntimeValue::Module(_) => mq_markdown::Node::Empty,
+                RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
+                    mq_markdown::Node::Empty
+                }
                 RuntimeValue::Array(_)
                 | RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)
@@ -244,17 +230,11 @@ impl Evaluator {
     }
 
     pub fn define_string_value(&self, name: &str, value: &str) {
-        define(
-            &self.env,
-            Ident::new(name),
-            RuntimeValue::String(value.to_string()),
-        );
+        define(&self.env, Ident::new(name), RuntimeValue::String(value.to_string()));
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
-        let module = self
-            .module_loader
-            .load_builtin(Shared::clone(&self.token_arena))?;
+        let module = self.module_loader.load_builtin(Shared::clone(&self.token_arena))?;
         self.load_module(module)
     }
 
@@ -269,15 +249,11 @@ impl Evaluator {
     ) -> Result<(), EvalError> {
         for node in &module.modules {
             let _ = match &*node.expr {
-                ast::Expr::Include(_) => {
-                    self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(env))?
-                }
+                ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(env))?,
                 ast::Expr::Module(ident, program) => {
                     self.eval_module(&RuntimeValue::NONE, ident, program, &Shared::clone(env))?
                 }
-                ast::Expr::Import(module_path) => {
-                    self.eval_import(module_path.to_owned(), &Shared::clone(env))?
-                }
+                ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), &Shared::clone(env))?,
                 _ => {
                     return Err(EvalError::InternalError(
                         (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -351,12 +327,7 @@ impl Evaluator {
 
     #[inline(never)]
     #[cfg(feature = "debugger")]
-    fn eval_debugger(
-        &self,
-        runtime_value: &RuntimeValue,
-        node: Shared<ast::Node>,
-        env: Shared<SharedCell<Env>>,
-    ) {
+    fn eval_debugger(&self, runtime_value: &RuntimeValue, node: Shared<ast::Node>, env: Shared<SharedCell<Env>>) {
         let current_call_stack = self.debugger.read().unwrap().current_call_stack();
         let token = get_token(Shared::clone(&self.token_arena), node.token_id);
 
@@ -395,11 +366,7 @@ impl Evaluator {
     }
 
     #[inline(always)]
-    fn eval_include(
-        &mut self,
-        module: ast::Literal,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<(), EvalError> {
+    fn eval_include(&mut self, module: ast::Literal, env: &Shared<SharedCell<Env>>) -> Result<(), EvalError> {
         match module {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -407,9 +374,7 @@ impl Evaluator {
                     .load_from_file(&module_name, Shared::clone(&self.token_arena))?;
                 self.load_module_with_env(module, env)
             }
-            _ => Err(EvalError::ModuleLoadError(
-                module::ModuleError::InvalidModule,
-            )),
+            _ => Err(EvalError::ModuleLoadError(module::ModuleError::InvalidModule)),
         }
     }
 
@@ -438,16 +403,11 @@ impl Evaluator {
                     define(
                         &module_env,
                         ident.name,
-                        RuntimeValue::Function(
-                            params.clone(),
-                            program.clone(),
-                            Shared::clone(&module_env),
-                        ),
+                        RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&module_env)),
                     );
                 }
                 ast::Expr::Let(ident, node) => {
-                    let val =
-                        self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
+                    let val = self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
                     define(&module_env, ident.name, val);
                 }
                 ast::Expr::Import(module_path) => {
@@ -466,11 +426,7 @@ impl Evaluator {
             Shared::clone(&module_env),
         ));
 
-        define(
-            &self.env,
-            Ident::new(module_name_to_use),
-            module_runtime_value,
-        );
+        define(&self.env, Ident::new(module_name_to_use), module_runtime_value);
 
         Ok(runtime_value.clone())
     }
@@ -488,8 +444,7 @@ impl Evaluator {
 
                 if let Ok(module) = module {
                     // Create a new environment for the module exports
-                    let module_env =
-                        Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                    let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 
                     let module_name_to_use = module.name.to_string();
 
@@ -501,29 +456,20 @@ impl Evaluator {
                         Shared::clone(&module_env),
                     ));
 
-                    define(
-                        &self.env,
-                        Ident::new(&module_name_to_use),
-                        module_runtime_value,
-                    );
+                    define(&self.env, Ident::new(&module_name_to_use), module_runtime_value);
 
-                    Ok(RuntimeValue::Module(ModuleEnv::new(
-                        &module_name_to_use,
-                        module_env,
-                    )))
+                    Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
                 } else if matches!(module, Err(ModuleError::AlreadyLoaded(_)))
                     && let Ok(value) = resolve(&module_name, env)
                 {
                     Ok(value)
                 } else {
-                    Err(EvalError::ModuleLoadError(module::ModuleError::NotFound(
-                        Cow::Owned(module_name),
-                    )))
+                    Err(EvalError::ModuleLoadError(module::ModuleError::NotFound(Cow::Owned(
+                        module_name,
+                    ))))
                 }
             }
-            _ => Err(EvalError::ModuleLoadError(
-                module::ModuleError::InvalidModule,
-            )),
+            _ => Err(EvalError::ModuleLoadError(module::ModuleError::InvalidModule)),
         }
     }
 
@@ -554,15 +500,12 @@ impl Evaluator {
                     #[cfg(feature = "sync")]
                     let resolved = module_exports.read().unwrap().resolve(module_ident.name);
 
-                    current_value = resolved
-                        .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))?;
+                    current_value =
+                        resolved.map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))?;
                 }
                 _ => {
                     let token = get_token(Shared::clone(&self.token_arena), token_id);
-                    return Err(EvalError::NotDefined(
-                        (*token).clone(),
-                        module_ident.name.to_string(),
-                    ));
+                    return Err(EvalError::NotDefined((*token).clone(), module_ident.name.to_string()));
                 }
             }
         }
@@ -585,26 +528,13 @@ impl Evaluator {
                                 // Create a dummy node for the function call
                                 let call_node = Shared::new(ast::Node {
                                     token_id,
-                                    expr: Shared::new(ast::Expr::Call(
-                                        func_name.clone(),
-                                        args.clone(),
-                                    )),
+                                    expr: Shared::new(ast::Expr::Call(func_name.clone(), args.clone())),
                                 });
-                                self.call_fn(
-                                    &fn_value,
-                                    call_node,
-                                    func_name.name,
-                                    args,
-                                    runtime_value,
-                                    env,
-                                )
+                                self.call_fn(&fn_value, call_node, func_name.name, args, runtime_value, env)
                             }
                             Err(_) => {
                                 let token = get_token(Shared::clone(&self.token_arena), token_id);
-                                Err(EvalError::NotDefined(
-                                    (*token).clone(),
-                                    func_name.name.to_string(),
-                                ))
+                                Err(EvalError::NotDefined((*token).clone(), func_name.name.to_string()))
                             }
                         }
                     }
@@ -615,18 +545,13 @@ impl Evaluator {
                         #[cfg(feature = "sync")]
                         let resolved = module_exports.read().unwrap().resolve(ident.name);
 
-                        resolved.map_err(|e| {
-                            e.to_eval_error(token_id, Shared::clone(&self.token_arena))
-                        })
+                        resolved.map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
                     }
                 }
             }
             _ => {
                 let token = get_token(Shared::clone(&self.token_arena), token_id);
-                let last_module = module_path
-                    .last()
-                    .map(|m| m.name.to_string())
-                    .unwrap_or_default();
+                let last_module = module_path.last().map(|m| m.name.to_string()).unwrap_or_default();
                 Err(EvalError::NotDefined((*token).clone(), last_module))
             }
         }
@@ -684,32 +609,28 @@ impl Evaluator {
 
         segments
             .iter()
-            .try_fold(
-                String::with_capacity(estimated_capacity),
-                |mut acc, segment| {
-                    match segment {
-                        ast::StringSegment::Text(s) => acc.push_str(s),
-                        ast::StringSegment::Ident(ident) => {
-                            let value = self.eval_ident(*ident, token_id, env)?;
-                            acc.push_str(&value.to_string());
-                        }
-                        ast::StringSegment::Env(env) => {
-                            acc.push_str(&std::env::var(env).map_err(|_| {
-                                EvalError::EnvNotFound(
-                                    (*get_token(Shared::clone(&self.token_arena), token_id))
-                                        .clone(),
-                                    env.clone(),
-                                )
-                            })?);
-                        }
-                        ast::StringSegment::Self_ => {
-                            acc.push_str(&runtime_value.to_string());
-                        }
+            .try_fold(String::with_capacity(estimated_capacity), |mut acc, segment| {
+                match segment {
+                    ast::StringSegment::Text(s) => acc.push_str(s),
+                    ast::StringSegment::Ident(ident) => {
+                        let value = self.eval_ident(*ident, token_id, env)?;
+                        acc.push_str(&value.to_string());
                     }
+                    ast::StringSegment::Env(env) => {
+                        acc.push_str(&std::env::var(env).map_err(|_| {
+                            EvalError::EnvNotFound(
+                                (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
+                                env.clone(),
+                            )
+                        })?);
+                    }
+                    ast::StringSegment::Self_ => {
+                        acc.push_str(&runtime_value.to_string());
+                    }
+                }
 
-                    Ok(acc)
-                },
-            )
+                Ok(acc)
+            })
             .map(|acc| acc.into())
     }
 
@@ -756,19 +677,13 @@ impl Evaluator {
                     .on_breakpoint_hit(&breakpoint, &debug_context);
                 self.debugger.write().unwrap().next(next_action);
             } else if self.debugger.write().unwrap().should_break(&debug_context) {
-                let next_action = self
-                    .debugger_handler
-                    .read()
-                    .unwrap()
-                    .on_step(&debug_context);
+                let next_action = self.debugger_handler.read().unwrap().on_step(&debug_context);
                 self.debugger.write().unwrap().next(next_action);
             }
         }
 
         match &*node.expr {
-            ast::Expr::Block(program) => {
-                self.eval_program(program, runtime_value.clone(), Shared::clone(env))
-            }
+            ast::Expr::Block(program) => self.eval_program(program, runtime_value.clone(), Shared::clone(env)),
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
@@ -779,9 +694,7 @@ impl Evaluator {
 
                 self.eval_fn(runtime_value, Shared::clone(node), ident.name, args, env)
             }
-            ast::Expr::CallDynamic(callable, args) => {
-                self.eval_call_dynamic(runtime_value, callable, args, env)
-            }
+            ast::Expr::CallDynamic(callable, args) => self.eval_call_dynamic(runtime_value, callable, args, env),
             ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
             ast::Expr::Break => Err(EvalError::Break),
             ast::Expr::Continue => Err(EvalError::Continue),
@@ -789,8 +702,7 @@ impl Evaluator {
             ast::Expr::Ident(ident) => self.eval_ident(ident.name, node.token_id, env),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
             ast::Expr::Def(ident, params, program) => {
-                let function =
-                    RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(env));
+                let function = RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(env));
                 define(env, ident.name, function.clone());
                 Ok(function)
             }
@@ -806,9 +718,7 @@ impl Evaluator {
             }
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Until(cond, program) => self.eval_until(runtime_value, cond, program, env),
-            ast::Expr::Try(try_expr, catch_expr) => {
-                self.eval_try(runtime_value, try_expr, catch_expr, env)
-            }
+            ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
             ast::Expr::Foreach(ident, values, body) => {
                 self.eval_foreach(runtime_value, ident.name, values, body, node.token_id, env)
             }
@@ -820,19 +730,11 @@ impl Evaluator {
                 Ok(runtime_value.clone())
             }
             ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env),
-            ast::Expr::Module(ident, program) => {
-                self.eval_module(runtime_value, ident, program, env)
+            ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program, env),
+            ast::Expr::QualifiedAccess(module_name, access_target) => {
+                self.eval_qualified_access(runtime_value, module_name, access_target, node.token_id, env)
             }
-            ast::Expr::QualifiedAccess(module_name, access_target) => self.eval_qualified_access(
-                runtime_value,
-                module_name,
-                access_target,
-                node.token_id,
-                env,
-            ),
-            ast::Expr::Match(value_node, arms) => {
-                self.eval_match(runtime_value, value_node, arms, env)
-            }
+            ast::Expr::Match(value_node, arms) => self.eval_match(runtime_value, value_node, arms, env),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
         }
     }
@@ -882,11 +784,7 @@ impl Evaluator {
 
                 for c in s.chars() {
                     define(&env, ident, RuntimeValue::String(c.to_string()));
-                    match self.eval_program(
-                        body,
-                        RuntimeValue::String(c.to_string()),
-                        Shared::clone(&env),
-                    ) {
+                    match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
                         Ok(result) => results.push(result),
                         Err(EvalError::Break) => break,
                         Err(EvalError::Continue) => continue,
@@ -968,11 +866,7 @@ impl Evaluator {
         }
 
         while cond_value.is_truthy() {
-            match self.eval_program(
-                body,
-                std::mem::take(&mut runtime_value),
-                Shared::clone(&env),
-            ) {
+            match self.eval_program(body, std::mem::take(&mut runtime_value), Shared::clone(&env)) {
                 Ok(new_runtime_value) => {
                     runtime_value = new_runtime_value;
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
@@ -1041,8 +935,7 @@ impl Evaluator {
                 // If there's a guard, evaluate it
                 if let Some(guard_node) = &arm.guard {
                     // Create a new environment with pattern bindings
-                    let guard_env =
-                        Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                    let guard_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
                     for (name, value) in bindings.iter() {
                         define(&guard_env, *name, value.clone());
                     }
@@ -1055,8 +948,7 @@ impl Evaluator {
                 }
 
                 // Pattern matched (and guard passed if present), evaluate body
-                let body_env =
-                    Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                let body_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
                 for (name, value) in bindings {
                     define(&body_env, name, value);
                 }
@@ -1107,11 +999,7 @@ impl Evaluator {
                     _ => false,
                 };
 
-                if matches {
-                    Ok(Some(Vec::new()))
-                } else {
-                    Ok(None)
-                }
+                if matches { Ok(Some(Vec::new())) } else { Ok(None) }
             }
             Pattern::Array(patterns) => {
                 // Array pattern: match array elements
@@ -1216,10 +1104,8 @@ impl Evaluator {
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        let args: Result<builtin::Args, EvalError> = args
-            .iter()
-            .map(|arg| self.eval_expr(runtime_value, arg, env))
-            .collect();
+        let args: Result<builtin::Args, EvalError> =
+            args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
         builtin::eval_builtin(runtime_value, ident, args?)
             .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))
     }
@@ -1272,10 +1158,7 @@ impl Evaluator {
         if let RuntimeValue::Function(params, program, fn_env) = fn_value {
             self.enter_scope()?;
             #[cfg(feature = "debugger")]
-            self.debugger
-                .write()
-                .unwrap()
-                .push_call_stack(Shared::clone(&node));
+            self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
 
             let new_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(fn_env))));
 
@@ -1284,11 +1167,7 @@ impl Evaluator {
                     define(&new_env, id.name, runtime_value.clone());
                 } else {
                     return Err(EvalError::InvalidDefinition(
-                        (*get_token(
-                            Shared::clone(&self.token_arena),
-                            params.first().unwrap().token_id,
-                        ))
-                        .clone(),
+                        (*get_token(Shared::clone(&self.token_arena), params.first().unwrap().token_id)).clone(),
                         ident.to_string(),
                     ));
                 }
@@ -5528,16 +5407,14 @@ mod tests {
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
     ) {
         assert_eq!(
-            Evaluator::new(ModuleLoader::new(None), token_arena)
-                .eval(&program, runtime_values.into_iter()),
+            Evaluator::new(ModuleLoader::new(None), token_arena).eval(&program, runtime_values.into_iter()),
             expected
         );
     }
 
     #[test]
     fn test_include() {
-        let (temp_dir, temp_file_path) =
-            mq_test::create_file("test_module.mq", "def func1(): 42; | let val1 = 1");
+        let (temp_dir, temp_file_path) = mq_test::create_file("test_module.mq", "def func1(): 42; | let val1 = 1");
 
         defer! {
             if temp_file_path.exists() {
@@ -5549,33 +5426,24 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Include(ast::Literal::String(
-                    "test_module".to_string(),
-                ))),
+                expr: Shared::new(ast::Expr::Include(ast::Literal::String("test_module".to_string()))),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Call(
-                    IdentWithToken::new("func1"),
-                    SmallVec::new(),
-                )),
+                expr: Shared::new(ast::Expr::Call(IdentWithToken::new("func1"), SmallVec::new())),
             }),
         ];
         assert_eq!(
-            Evaluator::new(loader, token_arena()).eval(
-                &program,
-                vec![RuntimeValue::String("".to_string())].into_iter()
-            ),
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::Number(42.into())])
         );
     }
 
     #[test]
     fn test_import_qualified_access_function() {
-        let (temp_dir, temp_file_path) = mq_test::create_file(
-            "test_qualified.mq",
-            r#"def greet(name): "Hello, " + name + "!";"#,
-        );
+        let (temp_dir, temp_file_path) =
+            mq_test::create_file("test_qualified.mq", r#"def greet(name): "Hello, " + name + "!";"#);
 
         defer! {
             if temp_file_path.exists() {
@@ -5587,9 +5455,7 @@ mod tests {
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
-                expr: Shared::new(ast::Expr::Import(ast::Literal::String(
-                    "test_qualified".to_string(),
-                ))),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_qualified".to_string()))),
             }),
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5597,26 +5463,21 @@ mod tests {
                     vec![IdentWithToken::new("test_qualified")],
                     ast::AccessTarget::Call(
                         IdentWithToken::new("greet"),
-                        smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(
-                            "World".to_string()
-                        )))],
+                        smallvec![ast_node(ast::Expr::Literal(ast::Literal::String("World".to_string())))],
                     ),
                 )),
             }),
         ];
         assert_eq!(
-            Evaluator::new(loader, token_arena()).eval(
-                &program,
-                vec![RuntimeValue::String("".to_string())].into_iter()
-            ),
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::String("Hello, World!".to_string())])
         );
     }
 
     #[test]
     fn test_import_qualified_access_value() {
-        let (temp_dir, temp_file_path) =
-            mq_test::create_file("test_qualified_val.mq", r#"let answer = 42"#);
+        let (temp_dir, temp_file_path) = mq_test::create_file("test_qualified_val.mq", r#"let answer = 42"#);
 
         defer! {
             if temp_file_path.exists() {
@@ -5641,10 +5502,8 @@ mod tests {
             }),
         ];
         assert_eq!(
-            Evaluator::new(loader, token_arena()).eval(
-                &program,
-                vec![RuntimeValue::String("".to_string())].into_iter()
-            ),
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::Number(42.into())])
         );
     }
@@ -5686,10 +5545,8 @@ mod tests {
             }),
         ];
         assert_eq!(
-            Evaluator::new(loader, token_arena()).eval(
-                &program,
-                vec![RuntimeValue::String("".to_string())].into_iter()
-            ),
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
             Ok(vec![RuntimeValue::Number(30.into())])
         );
     }
@@ -5699,18 +5556,14 @@ mod tests {
         let loader = ModuleLoader::default();
         let program = vec![Shared::new(ast::Node {
             token_id: 0.into(),
-            expr: Shared::new(ast::Expr::Import(ast::Literal::String(
-                "not_found".to_string(),
-            ))),
+            expr: Shared::new(ast::Expr::Import(ast::Literal::String("not_found".to_string()))),
         })];
         assert_eq!(
-            Evaluator::new(loader, token_arena()).eval(
-                &program,
-                vec![RuntimeValue::String("".to_string())].into_iter()
-            ),
-            Err(InnerError::Eval(EvalError::ModuleLoadError(
-                ModuleError::NotFound(Cow::Borrowed("not_found"))
-            )))
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+            Err(InnerError::Eval(EvalError::ModuleLoadError(ModuleError::NotFound(
+                Cow::Borrowed("not_found")
+            ))))
         );
     }
 
@@ -5866,8 +5719,7 @@ mod tests {
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
     ) {
         assert_eq!(
-            Evaluator::new(ModuleLoader::new(None), token_arena)
-                .eval(&program, runtime_values.into_iter()),
+            Evaluator::new(ModuleLoader::new(None), token_arena).eval(&program, runtime_values.into_iter()),
             expected
         );
     }
@@ -5948,9 +5800,9 @@ mod debugger_tests {
 
     #[rstest]
     fn test_eval_debugger_breakpoint_call(token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) {
-        let handler = Shared::new(SharedCell::new(Box::new(TestDebuggerHandler::new(
-            DebuggerAction::Continue,
-        )) as Box<dyn DebuggerHandler>));
+        let handler = Shared::new(SharedCell::new(
+            Box::new(TestDebuggerHandler::new(DebuggerAction::Continue)) as Box<dyn DebuggerHandler>,
+        ));
 
         let mut evaluator = Evaluator::new(ModuleLoader::new(None), token_arena);
         evaluator.debugger_handler = Shared::clone(&handler);

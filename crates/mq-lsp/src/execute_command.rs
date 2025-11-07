@@ -19,9 +19,7 @@ pub fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_js
             .collect::<Vec<_>>()
             .as_slice()
         {
-            [Some(code), Some(input), Some(input_format)] => {
-                execute(code, input, Some(input_format))
-            }
+            [Some(code), Some(input), Some(input_format)] => execute(code, input, Some(input_format)),
             [Some(code), Some(input)] => execute(code, input, None),
             _ => Err(jsonrpc::Error {
                 code: jsonrpc::ErrorCode::InvalidParams,
@@ -37,8 +35,7 @@ pub fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_js
             .as_slice()
         {
             [Some(code)] => {
-                let token_arena =
-                    mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+                let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
                 let program = mq_lang::parse(code, token_arena).map_err(|e| jsonrpc::Error {
                     code: jsonrpc::ErrorCode::InvalidParams,
                     message: Cow::Owned(format!("Error: {}", e)),
@@ -65,32 +62,29 @@ pub fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_js
     }
 }
 
-fn execute(
-    code: &str,
-    input: &str,
-    input_format: Option<&str>,
-) -> jsonrpc::Result<Option<serde_json::Value>> {
+fn execute(code: &str, input: &str, input_format: Option<&str>) -> jsonrpc::Result<Option<serde_json::Value>> {
     let mut engine = mq_lang::Engine::default();
-    let input = match input_format.unwrap_or("markdown") {
-        "markdown" => mq_lang::parse_markdown_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-        "mdx" => mq_lang::parse_mdx_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-        "html" => mq_lang::parse_html_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-        "text" => mq_lang::parse_text_input(input)
-            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-        _ => {
-            return Err(jsonrpc::Error {
-                code: jsonrpc::ErrorCode::InvalidParams,
-                message: Cow::Owned(format!(
-                    "Unsupported input format: {}",
-                    input_format.unwrap_or("unknown")
-                )),
-                data: None,
-            });
-        }
-    };
+    let input =
+        match input_format.unwrap_or("markdown") {
+            "markdown" => mq_lang::parse_markdown_input(input)
+                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
+            "mdx" => mq_lang::parse_mdx_input(input)
+                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
+            "html" => mq_lang::parse_html_input(input)
+                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
+            "text" => mq_lang::parse_text_input(input)
+                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
+            _ => {
+                return Err(jsonrpc::Error {
+                    code: jsonrpc::ErrorCode::InvalidParams,
+                    message: Cow::Owned(format!(
+                        "Unsupported input format: {}",
+                        input_format.unwrap_or("unknown")
+                    )),
+                    data: None,
+                });
+            }
+        };
 
     engine.load_builtin_module();
     let result = engine.eval(code, input.into_iter());
@@ -156,10 +150,7 @@ mod tests {
     fn test_invalid_command() {
         let params = ExecuteCommandParams {
             command: "mq/invalid".to_string(),
-            arguments: vec![
-                Value::String("query".to_string()),
-                Value::String("input".to_string()),
-            ],
+            arguments: vec![Value::String("query".to_string()), Value::String("input".to_string())],
             work_done_progress_params: Default::default(),
         };
 
@@ -192,10 +183,7 @@ mod tests {
         let input = "# Test\nThis is a test".to_string();
         let params = ExecuteCommandParams {
             command: "mq/run".to_string(),
-            arguments: vec![
-                Value::String("invalid_function()".to_string()),
-                input.into(),
-            ],
+            arguments: vec![Value::String("invalid_function()".to_string()), input.into()],
             work_done_progress_params: Default::default(),
         };
 

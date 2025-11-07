@@ -79,8 +79,7 @@ pub use ast::{ast_from_json, ast_to_json};
 pub use engine::Engine;
 pub use error::Error;
 pub use eval::builtin::{
-    BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc,
-    INTERNAL_FUNCTION_DOC,
+    BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc, INTERNAL_FUNCTION_DOC,
 };
 pub use eval::module::{Module, ModuleId, ModuleLoader};
 pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
@@ -135,23 +134,10 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
         include_spaces: true,
     })
     .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-    .map_err(|e| {
-        Box::new(error::Error::from_error(
-            code,
-            e.into(),
-            ModuleLoader::default(),
-        ))
-    })
+    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), ModuleLoader::default())))
     .unwrap();
 
-    let (cst_nodes, errors) = CstParser::new(
-        tokens
-            .into_iter()
-            .map(Shared::new)
-            .collect::<Vec<_>>()
-            .iter(),
-    )
-    .parse();
+    let (cst_nodes, errors) = CstParser::new(tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter()).parse();
 
     (cst_nodes, errors)
 }
@@ -159,13 +145,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
     let tokens = Lexer::new(lexer::Options::default())
         .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-        .map_err(|e| {
-            Box::new(error::Error::from_error(
-                code,
-                e.into(),
-                ModuleLoader::default(),
-            ))
-        })?;
+        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), ModuleLoader::default())))?;
     let mut token_arena = {
         #[cfg(not(feature = "sync"))]
         {
@@ -179,22 +159,12 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
     };
 
     AstParser::new(
-        tokens
-            .into_iter()
-            .map(Shared::new)
-            .collect::<Vec<_>>()
-            .iter(),
+        tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
         &mut token_arena,
         Module::TOP_LEVEL_MODULE_ID,
     )
     .parse()
-    .map_err(|e| {
-        Box::new(error::Error::from_error(
-            code,
-            e.into(),
-            ModuleLoader::default(),
-        ))
-    })
+    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), ModuleLoader::default())))
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.

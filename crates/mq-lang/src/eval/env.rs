@@ -23,10 +23,9 @@ pub enum EnvError {
 impl EnvError {
     pub fn to_eval_error(&self, token_id: TokenId, token_arena: TokenArena) -> EvalError {
         match self {
-            EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(
-                (*get_token(token_arena, token_id)).clone(),
-                def.to_string(),
-            ),
+            EnvError::InvalidDefinition(def) => {
+                EvalError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
+            }
         }
     }
 }
@@ -118,11 +117,7 @@ impl Variable {
 #[cfg(feature = "debugger")]
 impl std::fmt::Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} = {}, type: {}",
-            self.name, self.value, self.type_field
-        )
+        write!(f, "{} = {}, type: {}", self.name, self.value, self.type_field)
     }
 }
 
@@ -158,10 +153,7 @@ impl Env {
                 }
                 None => {
                     // Use optimized string-based builtin lookup
-                    if ident
-                        .resolve_with(builtin::get_builtin_functions_by_str)
-                        .is_some()
-                    {
+                    if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
                         Ok(RuntimeValue::NativeFunction(ident))
                     } else {
                         Err(EnvError::InvalidDefinition(ident.to_string()))
@@ -257,15 +249,10 @@ mod tests {
         let parent_value = RuntimeValue::Number(100.0.into());
 
         #[cfg(not(feature = "sync"))]
-        parent_env
-            .borrow_mut()
-            .define(parent_ident, parent_value.clone());
+        parent_env.borrow_mut().define(parent_ident, parent_value.clone());
 
         #[cfg(feature = "sync")]
-        parent_env
-            .write()
-            .unwrap()
-            .define(parent_ident, parent_value.clone());
+        parent_env.write().unwrap().define(parent_ident, parent_value.clone());
 
         let child_ident = Ident::new("child_var");
         let child_value = RuntimeValue::Number(200.0.into());
@@ -341,10 +328,7 @@ mod tests {
             Variable { name: "dict".to_string(), value: "{\"k1\": \"v1\", \"k2\": 3}".to_string(), type_field: "dict".to_string() }
         ]
     )]
-    fn test_variable_from_and_display(
-        #[case] vars: Vec<(&str, RuntimeValue)>,
-        #[case] expected: Vec<Variable>,
-    ) {
+    fn test_variable_from_and_display(#[case] vars: Vec<(&str, RuntimeValue)>, #[case] expected: Vec<Variable>) {
         for (i, (name, value)) in vars.iter().enumerate() {
             let ident = Ident::new(name);
             let var = Variable::from(ident, value);
@@ -386,28 +370,13 @@ mod tests {
         env.define(Ident::new("bar"), RuntimeValue::Boolean(true));
         env.define(
             Ident::new("func"),
-            RuntimeValue::Function(
-                smallvec![],
-                vec![],
-                Shared::new(SharedCell::new(Env::default())),
-            ),
+            RuntimeValue::Function(smallvec![], vec![], Shared::new(SharedCell::new(Env::default()))),
         );
-        env.define(
-            Ident::new("native"),
-            RuntimeValue::NativeFunction(Ident::new("native")),
-        );
+        env.define(Ident::new("native"), RuntimeValue::NativeFunction(Ident::new("native")));
         // Only non-function, non-native should be returned
         let globals = env.get_global_variables();
-        assert!(
-            globals
-                .iter()
-                .any(|v| v.name == "foo" && v.type_field == "number")
-        );
-        assert!(
-            globals
-                .iter()
-                .any(|v| v.name == "bar" && v.type_field == "bool")
-        );
+        assert!(globals.iter().any(|v| v.name == "foo" && v.type_field == "number"));
+        assert!(globals.iter().any(|v| v.name == "bar" && v.type_field == "bool"));
         assert!(!globals.iter().any(|v| v.name == "func"));
         assert!(!globals.iter().any(|v| v.name == "native"));
 
@@ -429,10 +398,6 @@ mod tests {
         let child_env = Env::with_parent(Shared::downgrade(&parent_env));
         let globals = child_env.get_global_variables();
 
-        assert!(
-            globals
-                .iter()
-                .any(|v| v.name == "p" && v.type_field == "number")
-        );
+        assert!(globals.iter().any(|v| v.name == "p" && v.type_field == "number"));
     }
 }

@@ -55,9 +55,6 @@ let width = 81
 "##;
     println!(
         "{:?}",
-        engine
-            .eval(code, mq_lang::null_input().into_iter())
-            .unwrap()
-            .compact()
+        engine.eval(code, mq_lang::null_input().into_iter()).unwrap().compact()
     );
 }

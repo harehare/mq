@@ -34,12 +34,7 @@ impl RobotsTxt {
                 })
             })
             .as_deref()
-            .ok_or_else(|| {
-                format!(
-                    "Target URL {} does not have a valid domain or host.",
-                    target_url
-                )
-            })?
+            .ok_or_else(|| format!("Target URL {} does not have a valid domain or host.", target_url))?
             .to_string();
 
         let robots_url_str = if let Some(path) = custom_robots_path {
@@ -53,16 +48,15 @@ impl RobotsTxt {
             }
         } else {
             let base_url_str = format!("{}://{}", target_url.scheme(), domain);
-            let base_url = Url::parse(&base_url_str)
-                .map_err(|e| format!("Failed to parse base URL: {}", e))?;
+            let base_url = Url::parse(&base_url_str).map_err(|e| format!("Failed to parse base URL: {}", e))?;
             base_url
                 .join("/robots.txt")
                 .map_err(|e| format!("Failed to join /robots.txt: {}", e))?
                 .to_string()
         };
 
-        let robots_url = Url::parse(&robots_url_str)
-            .map_err(|e| format!("Invalid robots.txt URL {}: {}", robots_url_str, e))?;
+        let robots_url =
+            Url::parse(&robots_url_str).map_err(|e| format!("Invalid robots.txt URL {}: {}", robots_url_str, e))?;
 
         tracing::info!("Fetching robots.txt from: {}", robots_url);
 
@@ -107,9 +101,7 @@ impl RobotsTxt {
         }
 
         // Simple optimization - just avoid reparsing if we have no robots.txt
-        let has_robots = *self
-            .parsed_robots
-            .get_or_init(|| self.robots_text.is_some());
+        let has_robots = *self.parsed_robots.get_or_init(|| self.robots_text.is_some());
 
         if !has_robots {
             return true;
@@ -204,9 +196,7 @@ mod tests {
             let http_client = HttpClient::new_reqwest(30.0).unwrap();
             let custom_url = format!("http://{}/custom-robots.txt", server.address());
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
-            let robots = RobotsTxt::fetch(&http_client, &url, Some(&custom_url))
-                .await
-                .unwrap();
+            let robots = RobotsTxt::fetch(&http_client, &url, Some(&custom_url)).await.unwrap();
 
             assert_eq!(robots.domain, server.address().to_string());
             assert_eq!(robots.robots_text.as_deref(), Some(robots_body));

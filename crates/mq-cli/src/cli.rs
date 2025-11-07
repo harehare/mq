@@ -229,28 +229,19 @@ enum Commands {
 
 impl Cli {
     pub fn run(&self) -> miette::Result<()> {
-        if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None)
-            && self.output.update
-        {
-            return Err(miette!(
-                "The output format is not supported for the update option"
-            ));
+        if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None) && self.output.update {
+            return Err(miette!("The output format is not supported for the update option"));
         }
 
         match &self.commands {
-            Some(Commands::Repl) => {
-                mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
-            }
+            Some(Commands::Repl) => mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run(),
             None if self.query.is_none() => {
                 mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]).run()
             }
             Some(Commands::Lsp { module_paths }) => {
                 tokio::runtime::Runtime::new()
                     .into_diagnostic()?
-                    .block_on(async {
-                        mq_lsp::start(LspConfig::new(module_paths.clone().unwrap_or_default()))
-                            .await
-                    });
+                    .block_on(async { mq_lsp::start(LspConfig::new(module_paths.clone().unwrap_or_default())).await });
                 Ok(())
             }
             Some(Commands::Mcp) => {
@@ -259,14 +250,10 @@ impl Cli {
                     .block_on(async { mq_mcp::start().await });
                 Ok(())
             }
-            Some(Commands::Fmt {
-                indent_width,
-                check,
-            }) => {
-                let mut formatter =
-                    mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-                        indent_width: *indent_width,
-                    }));
+            Some(Commands::Fmt { indent_width, check }) => {
+                let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+                    indent_width: *indent_width,
+                }));
                 for (_, content) in self.read_contents()? {
                     let formatted = formatter.format(&content).into_diagnostic()?;
 
@@ -420,9 +407,7 @@ impl Cli {
             (true, true) => String::new(),
         };
 
-        Ok(aggregate
-            .map(|agg| format!("{} | {}", agg, query))
-            .unwrap_or(query))
+        Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
     fn execute(
@@ -448,9 +433,7 @@ impl Cli {
                     "md" | "markdown" => &InputFormat::Markdown,
                     "mdx" => &InputFormat::Mdx,
                     "html" | "htm" => &InputFormat::Html,
-                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => {
-                        &InputFormat::Raw
-                    }
+                    "txt" | "csv" | "tsv" | "json" | "toml" | "yaml" | "yml" | "xml" => &InputFormat::Raw,
                     _ => &InputFormat::Markdown,
                 }
             } else if io::stdin().is_terminal() {
@@ -468,15 +451,11 @@ impl Cli {
         };
 
         let runtime_values = if self.output.update {
-            let results = engine
-                .eval(query, input.clone().into_iter())
-                .map_err(|e| *e)?;
+            let results = engine.eval(query, input.clone().into_iter()).map_err(|e| *e)?;
             let current_values: mq_lang::RuntimeValues = input.clone().into();
 
             if current_values.len() != results.len() {
-                return Err(miette!(
-                    "The number of input and output values do not match"
-                ));
+                return Err(miette!("The number of input and output values do not match"));
             }
 
             current_values.update_with(results)
@@ -706,11 +685,7 @@ mod tests {
             }
         }
 
-        for format in [
-            OutputFormat::Markdown,
-            OutputFormat::Html,
-            OutputFormat::Text,
-        ] {
+        for format in [OutputFormat::Markdown, OutputFormat::Html, OutputFormat::Text] {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {

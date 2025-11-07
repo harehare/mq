@@ -44,10 +44,9 @@ fn eval_while_speed_test() -> mq_lang::RuntimeValues {
 
 #[divan::bench(name = "eval_select_h")]
 fn eval_select_h() -> mq_lang::RuntimeValues {
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(
-        "# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n",
-    )
-    .unwrap();
+    let markdown: mq_markdown::Markdown =
+        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
+            .unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
     let mut engine = mq_lang::Engine::default();
     engine.eval(".h1", input.into_iter()).unwrap()
@@ -66,16 +65,13 @@ fn eval_string_interpolation() -> mq_lang::RuntimeValues {
 
 #[divan::bench(name = "eval_nodes")]
 fn eval_nodes() -> mq_lang::RuntimeValues {
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(
-        "# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n",
-    )
-    .unwrap();
+    let markdown: mq_markdown::Markdown =
+        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
+            .unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
-    engine
-        .eval(".h | nodes | map(upcase)", input.into_iter())
-        .unwrap()
+    engine.eval(".h | nodes | map(upcase)", input.into_iter()).unwrap()
 }
 
 #[divan::bench]
@@ -170,10 +166,7 @@ fn eval_foreach() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::Engine::default();
     engine.load_builtin_module();
     engine
-        .eval(
-            r#"foreach(x, range(0, 1000, 1)): x + 1;"#,
-            vec!["".into()].into_iter(),
-        )
+        .eval(r#"foreach(x, range(0, 1000, 1)): x + 1;"#, vec!["".into()].into_iter())
         .unwrap()
 }
 

@@ -21,9 +21,7 @@ impl Hir {
             if let Some(ref_name) = &ref_symbol.value {
                 let resolved = self
                     .resolve_ref_symbol_of_scope(ref_symbol.scope, ref_name, ref_symbol_id)
-                    .or_else(|| {
-                        self.resolve_ref_symbol_of_source(self.include_source_ids(), ref_name)
-                    });
+                    .or_else(|| self.resolve_ref_symbol_of_source(self.include_source_ids(), ref_name));
 
                 if let Some((symbol_id, _)) = resolved {
                     self.references.insert(ref_symbol_id, symbol_id);
@@ -43,9 +41,7 @@ impl Hir {
 
         for (_, symbol) in &self.symbols {
             match symbol.kind {
-                SymbolKind::Include(source_id)
-                | SymbolKind::Import(source_id)
-                | SymbolKind::Module(source_id) => {
+                SymbolKind::Include(source_id) | SymbolKind::Import(source_id) | SymbolKind::Module(source_id) => {
                     source_ids.push(source_id);
                 }
                 _ => {}
@@ -145,9 +141,9 @@ impl Hir {
             Some((*symbol_id, symbol.clone()))
         } else {
             // Search in parent scope
-            self.scopes[scope_id].parent_id.and_then(|parent_scope_id| {
-                self.resolve_ref_symbol_of_scope(parent_scope_id, ref_name, ref_symbol_id)
-            })
+            self.scopes[scope_id]
+                .parent_id
+                .and_then(|parent_scope_id| self.resolve_ref_symbol_of_scope(parent_scope_id, ref_name, ref_symbol_id))
         }
     }
 }

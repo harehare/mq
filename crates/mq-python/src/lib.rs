@@ -92,21 +92,14 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult
         InputFormat::Raw => Ok(mq_lang::raw_input(content)),
         InputFormat::Null => Ok(mq_lang::null_input()),
     }
-    .map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e))
-    })?;
+    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e)))?;
 
     engine
         .eval(code, input.into_iter())
         .map(|values| MQResult {
             values: values.into_iter().map(Into::into).collect::<Vec<_>>(),
         })
-        .map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Error evaluating query: {}",
-                e
-            ))
-        })
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e)))
 }
 
 #[pymodule]

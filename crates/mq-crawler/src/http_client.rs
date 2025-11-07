@@ -53,11 +53,7 @@ impl HttpClient {
                         .await
                         .map_err(|e| format!("Failed to read response text: {}", e))
                 } else {
-                    Err(format!(
-                        "Request to {} failed with status: {}",
-                        url,
-                        response.status()
-                    ))
+                    Err(format!("Request to {} failed with status: {}", url, response.status()))
                 }
             }
             HttpClient::Fantoccini(client) => {

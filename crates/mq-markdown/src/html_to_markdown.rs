@@ -39,10 +39,9 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
         let mut keywords: Vec<serde_yaml::Value> = Vec::new();
 
         for meta_node in head_element.select(&meta_selector) {
-            if let (Some(name_attr), Some(content_attr)) = (
-                meta_node.value().attr("name"),
-                meta_node.value().attr("content"),
-            ) && !content_attr.is_empty()
+            if let (Some(name_attr), Some(content_attr)) =
+                (meta_node.value().attr("name"), meta_node.value().attr("content"))
+                && !content_attr.is_empty()
             {
                 match name_attr.to_lowercase().as_str() {
                     "description" => {
@@ -70,24 +69,14 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
         }
 
         if !keywords.is_empty() {
-            fm_map.insert(
-                "keywords".to_string(),
-                serde_yaml::Value::Sequence(keywords),
-            );
+            fm_map.insert("keywords".to_string(), serde_yaml::Value::Sequence(keywords));
         }
     }
 
-    if fm_map.is_empty() {
-        None
-    } else {
-        Some(fm_map)
-    }
+    if fm_map.is_empty() { None } else { Some(fm_map) }
 }
 
-pub fn convert_html_to_markdown(
-    html_input: &str,
-    options: ConversionOptions,
-) -> miette::Result<String> {
+pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) -> miette::Result<String> {
     if html_input.trim().is_empty() {
         return Ok("".to_string());
     }
@@ -126,8 +115,7 @@ pub fn convert_html_to_markdown(
 
     let doc_children: Vec<_> = html.root_element().children().collect();
     let nodes_for_markdown_conversion = parser::map_nodes_to_html_nodes(doc_children)?;
-    let body_markdown =
-        converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, options)?;
+    let body_markdown = converter::convert_nodes_to_markdown(&nodes_for_markdown_conversion, options)?;
 
     Ok(format!("{}{}", front_matter_str, body_markdown))
 }

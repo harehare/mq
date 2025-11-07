@@ -10,8 +10,7 @@ use crate::{
 };
 
 pub fn init_tracing(config: &Config) {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| config.log_level.clone().into());
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| config.log_level.clone().into());
 
     match config.log_format {
         LogFormat::Json => {
@@ -68,9 +67,7 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     );
     cleanup_service.start();
 
-    axum::serve(listener, app)
-        .await
-        .expect("Failed to start server");
+    axum::serve(listener, app).await.expect("Failed to start server");
 
     Ok(())
 }
