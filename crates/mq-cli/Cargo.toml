@@ -29,6 +29,7 @@ clap.workspace = true
 colored.workspace = true
 itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
+mimalloc = {version = "0.1.48", features = ["v3"]}
 mq-dap = {workspace = true, optional = true}
 mq-formatter.workspace = true
 mq-hir.workspace = true
