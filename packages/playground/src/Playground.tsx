@@ -602,37 +602,39 @@ export const Playground = () => {
         }
 
         const values = await mq.definedValues(model.getValue(), moduleName);
-        const suggestions: languages.CompletionItem[] = values.map((value: mq.DefinedValue) => {
-          return {
-            label: value.name,
-            kind:
-              value.valueType === "Function"
-                ? monaco.languages.CompletionItemKind.Function
-                : value.valueType === "Variable"
-                ? monaco.languages.CompletionItemKind.Variable
-                : value.valueType === "Selector"
-                ? monaco.languages.CompletionItemKind.Method
-                : monaco.languages.CompletionItemKind.Property,
-            insertText:
-              value.valueType === "Function"
-                ? `${value.name}(${
-                    value.args
-                      ?.map((name: string, i: number) => `$\{${i}:${name}}`)
-                      .join(", ") || ""
-                  })`
-                : value.name,
-            insertTextRules:
-              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            detail: value.doc,
-            documentation: value.doc,
-            range: {
-              startLineNumber: position.lineNumber,
-              startColumn: wordRange.startColumn,
-              endLineNumber: position.lineNumber,
-              endColumn: wordRange.endColumn,
-            },
-          };
-        });
+        const suggestions: languages.CompletionItem[] = values.map(
+          (value: mq.DefinedValue) => {
+            return {
+              label: value.name,
+              kind:
+                value.valueType === "Function"
+                  ? monaco.languages.CompletionItemKind.Function
+                  : value.valueType === "Variable"
+                  ? monaco.languages.CompletionItemKind.Variable
+                  : value.valueType === "Selector"
+                  ? monaco.languages.CompletionItemKind.Method
+                  : monaco.languages.CompletionItemKind.Property,
+              insertText:
+                value.valueType === "Function"
+                  ? `${value.name}(${
+                      value.args
+                        ?.map((name: string, i: number) => `$\{${i}:${name}}`)
+                        .join(", ") || ""
+                    })`
+                  : value.name,
+              insertTextRules:
+                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              detail: value.doc,
+              documentation: value.doc,
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: wordRange.startColumn,
+                endLineNumber: position.lineNumber,
+                endColumn: wordRange.endColumn,
+              },
+            };
+          }
+        );
 
         const snippets: languages.CompletionItem[] = [
           {
@@ -872,7 +874,7 @@ export const Playground = () => {
             >
               <img src="./logo.svg" className="logo-icon" />
             </a>
-            <h1>Playground</h1>
+            <h1 style={{ color: "#67b8e3" }}>Playground</h1>
           </div>
           <div
             style={{
