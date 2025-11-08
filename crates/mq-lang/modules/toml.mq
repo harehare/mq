@@ -327,7 +327,7 @@ let INFINITY = 9223372036854775807
           let remaining = trim(remaining)
           | let remaining = _skip_comment(remaining)
           | let result = if (len(remaining) == 0 || _is_newline(remaining[0])):
-                      [table, current_section, is_array_section, if (len(remaining) > 0): remaining[1:len(input)] else: ""]
+                      [table, current_section, is_array_section, if (len(remaining) > 0): remaining[1:len(remaining)] else: ""]
                     elif (remaining[0] == "["): do
                         let result = _parse_section_header(remaining)
                         | let _keys = result[0]
