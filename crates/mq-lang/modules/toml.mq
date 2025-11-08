@@ -120,7 +120,7 @@ let INFINITY = 9223372036854775807
 | def _set_nested_value(table, keys, value):
     let key = first(keys)
     | if (len(keys) == 1):
-        if (table[key] && is_array(table[key])):
+        if (!is_none(table[key]) && is_array(table[key])):
           set(table, key, table[key] + value)
         else:
           set(table, key, value)
