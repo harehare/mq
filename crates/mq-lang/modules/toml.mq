@@ -96,7 +96,7 @@ let INFINITY = 9223372036854775807
           | let remaining = trim(key_result[1])
           | let keys = keys + key_result[0]
           | let is_done = len(remaining) == 0 || remaining[0] != "."
-          | let remaining = if (!is_done): remaining[1:len(input)] else: remaining
+          | let remaining = if (!is_done): remaining[1:len(remaining)] else: remaining
           | [keys, remaining]
         end
     | [result[0], result[1]]
