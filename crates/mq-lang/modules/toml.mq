@@ -274,9 +274,9 @@ let INFINITY = 9223372036854775807
           _parse_inline_table(remaining)
         elif (_is_boolean_start(remaining)):
           if (starts_with(remaining, "true")):
-            [true, remaining[4:len(input)]]
+            [true, remaining[4:len(remaining)]]
           elif (starts_with(remaining, "false")):
-            [false, remaining[5:len(input)]]
+            [false, remaining[5:len(remaining)]]
           else:
             [None, remaining]
         elif (starts_with(remaining, "inf") || starts_with(remaining, "+inf")):
