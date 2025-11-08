@@ -237,7 +237,7 @@ let INFINITY = 9223372036854775807
               let key_result = _parse_key(remaining)
               | let key = key_result[0]
               | let remaining = trim(key_result[1])
-              | let remaining = if (len(remaining) > 0 && remaining[0] == "="): remaining[1:len(input)] else: remaining
+              | let remaining = if (len(remaining) > 0 && remaining[0] == "="): remaining[1:len(remaining)] else: remaining
               | let remaining = trim(remaining)
               | let value_result = _parse_value(remaining)
               | let value = value_result[0]
