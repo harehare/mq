@@ -281,7 +281,7 @@ let INFINITY = 9223372036854775807
             [None, remaining]
         elif (starts_with(remaining, "inf") || starts_with(remaining, "+inf")):
           if (starts_with(remaining, "+inf")):
-            [INFINITY, remaining[4:len(input)]]
+            [INFINITY, remaining[4:len(remaining)]]
           else:
             [INFINITY, remaining[3:len(input)]]
         elif (starts_with(remaining, "-inf")):
