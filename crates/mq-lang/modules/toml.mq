@@ -283,11 +283,11 @@ let INFINITY = 9223372036854775807
           if (starts_with(remaining, "+inf")):
             [INFINITY, remaining[4:len(remaining)]]
           else:
-            [INFINITY, remaining[3:len(input)]]
+            [INFINITY, remaining[3:len(remaining)]]
         elif (starts_with(remaining, "-inf")):
-          [NEGATIVE_INFINITY, remaining[4:len(input)]]
+          [NEGATIVE_INFINITY, remaining[4:len(remaining)]]
         elif (_is_not_a_number(remaining)):
-          [NOT_A_NUMBER, remaining[3:len(input)]]
+          [NOT_A_NUMBER, remaining[3:len(remaining)]]
         elif (_is_datetime(remaining)):
           _parse_datetime(remaining)
         elif (len(remaining) > 0 && (_is_digit(remaining[0]) || remaining[0] == "+" || remaining[0] == "-")):
