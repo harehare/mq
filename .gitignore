@@ -91,3 +91,5 @@ example.html
 .github/chatmodes
 
 .serena
+
+tsconfig.tsbuildinfo

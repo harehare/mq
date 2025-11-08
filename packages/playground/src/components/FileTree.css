@@ -1,0 +1,148 @@
+.file-tree-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--tree-bg);
+  border-right: 1px solid var(--tree-border);
+  border-top: 1px solid var(--tree-border);
+  overflow: hidden;
+}
+
+.file-tree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 40px;
+}
+
+.file-tree-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tree-title-color);
+  letter-spacing: 0.5px;
+  margin-left: 8px;
+}
+
+.file-tree-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.file-tree-action-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--tree-title-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.file-tree-action-btn:hover {
+  background-color: var(--tree-border);
+}
+
+.file-tree-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.file-tree-node {
+  user-select: none;
+}
+
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--tree-item-color);
+  transition: background-color 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.file-tree-item:hover {
+  background-color: var(--tree-item-hover-bg);
+}
+
+.file-tree-item.selected {
+  background-color: var(--tree-item-selected-bg);
+  color: var(--tree-item-selected-color);
+}
+
+.file-tree-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.file-tree-spacer {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.file-tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.file-tree-rename-input {
+  flex: 1;
+  background-color: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-focusBorder, #007acc);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  margin-left: 4px;
+}
+
+.file-tree-rename-input:focus {
+  border-color: var(--vscode-focusBorder, #007acc);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+}
+
+.file-tree-children {
+  /* Children are rendered with increased padding via the level prop */
+}
+
+.file-tree-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--tree-empty-color);
+  font-size: 12px;
+}
+
+/* Scrollbar styling for file tree */
+.file-tree-content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.file-tree-content::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.file-tree-content::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+}
+
+.file-tree-content::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
