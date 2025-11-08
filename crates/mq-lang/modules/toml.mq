@@ -225,7 +225,7 @@ let INFINITY = 9223372036854775807
             end
       | let _values = if (is_none(result)): _values else: result[0]
       | let remaining = if (is_none(result)): remaining else: result[1]
-      | let remaining = if (len(remaining) > 0 && remaining[0] == "]"): remaining[1:len(input)] else: remaining
+      | let remaining = if (len(remaining) > 0 && remaining[0] == "]"): remaining[1:len(remaining)] else: remaining
       | [_values, remaining]
     end
 
