@@ -254,7 +254,7 @@ let INFINITY = 9223372036854775807
             end
       | let table = result[0]
       | let remaining = result[1]
-      | let remaining = if (len(remaining) > 0 && remaining[0] == "}"): remaining[1:len(input)] else: remaining
+      | let remaining = if (len(remaining) > 0 && remaining[0] == "}"): remaining[1:len(remaining)] else: remaining
       | [table, remaining]
     end
 
