@@ -38,6 +38,7 @@ const IS_UPDATE_KEY = "mq-playground.is_update";
 const INPUT_FORMAT_KEY = "mq-playground.input_format";
 const SELECTED_FILE_KEY = "mq-playground.selected_file";
 const CURRENT_FILE_PATH_KEY = "mq-playground.current_file_path";
+const SIDEBAR_VISIBLE_KEY = "mq-playground.sidebar-visible";
 
 const EXAMPLE_CATEGORIES: ExampleCategory[] = [
   {
@@ -392,7 +393,7 @@ export const Playground = () => {
     }
 
     // Fall back to localStorage
-    return localStorage.getItem("mq-playground.sidebar-visible") !== "false";
+    return localStorage.getItem(SIDEBAR_VISIBLE_KEY) !== "false";
   });
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved"
@@ -694,7 +695,9 @@ export const Playground = () => {
 
       try {
         const trimmedName = fileName.trim();
-        const path = parentPath ? `${parentPath}/${trimmedName}` : `/${trimmedName}`;
+        const path = parentPath
+          ? `${parentPath}/${trimmedName}`
+          : `/${trimmedName}`;
 
         await fileSystem.writeFile(path, "");
         await loadFiles();
@@ -712,7 +715,11 @@ export const Playground = () => {
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to create file:", error);
-        alert(`Failed to create file: ${error instanceof Error ? error.message : String(error)}`);
+        alert(
+          `Failed to create file: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       }
     },
     [loadFiles]
@@ -734,7 +741,11 @@ export const Playground = () => {
         await loadFiles();
       } catch (error) {
         console.error("Failed to create folder:", error);
-        alert(`Failed to create folder: ${error instanceof Error ? error.message : String(error)}`);
+        alert(
+          `Failed to create folder: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       }
     },
     [loadFiles]
@@ -806,7 +817,9 @@ export const Playground = () => {
 
         // Prevent converting directory to file or vice versa
         if (isDirectory && hasExtension && !currentHasExtension) {
-          alert("Cannot rename a folder to a file name. Folders cannot have file extensions.");
+          alert(
+            "Cannot rename a folder to a file name. Folders cannot have file extensions."
+          );
           setIsRenaming(false);
           return;
         }
@@ -892,6 +905,21 @@ export const Playground = () => {
     );
   }, [isSidebarVisible]);
 
+  // Add keyboard shortcut for save (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveCurrentFile();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [saveCurrentFile]);
+
   const toggleSidebar = useCallback(() => {
     setIsSidebarVisible((prev) => !prev);
   }, []);
@@ -909,15 +937,6 @@ export const Playground = () => {
       keybindings: [monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter],
       run: () => {
         handleRun();
-      },
-    });
-
-    monaco.editor.addEditorAction({
-      id: "save-file",
-      label: "Save File",
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => {
-        saveCurrentFile();
       },
     });
 
@@ -1321,9 +1340,24 @@ export const Playground = () => {
                     className="button save-button"
                     onClick={saveCurrentFile}
                     disabled={saveStatus === "saved"}
-                    title={saveStatus === "saved" ? "No changes to save" : "Save file (Ctrl+S)"}
+                    title={
+                      saveStatus === "saved"
+                        ? "No changes to save"
+                        : "Save file (Ctrl+S)"
+                    }
                   >
-                    {saveStatus === "saving" ? "Saving..." : saveStatus === "unsaved" ? "Save" : "✓ Saved"}
+                    <span className="save-button-content">
+                      {saveStatus === "saving" ? (
+                        "Saving..."
+                      ) : saveStatus === "unsaved" ? (
+                        <>
+                          <div>Save</div>
+                          <div>*</div>
+                        </>
+                      ) : (
+                        "✓ Saved"
+                      )}
+                    </span>
                   </button>
                 )}
                 <button className="button" onClick={handleCopy}>

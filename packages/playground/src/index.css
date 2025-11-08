@@ -227,6 +227,21 @@ body {
   font-weight: 600;
 }
 
+.save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+}
+
+.save-button-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+
 .format-button:disabled,
 .run-button:disabled {
   background-color: #a0aec0;

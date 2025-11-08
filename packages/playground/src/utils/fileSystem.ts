@@ -86,6 +86,7 @@ export class OPFSFileSystem {
         console.log(
           `File ${path} doesn't exist, considering deletion successful`
         );
+        console.error(checkError);
       }
     }
   }
