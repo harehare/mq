@@ -8,7 +8,7 @@ use url::Url;
 pub fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
-    source_map: BiMap<String, mq_hir::SourceId>,
+    source_map: &BiMap<String, mq_hir::SourceId>,
 ) -> Option<DocumentSymbolResponse> {
     source_map.get_by_left(&url.to_string()).map(|source_id| {
         let symbols = hir
@@ -77,7 +77,7 @@ mod tests {
         let hir = Arc::new(RwLock::new(mq_hir::Hir::default()));
         let url = Url::parse("file:///test.mq").unwrap();
         let source_map = BiMap::new();
-        let res = response(hir.clone(), url.clone(), source_map.clone());
+        let res = response(hir.clone(), url.clone(), &source_map);
 
         assert!(res.is_none());
     }
@@ -91,7 +91,7 @@ mod tests {
         let mut source_map = BiMap::new();
         source_map.insert(url.to_string(), source_id);
 
-        let res = response(Arc::new(RwLock::new(hir)), url.clone(), source_map);
+        let res = response(Arc::new(RwLock::new(hir)), url.clone(), &source_map);
         assert!(res.is_some());
 
         if let DocumentSymbolResponse::Nested(symbols) = res.unwrap() {

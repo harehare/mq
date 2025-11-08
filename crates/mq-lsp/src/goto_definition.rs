@@ -7,10 +7,11 @@ use tower_lsp_server::lsp_types::{self, GotoDefinitionResponse, Location, Positi
 use url::Url;
 
 pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<GotoDefinitionResponse> {
-    let source = hir.write().unwrap().source_by_url(&url);
+    let hir_guard = hir.read().unwrap();
+    let source = hir_guard.source_by_url(&url);
 
     if let Some(source) = source {
-        if let Some((_, symbol)) = hir.read().unwrap().find_symbol_in_position(
+        if let Some((_, symbol)) = hir_guard.find_symbol_in_position(
             source,
             mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
         ) {

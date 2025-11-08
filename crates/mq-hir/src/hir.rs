@@ -68,53 +68,42 @@ impl Hir {
 
     /// Returns a list of unused user-defined functions for a given source
     pub fn unused_functions(&self, source_id: SourceId) -> Vec<(SymbolId, &Symbol)> {
-        let mut unused = Vec::new();
-        let user_functions: Vec<_> = self
-            .symbols
-            .iter()
-            .filter(|(_, symbol)| {
-                symbol.is_function()
-                    && symbol.source.source_id == Some(source_id)
-                    && !self.is_builtin_symbol(symbol)
-                    && !symbol.is_internal_function()
-            })
-            .collect();
+        // Build usage map and collect functions in a single pass (O(n))
+        let mut usage_map: FxHashMap<&SmolStr, bool> = FxHashMap::default();
+        let mut user_functions = Vec::new();
 
-        for (func_id, func_symbol) in user_functions {
-            let func_name = match &func_symbol.value {
-                Some(name) => name,
-                None => continue, // Anonymous functions are not considered unused
-            };
-
-            // Check if this function is referenced anywhere
-            let is_used = self.symbols.iter().any(|(call_id, symbol)| {
-                match &symbol.kind {
-                    SymbolKind::Call => {
-                        // Check if the call symbol directly matches the function name
-                        if symbol.value.as_ref() == Some(func_name) && symbol.source.source_id == Some(source_id) {
-                            return true;
-                        }
-                        // Also check if they have argument symbols that match our function name
-                        self.symbols.iter().any(|(_, arg_symbol)| {
-                            arg_symbol.parent == Some(call_id)
-                                && arg_symbol.kind == SymbolKind::Argument
-                                && arg_symbol.value.as_ref() == Some(func_name)
-                                && arg_symbol.source.source_id == Some(source_id)
-                        })
-                    }
-                    SymbolKind::Ref | SymbolKind::Argument => {
-                        symbol.value.as_ref() == Some(func_name) && symbol.source.source_id == Some(source_id)
-                    }
-                    _ => false,
+        for (symbol_id, symbol) in &self.symbols {
+            // Collect user-defined functions from this source
+            if symbol.is_function()
+                && symbol.source.source_id == Some(source_id)
+                && !self.is_builtin_symbol(symbol)
+                && !symbol.is_internal_function()
+            {
+                if let Some(ref name) = symbol.value {
+                    usage_map.entry(name).or_insert(false);
+                    user_functions.push((symbol_id, symbol));
                 }
-            });
-
-            if !is_used {
-                unused.push((func_id, func_symbol));
+            }
+            // Mark functions as used if they're referenced
+            else if let Some(ref name) = symbol.value
+                && matches!(symbol.kind, SymbolKind::Call | SymbolKind::Ref | SymbolKind::Argument)
+                && symbol.source.source_id == Some(source_id)
+            {
+                usage_map.entry(name).and_modify(|used| *used = true).or_insert(true);
             }
         }
 
-        unused
+        // Filter out used functions (O(m) where m = number of user functions)
+        user_functions
+            .into_iter()
+            .filter(|(_, symbol)| {
+                symbol
+                    .value
+                    .as_ref()
+                    .and_then(|name| usage_map.get(name))
+                    .is_none_or(|&used| !used)
+            })
+            .collect()
     }
 
     #[inline(always)]
@@ -181,11 +170,13 @@ impl Hir {
             self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
         });
 
-        self.builtin.functions.clone().keys().for_each(|name| {
+        // Collect keys first to avoid borrow checker issues
+        let function_keys: Vec<_> = self.builtin.functions.keys().cloned().collect();
+        for name in function_keys {
             self.add_symbol(Symbol {
                 value: Some(name.clone()),
                 kind: SymbolKind::Function(
-                    mq_lang::BUILTIN_FUNCTION_DOC[name]
+                    mq_lang::BUILTIN_FUNCTION_DOC[&name]
                         .params
                         .iter()
                         .map(SmolStr::new)
@@ -195,17 +186,18 @@ impl Hir {
                 scope: self.builtin.scope_id,
                 doc: vec![(
                     mq_lang::Range::default(),
-                    mq_lang::BUILTIN_FUNCTION_DOC[name].description.to_string(),
+                    mq_lang::BUILTIN_FUNCTION_DOC[&name].description.to_string(),
                 )],
                 parent: None,
             });
-        });
+        }
 
-        self.builtin.internal_functions.clone().keys().for_each(|name| {
+        let internal_function_keys: Vec<_> = self.builtin.internal_functions.keys().cloned().collect();
+        for name in internal_function_keys {
             self.add_symbol(Symbol {
                 value: Some(name.clone()),
                 kind: SymbolKind::Function(
-                    mq_lang::INTERNAL_FUNCTION_DOC[name]
+                    mq_lang::INTERNAL_FUNCTION_DOC[&name]
                         .params
                         .iter()
                         .map(SmolStr::new)
@@ -215,13 +207,14 @@ impl Hir {
                 scope: self.builtin.scope_id,
                 doc: vec![(
                     mq_lang::Range::default(),
-                    mq_lang::INTERNAL_FUNCTION_DOC[name].description.to_string(),
+                    mq_lang::INTERNAL_FUNCTION_DOC[&name].description.to_string(),
                 )],
                 parent: None,
             });
-        });
+        }
 
-        self.builtin.selectors.clone().keys().for_each(|name| {
+        let selector_keys: Vec<_> = self.builtin.selectors.keys().cloned().collect();
+        for name in selector_keys {
             self.add_symbol(Symbol {
                 value: Some(name.clone()),
                 kind: SymbolKind::Selector,
@@ -229,11 +222,11 @@ impl Hir {
                 scope: self.builtin.scope_id,
                 doc: vec![(
                     mq_lang::Range::default(),
-                    mq_lang::BUILTIN_SELECTOR_DOC[name].description.to_string(),
+                    mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
                 )],
                 parent: None,
             });
-        });
+        }
 
         self.builtin.loaded = true;
     }
@@ -1250,13 +1243,13 @@ impl Hir {
     }
 
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
-        let scope_id = self.scopes.insert(scope.clone());
+        let parent_scope_id = scope.parent_id;
+        let scope_id = self.scopes.insert(scope);
 
-        if let Some(parent_scope_id) = scope.parent_id {
-            let _ = self
-                .scopes
-                .get_mut(parent_scope_id)
-                .map(|scope| scope.add_child(scope_id));
+        if let Some(parent_scope_id) = parent_scope_id
+            && let Some(parent) = self.scopes.get_mut(parent_scope_id)
+        {
+            parent.add_child(scope_id);
         }
 
         scope_id
