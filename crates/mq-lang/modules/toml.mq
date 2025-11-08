@@ -218,7 +218,7 @@ let INFINITY = 9223372036854775807
               | let remaining = trim(value_result[1])
               | let _values = if (is_none(value)): _values else: _values + value
               | let remaining = if (len(remaining) > 0 && remaining[0] == ","):
-                              trim(remaining[1:len(input)])
+                              trim(remaining[1:len(remaining)])
                             else:
                               remaining
               | [_values, remaining]
