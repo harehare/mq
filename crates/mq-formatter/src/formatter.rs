@@ -54,15 +54,11 @@ impl Formatter {
             self.format_node(mq_lang::Shared::clone(node), 0);
         }
 
-        let lines = self.output.lines();
-        let line_count = &lines.count();
-
-        if line_count == &1 {
+        if !self.output.contains('\n') {
             return Ok(self.output.trim_end().to_string());
         }
 
         let mut result = String::with_capacity(self.output.len());
-
         for line in self.output.lines() {
             result.push_str(line.trim_end());
             result.push('\n');
