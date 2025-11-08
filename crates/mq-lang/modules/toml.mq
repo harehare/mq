@@ -5,313 +5,119 @@ let INFINITY = 9223372036854775807
 | let NEGATIVE_INFINITY = -9223372036854775808
 | let NOT_A_NUMBER = to_number("NaN")
 
-|
-
-def _parse_toml_content(input):
-  def _is_digit(char):
-    test(char, "^[0-9]+$")
+| def _is_digit(char):
+    !is_none(char) && test(char, "[0-9]")
   end
 
-  def _is_whitespace(char):
+| def _is_whitespace(char):
     char == " " || char == "\t"
   end
 
-  def _is_newline(char):
+| def _is_newline(char):
     char == "\n" || char == "\r"
   end
 
-  def _is_infinity(input, current_pos):
-    let s1 = join(input[current_pos:current_pos + 3], "")
-    | let s2 = join(input[current_pos:current_pos + 4], "")
-    | s1 == "inf" || s2 == "+inf"
+| def _is_not_a_number(input):
+    starts_with(input, "nan")
   end
 
-  def _is_negative_infinity(input, current_pos):
-    let s = join(input[current_pos:current_pos + 4], "")
-    | s == "-inf"
-  end
-
-  def _is_not_a_number(input, pos):
-    let s = join(input[pos:pos + 3], "")
-    | s == "nan"
-  end
-
-  def _is_alpha_numeric(char):
+| def _is_alpha_numeric(char):
     test(char, "^[a-zA-Z]+$") || _is_digit(char) || char == "_" || char == "-" || char == "[" || char == "]"
   end
 
-  def _skip_whitespace(input, pos):
-    let current_pos = pos
-    | let result = until (current_pos < len(input) && _is_whitespace(input[current_pos])):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | if (is_none(result)): pos else: result
+| def _is_datetime_char(char):
+    _is_digit(char) || char == "-" || char == ":" || char == "T" || char == "t" || char == "Z" || char == "z" || char == "+" || char == "."
   end
 
-  def _skip_whitespace_and_new_line(input, pos):
-    let current_pos = pos
-    | let result = until (current_pos < len(input) && (_is_whitespace(input[current_pos]) || _is_newline(input[current_pos]))):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | if (is_none(result)): pos else: result
+| def _is_datetime(input):
+    # Check for date pattern (YYYY-MM-DD) or time pattern (HH:MM:SS)
+    test(input, "^[0-9]{4}-[0-9]{2}-[0-9]{2}") || test(input, "^[0-9]{2}:[0-9]{2}:[0-9]{2}")
   end
 
-  def _skip_comment(input, pos):
-    if (pos < len(input) && input[pos] == "#"):
+| def _skip_comment(input):
+    if (len(input) > 0 && input[0] == "#"):
       do
-        let current_pos = pos + 1
-        | let result = until (current_pos < len(input) && !_is_newline(input[current_pos])):
-                  let current_pos = current_pos + 1
-                  | current_pos
+        let i = 1
+        | let result = until (i < len(input) && !_is_newline(input[i])):
+                  let i = i + 1
+                  | i
                 end
-        | if (is_none(result)): current_pos else: result
+        | let skip_count = if (is_none(result)): 1 else: result
+        | trim(input[skip_count:len(input)])
       end
     else:
-      pos
+      trim(input)
   end
 
-  def _skip_to_next_line(input, pos):
-    let current_pos = pos
-    | let result = until (current_pos < len(input) && !_is_newline(input[current_pos])):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | let final_pos = if (is_none(result)): pos else: result
-    | if (input[final_pos] == "\r"):
-        if (input[final_pos + 1] == "\n"): final_pos + 2 else: final_pos + 1
-      elif (input[final_pos] == "\n"):
-        final_pos + 1
-      else:
-        final_pos
-  end
-
-  def _parse_key(input, pos):
-    if (input[pos] == "\"" || input[pos] == "'"):
+| def _parse_key(input):
+    if (len(input) > 0 && (input[0] == "\"" || input[0] == "'")):
       do
-        let quote_char = input[pos]
-        | let current_pos = pos + 1
+        let quote_char = input[0]
+        | let i = 1
         | let key_chars = ""
         | let escaped = false
-        | let char = input[current_pos]
-        | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
+        | let result = until (i < len(input) && (escaped || input[i] != quote_char)):
                   let result = if (escaped):
-                    [key_chars + char, false, current_pos + 1]
-                  elif (char == "\\"):
-                    [key_chars, true, current_pos + 1]
+                    [key_chars + input[i], false, i + 1]
+                  elif (input[i] == "\\"):
+                    [key_chars, true, i + 1]
                   else:
-                    [key_chars + char, escaped, current_pos + 1]
+                    [key_chars + input[i], escaped, i + 1]
                   | let key_chars = result[0]
                   | let escaped = result[1]
-                  | let current_pos = result[2]
-                  | let char = input[current_pos]
+                  | let i = result[2]
                   | result
                 end
-        # Add 1 to end_pos to skip the closing quote character
-        | [result[0], result[2] + 1]
+        # Add 1 to skip the closing quote character
+        | let key = result[0]
+        | let consumed = result[2] + 1
+        | [key, input[consumed:len(input)]]
       end
     else:
       do
-        let start_pos = pos
-        | let current_pos = pos
-        | let result = until (current_pos < len(input) && _is_alpha_numeric(input[current_pos])):
-                  let current_pos = current_pos + 1
-                  | current_pos
+        let i = 0
+        | let result = until (i < len(input) && _is_alpha_numeric(input[i])):
+                  let i = i + 1
+                  | i
                 end
-        | let end_pos = if (is_none(result)): pos else: result
-        | let key = join(input[start_pos:end_pos], "")
-        | [key, end_pos]
+        | let consumed = if (is_none(result)): 0 else: result
+        | let key = input[0:consumed]
+        | [key, input[consumed:len(input)]]
       end
   end
 
-  def _parse_dotted_key(input, pos):
+| def _parse_dotted_key(input):
     let keys = []
-    | let current_pos = pos
+    | let remaining = input
     | let is_done = false
     | let result = until (!is_done):
-          let current_pos = _skip_whitespace(input, current_pos)
-          | let key_result = _parse_key(input, current_pos)
-          | let current_pos = _skip_whitespace(input, key_result[1])
+          let remaining = trim(remaining)
+          | let key_result = _parse_key(remaining)
+          | let remaining = trim(key_result[1])
           | let keys = keys + key_result[0]
-          | let is_done = current_pos + 1 >= len(input) || input[current_pos] != "."
-          | let current_pos = if (!is_done): current_pos + 1 else: current_pos
-          | [keys, current_pos]
+          | let is_done = len(remaining) == 0 || remaining[0] != "."
+          | let remaining = if (!is_done): remaining[1:len(input)] else: remaining
+          | [keys, remaining]
         end
     | [result[0], result[1]]
   end
 
-  def _parse_multiline_string(input, pos, delimiter):
-    let current_pos = pos + 3
-    | let char = input[current_pos]
-    | let value_chars = ""
-    | let result = until (current_pos < len(input) && input[current_pos:current_pos + 3] != delimiter):
-          let value_chars = value_chars + char
-          | let current_pos = current_pos + 1
-          | let char = input[current_pos]
-          | [value_chars, current_pos]
-        end
-    | let value = if (is_none(result[0])): "" else: result[0]
-    | let end_pos = if (is_none(result[1])): pos + 1 else: result[1] + 3
-    | [value, end_pos]
-  end
-
-  def _parse_string(input, pos):
-    let quote_char = input[pos]
-    | let current_pos = pos + 1
-    | let char = input[current_pos]
-    | let value_chars = ""
-    | let escaped = false
-    | let result = until (current_pos < len(input) && (escaped || char != quote_char)):
-          let result = if (escaped):
-            [value_chars + char, false, current_pos + 1]
-          elif (char == "\\"):
-            [value_chars, true, current_pos + 1]
-          else:
-            [value_chars + char, escaped, current_pos + 1]
-          | let value_chars = result[0]
-          | let escaped = result[1]
-          | let current_pos = result[2]
-          | let char = input[current_pos]
-          | result
-        end
-    | let value = if (is_none(result[0])): "" else: result[0]
-    | let end_pos = if (is_none(result[2])): pos + 1 else: result[2] + 1
-    | [value, end_pos]
-  end
-
-  def _parse_integer(input, pos):
-    let start_pos = pos
-    | let current_pos = pos
-    | let has_sign = input[current_pos] == "+" || input[current_pos] == "-"
-    | let current_pos = if (has_sign): current_pos + 1 else: current_pos
-    | let result = until (current_pos < len(input) && _is_digit(input[current_pos])):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | let end_pos = if (is_none(result)): current_pos else: result
-    | let value_str = join(input[start_pos:end_pos], "")
-    | let value = to_number(value_str)
-    | [value, end_pos]
-  end
-
-  def _parse_float(input, pos):
-    let start_pos = pos
-    | let current_pos = pos
-    | let has_sign = input[current_pos] == "+" || input[current_pos] == "-"
-    | let current_pos = if (has_sign): current_pos + 1 else: current_pos
-    | let result = until (current_pos < len(input) && (_is_digit(input[current_pos]) || input[current_pos] == ".")):
-          let current_pos = current_pos + 1
-          | current_pos
-        end
-    | let end_pos = if (is_none(result)): current_pos else: result
-    | let value_str = join(input[start_pos:end_pos], "")
-    | let value = to_number(value_str)
-    | [value, end_pos]
-  end
-
-  def _is_boolean_start(input, pos):
-    starts_with(join(input[pos:pos + 4], ""), "true") || starts_with(join(input[pos:pos + 5], ""), "false")
-  end
-
-  def _detect_number_type(input, pos):
-    let temp_pos = pos
+| def _detect_number_type(input):
+    let i = 0
     | let has_dot = false
-    | let result = until (temp_pos < len(input) && (_is_digit(input[temp_pos]) || input[temp_pos] == "." || input[temp_pos] == "+" && input[temp_pos] == "-")):
-          let has_dot = has_dot || input[temp_pos] == "."
-          | let temp_pos = temp_pos + 1
-          | [has_dot, temp_pos]
+    | let result = until (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "+" || input[i] == "-" || input[i] == "_")):
+          let has_dot = has_dot || input[i] == "."
+          | let i = i + 1
+          | [has_dot, i]
         end
     | if (is_none(result)): has_dot else: result[0]
   end
 
-  def _parse_array(input, pos):
-    let current_pos = pos + 1
-    | let _values = []
-    | let current_pos = _skip_whitespace_and_new_line(input, current_pos)
-    | let result = until (current_pos < len(input) && input[current_pos] != "]"):
-          let value_result = _parse_value(input, current_pos)
-          | let value = value_result[0]
-          | let current_pos = value_result[1]
-          | let _values = if (is_none(value)): _values else: _values + value
-          | let current_pos = _skip_whitespace_and_new_line(input, current_pos)
-          | let current_pos = if (current_pos < len(input) && input[current_pos] == ","):
-                      _skip_whitespace_and_new_line(input, current_pos + 1)
-                    else:
-                      current_pos
-          | [_values, current_pos]
-        end
-    | let _values = if (is_none(result)): _values else: result[0]
-    | let current_pos = result[1]
-    | let current_pos = if (is_none(result)): pos elif (current_pos < len(input) && input[current_pos] == "]"): current_pos + 1 else: current_pos
-    | [_values, current_pos]
+| def _is_boolean_start(input):
+    starts_with(input, "true") || starts_with(input, "false")
   end
 
-  def _parse_inline_table(input, pos):
-    let current_pos = pos + 1
-    | let table = {}
-    | let current_pos = _skip_whitespace(input, current_pos)
-    | let result = until (current_pos < len(input) && input[current_pos] != "}"):
-          let key_result = _parse_key(input, current_pos)
-          | let key = key_result[0]
-          | let current_pos = _skip_whitespace(input, key_result[1])
-          | let current_pos = if (current_pos < len(input) && input[current_pos] == "="): current_pos + 1 else: current_pos
-          | let current_pos = _skip_whitespace(input, current_pos)
-          | let value_result = _parse_value(input, current_pos)
-          | let value = value_result[0]
-          | let current_pos = value_result[1]
-          | let table = set(table, key, value)
-          | let current_pos = _skip_whitespace(input, current_pos)
-          | let result = if (current_pos < len(input) && input[current_pos] == ","):
-                      [table, _skip_whitespace(input, current_pos + 1)]
-                    else:
-                      [table, current_pos]
-          | let table = result[0]
-          | let current_pos = result[1]
-          | result
-        end
-    | let table = result[0]
-    | let current_pos = result[1]
-    | let current_pos = if (current_pos < len(input) && input[current_pos] == "}"): current_pos + 1 else: current_pos
-    | [table, current_pos]
-  end
-
-  def _parse_value(input, pos):
-    let current_pos = _skip_whitespace(input, pos)
-    | let current_char = input[current_pos]
-    | let current_char3 = input[current_pos:current_pos + 3]
-    | if (current_pos >= len(input)):
-        [None, current_pos]
-      elif (current_char3 == ["\"", "\"", "\""]):
-        _parse_multiline_string(input, current_pos, ["\"", "\"", "\""])
-      elif (current_char3 == ["'", "'", "'"]):
-        _parse_multiline_string(input, current_pos, ["'", "'", "'"])
-      elif (current_char == "\"" || current_char == "'"):
-        _parse_string(input, current_pos)
-      elif (current_char == "["):
-        _parse_array(input, current_pos)
-      elif (current_char == "{"):
-        _parse_inline_table(input, current_pos)
-      elif (_is_boolean_start(input, current_pos)):
-        if (starts_with(join(input[current_pos:current_pos + 4], ""), "true")):
-          [true, current_pos + 4]
-        elif (starts_with(join(input[current_pos:current_pos + 5], ""), "false")):
-          [false, current_pos + 5]
-        else:
-          [None, current_pos]
-      elif (_is_infinity(input, current_pos)):
-        [INFINITY, current_pos + 3]
-      elif (_is_negative_infinity(input, current_pos)):
-        [NEGATIVE_INFINITY, current_pos + 4]
-      elif (_is_not_a_number(input, current_pos)):
-        [NOT_A_NUMBER, current_pos + 3]
-      elif (_is_digit(input[current_pos]) || input[current_pos] == "+" || input[current_pos] == "-"):
-        if (_detect_number_type(input, current_pos)): _parse_float(input, current_pos) else: _parse_integer(input, current_pos)
-      else:
-        [None, current_pos]
-  end
-
-  def _set_nested_value(table, keys, value):
+| def _set_nested_value(table, keys, value):
     let key = first(keys)
     | if (len(keys) == 1):
         if (is_array(table[first(keys)])):
@@ -326,102 +132,246 @@ def _parse_toml_content(input):
             else: {}, keys[1:len(keys)], value))
   end
 
-  def _parse_key_value_pair(input, pos):
-    let key_result = _parse_dotted_key(input, pos)
-    | let keys = key_result[0]
-    | let current_pos = _skip_whitespace(input, key_result[1])
-    | let current_pos = if (current_pos < len(input) && input[current_pos] == "="): current_pos + 1 else: current_pos
-    | let current_pos = _skip_whitespace(input, current_pos)
-    | let value_result = _parse_value(input, current_pos)
-    | let value = value_result[0]
-    | let current_pos = value_result[1]
-    | [keys, value, current_pos]
-  end
-
-  def _parse_section_header(input, pos):
-    let is_array_section = input[pos:pos + 2] == ["[", "["]
-    | let current_pos = if (is_array_section): pos + 2 else: pos + 1
-    | let key_result = _parse_dotted_key(input, current_pos)
-    | let keys = key_result[0]
-    | let last_key = last(keys)
-    | let last_key = if (is_array_section && ends_with(last_key, "]]")): last_key[0:-2] elif (ends_with(last_key, "]")): last_key[0:-1] else: last_key
-    | let current_pos = key_result[1]
-    | [keys[0:-1] + last_key, is_array_section, current_pos]
-  end
-
-  def _handle_key_value_array(table, current_section, input_chars, pos):
-    let current_pos = pos
-    | let values = {}
-    | let result = until (current_pos < len(input_chars) && input_chars[current_pos] != "["):
-          let result = _parse_key_value_pair(input_chars, current_pos)
-          | let key = first(result[0])
-          | let value = result[1]
-          | if (is_empty(key)): break
-          | let values = insert(values, key, value)
-          | let current_pos = _skip_to_next_line(input_chars, result[2])
-          | [values, current_pos]
-        end
-    | [_set_nested_value(table, current_section, [result[0]]), [], false, result[1]]
-  end
-
-  def _handle_section_header_char(table, input_chars, pos):
-    let result = _parse_section_header(input_chars, pos)
-    | let _keys = result[0]
-    | let is_array_table = result[1]
-    | let end_pos = result[2]
-    | let end_pos = _skip_to_next_line(input_chars, end_pos)
-    | [table, _keys, is_array_table, end_pos]
-  end
-
-  | let input_chars = to_array(input)
-  | let table = {}
-  | let current_section = []
-  | let is_array_section = false
-  | let pos = 0
-  | let result = until (pos < len(input_chars)):
-      let pos = _skip_whitespace(input_chars, pos)
-      | let pos = _skip_comment(input_chars, pos)
-      | let result = if (pos >= len(input_chars) || _is_newline(input_chars[pos])):
-              [table, current_section, is_array_section, pos + 1]
-            elif (input_chars[pos] == "["):
-              _handle_section_header_char(table, input_chars, pos)
-            elif (is_array_section):
-              _handle_key_value_array(table, current_section, input_chars, pos)
-            else:
-              do
-                let result = _parse_key_value_pair(input_chars, pos)
-                | let keys = result[0]
-                | let value = result[1]
-                | let end_pos = result[2]
-                | let updated_table = _set_nested_value(table, current_section + keys, value)
-                | let end_pos = _skip_to_next_line(input_chars, end_pos)
-                | [updated_table, current_section, false, end_pos]
-              end
-      | let table = result[0]
-      | let current_section = result[1]
-      | let is_array_section = result[2]
-      | let pos = result[3]
-      | result
-    end
-  | result[0]
-end
-
 # Parses a TOML string and returns the parsed data structure.
-def toml_parse(input):
-  _parse_toml_content(input)
-end
+| def _parse_toml_content(input):
+    def _parse_multiline_string(input, delimiter):
+      let i = 3
+      | let value_chars = ""
+      | let result = until (i + 2 < len(input) && input[i:i + 3] != delimiter):
+              let value_chars = value_chars + input[i]
+              | let i = i + 1
+              | [value_chars, i]
+            end
+      | let value = if (is_none(result[0])): "" else: result[0]
+      | let consumed = if (is_none(result[1])): 4 else: result[1] + 3
+      | [value, input[consumed:len(input)]]
+    end
+
+    def _parse_string(input):
+      let quote_char = input[0]
+      | let i = 1
+      | let value_chars = ""
+      | let escaped = false
+      | let result = until (i < len(input) && (escaped || input[i] != quote_char)):
+              let result = if (escaped):
+                [value_chars + input[i], false, i + 1]
+              elif (input[i] == "\\"):
+                [value_chars, true, i + 1]
+              else:
+                [value_chars + input[i], escaped, i + 1]
+              | let value_chars = result[0]
+              | let escaped = result[1]
+              | let i = result[2]
+              | result
+            end
+      | let value = if (is_none(result[0])): "" else: result[0]
+      | let consumed = if (is_none(result[2])): 2 else: result[2] + 1
+      | [value, input[consumed:len(input)]]
+    end
+
+    def _parse_integer(input):
+      let i = 0
+      | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
+      | let i = if (has_sign): 1 else: 0
+      | let result = until (i < len(input) && (_is_digit(input[i]) || input[i] == "_")):
+              let i = i + 1
+              | i
+            end
+      | let consumed = if (is_none(result)): i else: result
+      | let value_str = do input[0:consumed] | replace("_", "");
+      | let value = to_number(value_str)
+      | [value, input[consumed:len(input)]]
+    end
+
+    def _parse_float(input):
+      let i = 0
+      | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
+      | let i = if (has_sign): 1 else: 0
+      | let result = until (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "_")):
+              let i = i + 1
+              | i
+            end
+      | let consumed = if (is_none(result)): i else: result
+      | let value_str = do input[0:consumed] | replace("_", "");
+      | let value = to_number(value_str)
+      | [value, input[consumed:len(input)]]
+    end
+
+    def _parse_datetime(input):
+      let i = 0
+      | let result = until (i < len(input) && _is_datetime_char(input[i])):
+              let i = i + 1
+              | i
+            end
+      | let consumed = if (is_none(result)): i else: result
+      | let datetime_str = input[0:consumed]
+      | [datetime_str, input[consumed:len(input)]]
+    end
+
+    def _parse_array(input):
+      let remaining = input[1:len(input)]
+      | let _values = []
+      | let remaining = trim(remaining)
+      | let result = until (len(remaining) > 0 && remaining[0] != "]"):
+              let value_result = _parse_value(remaining)
+              | let value = value_result[0]
+              | let remaining = trim(value_result[1])
+              | let _values = if (is_none(value)): _values else: _values + value
+              | let remaining = if (len(remaining) > 0 && remaining[0] == ","):
+                              trim(remaining[1:len(input)])
+                            else:
+                              remaining
+              | [_values, remaining]
+            end
+      | let _values = if (is_none(result)): _values else: result[0]
+      | let remaining = if (is_none(result)): remaining else: result[1]
+      | let remaining = if (len(remaining) > 0 && remaining[0] == "]"): remaining[1:len(input)] else: remaining
+      | [_values, remaining]
+    end
+
+    def _parse_inline_table(input):
+      let remaining = input[1:len(input)]
+      | let table = {}
+      | let remaining = trim(remaining)
+      | let result = until (len(remaining) > 0 && remaining[0] != "}"):
+              let key_result = _parse_key(remaining)
+              | let key = key_result[0]
+              | let remaining = trim(key_result[1])
+              | let remaining = if (len(remaining) > 0 && remaining[0] == "="): remaining[1:len(input)] else: remaining
+              | let remaining = trim(remaining)
+              | let value_result = _parse_value(remaining)
+              | let value = value_result[0]
+              | let remaining = value_result[1]
+              | let table = set(table, key, value)
+              | let remaining = trim(remaining)
+              | let result = if (len(remaining) > 0 && remaining[0] == ","):
+                              [table, trim(remaining[1:len(input)])]
+                            else:
+                              [table, remaining]
+              | let table = result[0]
+              | let remaining = result[1]
+              | result
+            end
+      | let table = result[0]
+      | let remaining = result[1]
+      | let remaining = if (len(remaining) > 0 && remaining[0] == "}"): remaining[1:len(input)] else: remaining
+      | [table, remaining]
+    end
+
+    def _parse_value(input):
+      let remaining = trim(input)
+      | if (len(remaining) == 0):
+          [None, remaining]
+        elif (starts_with(remaining, "\"\"\"")):
+          _parse_multiline_string(remaining, "\"\"\"")
+        elif (starts_with(remaining, "'''")):
+          _parse_multiline_string(remaining, "'''")
+        elif (len(remaining) > 0 && (remaining[0] == "\"" || remaining[0] == "'")):
+          _parse_string(remaining)
+        elif (len(remaining) > 0 && remaining[0] == "["):
+          _parse_array(remaining)
+        elif (len(remaining) > 0 && remaining[0] == "{"):
+          _parse_inline_table(remaining)
+        elif (_is_boolean_start(remaining)):
+          if (starts_with(remaining, "true")):
+            [true, remaining[4:len(input)]]
+          elif (starts_with(remaining, "false")):
+            [false, remaining[5:len(input)]]
+          else:
+            [None, remaining]
+        elif (starts_with(remaining, "inf") || starts_with(remaining, "+inf")):
+          if (starts_with(remaining, "+inf")):
+            [INFINITY, remaining[4:len(input)]]
+          else:
+            [INFINITY, remaining[3:len(input)]]
+        elif (starts_with(remaining, "-inf")):
+          [NEGATIVE_INFINITY, remaining[4:len(input)]]
+        elif (_is_not_a_number(remaining)):
+          [NOT_A_NUMBER, remaining[3:len(input)]]
+        elif (_is_datetime(remaining)):
+          _parse_datetime(remaining)
+        elif (len(remaining) > 0 && (_is_digit(remaining[0]) || remaining[0] == "+" || remaining[0] == "-")):
+          if (_detect_number_type(remaining)): _parse_float(remaining) else: _parse_integer(remaining)
+        else:
+          [None, remaining]
+    end
+
+    def _parse_key_value_pair(input):
+      let key_result = _parse_dotted_key(input)
+      | let keys = key_result[0]
+      | let remaining = trim(key_result[1])
+      | let remaining = if (len(remaining) > 0 && remaining[0] == "="): remaining[1:len(input)] else: remaining
+      | let remaining = trim(remaining)
+      | let value_result = _parse_value(remaining)
+      | let value = value_result[0]
+      | let remaining = value_result[1]
+      | [keys, value, remaining]
+    end
+
+    def _parse_section_header(input):
+      let is_array_section = starts_with(input, "[[")
+      | let temp_remaining = if (is_array_section): input[2:len(input)] else: input[1:len(input)]
+      | let key_result = _parse_dotted_key(temp_remaining)
+      | let keys = key_result[0]
+      | let last_key = last(keys)
+      | let last_key = if (is_array_section && ends_with(last_key, "]]")): last_key[0:-2] elif (ends_with(last_key, "]")): last_key[0:-1] else: last_key
+      | let temp_remaining = key_result[1]
+      | [keys[0:-1] + last_key, is_array_section, temp_remaining]
+    end
+
+    | let table = {}
+    | let current_section = []
+    | let is_array_section = false
+    | let remaining = input
+    | let result = until (len(remaining) > 0):
+          let remaining = trim(remaining)
+          | let remaining = _skip_comment(remaining)
+          | let result = if (len(remaining) == 0 || _is_newline(remaining[0])):
+                      [table, current_section, is_array_section, if (len(remaining) > 0): remaining[1:len(input)] else: ""]
+                    elif (remaining[0] == "["): do
+                        let result = _parse_section_header(remaining)
+                        | let _keys = result[0]
+                        | let is_array_table = result[1]
+                        | let temp_remaining = result[2]
+                        | let temp_remaining = trim(temp_remaining)
+                        | [table, _keys, is_array_table, temp_remaining]
+                      end
+                    elif (is_array_section):
+                      do
+                        let values = {}
+                        | let temp_remaining = remaining
+                        | let result = until (len(temp_remaining) > 0 && temp_remaining[0] != "["):
+                                                  let result = _parse_key_value_pair(temp_remaining)
+                                                  | let key = first(result[0])
+                                                  | let value = result[1]
+                                                  | if (is_empty(key)): break
+                                                  | let values = insert(values, key, value)
+                                                  | let temp_remaining = trim(result[2])
+                                                  | [values, temp_remaining]
+                                                end
+                        | [_set_nested_value(table, current_section, [result[0]]), [], false, result[1]]
+                      end
+                    else:
+                      do
+                        let result = _parse_key_value_pair(remaining)
+                        | let keys = result[0]
+                        | let value = result[1]
+                        | let temp_remaining = result[2]
+                        | let updated_table = _set_nested_value(table, current_section + keys, value)
+                        | let temp_remaining = trim(temp_remaining)
+                        | [updated_table, current_section, false, temp_remaining]
+                      end
+          | let table = result[0]
+          | let current_section = result[1]
+          | let is_array_section = result[2]
+          | let remaining = result[3]
+          | result
+        end
+    | result[0]
+  end
 
 def _escape_string(str):
-  replace(
-    replace(
-      replace(
-        replace(str, "\\", "\\\\"),
-        "\"", "\\\""
-      ),
-      "\n", "\\n"
-    ),
-    "\t", "\\t"
-  )
+  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
 end
 
 def _add_toml_lines(lines, key, value):
@@ -447,6 +397,11 @@ def _toml_stringify_value(value):
     ""
   else:
     to_string(value)
+end
+
+# Parses a TOML string and returns the parsed data structure.
+def toml_parse(input):
+  _parse_toml_content(input)
 end
 
 # Converts a data structure to a TOML string representation.
