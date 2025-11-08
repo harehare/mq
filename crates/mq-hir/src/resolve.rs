@@ -4,6 +4,7 @@ use crate::{Hir, ScopeId, SourceId, Symbol, SymbolId, SymbolKind};
 
 impl Hir {
     pub fn resolve(&mut self) {
+        // Extract only the fields we need instead of cloning the entire Symbol
         let symbols_to_resolve: Vec<_> = self
             .symbols
             .iter()
@@ -12,16 +13,16 @@ impl Hir {
                 | SymbolKind::Call
                 | SymbolKind::CallDynamic
                 | SymbolKind::Argument
-                | SymbolKind::QualifiedAccess => Some((ref_symbol_id, ref_symbol.clone())),
+                | SymbolKind::QualifiedAccess => Some((ref_symbol_id, ref_symbol.scope, ref_symbol.value.clone())),
                 _ => None,
             })
             .collect();
 
-        for (ref_symbol_id, ref_symbol) in symbols_to_resolve {
-            if let Some(ref_name) = &ref_symbol.value {
+        for (ref_symbol_id, scope, ref_name) in symbols_to_resolve {
+            if let Some(ref_name) = ref_name {
                 let resolved = self
-                    .resolve_ref_symbol_of_scope(ref_symbol.scope, ref_name, ref_symbol_id)
-                    .or_else(|| self.resolve_ref_symbol_of_source(self.include_source_ids(), ref_name));
+                    .resolve_ref_symbol_of_scope(scope, &ref_name, ref_symbol_id)
+                    .or_else(|| self.resolve_ref_symbol_of_source(self.include_source_ids(), &ref_name));
 
                 if let Some((symbol_id, _)) = resolved {
                     self.references.insert(ref_symbol_id, symbol_id);

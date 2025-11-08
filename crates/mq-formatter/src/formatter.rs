@@ -54,28 +54,14 @@ impl Formatter {
             self.format_node(mq_lang::Shared::clone(node), 0);
         }
 
-        let mut result = String::with_capacity(self.output.len());
-        let mut start = 0;
-
-        // Process each line by finding newlines
-        while let Some(newline_pos) = self.output[start..].find('\n') {
-            let line_end = start + newline_pos;
-            let line = &self.output[start..line_end];
-            result.push_str(line.trim_end());
-            result.push('\n');
-            start = line_end + 1;
+        if !self.output.contains('\n') {
+            return Ok(self.output.trim_end().to_string());
         }
 
-        // Handle the last line (if any) that doesn't end with newline
-        if start < self.output.len() {
-            let last_line = &self.output[start..];
-            result.push_str(last_line.trim_end());
-            // Only add newline if original ended with newline
-            if self.output.ends_with('\n') {
-                result.push('\n');
-            }
-        } else if result.ends_with('\n') && !self.output.ends_with('\n') {
-            result.pop();
+        let mut result = String::with_capacity(self.output.len());
+        for line in self.output.lines() {
+            result.push_str(line.trim_end());
+            result.push('\n');
         }
 
         Ok(result)
@@ -1205,8 +1191,8 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case("", "")]
-    #[case(
+    #[case::empty("", "")]
+    #[case::if_(
         "if(test):
         test
         else:
@@ -1214,21 +1200,24 @@ mod tests {
         "if (test):
   test
 else:
-  test2"
+  test2
+"
     )]
-    #[case(
+    #[case::def_(
         "def name(test):
         test | test2;",
         "def name(test):
-  test | test2;"
+  test | test2;
+"
     )]
-    #[case(
+    #[case::foreach_(
         "foreach(x,array(1, 2, 3)):
         add(x, 1);",
         "foreach (x, array(1, 2, 3)):
-  add(x, 1);"
+  add(x, 1);
+"
     )]
-    #[case(
+    #[case::def_(
         "def test():
         test1
         |test2
@@ -1236,7 +1225,8 @@ else:
         "def test():
   test1
   | test2
-  | test3;"
+  | test3;
+"
     )]
     #[case("test()|test2()", "test() | test2()")]
     #[case(
@@ -1251,7 +1241,8 @@ else:
 elif (test2):
   test2
 else:
-  test3"
+  test3
+"
     )]
     #[case::if_(
         "if(test):
@@ -1265,7 +1256,8 @@ else:
 elif (test2):
   test2
 else:
-  test3"
+  test3
+"
     )]
     #[case::if_(
         "if(test):
@@ -1275,7 +1267,8 @@ else:
         "if (test):
   test
 else:
-  test2"
+  test2
+"
     )]
     #[case::if_else(
         "if(test):
@@ -1287,7 +1280,8 @@ else:
   test
 else: do
     test2
-  end"
+  end
+"
     )]
     #[case::one_line("if(test): test else: test2", "if (test): test else: test2")]
     #[case::one_line(
@@ -1304,7 +1298,8 @@ else: do
         "while(condition()):
         process();",
         "while (condition()):
-  process();"
+  process();
+"
     )]
     #[case::while_oneline("while(condition()): process();", "while (condition()): process();")]
     #[case::while_with_pipe(
@@ -1315,13 +1310,15 @@ else: do
         "while (check_condition()):
   data
   | process()
-  | output();"
+  | output();
+"
     )]
     #[case::until_multiline(
         "until(finished()):
         continue_process();",
         "until (finished()):
-  continue_process();"
+  continue_process();
+"
     )]
     #[case::until_oneline("until(finished()): continue_process();", "until (finished()): continue_process();")]
     #[case::def(
@@ -1352,7 +1349,8 @@ None"##,
   elif (eq(to_md_name(), "h5")):
     to_md_list(link, 5)
   else:
-    None"##
+    None
+"##
     )]
     #[case::def(
         r#"def snake_to_camel(x):
@@ -1370,7 +1368,8 @@ None"##,
       | let rest_str = downcase(slice(word, 1, len(word)))
       | s"${first_char}${rest_str}";
   | join("");
-| snake_to_camel()"#
+| snake_to_camel()
+"#
     )]
     #[case::def(
         r#"def snake_to_camel(x): let words = split(x, "_") | foreach (word, words): let first_char = upcase(first(word)) | let rest_str = downcase(slice(word, 1, len(word))) | add(first_char, rest_str); | join("");| snake_to_camel()"#,
@@ -1381,7 +1380,8 @@ None"##,
         r#"test(
 "test")"#,
         r#"test(
-  "test")"#
+  "test")
+"#
     )]
     #[case::call(
         r#"test(
@@ -1389,7 +1389,8 @@ None"##,
   )"#,
         r#"test(
   "test"
-)"#
+)
+"#
     )]
     #[case::call(
         r#"test(
@@ -1401,7 +1402,8 @@ None"##,
   "test"
   ,"test"
   ,true
-)"#
+)
+"#
     )]
     #[case::interpolated_string(
         r#"test(
@@ -1409,7 +1411,8 @@ s"test${val1}"
   )"#,
         r#"test(
   s"test${val1}"
-)"#
+)
+"#
     )]
     #[case::include("include  \"test.mq\"", "include \"test.mq\"")]
     #[case::nodes("nodes|nodes", "nodes | nodes")]
@@ -1418,7 +1421,8 @@ s"test${val1}"
         "fn(arg1,arg2):
         program;",
         "fn(arg1, arg2):
-  program;"
+  program;
+"
     )]
     #[case::fn_args("map( fn():program;)", "map(fn(): program;)")]
     #[case::array_empty("[]", "[]")]
@@ -1433,7 +1437,7 @@ s"test${val1}"
     2,
     3
     ]"#,
-        "[\n  1,\n  2,\n  3\n]"
+        "[\n  1,\n  2,\n  3\n]\n"
     )]
     #[case::let_with_array(r#"let arr = [1, 2, 3]"#, r#"let arr = [1, 2, 3]"#)]
     #[case::let_with_array_multiline(
@@ -1442,7 +1446,7 @@ s"test${val1}"
 2,
 3
 ]"#,
-        "let arr = [\n  1,\n  2,\n  3\n]"
+        "let arr = [\n  1,\n  2,\n  3\n]\n"
     )]
     #[case::dict_empty("{}", "{}")]
     #[case::def_with_let_and_array(
@@ -1476,7 +1480,7 @@ s"test${val1}"
 "key1": "value1",
 "key2": "value2"
 }"#,
-        "{\n  \"key1\": \"value1\",\n  \"key2\": \"value2\"\n}"
+        "{\n  \"key1\": \"value1\",\n  \"key2\": \"value2\"\n}\n"
     )]
     #[case::dict_multiline_mixed(
         r#"{
@@ -1484,7 +1488,7 @@ s"test${val1}"
 "num": 42,
 "bool": true
 }"#,
-        "{\n  \"str\": \"value\",\n  \"num\": 42,\n  \"bool\": true\n}"
+        "{\n  \"str\": \"value\",\n  \"num\": 42,\n  \"bool\": true\n}\n"
     )]
     #[case::equal_operator("let x = 1 == 2", "let x = 1 == 2")]
     #[case::not_equal_operator("let y = 3 != 4", "let y = 3 != 4")]
@@ -1494,7 +1498,8 @@ s"test${val1}"
         r#"let x =
 "test""#,
         r#"let x =
-  "test""#
+  "test"
+"#
     )]
     #[case::let_with_if_multiline(
         r#"let x = if(test):
@@ -1504,13 +1509,15 @@ test2"#,
         r#"let x = if (test):
   test
 else:
-  test2"#
+  test2
+"#
     )]
     #[case::let_with_while_multiline(
         r#"let x = while(condition()):
 process();"#,
         r#"let x = while (condition()):
-  process();"#
+  process();
+"#
     )]
     #[case::less_than_operator("let x = 1 < 2", "let x = 1 < 2")]
     #[case::less_than_equal_operator("let x = 1 <= 2", "let x = 1 <= 2")]
@@ -1532,7 +1539,8 @@ process();"#,
 || 3"#,
         "1
  || 2
- || 3"
+ || 3
+"
     )]
     #[case::binary_op_multiline(
         r#"let v = 1
@@ -1540,7 +1548,8 @@ process();"#,
 || 3"#,
         "let v = 1
    || 2
-   || 3"
+   || 3
+"
     )]
     #[case::def_contains(
         r#"def contains(haystack, needle):
@@ -1586,7 +1595,8 @@ end
         r#"let x = until(condition()):
 process();"#,
         r#"let x = until (condition()):
-  process();"#
+  process();
+"#
     )]
     #[case::let_with_until_multiline2(
         r#""test"
@@ -1594,13 +1604,15 @@ process();"#,
 process();"#,
         r#""test"
 | let x = until (condition()):
-  process();"#
+  process();
+"#
     )]
     #[case::let_with_while_multiline(
         r#"let x = while(condition()):
 process();"#,
         r#"let x = while (condition()):
-  process();"#
+  process();
+"#
     )]
     #[case::let_with_while_multiline2(
         r#""test"
@@ -1608,24 +1620,25 @@ process();"#,
 process();"#,
         r#""test"
 | let x = while (condition()):
-  process();"#
+  process();
+"#
     )]
-    #[case::array_index_access("let arr = [1, 2, 3]\n|arr[1]", "let arr = [1, 2, 3]\n| arr[1]")]
+    #[case::array_index_access("let arr = [1, 2, 3]\n|arr[1]", "let arr = [1, 2, 3]\n| arr[1]\n")]
     #[case::array_index_access_inline("arr[0]", "arr[0]")]
     #[case::dict_index_access(
         "let d = {\"key\": \"value\"}\n|d[\"key\"]",
-        "let d = {\"key\": \"value\"}\n| d[\"key\"]"
+        "let d = {\"key\": \"value\"}\n| d[\"key\"]\n"
     )]
     #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
-    #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1")]
+    #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1\n")]
     #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline(
         "let x = 1\n# multiline comment\nlet y = 2",
-        "let x = 1\n# multiline comment\nlet y = 2"
+        "let x = 1\n# multiline comment\nlet y = 2\n"
     )]
     #[case::comment_after_expr_multiline(
         "if(test):\n  test # comment\nelse:\n  test2 # comment2",
-        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2\n"
     )]
     #[case::comment_after_expr_inline(
         "if(test): test # comment else: test2 # comment2",
@@ -1634,13 +1647,13 @@ process();"#,
     #[case::fn_as_call_arg_single_line("map(fn(): program;)", "map(fn(): program;)")]
     #[case::fn_as_call_arg_multi_line(
         "map(\n  fn(arg):\n    process(arg);\n)",
-        "map(\n  fn(arg):\n    process(arg);\n)"
+        "map(\n  fn(arg):\n    process(arg);\n)\n"
     )]
     #[case::fn_as_call_arg_with_other_args("map(fn(): program;, 1, \"test\")", "map(fn(): program;, 1, \"test\")")]
     #[case::nested_fn_as_call_arg("outer(map(fn(): inner();))", "outer(map(fn(): inner();))")]
     #[case::fn_as_call_arg_with_multiline_args(
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)",
-        "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)"
+        "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)\n"
     )]
     #[case::group_simple("(1)", "(1)")]
     #[case::group_with_expr("(1 + 2)", "(1 + 2)")]
@@ -1662,7 +1675,8 @@ catch:
         "try:
   process()
 catch:
-  handle_error()"
+  handle_error()
+"
     )]
     #[case::try_catch_oneline("try: process() catch: handle_error()", "try: process() catch: handle_error()")]
     #[case::try_catch_with_finally(
@@ -1703,7 +1717,8 @@ process();
   "key1": fn():
     process();
   ,"key2": "value2"
-}"#
+}
+"#
     )]
     #[case::do_block_multiline(
         r#"do
@@ -1749,7 +1764,8 @@ end"#,
   | 1: "one"
   | 2: "two"
   | _: "other"
-end"#
+end
+"#
     )]
     #[case::match_with_guard(
         "match(x): | n if(n > 0): \"positive\" | _: \"non-positive\" end",
@@ -1781,7 +1797,8 @@ end"#,
   | 1: "one"
   | 2: "two"
   | _: "other"
-end"#
+end
+"#
     )]
     #[case::match_with_type_pattern(
         "match(val): | :string: \"is string\" | :number: \"is number\" | _: \"other\" end",
@@ -1797,7 +1814,8 @@ end"#
 | match (x):
     | 1: "one"
     | 2: "two"
-  end"#
+  end
+"#
     )]
     #[case::dict_nested_multiline_level3(
         r#"{
@@ -1813,7 +1831,8 @@ end"#
       "level3": "value"
     }
   }
-}"#
+}
+"#
     )]
     #[case::array_nested_multiline_level3(
         r#"[
@@ -1829,21 +1848,22 @@ end"#
       "value"
     ]
   ]
-]"#
+]
+"#
     )]
-    #[case::comment_with_newline("# comment\nlet x = 1", "# comment\nlet x = 1")]
+    #[case::comment_with_newline("# comment\nlet x = 1", "# comment\nlet x = 1\n")]
     #[case::comment_with_indent(
         "if(test):\n  test # comment\nelse:\n  test2 # comment2",
-        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2\n"
     )]
     #[case::comment_inline_with_indent("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline_with_indent(
         "let x = 1\n  # multiline comment\nlet y = 2",
-        "let x = 1\n# multiline comment\nlet y = 2"
+        "let x = 1\n# multiline comment\nlet y = 2\n"
     )]
     #[case::comment_after_expr_multiline_with_indent(
         "if(test):\n  test # comment\nelse:\n    test2 # comment2",
-        "if (test):\n  test # comment\nelse:\n  test2 # comment2"
+        "if (test):\n  test # comment\nelse:\n  test2 # comment2\n"
     )]
     #[case::comment_after_expr_inline_with_indent(
         "if(test): test # comment else:    test2 # comment2",
@@ -1859,7 +1879,8 @@ end"#,
         r#"module test:
   import "foo.mq"
   | def main(): test();
-end"#
+end
+"#
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);

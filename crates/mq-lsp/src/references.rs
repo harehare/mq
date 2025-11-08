@@ -11,18 +11,17 @@ pub fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     position: Position,
-    source_map: BiMap<String, mq_hir::SourceId>,
+    source_map: &BiMap<String, mq_hir::SourceId>,
 ) -> Option<Vec<Location>> {
-    let source = hir.write().unwrap().source_by_url(&url);
+    let hir_guard = hir.read().unwrap();
+    let source = hir_guard.source_by_url(&url);
 
     if let Some(source) = source {
-        if let Some((symbol_id, _)) = hir.read().unwrap().find_symbol_in_position(
+        if let Some((symbol_id, _)) = hir_guard.find_symbol_in_position(
             source,
             mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
         ) {
-            let locations = hir
-                .read()
-                .unwrap()
+            let locations = hir_guard
                 .references(symbol_id)
                 .iter()
                 .filter_map(|(_, symbol)| {
@@ -72,7 +71,7 @@ mod tests {
         let url = Url::parse("file:///test.mq").unwrap();
         let position = Position::new(0, 0);
 
-        let result = response(hir, url, position, source_map);
+        let result = response(hir, url, position, &source_map);
         assert!(result.is_none());
     }
 
@@ -87,7 +86,7 @@ mod tests {
         source_map.insert(url.to_string(), source_id);
 
         let position = Position::new(0, 5);
-        let result = response(hir, url, position, source_map);
+        let result = response(hir, url, position, &source_map);
 
         assert!(result.is_some());
         let locations = result.unwrap();

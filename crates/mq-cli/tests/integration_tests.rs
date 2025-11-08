@@ -35,7 +35,7 @@ fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
 #[case::format(
     vec!["fmt"],
     "def test(x):\nadd(x,1);\n| map(array(1,2,3),test)",
-    Some("def test(x):\n  add(x, 1);\n| map(array(1, 2, 3), test)\n")
+    Some("def test(x):\n  add(x, 1);\n| map(array(1, 2, 3), test)\n\n")
 )]
 #[case::docs(
     vec!["docs"],

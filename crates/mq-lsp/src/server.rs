@@ -123,11 +123,12 @@ impl LanguageServer for Backend {
         let url = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
+        let source_map_guard = self.source_map.read().unwrap();
         Ok(references::response(
             Arc::clone(&self.hir),
             to_url(&url),
             position,
-            self.source_map.read().unwrap().clone(),
+            &source_map_guard,
         ))
     }
 
@@ -136,10 +137,11 @@ impl LanguageServer for Backend {
         params: lsp_types::DocumentSymbolParams,
     ) -> jsonrpc::Result<Option<lsp_types::DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
+        let source_map_guard = self.source_map.read().unwrap();
         Ok(document_symbol::response(
             Arc::clone(&self.hir),
             to_url(&uri),
-            self.source_map.read().unwrap().clone(),
+            &source_map_guard,
         ))
     }
 
@@ -157,11 +159,12 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
+        let source_map_guard = self.source_map.read().unwrap();
         Ok(completions::response(
             Arc::clone(&self.hir),
             to_url(&uri),
             position,
-            self.source_map.read().unwrap().clone(),
+            &source_map_guard,
         ))
     }
 
@@ -209,9 +212,10 @@ impl Backend {
         };
         let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
-        self.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        self.cst_nodes_map.insert(uri.to_string(), nodes);
-        self.error_map.insert(uri.to_string(), errors.error_ranges(&text));
+        let uri_string = uri.to_string();
+        self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
+        self.cst_nodes_map.insert(uri_string.clone(), nodes);
+        self.error_map.insert(uri_string, errors.error_ranges(&text));
     }
 
     async fn diagnostics(&self, uri: Url, version: Option<i32>) {
@@ -241,98 +245,92 @@ impl Backend {
             }));
         }
 
-        // Add HIR errors for this specific file
-        if let Some(source_id) = self.source_map.read().unwrap().get_by_left(&uri_string) {
-            // Filter HIR errors to only include ones from this specific source
-            diagnostics.extend(
-                self.hir
-                    .read()
-                    .unwrap()
-                    .error_ranges()
-                    .into_iter()
-                    .filter_map(|(message, item)| {
-                        // Only include errors if they are related to this file's source
-                        // We'll check this by examining the source_id of symbols in HIR
-                        let hir = self.hir.read().unwrap();
-                        let has_error_in_this_file = hir.symbols().any(|(_, symbol)| {
-                            symbol.source.source_id == Some(*source_id)
-                                && symbol.source.text_range.as_ref() == Some(&item)
-                        });
+        // Acquire locks once for all HIR operations, inside a scope to ensure guards are dropped before await
+        {
+            let source_map_guard = self.source_map.read().unwrap();
+            if let Some(source_id) = source_map_guard.get_by_left(&uri_string) {
+                let hir_guard = self.hir.read().unwrap();
 
-                        if has_error_in_this_file {
-                            Some(lsp_types::Diagnostic::new_simple(
-                                lsp_types::Range::new(
-                                    lsp_types::Position {
-                                        line: item.start.line - 1,
-                                        character: (item.start.column - 1) as u32,
-                                    },
-                                    lsp_types::Position {
-                                        line: item.end.line - 1,
-                                        character: (item.end.column - 1) as u32,
-                                    },
-                                ),
-                                message,
-                            ))
-                        } else {
-                            None
-                        }
-                    }),
-            );
-
-            // Add unused function warnings
-            let hir = self.hir.read().unwrap();
-            let unused_functions = hir.unused_functions(*source_id);
-            for (_, symbol) in unused_functions {
-                if let Some(text_range) = &symbol.source.text_range {
-                    let mut diagnostic = lsp_types::Diagnostic::new_simple(
-                        lsp_types::Range::new(
-                            lsp_types::Position {
-                                line: text_range.start.line - 1,
-                                character: (text_range.start.column - 1) as u32,
-                            },
-                            lsp_types::Position {
-                                line: text_range.end.line - 1,
-                                character: (text_range.end.column - 1) as u32,
-                            },
-                        ),
-                        format!(
-                            "Function '{}' is defined but never used",
-                            symbol.value.as_ref().unwrap_or(&"<anonymous>".into())
-                        ),
-                    );
-                    diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
-                    diagnostics.push(diagnostic);
+                // Build a map of text_range -> bool for this file's symbols for O(1) lookup
+                let mut range_map = std::collections::HashMap::new();
+                for (_, symbol) in hir_guard.symbols() {
+                    if symbol.source.source_id == Some(*source_id)
+                        && let Some(ref text_range) = symbol.source.text_range
+                    {
+                        range_map.insert(text_range.clone(), true);
+                    }
                 }
+
+                // Filter HIR errors to only include ones from this specific source
+                diagnostics.extend(hir_guard.error_ranges().into_iter().filter_map(|(message, item)| {
+                    if range_map.contains_key(&item) {
+                        Some(lsp_types::Diagnostic::new_simple(
+                            lsp_types::Range::new(
+                                lsp_types::Position {
+                                    line: item.start.line - 1,
+                                    character: (item.start.column - 1) as u32,
+                                },
+                                lsp_types::Position {
+                                    line: item.end.line - 1,
+                                    character: (item.end.column - 1) as u32,
+                                },
+                            ),
+                            message,
+                        ))
+                    } else {
+                        None
+                    }
+                }));
+
+                // Add unused function warnings
+                let unused_functions = hir_guard.unused_functions(*source_id);
+                for (_, symbol) in unused_functions {
+                    if let Some(text_range) = &symbol.source.text_range {
+                        let mut diagnostic = lsp_types::Diagnostic::new_simple(
+                            lsp_types::Range::new(
+                                lsp_types::Position {
+                                    line: text_range.start.line - 1,
+                                    character: (text_range.start.column - 1) as u32,
+                                },
+                                lsp_types::Position {
+                                    line: text_range.end.line - 1,
+                                    character: (text_range.end.column - 1) as u32,
+                                },
+                            ),
+                            format!(
+                                "Function '{}' is defined but never used",
+                                symbol.value.as_ref().unwrap_or(&"<anonymous>".into())
+                            ),
+                        );
+                        diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
+                        diagnostics.push(diagnostic);
+                    }
+                }
+
+                // Add HIR warnings (including unreachable code warnings)
+                diagnostics.extend(hir_guard.warning_ranges().into_iter().filter_map(|(message, item)| {
+                    if range_map.contains_key(&item) {
+                        let mut diagnostic = lsp_types::Diagnostic::new_simple(
+                            lsp_types::Range::new(
+                                lsp_types::Position {
+                                    line: item.start.line - 1,
+                                    character: (item.start.column - 1) as u32,
+                                },
+                                lsp_types::Position {
+                                    line: item.end.line - 1,
+                                    character: (item.end.column - 1) as u32,
+                                },
+                            ),
+                            message,
+                        );
+                        diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
+                        Some(diagnostic)
+                    } else {
+                        None
+                    }
+                }));
             }
-
-            // Add HIR warnings (including unreachable code warnings)
-            diagnostics.extend(hir.warning_ranges().into_iter().filter_map(|(message, item)| {
-                // Only include warnings if they are related to this file's source
-                let has_warning_in_this_file = hir.symbols().any(|(_, symbol)| {
-                    symbol.source.source_id == Some(*source_id) && symbol.source.text_range.as_ref() == Some(&item)
-                });
-
-                if has_warning_in_this_file {
-                    let mut diagnostic = lsp_types::Diagnostic::new_simple(
-                        lsp_types::Range::new(
-                            lsp_types::Position {
-                                line: item.start.line - 1,
-                                character: (item.start.column - 1) as u32,
-                            },
-                            lsp_types::Position {
-                                line: item.end.line - 1,
-                                character: (item.end.column - 1) as u32,
-                            },
-                        ),
-                        message,
-                    );
-                    diagnostic.severity = Some(lsp_types::DiagnosticSeverity::WARNING);
-                    Some(diagnostic)
-                } else {
-                    None
-                }
-            }));
-        }
+        } // Guards are dropped here, before the await
 
         self.client
             .publish_diagnostics(to_uri(&uri), diagnostics, version)

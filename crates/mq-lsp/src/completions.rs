@@ -12,7 +12,7 @@ pub fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     position: Position,
-    source_map: BiMap<String, mq_hir::SourceId>,
+    source_map: &BiMap<String, mq_hir::SourceId>,
 ) -> Option<CompletionResponse> {
     match source_map.get_by_left(&url.to_string()) {
         Some(source_id) => {
@@ -146,7 +146,7 @@ mod tests {
         let url = Url::parse("file:///unknown.mql").unwrap();
         let position = Position::new(0, 0);
 
-        let result = response(hir, url, position, source_map);
+        let result = response(hir, url, position, &source_map);
         assert!(result.is_none());
     }
 
@@ -159,7 +159,7 @@ mod tests {
 
         source_map.insert(url.to_string(), source_id);
 
-        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), source_map);
+        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), &source_map);
         assert!(result.is_some());
 
         if let Some(CompletionResponse::Array(items)) = result {
@@ -176,7 +176,7 @@ mod tests {
 
         source_map.insert(url.to_string(), source_id);
 
-        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), source_map);
+        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), &source_map);
         assert!(result.is_some());
 
         if let Some(CompletionResponse::Array(items)) = result {
@@ -200,7 +200,7 @@ mod tests {
             Arc::new(RwLock::new(hir)),
             url,
             Position::new(0, 70), // Position right after "math::", before "a"
-            source_map,
+            &source_map,
         );
 
         assert!(result.is_some());
@@ -240,7 +240,7 @@ mod tests {
             Arc::new(RwLock::new(hir)),
             url,
             Position::new(0, 46), // Position right after "utils::"
-            source_map,
+            &source_map,
         );
 
         assert!(result.is_some());
