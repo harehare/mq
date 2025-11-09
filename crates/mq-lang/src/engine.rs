@@ -90,10 +90,10 @@ impl<T: ModuleResolver> Default for Engine<T> {
 }
 
 impl<T: ModuleResolver> Engine<T> {
-    pub fn new(module_io: T) -> Self {
+    pub fn new(module_resolver: T) -> Self {
         let token_arena = create_default_token_arena();
         Self {
-            evaluator: Evaluator::new(ModuleLoader::new(module_io), Shared::clone(&token_arena)),
+            evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
             options: Options::default(),
             token_arena,
         }

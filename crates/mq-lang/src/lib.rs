@@ -63,9 +63,7 @@ use std::sync::Arc;
 #[cfg(feature = "sync")]
 use std::sync::RwLock;
 
-pub use arena::Arena;
-#[cfg(feature = "ast-json")]
-pub use arena::ArenaId;
+pub use arena::{Arena, ArenaId};
 pub use ast::Program;
 pub use ast::node::Expr as AstExpr;
 pub use ast::node::IdentWithToken;
@@ -85,8 +83,8 @@ pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use module::{
-    BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, resolver::LocalFsModuleResolver,
-    resolver::ModuleResolver,
+    BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, error::ModuleError,
+    resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
 };
 pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
