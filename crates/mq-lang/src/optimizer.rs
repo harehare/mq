@@ -2537,7 +2537,7 @@ mod proptests {
         fn test_optimization_div_mod(
             expr_str in arb_div_mod_expr()
         ) {
-            let mut engine= DefaultEngine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
