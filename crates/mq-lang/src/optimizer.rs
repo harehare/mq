@@ -2378,7 +2378,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use crate::{Arena, Engine, SharedCell};
+    use crate::{Arena, DefaultEngine, Engine, SharedCell};
     use mq_test::strategies::expr::*;
     use proptest::prelude::*;
 
@@ -2416,7 +2416,7 @@ mod proptests {
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
             prop_assume!(program.is_ok());
 
-            let mut engine: Engine = Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
