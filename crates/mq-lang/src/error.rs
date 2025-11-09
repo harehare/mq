@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use crate::{
     Module, ModuleLoader,
     ast::error::ParseError,
-    eval::{error::EvalError, module::ModuleError},
+    eval::{error::EvalError, module},
     lexer::error::LexerError,
 };
 
@@ -18,7 +18,7 @@ pub enum InnerError {
     #[error(transparent)]
     Parse(#[from] ParseError),
     #[error(transparent)]
-    Module(#[from] ModuleError),
+    Module(#[from] module::ModuleError),
 }
 
 /// Represents a high-level error with diagnostic information for the user.
@@ -37,7 +37,7 @@ impl Error {
     pub fn from_error(
         top_level_source_code: impl Into<String>,
         cause: InnerError,
-        module_loader: ModuleLoader,
+        module_loader: ModuleLoader<impl module::ModuleIO>,
     ) -> Self {
         let source_code = top_level_source_code.into();
         let token = match &cause {
@@ -72,12 +72,12 @@ impl Error {
                 EvalError::EnvNotFound(_, _) => None,
             },
             InnerError::Module(err) => match err {
-                ModuleError::AlreadyLoaded(_) => None,
-                ModuleError::NotFound(_) => None,
-                ModuleError::IOError(_) => None,
-                ModuleError::LexerError(LexerError::UnexpectedToken(token)) => Some(token),
-                ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_)) => None,
-                ModuleError::ParseError(err) => match err {
+                module::ModuleError::AlreadyLoaded(_) => None,
+                module::ModuleError::NotFound(_) => None,
+                module::ModuleError::IOError(_) => None,
+                module::ModuleError::LexerError(LexerError::UnexpectedToken(token)) => Some(token),
+                module::ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_)) => None,
+                module::ModuleError::ParseError(err) => match err {
                     ParseError::EnvNotFound(token, _) => Some(token),
                     ParseError::UnexpectedToken(token) => Some(token),
                     ParseError::UnexpectedEOFDetected(_) => None,
@@ -86,7 +86,7 @@ impl Error {
                     ParseError::ExpectedClosingBrace(token) => Some(token),
                     ParseError::ExpectedClosingBracket(token) => Some(token),
                 },
-                ModuleError::InvalidModule => None,
+                module::ModuleError::InvalidModule => None,
             },
         };
 
@@ -131,16 +131,16 @@ impl Error {
                     InnerError::Parse(ParseError::UnexpectedEOFDetected(module_id)) => (Some(module_id), true),
                     InnerError::Lexer(LexerError::UnexpectedEOFDetected(module_id)) => (Some(module_id), true),
                     InnerError::Eval(_) => (None, false),
-                    InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(module_id))) => {
-                        (Some(module_id), true)
-                    }
+                    InnerError::Module(module::ModuleError::ParseError(ParseError::UnexpectedEOFDetected(
+                        module_id,
+                    ))) => (Some(module_id), true),
                     _ => (None, false),
                 };
 
                 let source_code = module_id
                     .map(|module_id| match module_loader.module_name(*module_id) {
                         Cow::Borrowed(Module::TOP_LEVEL_MODULE) => source_code.clone(),
-                        Cow::Borrowed(Module::BUILTIN_MODULE) => ModuleLoader::BUILTIN_FILE.to_string(),
+                        Cow::Borrowed(Module::BUILTIN_MODULE) => module::BUILTIN_FILE.to_string(),
                         Cow::Borrowed(module_name) => module_loader.clone().read_file(module_name).unwrap_or_default(),
                         Cow::Owned(module_name) => module_loader.clone().read_file(&module_name).unwrap_or_default(),
                     })
@@ -245,31 +245,33 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("A runtime error occurred during evaluation."))
             }
             InnerError::Eval(EvalError::ZeroDivision(_)) => Some(Cow::Borrowed("Division by zero is not allowed.")),
-            InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
+            InnerError::Module(module::ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
             ))),
-            InnerError::Module(ModuleError::IOError(_)) => Some(Cow::Borrowed(
+            InnerError::Module(module::ModuleError::IOError(_)) => Some(Cow::Borrowed(
                 "An I/O error occurred while loading a module. Check file permissions and paths.",
             )),
-            InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {
+            InnerError::Module(module::ModuleError::LexerError(LexerError::UnexpectedToken(_))) => {
                 Some(Cow::Borrowed("Lexer error in module: unexpected token."))
             }
-            InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_))) => {
+            InnerError::Module(module::ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_))) => {
                 Some(Cow::Borrowed("Lexer error in module: unexpected end of file."))
             }
-            InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(_, env))) => {
+            InnerError::Module(module::ModuleError::ParseError(ParseError::EnvNotFound(_, env))) => {
                 Some(Cow::Owned(format!("Environment variable '{env}' not found in module.")))
             }
-            InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(_))) => {
+            InnerError::Module(module::ModuleError::ParseError(ParseError::UnexpectedToken(_))) => {
                 Some(Cow::Borrowed("Parse error in module: unexpected token."))
             }
-            InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(_))) => {
+            InnerError::Module(module::ModuleError::ParseError(ParseError::UnexpectedEOFDetected(_))) => {
                 Some(Cow::Borrowed("Parse error in module: unexpected end of file."))
             }
-            InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
+            InnerError::Module(module::ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
                 Some(Cow::Borrowed("Parse error in module: insufficient tokens."))
             }
-            InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
+            InnerError::Module(module::ModuleError::InvalidModule) => {
+                Some(Cow::Borrowed("Invalid module format or content."))
+            }
             _ => None,
         };
 
@@ -304,7 +306,7 @@ mod test {
     #[test]
     fn test_from_error_with_eof_error() {
         let cause = InnerError::Parse(ParseError::UnexpectedEOFDetected(ArenaId::new(0)));
-        let module_loader = ModuleLoader::default();
+        let module_loader: ModuleLoader = ModuleLoader::default();
         let error = Error::from_error("line 1\nline 2", cause, module_loader);
 
         assert_eq!(error.source_code, "line 1\nline 2");
@@ -431,14 +433,20 @@ mod test {
         }, "".to_string())),
         "source code"
     )]
-    #[case::module_not_found(InnerError::Module(ModuleError::NotFound(Cow::Borrowed("test"))), "source code")]
-    #[case::module_io_error(InnerError::Module(ModuleError::IOError(Cow::Borrowed("test"))), "source code")]
+    #[case::module_not_found(
+        InnerError::Module(module::ModuleError::NotFound(Cow::Borrowed("test"))),
+        "source code"
+    )]
+    #[case::module_io_error(
+        InnerError::Module(module::ModuleError::IOError(Cow::Borrowed("test"))),
+        "source code"
+    )]
     #[case::module_lexer_error(
-        InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedEOFDetected(ArenaId::new(0)))),
+        InnerError::Module(module::ModuleError::LexerError(LexerError::UnexpectedEOFDetected(ArenaId::new(0)))),
         "source code"
     )]
     #[case::module_parse_error(
-        InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::EnvNotFound(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
@@ -446,7 +454,7 @@ mod test {
         "source code"
     )]
     #[case::module_parse_error(
-        InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::UnexpectedToken(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
@@ -454,11 +462,11 @@ mod test {
         "source code"
     )]
     #[case::module_parse_error(
-        InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedEOFDetected(ArenaId::new(0)))),
+        InnerError::Module(module::ModuleError::ParseError(ParseError::UnexpectedEOFDetected(ArenaId::new(0)))),
         "source code"
     )]
     #[case::module_parse_error(
-        InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::InsufficientTokens(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
@@ -466,7 +474,11 @@ mod test {
         ))),
         "source code"
     )]
-    fn test_from_error(module_loader: ModuleLoader, #[case] cause: InnerError, #[case] source_code: &str) {
+    fn test_from_error(
+        module_loader: module::ModuleLoader<impl module::ModuleIO>,
+        #[case] cause: InnerError,
+        #[case] source_code: &str,
+    ) {
         let error = Error::from_error(source_code, cause, module_loader);
         assert_eq!(error.source_code, source_code);
     }
@@ -485,7 +497,7 @@ mod test {
         }
 
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let mut loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
         loader
             .load_from_file("test_from_error_with_module_source", token_arena)
             .unwrap();
@@ -505,7 +517,7 @@ mod test {
     #[test]
     fn test_from_error_with_builtin_module() {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::default();
+        let mut loader: ModuleLoader = ModuleLoader::default();
         loader.load_builtin(token_arena).unwrap();
         let token = Token {
             range: Range::default(),
@@ -516,7 +528,7 @@ mod test {
         let cause = InnerError::Eval(EvalError::ZeroDivision(token));
         let error = Error::from_error("top level source", cause, loader);
 
-        assert_eq!(error.source_code, ModuleLoader::BUILTIN_FILE);
+        assert_eq!(error.source_code, module::BUILTIN_FILE);
     }
 
     #[rstest]
@@ -573,7 +585,7 @@ mod test {
     )]
     #[case::eval_recursion_error(InnerError::Eval(EvalError::RecursionError(0)))]
     #[case::eval_module_load_error(
-        InnerError::Eval(EvalError::ModuleLoadError(ModuleError::NotFound("mod".into())))
+        InnerError::Eval(EvalError::ModuleLoadError(module::ModuleError::NotFound("mod".into())))
     )]
     #[case::eval_user_defined(
         InnerError::Eval(EvalError::UserDefined {
@@ -675,65 +687,65 @@ mod test {
             module_id: ArenaId::new(0),
         }, "ENV".into()))
     )]
-    #[case::module_not_found(InnerError::Module(ModuleError::NotFound(Cow::Borrowed("mod"))))]
-    #[case::module_io_error(InnerError::Module(ModuleError::IOError(Cow::Borrowed("io"))))]
+    #[case::module_not_found(InnerError::Module(module::ModuleError::NotFound(Cow::Borrowed("mod"))))]
+    #[case::module_io_error(InnerError::Module(module::ModuleError::IOError(Cow::Borrowed("io"))))]
     #[case::module_lexer_error_unexpected_token(
-        InnerError::Module(ModuleError::LexerError(LexerError::UnexpectedToken(Token {
+        InnerError::Module(module::ModuleError::LexerError(LexerError::UnexpectedToken(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         })))
     )]
-    #[case::module_lexer_error_unexpected_eof(InnerError::Module(ModuleError::LexerError(
+    #[case::module_lexer_error_unexpected_eof(InnerError::Module(module::ModuleError::LexerError(
         LexerError::UnexpectedEOFDetected(ArenaId::new(0))
     )))]
     #[case::module_parse_error_env_not_found(
-        InnerError::Module(ModuleError::ParseError(ParseError::EnvNotFound(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::EnvNotFound(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         }, "ENV".into())))
     )]
     #[case::module_parse_error_unexpected_token(
-        InnerError::Module(ModuleError::ParseError(ParseError::UnexpectedToken(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::UnexpectedToken(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         })))
     )]
-    #[case::module_parse_error_unexpected_eof(InnerError::Module(ModuleError::ParseError(
+    #[case::module_parse_error_unexpected_eof(InnerError::Module(module::ModuleError::ParseError(
         ParseError::UnexpectedEOFDetected(ArenaId::new(0))
     )))]
     #[case::module_parse_error_insufficient_tokens(
-        InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::InsufficientTokens(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         })))
     )]
-    #[case::module_invalid_module(InnerError::Module(ModuleError::InvalidModule))]
+    #[case::module_invalid_module(InnerError::Module(module::ModuleError::InvalidModule))]
     #[case::module_parse_error_expected_closing_paren(
-        InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingParen(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::ExpectedClosingParen(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         })))
     )]
     #[case::module_parse_error_expected_closing_brace(
-        InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::ExpectedClosingBrace(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         })))
     )]
     #[case::module_parse_error_expected_closing_bracket(
-        InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(Token {
+        InnerError::Module(module::ModuleError::ParseError(ParseError::ExpectedClosingBracket(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
         })))
     )]
-    fn test_diagnostic_code_and_help(module_loader: ModuleLoader, #[case] cause: InnerError) {
+    fn test_diagnostic_code_and_help(module_loader: ModuleLoader<impl module::ModuleIO>, #[case] cause: InnerError) {
         let error = Error::from_error("source code", cause, module_loader);
         // code() and help() must not panic
         let _ = error.code();

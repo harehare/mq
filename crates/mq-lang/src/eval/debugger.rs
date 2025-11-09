@@ -2,8 +2,8 @@ use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
 use crate::ast::node as ast;
-use crate::eval::Evaluator;
 use crate::eval::env::Env;
+use crate::eval::{Evaluator, module};
 use crate::{Shared, SharedCell, Token};
 
 use std::{collections::HashSet, fmt::Debug};
@@ -419,7 +419,7 @@ pub struct DefaultDebuggerHandler;
 
 impl DebuggerHandler for DefaultDebuggerHandler {}
 
-impl Evaluator {
+impl<T: module::ModuleIO> Evaluator<T> {
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         Shared::clone(&self.debugger)
     }

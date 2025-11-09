@@ -2378,7 +2378,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use crate::{Arena, SharedCell};
+    use crate::{Arena, Engine, SharedCell};
     use mq_test::strategies::expr::*;
     use proptest::prelude::*;
 
@@ -2416,7 +2416,7 @@ mod proptests {
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
             prop_assume!(program.is_ok());
 
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
@@ -2439,10 +2439,10 @@ mod proptests {
         fn test_optimization_preserves_semantics_nested(
             expr_str in arb_nested_arithmetic_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
-            let mut engine_opt = crate::Engine::default();
+            let mut engine_opt: Engine = Engine::default();
             let result_opt = engine_opt.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
             prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
@@ -2459,7 +2459,7 @@ mod proptests {
         fn test_inline_only_preserves_semantics(
             (expr_str, _expected) in arb_arithmetic_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_inline = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::InlineOnly);
 
@@ -2477,7 +2477,7 @@ mod proptests {
         fn test_optimization_string_concat(
             expr_str in arb_string_concat_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2495,12 +2495,12 @@ mod proptests {
         fn test_optimization_comparison(
             expr_str in arb_comparison_expr()
         ) {
-            let mut engine_no_opt = crate::Engine::default();
+            let mut engine_no_opt: Engine = Engine::default();
             engine_no_opt.load_builtin_module();
             engine_no_opt.set_optimization_level(OptimizationLevel::None);
             let result_no_opt = engine_no_opt.eval(&expr_str, crate::null_input().into_iter());
 
-            let mut engine_opt = crate::Engine::default();
+            let mut engine_opt: Engine = Engine::default();
             engine_opt.load_builtin_module();
             engine_opt.set_optimization_level(OptimizationLevel::Full);
             let result_opt = engine_opt.eval(&expr_str, crate::null_input().into_iter());
@@ -2519,7 +2519,7 @@ mod proptests {
         fn test_optimization_logical(
             expr_str in arb_logical_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2537,7 +2537,7 @@ mod proptests {
         fn test_optimization_div_mod(
             expr_str in arb_div_mod_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2555,7 +2555,7 @@ mod proptests {
         fn test_optimization_let_expr(
             expr_str in arb_let_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2573,7 +2573,7 @@ mod proptests {
         fn test_optimization_deeply_nested(
             expr_str in arb_deeply_nested_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2591,7 +2591,7 @@ mod proptests {
         fn test_optimization_mixed_type(
             expr_str in arb_mixed_type_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2609,7 +2609,7 @@ mod proptests {
         fn test_optimization_function_def(
             expr_str in arb_function_def_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2630,7 +2630,7 @@ mod proptests {
         fn test_optimization_complex(
             expr_str in arb_any_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine: Engine = Engine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 

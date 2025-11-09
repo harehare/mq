@@ -33,12 +33,98 @@ pub type ModuleId = ArenaId<ModuleName>;
 type ModuleName = SmolStr;
 type StandardModules = FxHashMap<SmolStr, fn() -> &'static str>;
 
+pub trait ModuleIO: Clone + Default {
+    fn read_module(&self, module_name: &str) -> Result<String, ModuleError>;
+    fn search_paths(&self) -> Vec<PathBuf>;
+    fn set_search_paths(&mut self, paths: Vec<PathBuf>);
+    fn module_id(name: &str) -> Cow<'static, str> {
+        // For common module names, use static strings to avoid allocation
+        match name {
+            "csv" => Cow::Borrowed("csv.mq"),
+            "json" => Cow::Borrowed("json.mq"),
+            "yaml" => Cow::Borrowed("yaml.mq"),
+            "xml" => Cow::Borrowed("xml.mq"),
+            "toml" => Cow::Borrowed("toml.mq"),
+            "test" => Cow::Borrowed("test.mq"),
+            "fuzzy" => Cow::Borrowed("fuzzy.mq"),
+            _ => Cow::Owned(format!("{}.mq", name)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FsModuleIO {
+    pub(crate) paths: Option<Vec<PathBuf>>,
+}
+
+impl ModuleIO for FsModuleIO {
+    fn read_module(&self, module_name: &str) -> Result<String, ModuleError> {
+        let file_path =
+            Self::find(module_name, self.paths.clone()).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))?;
+        fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
+    }
+
+    fn search_paths(&self) -> Vec<PathBuf> {
+        self.paths
+            .clone()
+            .unwrap_or_else(|| DEFAULT_PATHS.iter().map(PathBuf::from).collect())
+    }
+
+    fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
+        self.paths = if paths.is_empty() { None } else { Some(paths) };
+    }
+}
+
+impl FsModuleIO {
+    pub fn new(paths: Option<Vec<PathBuf>>) -> Self {
+        Self { paths }
+    }
+
+    fn find(name: &str, search_paths: Option<Vec<PathBuf>>) -> Result<PathBuf, ModuleError> {
+        let home = dirs::home_dir()
+            .map(|p| {
+                let path = p.clone();
+                path.to_str().unwrap_or("").to_string()
+            })
+            .unwrap_or("".to_string());
+        let origin = std::env::current_dir().ok();
+
+        search_paths
+            .map(|p| {
+                p.into_iter()
+                    .map(|p| p.to_str().map(|p| p.to_string()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| DEFAULT_PATHS.iter().map(|p| p.to_string()).collect())
+            .iter()
+            .map(|path| {
+                let path = origin
+                    .clone()
+                    .map(|p| {
+                        path.replace("$ORIGIN", p.to_str().unwrap_or(""))
+                            .replace("$HOME", home.as_str())
+                    })
+                    .unwrap_or_else(|| home.clone());
+
+                PathBuf::from(path).join(Self::module_id(name).as_ref())
+            })
+            .find(|p| p.is_file())
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_id(name).to_string())))
+    }
+}
+
+impl<T: ModuleIO> Default for ModuleLoader<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct ModuleLoader {
-    pub(crate) search_paths: Option<Vec<PathBuf>>,
+pub struct ModuleLoader<T: ModuleIO = FsModuleIO> {
     pub(crate) loaded_modules: Arena<ModuleName>,
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
+    io: T,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,24 +164,18 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     map
 });
 
-impl Default for ModuleLoader {
-    fn default() -> Self {
-        Self::new(None)
-    }
-}
+pub const BUILTIN_FILE: &str = include_str!("../../builtin.mq");
 
-impl ModuleLoader {
-    pub const BUILTIN_FILE: &str = include_str!("../../builtin.mq");
-
-    pub fn new(search_paths: Option<Vec<PathBuf>>) -> Self {
+impl<T: ModuleIO> ModuleLoader<T> {
+    pub fn new(io: T) -> Self {
         let mut loaded_modules = Arena::new(10);
         loaded_modules.alloc(Module::TOP_LEVEL_MODULE.into());
 
         Self {
-            search_paths,
             loaded_modules,
             #[cfg(feature = "debugger")]
             source_code: None,
+            io,
         }
     }
 
@@ -114,6 +194,14 @@ impl ModuleLoader {
     #[cfg(feature = "debugger")]
     pub fn set_source_code(&mut self, source_code: String) {
         self.source_code = Some(source_code);
+    }
+
+    pub fn search_paths(&self) -> Vec<PathBuf> {
+        self.io.search_paths()
+    }
+
+    pub fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
+        self.io.set_search_paths(paths);
     }
 
     pub fn load(&mut self, module_name: &str, code: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
@@ -182,21 +270,19 @@ impl ModuleLoader {
         if STANDARD_MODULES.contains_key(module_name) {
             Ok(STANDARD_MODULES.get(module_name).map(|f| f()).unwrap().to_string())
         } else {
-            let file_path = Self::find(module_name, self.search_paths.clone())
-                .map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))?;
-            fs::read_to_string(&file_path).map_err(|e| ModuleError::IOError(Cow::Owned(e.to_string())))
+            self.io.read_module(module_name)
         }
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        self.load(Module::BUILTIN_MODULE, Self::BUILTIN_FILE, token_arena)
+        self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, token_arena)
     }
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
         match self.module_name(module_id) {
             Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(self.source_code.clone().unwrap_or_default()),
-            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
+            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(BUILTIN_FILE.to_string()),
             Cow::Borrowed(module_name) => self.read_file(module_name),
             Cow::Owned(module_name) => self.read_file(&module_name),
         }
@@ -205,55 +291,9 @@ impl ModuleLoader {
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
         match self.module_name(module_id) {
             Cow::Borrowed(Module::TOP_LEVEL_MODULE) => Ok(source_code),
-            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(ModuleLoader::BUILTIN_FILE.to_string()),
+            Cow::Borrowed(Module::BUILTIN_MODULE) => Ok(BUILTIN_FILE.to_string()),
             Cow::Borrowed(module_name) => self.read_file(module_name),
             Cow::Owned(module_name) => self.read_file(&module_name),
-        }
-    }
-
-    fn find(name: &str, search_paths: Option<Vec<PathBuf>>) -> Result<PathBuf, ModuleError> {
-        let home = dirs::home_dir()
-            .map(|p| {
-                let path = p.clone();
-                path.to_str().unwrap_or("").to_string()
-            })
-            .unwrap_or("".to_string());
-        let origin = std::env::current_dir().ok();
-
-        search_paths
-            .map(|p| {
-                p.into_iter()
-                    .map(|p| p.to_str().map(|p| p.to_string()).unwrap_or_default())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| DEFAULT_PATHS.to_vec().iter().map(|p| p.to_string()).collect())
-            .iter()
-            .map(|path| {
-                let path = origin
-                    .clone()
-                    .map(|p| {
-                        path.replace("$ORIGIN", p.to_str().unwrap_or(""))
-                            .replace("$HOME", home.as_str())
-                    })
-                    .unwrap_or_else(|| home.clone());
-
-                PathBuf::from(path).join(Self::module_id(name).as_ref())
-            })
-            .find(|p| p.is_file())
-            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_id(name).to_string())))
-    }
-
-    fn module_id(name: &str) -> Cow<'static, str> {
-        // For common module names, use static strings to avoid allocation
-        match name {
-            "csv" => Cow::Borrowed("csv.mq"),
-            "json" => Cow::Borrowed("json.mq"),
-            "yaml" => Cow::Borrowed("yaml.mq"),
-            "xml" => Cow::Borrowed("xml.mq"),
-            "toml" => Cow::Borrowed("toml.mq"),
-            "test" => Cow::Borrowed("test.mq"),
-            "fuzzy" => Cow::Borrowed("fuzzy.mq"),
-            _ => Cow::Owned(format!("{}.mq", name)),
         }
     }
 
@@ -291,6 +331,7 @@ mod tests {
     use crate::{
         Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken},
+        eval::module::FsModuleIO,
         range::{Position, Range},
     };
 
@@ -372,7 +413,10 @@ mod tests {
         #[case] program: String,
         #[case] expected: Result<Module, ModuleError>,
     ) {
-        assert_eq!(ModuleLoader::default().load("test", &program, token_arena), expected);
+        assert_eq!(
+            ModuleLoader::new(FsModuleIO::default()).load("test", &program, token_arena),
+            expected
+        );
     }
 
     #[rstest]
@@ -387,7 +431,7 @@ mod tests {
         #[case] module_name: &str,
         #[case] expected: Result<Module, ModuleError>,
     ) {
-        let mut loader = ModuleLoader::default();
+        let mut loader = ModuleLoader::new(FsModuleIO::default());
         let result = loader.load_from_file(module_name, token_arena.clone());
         // Only check that loading does not return NotFound error and returns Some(Module)
         match expected {

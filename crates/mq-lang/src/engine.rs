@@ -4,12 +4,13 @@ use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
+use crate::eval::module;
 #[cfg(feature = "debugger")]
 use crate::eval::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
-use crate::{MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
+use crate::{FsModuleIO, MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
     ModuleLoader, Token,
@@ -53,9 +54,9 @@ impl Default for Options {
 /// # Examples
 ///
 /// ```rust
-/// use mq_lang::Engine;
+/// use mq_lang::DefaultEngine;
 ///
-/// let mut engine = Engine::default();
+/// let mut engine = DefaultEngine::default();
 /// engine.load_builtin_module();
 ///
 /// let input = mq_lang::parse_text_input("hello").unwrap();
@@ -63,8 +64,8 @@ impl Default for Options {
 /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
 /// ```
 #[derive(Debug, Clone)]
-pub struct Engine {
-    pub(crate) evaluator: Evaluator,
+pub struct Engine<T: module::ModuleIO = FsModuleIO> {
+    pub(crate) evaluator: Evaluator<T>,
     pub(crate) options: Options,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 }
@@ -83,18 +84,22 @@ fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     token_arena
 }
 
-impl Default for Engine {
+impl<T: module::ModuleIO> Default for Engine<T> {
     fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
+impl<T: module::ModuleIO> Engine<T> {
+    pub fn new(module_io: T) -> Self {
         let token_arena = create_default_token_arena();
         Self {
-            evaluator: Evaluator::new(ModuleLoader::default(), Shared::clone(&token_arena)),
+            evaluator: Evaluator::new(ModuleLoader::new(module_io), Shared::clone(&token_arena)),
             options: Options::default(),
             token_arena,
         }
     }
-}
 
-impl Engine {
     /// Enable or disable code optimization.
     ///
     /// When optimization is enabled, the engine performs constant folding
@@ -115,8 +120,8 @@ impl Engine {
     ///
     /// These paths will be searched when loading external modules
     /// via the `include` statement in mq code.
-    pub fn set_paths(&mut self, paths: Vec<PathBuf>) {
-        self.evaluator.module_loader.search_paths = Some(paths);
+    pub fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
+        self.evaluator.module_loader.set_search_paths(paths);
     }
 
     /// Define a string variable that can be used in mq code.
@@ -169,7 +174,7 @@ impl Engine {
     /// ```
     /// use mq_lang::{Engine, OptimizationLevel};
     ///
-    /// let mut engine = Engine::default();
+    /// let mut engine: Engine = Engine::default();
     /// engine.load_builtin_module();
     ///
     /// let input = mq_lang::parse_text_input("hello").unwrap();
@@ -203,9 +208,7 @@ impl Engine {
     /// # Examples
     ///
     /// ```
-    /// use mq_lang::Engine;
-    ///
-    /// let mut engine = Engine::default();
+    /// let mut engine = mq_lang::DefaultEngine::default();
     /// engine.load_builtin_module();
     ///
     /// let input = mq_lang::parse_text_input("hello").unwrap();
@@ -228,7 +231,7 @@ impl Engine {
     /// #[cfg(feature = "ast-json")]
     /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, RuntimeValue, Shared};
     ///
-    /// let mut engine = Engine::default();
+    /// let mut engine: Engine = Engine::default();
     /// engine.load_builtin_module();
     ///
     /// let json = r#"[
@@ -319,20 +322,22 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use crate::DefaultEngine;
+
     use super::*;
     use mq_test::defer;
 
     #[test]
     fn test_set_paths() {
-        let mut engine = Engine::default();
+        let mut engine: Engine = Engine::default();
         let paths = vec![PathBuf::from("/test/path")];
-        engine.set_paths(paths.clone());
-        assert_eq!(engine.evaluator.module_loader.search_paths, Some(paths));
+        engine.set_search_paths(paths.clone());
+        assert_eq!(engine.evaluator.module_loader.search_paths(), paths);
     }
 
     #[test]
     fn test_set_max_call_stack_depth() {
-        let mut engine = Engine::default();
+        let mut engine: Engine = Engine::default();
         let default_depth = engine.evaluator.options.max_call_stack_depth;
         let new_depth = default_depth + 10;
 
@@ -342,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_version() {
-        let version = Engine::version();
+        let version = DefaultEngine::version();
         assert!(!version.is_empty());
     }
 
@@ -357,8 +362,8 @@ mod tests {
             }
         }
 
-        let mut engine = Engine::default();
-        engine.set_paths(vec![temp_dir]);
+        let mut engine: Engine = Engine::default();
+        engine.set_search_paths(vec![temp_dir]);
 
         let result = engine.load_module("test_module");
         assert!(result.is_ok());
@@ -375,8 +380,8 @@ mod tests {
             }
         }
 
-        let mut engine = Engine::default();
-        engine.set_paths(vec![temp_dir]);
+        let mut engine: Engine = Engine::default();
+        engine.set_search_paths(vec![temp_dir]);
 
         let result = engine.load_module("error");
         assert!(result.is_err());
@@ -384,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_eval() {
-        let mut engine = Engine::default();
+        let mut engine: Engine = Engine::default();
         let result = engine.eval("add(1, 1)", vec!["".to_string().into()].into_iter());
         assert!(result.is_ok());
         let values = result.unwrap();
@@ -396,7 +401,7 @@ mod tests {
     fn test_eval_ast() {
         use crate::{AstExpr, AstLiteral, AstNode};
 
-        let mut engine = Engine::default();
+        let mut engine: Engine = Engine::default();
         engine.load_builtin_module();
 
         let program = vec![Shared::new(AstNode {
@@ -416,7 +421,7 @@ mod tests {
     fn test_engine_thread_usage_with_sync_feature() {
         use std::sync::{Arc, Mutex};
 
-        let engine = Arc::new(Mutex::new(Engine::default()));
+        let engine: Arc<Mutex<Engine>> = Arc::new(Mutex::new(Engine::default()));
         let engine_clone = Arc::clone(&engine);
 
         let handle = std::thread::spawn(move || {
@@ -437,7 +442,7 @@ mod tests {
         use crate::eval::env::Env;
         use crate::{SharedCell, null_input};
 
-        let engine = Engine::default();
+        let engine: Engine = Engine::default();
         let env = Shared::new(SharedCell::new(Env::default()));
 
         env.write().unwrap().define("runtime".into(), RuntimeValue::NONE);
@@ -455,7 +460,7 @@ mod tests {
     fn test_get_source_code_for_debug() {
         use crate::eval::module::ModuleId;
 
-        let mut engine = Engine::default();
+        let mut engine: Engine = Engine::default();
         engine.load_builtin_module();
 
         let module_id = ModuleId::new(0);

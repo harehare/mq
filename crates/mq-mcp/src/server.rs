@@ -67,7 +67,7 @@ impl Server {
         description = "Executes an mq query on the provided HTML content and returns the result as Markdown. Selectors and functions listed in the available_selectors and available_functions tools can be used."
     )]
     fn html_to_markdown(&self, Parameters(QueryForHtml { html, query }): Parameters<QueryForHtml>) -> McpResult {
-        let mut engine = mq_lang::Engine::default();
+        let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
 
         let markdown = mq_markdown::Markdown::from_html_str(&html).map_err(|e| {
@@ -103,7 +103,7 @@ impl Server {
         &self,
         Parameters(QueryForMarkdown { markdown, query }): Parameters<QueryForMarkdown>,
     ) -> Result<CallToolResult, ErrorData> {
-        let mut engine = mq_lang::Engine::default();
+        let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
 
         let markdown = mq_markdown::Markdown::from_html_str(&markdown).map_err(|e| {

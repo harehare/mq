@@ -63,7 +63,7 @@ pub fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_js
 }
 
 fn execute(code: &str, input: &str, input_format: Option<&str>) -> jsonrpc::Result<Option<serde_json::Value>> {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     let input =
         match input_format.unwrap_or("markdown") {
             "markdown" => mq_lang::parse_markdown_input(input)

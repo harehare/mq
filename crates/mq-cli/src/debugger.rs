@@ -121,7 +121,7 @@ impl From<String> for Command {
 
 #[derive(Debug)]
 pub struct DebuggerHandler {
-    engine: mq_lang::Engine,
+    engine: mq_lang::DefaultEngine,
 }
 
 #[cfg(feature = "debugger")]
@@ -142,7 +142,7 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
 }
 
 impl DebuggerHandler {
-    pub fn new(engine: mq_lang::Engine) -> Self {
+    pub fn new(engine: mq_lang::DefaultEngine) -> Self {
         Self { engine }
     }
 
@@ -578,7 +578,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let handler = DebuggerHandler::new(mq_lang::Engine::default());
+        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default());
         let (start, snippet) = handler.get_source_code_with_context(&context, 4, 2);
         assert_eq!(start, 2);
         assert_eq!(
@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_get_source_code_with_context_edge_cases() {
-        let handler = DebuggerHandler::new(mq_lang::Engine::default());
+        let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default());
 
         // Empty source code
         let empty_context = DebugContext {
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn test_debugger_handler_new() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let handler = DebuggerHandler::new(engine);
         // Just verify it constructs without panic
         assert!(std::mem::size_of_val(&handler) > 0);

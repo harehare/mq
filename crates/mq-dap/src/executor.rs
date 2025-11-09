@@ -9,7 +9,7 @@ type DynResult<T> = miette::Result<T, Box<dyn std::error::Error>>;
 
 /// Execute query in a separate thread
 pub fn execute_query(
-    mut engine: mq_lang::Engine,
+    mut engine: mq_lang::DefaultEngine,
     query: String,
     input_file: Option<String>,
     message_tx: Sender<DebuggerMessage>,
@@ -99,8 +99,8 @@ mod tests {
     use tempfile::TempDir;
 
     /// Helper to create a dummy engine that echoes input
-    fn dummy_engine() -> mq_lang::Engine {
-        mq_lang::Engine::default()
+    fn dummy_engine() -> mq_lang::DefaultEngine {
+        mq_lang::DefaultEngine::default()
     }
 
     #[test]
@@ -247,7 +247,7 @@ version: 1.0.0
         // Create input file
         fs::write(&input_file_path, "# Test Input\n\nThis is a test.").unwrap();
 
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let (tx, _rx) = unbounded::<DebuggerMessage>();
 
         let result = execute_query(
@@ -270,7 +270,7 @@ version: 1.0.0
         // Create query file
         fs::write(&query_file_path, ".").unwrap();
 
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let (tx, _rx) = unbounded::<DebuggerMessage>();
 
         let result = execute_query(engine, query_file_path.to_string_lossy().to_string(), None, tx);
@@ -281,7 +281,7 @@ version: 1.0.0
 
     #[test]
     fn test_execute_query_nonexistent_query_file() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let (tx, _rx) = unbounded::<DebuggerMessage>();
 
         let result = execute_query(engine, "nonexistent.mq".to_string(), None, tx);
@@ -298,7 +298,7 @@ version: 1.0.0
         // Create query file
         fs::write(&query_file_path, ".").unwrap();
 
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let (tx, _rx) = unbounded::<DebuggerMessage>();
 
         let result = execute_query(
@@ -320,7 +320,7 @@ version: 1.0.0
         // Create a simple query file
         fs::write(&query_file_path, ".").unwrap();
 
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let (tx, rx) = unbounded::<DebuggerMessage>();
 
         let result = execute_query(engine, query_file_path.to_string_lossy().to_string(), None, tx);

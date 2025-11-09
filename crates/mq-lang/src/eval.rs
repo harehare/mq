@@ -63,28 +63,28 @@ impl Default for Options {
 }
 
 #[derive(Debug)]
-pub struct Evaluator {
+pub struct Evaluator<T: module::ModuleIO = module::FsModuleIO> {
     env: Shared<SharedCell<Env>>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
     call_stack_depth: u32,
     pub(crate) options: Options,
-    pub(crate) module_loader: module::ModuleLoader,
+    pub(crate) module_loader: module::ModuleLoader<T>,
 
     #[cfg(feature = "debugger")]
-    debugger: Shared<SharedCell<Debugger>>,
+    pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
 
-impl Default for Evaluator {
+impl<T: module::ModuleIO> Default for Evaluator<T> {
     fn default() -> Self {
         Self {
             env: Shared::new(SharedCell::new(Env::default())),
             token_arena: Shared::new(SharedCell::new(Arena::new(10))),
             call_stack_depth: 0,
             options: Options::default(),
-            module_loader: module::ModuleLoader::default(),
+            module_loader: module::ModuleLoader::new(T::default()),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -94,7 +94,7 @@ impl Default for Evaluator {
     }
 }
 
-impl Clone for Evaluator {
+impl<T: module::ModuleIO> Clone for Evaluator<T> {
     fn clone(&self) -> Self {
         Self {
             env: Shared::clone(&self.env),
@@ -110,9 +110,9 @@ impl Clone for Evaluator {
     }
 }
 
-impl Evaluator {
+impl<T: module::ModuleIO> Evaluator<T> {
     pub(crate) fn new(
-        module_loader: module::ModuleLoader,
+        module_loader: module::ModuleLoader<T>,
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     ) -> Self {
         Self {
@@ -1254,7 +1254,7 @@ mod tests {
     use crate::eval::module::ModuleError;
     use crate::number::{INFINITE, NAN};
     use crate::range::Range;
-    use crate::{AstExpr, AstNode, ModuleLoader, token_alloc};
+    use crate::{AstExpr, AstNode, DefaultModuleLoader, ModuleLoader, token_alloc};
     use crate::{Token, TokenKind};
 
     use super::*;
@@ -5407,7 +5407,7 @@ mod tests {
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
     ) {
         assert_eq!(
-            Evaluator::new(ModuleLoader::new(None), token_arena).eval(&program, runtime_values.into_iter()),
+            Evaluator::new(DefaultModuleLoader::default(), token_arena).eval(&program, runtime_values.into_iter()),
             expected
         );
     }
@@ -5422,7 +5422,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5451,7 +5451,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5485,7 +5485,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5522,7 +5522,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5553,7 +5553,7 @@ mod tests {
 
     #[test]
     fn test_import_error() {
-        let loader = ModuleLoader::default();
+        let loader: ModuleLoader = ModuleLoader::default();
         let program = vec![Shared::new(ast::Node {
             token_id: 0.into(),
             expr: Shared::new(ast::Expr::Import(ast::Literal::String("not_found".to_string()))),
@@ -5719,7 +5719,7 @@ mod tests {
         #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
     ) {
         assert_eq!(
-            Evaluator::new(ModuleLoader::new(None), token_arena).eval(&program, runtime_values.into_iter()),
+            Evaluator::new(DefaultModuleLoader::default(), token_arena).eval(&program, runtime_values.into_iter()),
             expected
         );
     }
@@ -5804,7 +5804,7 @@ mod debugger_tests {
             Box::new(TestDebuggerHandler::new(DebuggerAction::Continue)) as Box<dyn DebuggerHandler>,
         ));
 
-        let mut evaluator = Evaluator::new(ModuleLoader::new(None), token_arena);
+        let mut evaluator: Evaluator = Evaluator::new(ModuleLoader::default(), token_arena);
         evaluator.debugger_handler = Shared::clone(&handler);
 
         let program = vec![ast_call("breakpoint", SmallVec::new())];

@@ -405,7 +405,7 @@ impl Crawler {
 
     fn execute_query(query: &str, input: &str, conversion_options: ConversionOptions) -> miette::Result<String> {
         let input = mq_lang::parse_html_input_with_options(input, conversion_options)?;
-        let mut mq_engine = mq_lang::Engine::default();
+        let mut mq_engine = mq_lang::DefaultEngine::default();
         mq_engine.load_builtin_module();
 
         match mq_engine

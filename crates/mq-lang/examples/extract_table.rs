@@ -18,7 +18,7 @@ fn main() {
 | USB Cable | Accessories | $12 | 89 |
 | Coffee Maker | Appliances | $85 | 24 |
     ";
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
 
     let code = ".[][]";

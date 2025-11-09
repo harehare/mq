@@ -1,4 +1,5 @@
 use libc::c_void;
+use mq_lang::DefaultEngine;
 use mq_lang::{Engine, RuntimeValue};
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -34,7 +35,7 @@ unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::
 /// The caller is responsible for destroying the engine using `mq_destroy`.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_create() -> *mut MqContext {
-    let mut engine = Engine::default();
+    let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
     let boxed_engine = Box::new(engine);
     Box::into_raw(boxed_engine) as *mut MqContext

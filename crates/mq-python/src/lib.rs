@@ -81,7 +81,7 @@ impl Options {
 #[pyfunction]
 #[pyo3(signature = (code, content, options=None))]
 fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult> {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     let options = options.unwrap_or_default();
     let input = match options.input_format.unwrap_or(InputFormat::Markdown) {

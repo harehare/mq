@@ -56,7 +56,7 @@ impl Hir {
             symbols: SlotMap::default(),
             sources,
             scopes,
-            module_loader: mq_lang::ModuleLoader::new(Some(module_paths)),
+            module_loader: mq_lang::ModuleLoader::new(mq_lang::FsModuleIO::new(Some(module_paths))),
             source_scopes,
             references: FxHashMap::default(),
         }
@@ -164,7 +164,7 @@ impl Hir {
             return;
         }
 
-        let (nodes, _) = mq_lang::parse_recovery(mq_lang::ModuleLoader::BUILTIN_FILE);
+        let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
 
         nodes.iter().for_each(|node| {
             self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
