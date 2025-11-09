@@ -83,9 +83,6 @@ impl FsModuleIO {
     fn find(name: &str, search_paths: Option<Vec<PathBuf>>) -> Result<PathBuf, ModuleError> {
         let home = dirs::home_dir()
             .map(|p| p.to_str().unwrap_or("").to_string())
-            
-            
-            
             .unwrap_or("".to_string());
         let origin = std::env::current_dir().ok();
 
