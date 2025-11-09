@@ -43,7 +43,7 @@ def _parse_yaml_value(str):
     elif (_parse_yaml_boolean(trimmed) != None):
       _parse_yaml_boolean(trimmed)
     # number
-    elif (is_digit(trimmed) || first(to_array(trimmed)) == "-" || first(to_array(trimmed)) == "+"):
+    elif (is_digit(trimmed) || first(trimmed) == "-" || first(trimmed) == "+"):
       if (contains(trimmed, ".")): to_number(trimmed) else: to_number(trimmed)
     # null
     elif (trimmed == "null" || trimmed == "Null" || trimmed == "NULL" || trimmed == "~" || trimmed == ""):
