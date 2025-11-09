@@ -72,7 +72,7 @@ pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
     pub(crate) module_loader: module::ModuleLoader<T>,
 
     #[cfg(feature = "debugger")]
-    pub(crate) debugger: Shared<SharedCell<Debugger>>,
+    debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
