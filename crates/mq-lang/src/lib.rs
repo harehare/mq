@@ -48,6 +48,7 @@ mod error;
 mod eval;
 mod ident;
 mod lexer;
+mod module;
 mod number;
 mod optimizer;
 mod range;
@@ -79,16 +80,19 @@ pub use error::Error;
 pub use eval::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc, INTERNAL_FUNCTION_DOC,
 };
-pub use eval::module::{BUILTIN_FILE as BUILTIN_MODULE_FILE, FsModuleIO, Module, ModuleIO, ModuleId, ModuleLoader};
 pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
+pub use module::{
+    BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, resolver::LocalFsModuleResolver,
+    resolver::ModuleResolver,
+};
 pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
 
-pub type DefaultEngine = Engine<FsModuleIO>;
-pub type DefaultModuleLoader = ModuleLoader<FsModuleIO>;
+pub type DefaultEngine = Engine<LocalFsModuleResolver>;
+pub type DefaultModuleLoader = ModuleLoader<LocalFsModuleResolver>;
 
 #[cfg(feature = "cst")]
 pub use cst::node::BinaryOp as CstBinaryOp;

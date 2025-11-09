@@ -4,13 +4,12 @@ use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
-use crate::eval::module;
 #[cfg(feature = "debugger")]
-use crate::eval::module::ModuleId;
+use crate::module::ModuleId;
 use crate::optimizer::OptimizationLevel;
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
-use crate::{FsModuleIO, MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
+use crate::{LocalFsModuleResolver, ModuleResolver, MqResult, RuntimeValue, Shared, SharedCell, token_alloc};
 
 use crate::{
     ModuleLoader, Token,
@@ -64,7 +63,7 @@ impl Default for Options {
 /// assert_eq!(result.unwrap(), vec!["hello world".to_string().into()].into());
 /// ```
 #[derive(Debug, Clone)]
-pub struct Engine<T: module::ModuleIO = FsModuleIO> {
+pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
     pub(crate) options: Options,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
@@ -84,13 +83,13 @@ fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     token_arena
 }
 
-impl<T: module::ModuleIO> Default for Engine<T> {
+impl<T: ModuleResolver> Default for Engine<T> {
     fn default() -> Self {
         Self::new(T::default())
     }
 }
 
-impl<T: module::ModuleIO> Engine<T> {
+impl<T: ModuleResolver> Engine<T> {
     pub fn new(module_io: T) -> Self {
         let token_arena = create_default_token_arena();
         Self {
@@ -458,7 +457,7 @@ mod tests {
     #[cfg(feature = "debugger")]
     #[test]
     fn test_get_source_code_for_debug() {
-        use crate::eval::module::ModuleId;
+        use crate::module::ModuleId;
 
         let mut engine: Engine = Engine::default();
         engine.load_builtin_module();

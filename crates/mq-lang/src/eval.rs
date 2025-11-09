@@ -7,8 +7,9 @@ use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
 use crate::{
-    IdentWithToken,
-    eval::{env::EnvError, module::ModuleError, runtime_value::ModuleEnv},
+    IdentWithToken, LocalFsModuleResolver, ModuleResolver,
+    eval::{env::EnvError, runtime_value::ModuleEnv},
+    module::{self, error::ModuleError},
 };
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
@@ -32,7 +33,6 @@ pub mod builtin;
 pub mod debugger;
 pub mod env;
 pub mod error;
-pub mod module;
 pub mod runtime_value;
 
 use env::Env;
@@ -63,7 +63,7 @@ impl Default for Options {
 }
 
 #[derive(Debug)]
-pub struct Evaluator<T: module::ModuleIO = module::FsModuleIO> {
+pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
     env: Shared<SharedCell<Env>>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
@@ -77,7 +77,7 @@ pub struct Evaluator<T: module::ModuleIO = module::FsModuleIO> {
     pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
 
-impl<T: module::ModuleIO> Default for Evaluator<T> {
+impl<T: ModuleResolver> Default for Evaluator<T> {
     fn default() -> Self {
         Self {
             env: Shared::new(SharedCell::new(Env::default())),
@@ -94,7 +94,7 @@ impl<T: module::ModuleIO> Default for Evaluator<T> {
     }
 }
 
-impl<T: module::ModuleIO> Clone for Evaluator<T> {
+impl<T: ModuleResolver> Clone for Evaluator<T> {
     fn clone(&self) -> Self {
         Self {
             env: Shared::clone(&self.env),
@@ -110,7 +110,7 @@ impl<T: module::ModuleIO> Clone for Evaluator<T> {
     }
 }
 
-impl<T: module::ModuleIO> Evaluator<T> {
+impl<T: ModuleResolver> Evaluator<T> {
     pub(crate) fn new(
         module_loader: module::ModuleLoader<T>,
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
@@ -374,7 +374,7 @@ impl<T: module::ModuleIO> Evaluator<T> {
                     .load_from_file(&module_name, Shared::clone(&self.token_arena))?;
                 self.load_module_with_env(module, env)
             }
-            _ => Err(EvalError::ModuleLoadError(module::ModuleError::InvalidModule)),
+            _ => Err(EvalError::ModuleLoadError(ModuleError::InvalidModule)),
         }
     }
 
@@ -464,12 +464,12 @@ impl<T: module::ModuleIO> Evaluator<T> {
                 {
                     Ok(value)
                 } else {
-                    Err(EvalError::ModuleLoadError(module::ModuleError::NotFound(Cow::Owned(
+                    Err(EvalError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
                         module_name,
                     ))))
                 }
             }
-            _ => Err(EvalError::ModuleLoadError(module::ModuleError::InvalidModule)),
+            _ => Err(EvalError::ModuleLoadError(ModuleError::InvalidModule)),
         }
     }
 
@@ -1251,7 +1251,7 @@ mod tests {
     use std::vec;
 
     use crate::ast::node::{Args, IdentWithToken};
-    use crate::eval::module::ModuleError;
+    use crate::eval::module::error::ModuleError;
     use crate::number::{INFINITE, NAN};
     use crate::range::Range;
     use crate::{AstExpr, AstNode, DefaultModuleLoader, ModuleLoader, token_alloc};
@@ -5422,7 +5422,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5451,7 +5451,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5485,7 +5485,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),
@@ -5522,7 +5522,7 @@ mod tests {
             }
         }
 
-        let loader = ModuleLoader::new(module::FsModuleIO::new(Some(vec![temp_dir.clone()])));
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
         let program = vec![
             Shared::new(ast::Node {
                 token_id: 0.into(),

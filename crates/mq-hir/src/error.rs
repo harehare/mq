@@ -43,7 +43,7 @@ impl Hir {
                 }
                 SymbolKind::Include(_) => {
                     let module_name = symbol.clone().value.unwrap_or(SmolStr::new("unknown")).clone();
-                    match self.module_loader.read_file(&module_name) {
+                    match self.module_loader.resolve(&module_name) {
                         Ok(_) => None,
                         Err(_) => Some(HirError::ModuleNotFound {
                             symbol: symbol.clone(),
