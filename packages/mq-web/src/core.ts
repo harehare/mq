@@ -3,7 +3,7 @@ import init, { Options, Diagnostic, DefinedValue } from "./mq_wasm";
 // Type definitions for WASM module
 interface WasmModule {
   run: (code: string, content: string, options: Options) => Promise<string>;
-  toAst: (code: string) => string;
+  toAst: (code: string) => Promise<string>;
   format: (code: string) => Promise<string>;
   diagnostics: (code: string) => Promise<readonly Diagnostic[]>;
   definedValues: (

@@ -369,7 +369,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
 }
 
 #[wasm_bindgen(js_name=toAst)]
-pub fn to_ast(code: &str) -> Result<String, JsValue> {
+pub async fn to_ast(code: &str) -> Result<String, JsValue> {
     let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
     mq_lang::parse(code, token_arena)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse code: {}", e)))
