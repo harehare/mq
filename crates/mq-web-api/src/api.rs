@@ -78,7 +78,7 @@ pub fn diagnostics(request: ApiRequest) -> DiagnosticsApiResponse {
 }
 
 fn execute_query(request: ApiRequest) -> miette::Result<mq_lang::RuntimeValues> {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
 
     let input = match request.input_format.unwrap_or(InputFormat::Markdown) {

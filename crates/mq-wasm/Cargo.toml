@@ -14,16 +14,19 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
+futures = "0.3"
 itertools.workspace = true
 js-sys = "0.3.77"
 mq-formatter.workspace = true
 mq-hir.workspace = true
 mq-lang = {workspace = true, features = ["ast-json"]}
 mq-markdown.workspace = true
+opfs = "0.1.4"
 serde = {workspace = true, features = ["derive"]}
 serde-wasm-bindgen = "0.6.5"
 serde_json.workspace = true
 wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4.55"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.55"

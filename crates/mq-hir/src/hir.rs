@@ -56,7 +56,7 @@ impl Hir {
             symbols: SlotMap::default(),
             sources,
             scopes,
-            module_loader: mq_lang::ModuleLoader::new(Some(module_paths)),
+            module_loader: mq_lang::ModuleLoader::new(mq_lang::LocalFsModuleResolver::new(Some(module_paths))),
             source_scopes,
             references: FxHashMap::default(),
         }
@@ -164,7 +164,7 @@ impl Hir {
             return;
         }
 
-        let (nodes, _) = mq_lang::parse_recovery(mq_lang::ModuleLoader::BUILTIN_FILE);
+        let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
 
         nodes.iter().for_each(|node| {
             self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
@@ -570,7 +570,7 @@ impl Hir {
             let _ = node.children_without_token().first().map(|child| {
                 let module_name = child.name().unwrap();
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
-                    let code = self.module_loader.read_file(&module_name);
+                    let code = self.module_loader.resolve(&module_name);
                     let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
 
                     self.add_symbol(Symbol {
@@ -601,7 +601,7 @@ impl Hir {
             let _ = node.children_without_token().first().map(|child| {
                 let module_name = child.name().unwrap();
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_name)) {
-                    let code = self.module_loader.read_file(&module_name);
+                    let code = self.module_loader.resolve(&module_name);
                     let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
 
                     self.add_symbol(Symbol {

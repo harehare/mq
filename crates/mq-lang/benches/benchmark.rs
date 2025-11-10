@@ -6,7 +6,7 @@ fn main() {
 
 #[divan::bench()]
 fn eval_fibonacci() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             "
@@ -22,7 +22,7 @@ fn eval_fibonacci() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_until_speed_test() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             "let i = 10000 | until(i > 0): let i = i - 1 | i;",
@@ -33,7 +33,7 @@ fn eval_until_speed_test() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_while_speed_test() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             "let i = 10000 | while(i > 0): let i = i - 1 | i;",
@@ -48,13 +48,13 @@ fn eval_select_h() -> mq_lang::RuntimeValues {
         mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
             .unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.eval(".h1", input.into_iter()).unwrap()
 }
 
 #[divan::bench(name = "eval_string_interpolation")]
 fn eval_string_interpolation() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             r#"let world = "world" | s"$$Hello, ${world}$$""#, // Semicolon is correct here before pipe
@@ -69,14 +69,14 @@ fn eval_nodes() -> mq_lang::RuntimeValues {
         mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
             .unwrap();
     let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine.eval(".h | nodes | map(upcase)", input.into_iter()).unwrap()
 }
 
 #[divan::bench]
 fn eval_boolean_folding() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             r#"
@@ -96,7 +96,7 @@ fn eval_boolean_folding() -> mq_lang::RuntimeValues {
 
 #[divan::bench]
 fn eval_comparison_folding() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             r#"
@@ -126,7 +126,7 @@ fn eval_comparison_folding() -> mq_lang::RuntimeValues {
 
 #[divan::bench]
 fn eval_dead_code_elimination_benchmark() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(
             r#"
@@ -163,7 +163,7 @@ fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
 
 #[divan::bench(name = "eval_foreach")]
 fn eval_foreach() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine
         .eval(r#"foreach(x, range(0, 1000, 1)): x + 1;"#, vec!["".into()].into_iter())
@@ -172,7 +172,7 @@ fn eval_foreach() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_csv_parse() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine
         .eval(
@@ -184,7 +184,7 @@ fn eval_csv_parse() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_yaml_parse() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine
         .eval(
@@ -196,7 +196,7 @@ fn eval_yaml_parse() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_json_parse() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine
         .eval(
@@ -208,7 +208,7 @@ fn eval_json_parse() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_qualified_access_to_csv_module() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine
        .eval(
@@ -220,7 +220,7 @@ fn eval_qualified_access_to_csv_module() -> mq_lang::RuntimeValues {
 
 #[divan::bench()]
 fn eval_string_equality() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine
         .eval(

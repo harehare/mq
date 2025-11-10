@@ -1,6 +1,6 @@
 use nom_locate::LocatedSpan;
 
-use crate::eval::module::ModuleId;
+use crate::module::ModuleId;
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 

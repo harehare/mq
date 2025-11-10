@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{Token, number::Number};
 
-use super::module::ModuleError;
+use super::module::error::ModuleError;
 
 type FunctionName = String;
 type ArgType = Vec<SmolStr>;

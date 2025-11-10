@@ -1,5 +1,5 @@
 fn main() {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     let code = "
      def fibonacci(x):
       if(x < 2):

@@ -5,7 +5,7 @@ use smol_str::SmolStr;
 
 #[cfg(feature = "ast-json")]
 use crate::ArenaId;
-use crate::{eval::module::ModuleId, number::Number, range::Range};
+use crate::{module::ModuleId, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 

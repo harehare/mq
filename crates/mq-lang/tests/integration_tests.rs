@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use mq_lang::{Engine, Ident, MqResult, RuntimeValue};
+use mq_lang::{DefaultEngine, Engine, Ident, MqResult, RuntimeValue};
 use rstest::{fixture, rstest};
 
 #[fixture]
-fn engine_no_opt() -> Engine {
-    let mut engine = mq_lang::Engine::default();
+fn engine_no_opt() -> DefaultEngine {
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine.set_optimization_level(mq_lang::OptimizationLevel::None);
     engine
@@ -13,7 +13,7 @@ fn engine_no_opt() -> Engine {
 
 #[fixture]
 fn engine_with_opt() -> Engine {
-    let mut engine = mq_lang::Engine::default();
+    let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine.set_optimization_level(mq_lang::OptimizationLevel::Full);
     engine

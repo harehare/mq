@@ -5,13 +5,11 @@
 ### Examples
 
 ```rs
-use mq_lang::Engine;
-
 let code = "add(\"world!\")";
 let input = vec![mq_lang::Value::Markdown(
   mq_markdown::Markdown::from_str("Hello,").unwrap()
 )].into_iter();
-let mut engine = mq_lang::Engine::default();
+let mut engine = mq_lang::DefaultEngine::default();
 
 assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
 

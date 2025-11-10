@@ -77,7 +77,7 @@ impl From<String> for Command {
 }
 
 pub struct CommandContext {
-    pub(crate) engine: mq_lang::Engine,
+    pub(crate) engine: mq_lang::DefaultEngine,
     pub(crate) input: Vec<mq_lang::RuntimeValue>,
     pub(crate) hir: mq_hir::Hir,
     pub(crate) source_id: mq_hir::SourceId,
@@ -85,7 +85,7 @@ pub struct CommandContext {
 }
 
 impl CommandContext {
-    pub fn new(engine: mq_lang::Engine, input: Vec<mq_lang::RuntimeValue>) -> Self {
+    pub fn new(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
         let mut hir = mq_hir::Hir::default();
         let (source_id, scope_id) = hir.add_new_source(None);
 
@@ -205,7 +205,9 @@ impl CommandContext {
                     })
                     .collect(),
             )),
-            Command::Version => Ok(CommandOutput::String(vec![mq_lang::Engine::version().to_string()])),
+            Command::Version => Ok(CommandOutput::String(vec![
+                mq_lang::DefaultEngine::version().to_string(),
+            ])),
             Command::Eval(code) => {
                 if code.is_empty() {
                     return Ok(CommandOutput::None);
@@ -295,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_completions() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let ctx = CommandContext::new(engine, Vec::new());
 
         let completions = ctx.completions("", 0);
@@ -304,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_execute_env() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute("/env TEST_VAR test_value");
@@ -314,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_execute_help() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute("/help").unwrap();
@@ -330,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_execute_vars() {
-        let mut ctx = CommandContext::new(mq_lang::Engine::default(), Vec::new());
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), Vec::new());
 
         ctx.execute("let x = 42 | let x2 = def fun1(x): add(x, 2); | def fun(): 1;")
             .unwrap();
@@ -348,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_execute_version() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute("/version").unwrap();
@@ -362,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_execute_load_file() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
         let (_, temp_file_path) = mq_test::create_file(
             "test_execute_load_file.md",
@@ -385,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_execute_eval() {
-        let engine = mq_lang::Engine::default();
+        let engine = mq_lang::DefaultEngine::default();
         let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
 
         let result = ctx.execute("add(1, 2)").unwrap();

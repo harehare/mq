@@ -393,6 +393,14 @@ impl Optimizer {
         if let ast::Expr::Call(func_ident, args) = &*node.expr
             && let Some((params, body, _)) = self.function_table.get(&func_ident.name)
         {
+            // Only inline if the number of arguments matches the number of parameters
+            // If params.len() == args.len() + 1, it means implicit first argument is needed,
+            // which we cannot handle during static optimization
+            if params.len() != args.len() {
+                new_program.push(node);
+                return;
+            }
+
             let mut param_bindings = FxHashMap::default();
             for (param, arg) in params.iter().zip(args.iter()) {
                 if let ast::Expr::Ident(param_ident) = &*param.expr {
@@ -462,20 +470,25 @@ impl Optimizer {
 
                 // Check if this function call can be inlined
                 if let Some((params, body, _)) = self.function_table.get(&func_ident.name) {
-                    // Create parameter bindings
-                    let mut param_bindings = FxHashMap::default();
-                    for (param, arg) in params.iter().zip(new_args.iter()) {
-                        if let ast::Expr::Ident(param_ident) = &*param.expr {
-                            param_bindings.insert(param_ident.name, arg.clone());
+                    // Only inline if the number of arguments matches the number of parameters
+                    // If params.len() == args.len() + 1, it means implicit first argument is needed,
+                    // which we cannot handle during static optimization
+                    if params.len() == new_args.len() {
+                        // Create parameter bindings
+                        let mut param_bindings = FxHashMap::default();
+                        for (param, arg) in params.iter().zip(new_args.iter()) {
+                            if let ast::Expr::Ident(param_ident) = &*param.expr {
+                                param_bindings.insert(param_ident.name, arg.clone());
+                            }
                         }
+                        // For single-expression functions, return the substituted expression directly
+                        if body.len() == 1 {
+                            return Self::substitute_parameters(&body[0], &param_bindings);
+                        }
+                        // For multi-expression functions, we need to create a compound expression
+                        // This is a limitation - we can only inline single-expression functions in nested contexts
+                        // Multi-expression functions can only be inlined at the top level
                     }
-                    // For single-expression functions, return the substituted expression directly
-                    if body.len() == 1 {
-                        return Self::substitute_parameters(&body[0], &param_bindings);
-                    }
-                    // For multi-expression functions, we need to create a compound expression
-                    // This is a limitation - we can only inline single-expression functions in nested contexts
-                    // Multi-expression functions can only be inlined at the top level
                 }
 
                 Shared::new(ast::Expr::Call(func_ident.clone(), new_args))
@@ -2378,7 +2391,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use crate::{Arena, SharedCell};
+    use crate::{Arena, DefaultEngine, SharedCell};
     use mq_test::strategies::expr::*;
     use proptest::prelude::*;
 
@@ -2416,7 +2429,7 @@ mod proptests {
             let program = crate::parse(&expr_str, Shared::clone(&token_arena));
             prop_assume!(program.is_ok());
 
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
@@ -2439,10 +2452,10 @@ mod proptests {
         fn test_optimization_preserves_semantics_nested(
             expr_str in arb_nested_arithmetic_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
 
-            let mut engine_opt = crate::Engine::default();
+            let mut engine_opt = DefaultEngine::default();
             let result_opt = engine_opt.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
             prop_assert!(result_no_opt.is_ok(), "Non-optimized evaluation should succeed");
@@ -2459,7 +2472,7 @@ mod proptests {
         fn test_inline_only_preserves_semantics(
             (expr_str, _expected) in arb_arithmetic_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_inline = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::InlineOnly);
 
@@ -2477,7 +2490,7 @@ mod proptests {
         fn test_optimization_string_concat(
             expr_str in arb_string_concat_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2495,12 +2508,12 @@ mod proptests {
         fn test_optimization_comparison(
             expr_str in arb_comparison_expr()
         ) {
-            let mut engine_no_opt = crate::Engine::default();
+            let mut engine_no_opt = DefaultEngine::default();
             engine_no_opt.load_builtin_module();
             engine_no_opt.set_optimization_level(OptimizationLevel::None);
             let result_no_opt = engine_no_opt.eval(&expr_str, crate::null_input().into_iter());
 
-            let mut engine_opt = crate::Engine::default();
+            let mut engine_opt = DefaultEngine::default();
             engine_opt.load_builtin_module();
             engine_opt.set_optimization_level(OptimizationLevel::Full);
             let result_opt = engine_opt.eval(&expr_str, crate::null_input().into_iter());
@@ -2519,7 +2532,7 @@ mod proptests {
         fn test_optimization_logical(
             expr_str in arb_logical_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2537,7 +2550,7 @@ mod proptests {
         fn test_optimization_div_mod(
             expr_str in arb_div_mod_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2555,7 +2568,7 @@ mod proptests {
         fn test_optimization_let_expr(
             expr_str in arb_let_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2573,7 +2586,7 @@ mod proptests {
         fn test_optimization_deeply_nested(
             expr_str in arb_deeply_nested_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2591,7 +2604,7 @@ mod proptests {
         fn test_optimization_mixed_type(
             expr_str in arb_mixed_type_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2609,7 +2622,7 @@ mod proptests {
         fn test_optimization_function_def(
             expr_str in arb_function_def_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2630,7 +2643,7 @@ mod proptests {
         fn test_optimization_complex(
             expr_str in arb_any_expr()
         ) {
-            let mut engine = crate::Engine::default();
+            let mut engine = DefaultEngine::default();
             let result_no_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::None);
             let result_opt = engine.eval_with_level(&expr_str, crate::null_input().into_iter(), OptimizationLevel::Full);
 
@@ -2645,5 +2658,63 @@ mod proptests {
                 val_opt
             );
         }
+    }
+
+    /// Test for implicit first argument handling in function inlining
+    #[test]
+    fn test_inline_with_implicit_first_argument() {
+        let query = r#"
+def my_func(x):
+  x
+end
+| 42 | my_func()
+"#;
+
+        let mut engine_no_opt = DefaultEngine::default();
+        let result_no_opt =
+            engine_no_opt.eval_with_level(query, crate::null_input().into_iter(), OptimizationLevel::None);
+
+        let mut engine_opt = DefaultEngine::default();
+        let result_opt = engine_opt.eval_with_level(query, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+        assert!(result_no_opt.is_ok(), "No optimization failed: {:?}", result_no_opt);
+        assert!(result_opt.is_ok(), "Optimization failed: {:?}", result_opt);
+
+        let val_no_opt = &result_no_opt.unwrap()[0];
+        let val_opt = &result_opt.unwrap()[0];
+
+        assert_eq!(
+            val_no_opt, val_opt,
+            "Results differ between optimized and non-optimized versions"
+        );
+    }
+
+    /// Test for implicit first argument with builtin function call
+    #[test]
+    fn test_inline_with_implicit_arg_and_builtin() {
+        let query = r#"
+def my_split(x):
+  split(x, "_")
+end
+| "hello_world" | my_split()
+"#;
+
+        let mut engine_no_opt = DefaultEngine::default();
+        let result_no_opt =
+            engine_no_opt.eval_with_level(query, crate::null_input().into_iter(), OptimizationLevel::None);
+
+        let mut engine_opt = DefaultEngine::default();
+        let result_opt = engine_opt.eval_with_level(query, crate::null_input().into_iter(), OptimizationLevel::Full);
+
+        assert!(result_no_opt.is_ok(), "No optimization failed: {:?}", result_no_opt);
+        assert!(result_opt.is_ok(), "Optimization failed: {:?}", result_opt);
+
+        let val_no_opt = &result_no_opt.unwrap()[0];
+        let val_opt = &result_opt.unwrap()[0];
+
+        assert_eq!(
+            val_no_opt, val_opt,
+            "Results differ between optimized and non-optimized versions"
+        );
     }
 }

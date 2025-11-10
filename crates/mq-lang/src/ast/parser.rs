@@ -1,7 +1,7 @@
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
-use crate::eval::module::ModuleId;
 use crate::lexer::token::{Token, TokenKind};
+use crate::module::ModuleId;
 use crate::{Ident, Shared};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;

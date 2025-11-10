@@ -19,7 +19,7 @@ use nom_locate::{LocatedSpan, position};
 use smol_str::SmolStr;
 use token::{StringSegment, Token, TokenKind};
 
-use crate::eval::module::ModuleId;
+use crate::module::ModuleId;
 use crate::number::Number;
 use crate::range::Range;
 

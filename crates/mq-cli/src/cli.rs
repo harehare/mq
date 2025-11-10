@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
-use mq_lang::Engine;
+use mq_lang::DefaultEngine;
 use mq_lsp::server::LspConfig;
 use rayon::prelude::*;
 use std::collections::VecDeque;
@@ -330,12 +330,12 @@ impl Cli {
         }
     }
 
-    fn create_engine(&self) -> miette::Result<Engine> {
-        let mut engine = mq_lang::Engine::default();
+    fn create_engine(&self) -> miette::Result<DefaultEngine> {
+        let mut engine = mq_lang::DefaultEngine::default();
         engine.load_builtin_module();
 
         if let Some(dirs) = &self.input.module_directories {
-            engine.set_paths(dirs.clone());
+            engine.set_search_paths(dirs.clone());
         }
 
         if let Some(modules) = &self.input.module_names {
@@ -412,7 +412,7 @@ impl Cli {
 
     fn execute(
         &self,
-        engine: &mut mq_lang::Engine,
+        engine: &mut mq_lang::DefaultEngine,
         query: &str,
         file: &Option<PathBuf>,
         content: &str,

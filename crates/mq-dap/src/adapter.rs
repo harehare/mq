@@ -21,7 +21,7 @@ type DynResult<T> = miette::Result<T, Box<dyn std::error::Error>>;
 
 /// Main DAP adapter for mq debugger
 pub struct MqAdapter {
-    engine: mq_lang::Engine,
+    engine: mq_lang::DefaultEngine,
     query_file: Option<String>,
     debugger_message_rx: Option<Receiver<DebuggerMessage>>,
     debugger_message_tx: Option<Sender<DebuggerMessage>>,
@@ -42,7 +42,7 @@ impl MqAdapter {
         let (command_tx, command_rx) = crossbeam_channel::unbounded::<DapCommand>();
 
         let dap_handler = DapDebuggerHandler::new(message_tx.clone());
-        let mut engine = mq_lang::Engine::default();
+        let mut engine = mq_lang::DefaultEngine::default();
 
         // Set up the debugger handler
         {
@@ -262,8 +262,8 @@ impl MqAdapter {
 
     /// Evaluate code in the current debug context
     fn eval(&self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
-        let mut engine = if let Some(ref context) = self.current_debug_context {
-            mq_lang::Engine::default().switch_env(Shared::clone(&context.env))
+        let mut engine: mq_lang::DefaultEngine = if let Some(ref context) = self.current_debug_context {
+            mq_lang::DefaultEngine::default().switch_env(Shared::clone(&context.env))
         } else {
             return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
                 "Current context not found",

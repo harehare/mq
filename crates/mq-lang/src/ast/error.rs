@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Token, eval::module::ModuleId};
+use crate::{Token, module::ModuleId};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {

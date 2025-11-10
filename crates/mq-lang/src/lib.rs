@@ -3,13 +3,11 @@
 //! ## Examples
 //!
 //! ```rs
-//! use mq_lang::Engine;
-//!
 //! let code = "add(\"world!\")";
 //! let input = vec![mq_lang::Value::Markdown(
 //!   mq_markdown::Markdown::from_str("Hello,").unwrap()
 //! )].into_iter();
-//! let mut engine = mq_lang::Engine::default();
+//! let mut engine = mq_lang::DefaultEngine::default();
 //!
 //! assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
 //!
@@ -50,6 +48,7 @@ mod error;
 mod eval;
 mod ident;
 mod lexer;
+mod module;
 mod number;
 mod optimizer;
 mod range;
@@ -64,9 +63,7 @@ use std::sync::Arc;
 #[cfg(feature = "sync")]
 use std::sync::RwLock;
 
-pub use arena::Arena;
-#[cfg(feature = "ast-json")]
-pub use arena::ArenaId;
+pub use arena::{Arena, ArenaId};
 pub use ast::Program;
 pub use ast::node::Expr as AstExpr;
 pub use ast::node::IdentWithToken;
@@ -81,13 +78,19 @@ pub use error::Error;
 pub use eval::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinFunctionDoc, BuiltinSelectorDoc, INTERNAL_FUNCTION_DOC,
 };
-pub use eval::module::{Module, ModuleId, ModuleLoader};
 pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
+pub use module::{
+    BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, error::ModuleError,
+    resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
+};
 pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
+
+pub type DefaultEngine = Engine<LocalFsModuleResolver>;
+pub type DefaultModuleLoader = ModuleLoader<LocalFsModuleResolver>;
 
 #[cfg(feature = "cst")]
 pub use cst::node::BinaryOp as CstBinaryOp;
@@ -134,7 +137,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
         include_spaces: true,
     })
     .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), ModuleLoader::default())))
+    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
     .unwrap();
 
     let (cst_nodes, errors) = CstParser::new(tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter()).parse();
@@ -145,7 +148,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
     let tokens = Lexer::new(lexer::Options::default())
         .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), ModuleLoader::default())))?;
+        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))?;
     let mut token_arena = {
         #[cfg(not(feature = "sync"))]
         {
@@ -164,7 +167,7 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         Module::TOP_LEVEL_MODULE_ID,
     )
     .parse()
-    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), ModuleLoader::default())))
+    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
@@ -241,7 +244,7 @@ mod tests {
     fn test_eval_basic() {
         let code = "add(\"world!\")";
         let input = mq_markdown::Markdown::from_markdown_str("Hello,").unwrap();
-        let mut engine = Engine::default();
+        let mut engine = DefaultEngine::default();
 
         assert_eq!(
             engine

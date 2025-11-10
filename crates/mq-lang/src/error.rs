@@ -2,10 +2,8 @@ use miette::{Diagnostic, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    Module, ModuleLoader,
-    ast::error::ParseError,
-    eval::{error::EvalError, module::ModuleError},
-    lexer::error::LexerError,
+    Module, ModuleLoader, ModuleResolver, ast::error::ParseError, eval::error::EvalError, lexer::error::LexerError,
+    module, module::error::ModuleError,
 };
 
 #[allow(clippy::useless_conversion)]
@@ -37,7 +35,7 @@ impl Error {
     pub fn from_error(
         top_level_source_code: impl Into<String>,
         cause: InnerError,
-        module_loader: ModuleLoader,
+        module_loader: ModuleLoader<impl ModuleResolver>,
     ) -> Self {
         let source_code = top_level_source_code.into();
         let token = match &cause {
@@ -140,9 +138,9 @@ impl Error {
                 let source_code = module_id
                     .map(|module_id| match module_loader.module_name(*module_id) {
                         Cow::Borrowed(Module::TOP_LEVEL_MODULE) => source_code.clone(),
-                        Cow::Borrowed(Module::BUILTIN_MODULE) => ModuleLoader::BUILTIN_FILE.to_string(),
-                        Cow::Borrowed(module_name) => module_loader.clone().read_file(module_name).unwrap_or_default(),
-                        Cow::Owned(module_name) => module_loader.clone().read_file(&module_name).unwrap_or_default(),
+                        Cow::Borrowed(Module::BUILTIN_MODULE) => module::BUILTIN_FILE.to_string(),
+                        Cow::Borrowed(module_name) => module_loader.clone().resolve(module_name).unwrap_or_default(),
+                        Cow::Owned(module_name) => module_loader.clone().resolve(&module_name).unwrap_or_default(),
                     })
                     .unwrap_or(source_code);
 
@@ -294,7 +292,7 @@ mod test {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::{Arena, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
+    use crate::{Arena, LocalFsModuleResolver, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
 
     #[fixture]
     fn module_loader() -> ModuleLoader {
@@ -304,7 +302,7 @@ mod test {
     #[test]
     fn test_from_error_with_eof_error() {
         let cause = InnerError::Parse(ParseError::UnexpectedEOFDetected(ArenaId::new(0)));
-        let module_loader = ModuleLoader::default();
+        let module_loader: ModuleLoader = ModuleLoader::default();
         let error = Error::from_error("line 1\nline 2", cause, module_loader);
 
         assert_eq!(error.source_code, "line 1\nline 2");
@@ -466,7 +464,11 @@ mod test {
         ))),
         "source code"
     )]
-    fn test_from_error(module_loader: ModuleLoader, #[case] cause: InnerError, #[case] source_code: &str) {
+    fn test_from_error(
+        module_loader: module::ModuleLoader<impl ModuleResolver>,
+        #[case] cause: InnerError,
+        #[case] source_code: &str,
+    ) {
         let error = Error::from_error(source_code, cause, module_loader);
         assert_eq!(error.source_code, source_code);
     }
@@ -485,7 +487,7 @@ mod test {
         }
 
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::new(Some(vec![temp_dir.clone()]));
+        let mut loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
         loader
             .load_from_file("test_from_error_with_module_source", token_arena)
             .unwrap();
@@ -505,7 +507,7 @@ mod test {
     #[test]
     fn test_from_error_with_builtin_module() {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
-        let mut loader = ModuleLoader::default();
+        let mut loader: ModuleLoader = ModuleLoader::default();
         loader.load_builtin(token_arena).unwrap();
         let token = Token {
             range: Range::default(),
@@ -516,7 +518,7 @@ mod test {
         let cause = InnerError::Eval(EvalError::ZeroDivision(token));
         let error = Error::from_error("top level source", cause, loader);
 
-        assert_eq!(error.source_code, ModuleLoader::BUILTIN_FILE);
+        assert_eq!(error.source_code, module::BUILTIN_FILE);
     }
 
     #[rstest]
@@ -733,7 +735,7 @@ mod test {
             module_id: ArenaId::new(0),
         })))
     )]
-    fn test_diagnostic_code_and_help(module_loader: ModuleLoader, #[case] cause: InnerError) {
+    fn test_diagnostic_code_and_help(module_loader: ModuleLoader<impl ModuleResolver>, #[case] cause: InnerError) {
         let error = Error::from_error("source code", cause, module_loader);
         // code() and help() must not panic
         let _ = error.code();

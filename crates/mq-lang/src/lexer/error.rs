@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::eval::module::ModuleId;
+use crate::module::ModuleId;
 
 use super::token::Token;
 
