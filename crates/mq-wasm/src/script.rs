@@ -280,7 +280,7 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, mq_lang::ModuleError> {
         self.cache.borrow().get(module_name).cloned().ok_or_else(|| {
             mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
-                "Module '{}' not found in cache. Use preload_module() to load it first.",
+                "Module '{}' not found in cache. Use preload_modules() to load it first.",
                 module_name
             )))
         })
