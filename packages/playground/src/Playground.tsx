@@ -1610,11 +1610,6 @@ export const Playground = () => {
               </span>
             )}
           </div>
-          <div className="footer-right">
-            <span style={{ fontSize: "11px", opacity: 0.7 }}>
-              mq Playground
-            </span>
-          </div>
         </footer>
       )}
 
