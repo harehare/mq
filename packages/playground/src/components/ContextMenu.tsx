@@ -1,5 +1,5 @@
-import { FC, useEffect, useRef } from 'react';
-import './ContextMenu.css';
+import { useEffect, useRef } from "react";
+import "./ContextMenu.css";
 
 export interface ContextMenuItem {
   label: string;
@@ -15,7 +15,7 @@ interface ContextMenuProps {
   onClose: () => void;
 }
 
-export const ContextMenu: FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
+export const ContextMenu = ({ x, y, items, onClose }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,17 +26,17 @@ export const ContextMenu: FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
     };
 
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
     };
   }, [onClose]);
 
@@ -49,7 +49,7 @@ export const ContextMenu: FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
       {items.map((item, index) => (
         <div
           key={index}
-          className={`context-menu-item ${item.disabled ? 'disabled' : ''}`}
+          className={`context-menu-item ${item.disabled ? "disabled" : ""}`}
           onClick={() => {
             if (!item.disabled) {
               item.onClick();
