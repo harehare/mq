@@ -244,7 +244,7 @@ mod tests {
     fn test_eval_basic() {
         let code = "add(\"world!\")";
         let input = mq_markdown::Markdown::from_markdown_str("Hello,").unwrap();
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
 
         assert_eq!(
             engine

@@ -772,24 +772,24 @@ mod tests {
             let mut file_handle = root
                 .get_file_handle_with_options(file_name, &opfs::GetFileHandleOptions { create: true })
                 .await
-                .expect(&format!("Failed to get file handle for {}", file_name));
+                .unwrap_or_else(|_| panic!("Failed to get file handle for {}", file_name));
 
             let mut writer = file_handle
                 .create_writable_with_options(&opfs::CreateWritableOptions {
                     keep_existing_data: false,
                 })
                 .await
-                .expect(&format!("Failed to create writable for {}", file_name));
+                .unwrap_or_else(|_| panic!("Failed to create writable for {}", file_name));
 
             writer
                 .write_at_cursor_pos(content.as_bytes().to_vec())
                 .await
-                .expect(&format!("Failed to write to {}", file_name));
+                .unwrap_or_else(|_| panic!("Failed to write to {}", file_name));
 
             writer
                 .close()
                 .await
-                .expect(&format!("Failed to close writer for {}", file_name));
+                .unwrap_or_else(|_| panic!("Failed to close writer for {}", file_name));
         }
 
         // Preload all modules

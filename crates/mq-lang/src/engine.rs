@@ -171,9 +171,9 @@ impl<T: ModuleResolver> Engine<T> {
     /// # Examples
     ///
     /// ```
-    /// use mq_lang::{Engine, OptimizationLevel};
+    /// use mq_lang::{DefaultEngine, OptimizationLevel};
     ///
-    /// let mut engine: Engine = Engine::default();
+    /// let mut engine = DefaultEngine::default();
     /// engine.load_builtin_module();
     ///
     /// let input = mq_lang::parse_text_input("hello").unwrap();
@@ -228,9 +228,9 @@ impl<T: ModuleResolver> Engine<T> {
     ///
     /// ```rust
     /// #[cfg(feature = "ast-json")]
-    /// use mq_lang::{Engine, AstNode, AstExpr, AstLiteral, Program, RuntimeValue, Shared};
+    /// use mq_lang::{DefaultEngine, AstNode, AstExpr, AstLiteral, Program, RuntimeValue, Shared};
     ///
-    /// let mut engine: Engine = Engine::default();
+    /// let mut engine = DefaultEngine::default();
     /// engine.load_builtin_module();
     ///
     /// let json = r#"[
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_set_paths() {
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         let paths = vec![PathBuf::from("/test/path")];
         engine.set_search_paths(paths.clone());
         assert_eq!(engine.evaluator.module_loader.search_paths(), paths);
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_set_max_call_stack_depth() {
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         let default_depth = engine.evaluator.options.max_call_stack_depth;
         let new_depth = default_depth + 10;
 
@@ -361,7 +361,7 @@ mod tests {
             }
         }
 
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         engine.set_search_paths(vec![temp_dir]);
 
         let result = engine.load_module("test_module");
@@ -379,7 +379,7 @@ mod tests {
             }
         }
 
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         engine.set_search_paths(vec![temp_dir]);
 
         let result = engine.load_module("error");
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_eval() {
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         let result = engine.eval("add(1, 1)", vec!["".to_string().into()].into_iter());
         assert!(result.is_ok());
         let values = result.unwrap();
@@ -400,7 +400,7 @@ mod tests {
     fn test_eval_ast() {
         use crate::{AstExpr, AstLiteral, AstNode};
 
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
 
         let program = vec![Shared::new(AstNode {
@@ -441,7 +441,7 @@ mod tests {
         use crate::eval::env::Env;
         use crate::{SharedCell, null_input};
 
-        let engine: Engine = Engine::default();
+        let engine = DefaultEngine::default();
         let env = Shared::new(SharedCell::new(Env::default()));
 
         env.write().unwrap().define("runtime".into(), RuntimeValue::NONE);
@@ -459,7 +459,7 @@ mod tests {
     fn test_get_source_code_for_debug() {
         use crate::module::ModuleId;
 
-        let mut engine: Engine = Engine::default();
+        let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
 
         let module_id = ModuleId::new(0);
