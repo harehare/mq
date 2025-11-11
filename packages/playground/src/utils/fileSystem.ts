@@ -174,7 +174,7 @@ export class OPFSFileSystem {
         }
       } else {
         // No content provided - read, write, delete
-        const isDirectory = await this.isDirectory(oldPath);
+        const isDirectory = await this.isDirectoryPath(oldPath);
 
         if (isDirectory) {
           await this.copyDirectory(oldPath, newPath);
@@ -223,10 +223,6 @@ export class OPFSFileSystem {
     } catch {
       return false;
     }
-  }
-
-  private async isDirectory(path: string): Promise<boolean> {
-    return this.isDirectoryPath(path);
   }
 
   private async copyDirectory(
