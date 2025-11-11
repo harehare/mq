@@ -80,10 +80,7 @@ const CreateInput = ({
   };
 
   const handleBlur = () => {
-    // Delay the onComplete call to ensure onChange has updated the state
-    setTimeout(() => {
-      onComplete();
-    }, 100);
+    onComplete();
   };
 
   return (
