@@ -552,9 +552,11 @@ const startLspServer = async () => {
       ? workspaceFolders.map((folder) => folder.uri.fsPath)
       : [process.cwd()];
 
+  const multiWorkspaceArgs = workspacePaths.flatMap((path) => ["-M", path]);
+
   const run: lc.Executable = {
     command: lspPath,
-    args: ["lsp", "-M", ...workspacePaths],
+    args: ["lsp", ...multiWorkspaceArgs],
     options: {},
   };
 
