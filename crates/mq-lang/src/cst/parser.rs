@@ -526,9 +526,11 @@ impl<'a> Parser<'a> {
             // Add the colon token
             children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::Colon), NodeKind::Token)?);
 
-            // Parse the second expression (end index)
-            let second_expr = self.parse_expr(Vec::new(), false, false)?;
-            children.push(second_expr);
+            if !self.try_next_token(|kind| *kind == TokenKind::RBracket) {
+                // Parse the second expression (end index)
+                let second_expr = self.parse_expr(Vec::new(), false, false)?;
+                children.push(second_expr);
+            }
         }
 
         // Expect closing bracket
@@ -6591,6 +6593,64 @@ mod tests {
                         Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+                Shared::new(Node {
+                    kind: NodeKind::Eof,
+                    token: Some(Shared::new(token(TokenKind::Eof))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: Vec::new(),
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::slice_access_with_start_only(
+        vec![
+            Shared::new(token(TokenKind::Ident("arr".into()))),
+            Shared::new(token(TokenKind::LBracket)),
+            Shared::new(token(TokenKind::NumberLiteral(1.into()))),
+            Shared::new(token(TokenKind::Colon)),
+            Shared::new(token(TokenKind::RBracket)),
+            Shared::new(token(TokenKind::Eof)),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LBracket))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::Colon))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RBracket))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
