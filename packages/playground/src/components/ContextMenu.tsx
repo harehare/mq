@@ -1,19 +1,19 @@
 import { useEffect, useRef } from "react";
 import "./ContextMenu.css";
 
-export interface ContextMenuItem {
+export type ContextMenuItem = {
   label: string;
   onClick: () => void;
   icon?: React.ReactNode;
   disabled?: boolean;
-}
+};
 
-interface ContextMenuProps {
+type ContextMenuProps = {
   x: number;
   y: number;
   items: ContextMenuItem[];
   onClose: () => void;
-}
+};
 
 export const ContextMenu = ({ x, y, items, onClose }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);

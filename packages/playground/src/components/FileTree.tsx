@@ -13,7 +13,7 @@ import {
 import "./FileTree.css";
 import { ContextMenu, ContextMenuItem } from "./ContextMenu";
 
-interface FileTreeProps {
+type FileTreeProps = {
   files: FileNode[];
   onFileSelect: (path: string) => void;
   onRefresh: () => void;
@@ -22,9 +22,9 @@ interface FileTreeProps {
   onDeleteFile: (path: string) => void;
   onRenameFile: (oldPath: string, newName: string) => void;
   selectedFile: string | null;
-}
+};
 
-interface FileTreeNodeProps {
+type FileTreeNodeProps = {
   node: FileNode;
   onFileSelect: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
@@ -35,23 +35,25 @@ interface FileTreeNodeProps {
   onRenamingComplete: () => void;
   onRenamingCancel: () => void;
   creatingInPath: string | undefined;
-  creatingType: "file" | "folder" | null;
+  creatingType: NodeType | null;
   creatingValue: string;
   onCreatingChange: (value: string) => void;
   onCreatingComplete: () => void;
   onCreatingCancel: () => void;
   selectedFile: string | null;
   level: number;
-}
+};
 
-interface CreateInputProps {
+type NodeType = "file" | "folder";
+
+type CreateInputProps = {
   value: string;
   onChange: (value: string) => void;
   onComplete: () => void;
   onCancel: () => void;
-  type: "file" | "folder";
+  type: NodeType;
   level: number;
-}
+};
 
 const CreateInput = ({
   value,
@@ -162,13 +164,13 @@ const FileTreeNode = ({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
+      if (e.key === "Enter") {
         e.preventDefault();
         onRenamingComplete();
-      } else if (e.key === 'Escape') {
+      } else if (e.key === "Escape") {
         e.preventDefault();
         onRenamingCancel();
-      } else if (e.key === 'F2' && !isRenaming) {
+      } else if (e.key === "F2" && !isRenaming) {
         e.preventDefault();
         onStartRename(node);
       }
@@ -278,7 +280,7 @@ export const FileTree = ({
   const [renamingValue, setRenamingValue] = useState("");
   const [creatingItem, setCreatingItem] = useState<{
     parentPath: string | undefined;
-    type: "file" | "folder";
+    type: NodeType;
   } | null>(null);
   const [creatingValue, setCreatingValue] = useState("");
 
@@ -311,25 +313,23 @@ export const FileTree = ({
     setRenamingValue("");
   }, []);
 
-  const handleStartCreate = useCallback((parentPath: string | undefined, type: "file" | "folder") => {
-    setCreatingItem({ parentPath, type });
-    setCreatingValue("");
-  }, []);
+  const handleStartCreate = useCallback(
+    (parentPath: string | undefined, type: NodeType) => {
+      setCreatingItem({ parentPath, type });
+      setCreatingValue("");
+    },
+    []
+  );
 
   const handleCreatingComplete = useCallback(() => {
-    console.log("handleCreatingComplete called:", { creatingItem, creatingValue });
-
     if (creatingItem && creatingValue.trim()) {
       const trimmedValue = creatingValue.trim();
-      console.log("Creating:", { type: creatingItem.type, parentPath: creatingItem.parentPath, value: trimmedValue });
 
       if (creatingItem.type === "file") {
         onCreateFile(creatingItem.parentPath, trimmedValue);
       } else {
         onCreateFolder(creatingItem.parentPath, trimmedValue);
       }
-    } else {
-      console.log("Skipping creation - empty value or no creatingItem");
     }
     setCreatingItem(null);
     setCreatingValue("");

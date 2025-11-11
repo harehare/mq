@@ -1,9 +1,9 @@
-export interface FileNode {
+export type FileNode = {
   name: string;
   path: string;
   type: "file" | "directory";
   children?: FileNode[];
-}
+};
 
 export class OPFSFileSystem {
   private root: FileSystemDirectoryHandle | null = null;
@@ -82,10 +82,6 @@ export class OPFSFileSystem {
         await new Promise((resolve) => setTimeout(resolve, 500));
         await currentDir.removeEntry(fileName);
       } catch (checkError) {
-        // File doesn't exist, which is fine (already deleted)
-        console.log(
-          `File ${path} doesn't exist, considering deletion successful`
-        );
         console.error(checkError);
       }
     }

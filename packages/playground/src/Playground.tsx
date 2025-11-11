@@ -418,13 +418,7 @@ export const Playground = () => {
     // Restore active tab ID from localStorage on initial load
     return localStorage.getItem(ACTIVE_TAB_ID_KEY);
   });
-  const tabsRef = useRef<Tab[]>([]);
   const hasInitialized = useRef(false);
-
-  // Keep tabsRef in sync with tabs state
-  useEffect(() => {
-    tabsRef.current = tabs;
-  }, [tabs]);
 
   // Persist tabs to localStorage whenever they change
   useEffect(() => {
@@ -488,15 +482,8 @@ export const Playground = () => {
             try {
               // Verify the file still exists and load its current content
               const content = await fileSystem.readFile(activeTab.filePath);
-              setCode(content);
-              setCurrentFilePath(activeTab.filePath);
+              setEditorContent(activeTab.filePath, content);
               setSelectedFile(activeTab.filePath);
-
-              const fileType = getFileType(activeTab.filePath);
-              if (fileType === "md" || fileType === "mdx") {
-                setMarkdown(content);
-                setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
-              }
             } catch (error) {
               console.error("Failed to restore active tab:", error);
               // If active tab file doesn't exist, clear it
@@ -719,33 +706,10 @@ export const Playground = () => {
     return "other";
   };
 
-  const openOrSwitchToTab = useCallback((filePath: string, content: string) => {
-    // Check if tab already exists using ref to get the latest state
-    const existingTab = tabsRef.current.find((tab) => tab.filePath === filePath);
-    if (existingTab) {
-      setActiveTabId(existingTab.id);
-      setCode(existingTab.content);
-      setCurrentFilePath(filePath);
-      const fileType = getFileType(filePath);
-      if (fileType === "md" || fileType === "mdx") {
-        setMarkdown(existingTab.content);
-        setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
-      }
-      return;
-    }
+  const generateTabId = () => `tab-${Date.now()}-${Math.random()}`;
 
-    // Create new tab
-    const newTab: Tab = {
-      id: `tab-${Date.now()}-${Math.random()}`,
-      filePath,
-      content,
-      savedContent: content, // Initially, content and savedContent are the same
-      fileType: getFileType(filePath),
-      isDirty: false,
-    };
-
-    setTabs((prevTabs) => [...prevTabs, newTab]);
-    setActiveTabId(newTab.id);
+  // Helper function to set editor content based on file type
+  const setEditorContent = (filePath: string, content: string) => {
     setCode(content);
     setCurrentFilePath(filePath);
 
@@ -754,6 +718,33 @@ export const Playground = () => {
       setMarkdown(content);
       setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
     }
+  };
+
+  const openOrSwitchToTab = useCallback((filePath: string, content: string) => {
+    setTabs((prevTabs) => {
+      // Check if tab already exists
+      const existingTab = prevTabs.find((tab) => tab.filePath === filePath);
+      if (existingTab) {
+        setActiveTabId(existingTab.id);
+        setEditorContent(filePath, existingTab.content);
+        return prevTabs; // Don't modify tabs
+      }
+
+      // Create new tab
+      const newTab: Tab = {
+        id: generateTabId(),
+        filePath,
+        content,
+        savedContent: content,
+        fileType: getFileType(filePath),
+        isDirty: false,
+      };
+
+      setActiveTabId(newTab.id);
+      setEditorContent(filePath, content);
+
+      return [...prevTabs, newTab];
+    });
   }, []);
 
   const handleTabClick = useCallback(
@@ -762,14 +753,8 @@ export const Playground = () => {
       if (!tab) return;
 
       setActiveTabId(tabId);
-      setCode(tab.content);
-      setCurrentFilePath(tab.filePath);
+      setEditorContent(tab.filePath, tab.content);
       setSelectedFile(tab.filePath);
-
-      if (tab.fileType === "md" || tab.fileType === "mdx") {
-        setMarkdown(tab.content);
-        setInputFormat(tab.fileType === "mdx" ? "mdx" : "markdown");
-      }
     },
     [tabs]
   );
@@ -795,14 +780,8 @@ export const Playground = () => {
         if (newTabs.length > 0) {
           const nextTab = newTabs[newTabs.length - 1];
           setActiveTabId(nextTab.id);
-          setCode(nextTab.content);
-          setCurrentFilePath(nextTab.filePath);
+          setEditorContent(nextTab.filePath, nextTab.content);
           setSelectedFile(nextTab.filePath);
-
-          if (nextTab.fileType === "md" || nextTab.fileType === "mdx") {
-            setMarkdown(nextTab.content);
-            setInputFormat(nextTab.fileType === "mdx" ? "mdx" : "markdown");
-          }
         } else {
           setActiveTabId(null);
           setCurrentFilePath(null);

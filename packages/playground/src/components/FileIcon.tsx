@@ -7,11 +7,11 @@ import {
   VscFolderOpened,
 } from "react-icons/vsc";
 
-interface FileIconProps {
+type FileIconProps = {
   fileName: string;
   isDirectory: boolean;
   isExpanded?: boolean;
-}
+};
 
 export const FileIcon = ({
   fileName,

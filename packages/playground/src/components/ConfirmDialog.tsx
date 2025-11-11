@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
 import "./ConfirmDialog.css";
 
-interface ConfirmDialogProps {
+type ConfirmDialogProps = {
   title: string;
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
-}
+};
 
 export const ConfirmDialog = ({
   title,
