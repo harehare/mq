@@ -1,0 +1,84 @@
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background-color: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.confirm-dialog-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, #454545);
+}
+
+.confirm-dialog-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.confirm-dialog-body {
+  padding: 20px;
+}
+
+.confirm-dialog-body p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--vscode-foreground, #cccccc);
+  line-height: 1.5;
+}
+
+.confirm-dialog-footer {
+  padding: 12px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--vscode-editorWidget-border, #454545);
+}
+
+.confirm-dialog-button {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 2px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.1s ease;
+}
+
+.confirm-dialog-button.cancel {
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+}
+
+.confirm-dialog-button.cancel:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.confirm-dialog-button.confirm {
+  background-color: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.confirm-dialog-button.confirm:hover {
+  background-color: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.confirm-dialog-button:active {
+  transform: translateY(1px);
+}

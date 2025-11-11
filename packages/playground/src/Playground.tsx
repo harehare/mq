@@ -1,9 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import * as mq from "mq-web";
 import { languages } from "monaco-editor";
 import LZString from "lz-string";
+import { FileTree } from "./components/FileTree";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { TabBar, Tab } from "./components/TabBar";
+import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
+import {
+  VscLayoutSidebarLeft,
+  VscLayoutSidebarLeftOff,
+  VscSave,
+  VscCheck,
+  VscLoading,
+} from "react-icons/vsc";
 
 type SharedData = {
   code: string;
@@ -26,6 +37,11 @@ const CODE_KEY = "mq-playground.code";
 const MARKDOWN_KEY = "mq-playground.markdown";
 const IS_UPDATE_KEY = "mq-playground.is_update";
 const INPUT_FORMAT_KEY = "mq-playground.input_format";
+const SELECTED_FILE_KEY = "mq-playground.selected_file";
+const CURRENT_FILE_PATH_KEY = "mq-playground.current_file_path";
+const SIDEBAR_VISIBLE_KEY = "mq-playground.sidebar-visible";
+const TABS_KEY = "mq-playground.tabs";
+const ACTIVE_TAB_ID_KEY = "mq-playground.active_tab_id";
 
 const EXAMPLE_CATEGORIES: ExampleCategory[] = [
   {
@@ -366,8 +382,139 @@ export const Playground = () => {
   );
   const [activeTab, setActiveTab] = useState<"output" | "ast">("output");
   const [astResult, setAstResult] = useState("");
+  const [files, setFiles] = useState<FileNode[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [isOPFSSupported, setIsOPFSSupported] = useState<boolean>(false);
+  const [isSidebarVisible, setIsSidebarVisible] = useState<boolean>(() => {
+    // Check URL parameter first
+    const urlParams = new URLSearchParams(window.location.search);
+    const sidebarParam = urlParams.get("sidebar");
+
+    if (sidebarParam !== null) {
+      return sidebarParam === "true";
+    }
+
+    // Fall back to localStorage
+    return localStorage.getItem(SIDEBAR_VISIBLE_KEY) !== "false";
+  });
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
+    "saved"
+  );
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
+    path: string;
+  } | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [tabs, setTabs] = useState<Tab[]>(() => {
+    // Restore tabs from localStorage on initial load
+    try {
+      const savedTabs = localStorage.getItem(TABS_KEY);
+      return savedTabs ? JSON.parse(savedTabs) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeTabId, setActiveTabId] = useState<string | null>(() => {
+    // Restore active tab ID from localStorage on initial load
+    return localStorage.getItem(ACTIVE_TAB_ID_KEY);
+  });
+  const hasInitialized = useRef(false);
+
+  // Persist tabs to localStorage whenever they change
+  useEffect(() => {
+    if (tabs.length > 0) {
+      localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+    } else {
+      localStorage.removeItem(TABS_KEY);
+    }
+  }, [tabs]);
+
+  // Persist active tab ID to localStorage whenever it changes
+  useEffect(() => {
+    if (activeTabId) {
+      localStorage.setItem(ACTIVE_TAB_ID_KEY, activeTabId);
+    } else {
+      localStorage.removeItem(ACTIVE_TAB_ID_KEY);
+    }
+  }, [activeTabId]);
+
+  const loadFiles = useCallback(async () => {
+    try {
+      const fileList = await fileSystem.listFiles("/");
+      setFiles(fileList);
+    } catch (error) {
+      console.error("Failed to load files:", error);
+    }
+  }, []);
 
   useEffect(() => {
+    // Prevent double initialization in React 18 Strict Mode
+    if (hasInitialized.current) {
+      return;
+    }
+    hasInitialized.current = true;
+
+    const initFileSystem = async () => {
+      // Check if OPFS is supported
+      const supported = OPFSFileSystem.isSupported();
+      setIsOPFSSupported(supported);
+
+      if (!supported) {
+        console.warn(
+          "Origin Private File System is not supported in this browser"
+        );
+        return;
+      }
+
+      try {
+        await fileSystem.initialize();
+        await loadFiles();
+
+        // Get initial tabs and activeTabId from localStorage
+        const savedTabs = localStorage.getItem(TABS_KEY);
+        const initialTabs = savedTabs ? JSON.parse(savedTabs) : [];
+        const savedActiveTabId = localStorage.getItem(ACTIVE_TAB_ID_KEY);
+
+        // Restore active tab content if tabs were restored from localStorage
+        if (!window.location.hash && savedActiveTabId && initialTabs.length > 0) {
+          const activeTab = initialTabs.find((tab: Tab) => tab.id === savedActiveTabId);
+          if (activeTab) {
+            try {
+              // Verify the file still exists and load its current content
+              const content = await fileSystem.readFile(activeTab.filePath);
+              setEditorContent(activeTab.filePath, content);
+              setSelectedFile(activeTab.filePath);
+            } catch (error) {
+              console.error("Failed to restore active tab:", error);
+              // If active tab file doesn't exist, clear it
+              setTabs((prev) => prev.filter((tab) => tab.id !== savedActiveTabId));
+              setActiveTabId(null);
+            }
+          }
+        } else if (!window.location.hash && initialTabs.length === 0) {
+          // Only open a new tab if no tabs were restored
+          const savedFilePath = localStorage.getItem(CURRENT_FILE_PATH_KEY);
+          if (savedFilePath) {
+            try {
+              const content = await fileSystem.readFile(savedFilePath);
+              openOrSwitchToTab(savedFilePath, content);
+              setSelectedFile(savedFilePath);
+            } catch (error) {
+              console.error("Failed to restore last file:", error);
+              localStorage.removeItem(CURRENT_FILE_PATH_KEY);
+              localStorage.removeItem(SELECTED_FILE_KEY);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to initialize file system:", error);
+        setIsOPFSSupported(false);
+      }
+    };
+
+    initFileSystem();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     if (window.location.hash) {
       try {
         const compressed = window.location.hash.substring(1);
@@ -412,7 +559,13 @@ export const Playground = () => {
       document.documentElement.style.colorScheme =
         themeParam === "dark" ? "dark" : "light";
     }
-  }, []);
+
+    // Update sidebar visibility from URL parameter if present
+    const sidebarParam = urlParams.get("sidebar");
+    if (sidebarParam !== null) {
+      setIsSidebarVisible(sidebarParam === "true");
+    }
+  }, [loadFiles]);
 
   const handleRun = useCallback(async () => {
     if (!code || !markdown) {
@@ -544,6 +697,378 @@ export const Playground = () => {
     },
     []
   );
+
+  const getFileType = (filePath: string): Tab["fileType"] => {
+    const extension = filePath.split(".").pop()?.toLowerCase();
+    if (extension === "mq") return "mq";
+    if (extension === "md") return "md";
+    if (extension === "mdx") return "mdx";
+    return "other";
+  };
+
+  const generateTabId = () => `tab-${Date.now()}-${Math.random()}`;
+
+  // Helper function to set editor content based on file type
+  const setEditorContent = (filePath: string, content: string) => {
+    setCode(content);
+    setCurrentFilePath(filePath);
+
+    const fileType = getFileType(filePath);
+    if (fileType === "md" || fileType === "mdx") {
+      setMarkdown(content);
+      setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
+    }
+  };
+
+  const openOrSwitchToTab = useCallback((filePath: string, content: string) => {
+    setTabs((prevTabs) => {
+      // Check if tab already exists
+      const existingTab = prevTabs.find((tab) => tab.filePath === filePath);
+      if (existingTab) {
+        setActiveTabId(existingTab.id);
+        setEditorContent(filePath, existingTab.content);
+        return prevTabs; // Don't modify tabs
+      }
+
+      // Create new tab
+      const newTab: Tab = {
+        id: generateTabId(),
+        filePath,
+        content,
+        savedContent: content,
+        fileType: getFileType(filePath),
+        isDirty: false,
+      };
+
+      setActiveTabId(newTab.id);
+      setEditorContent(filePath, content);
+
+      return [...prevTabs, newTab];
+    });
+  }, []);
+
+  const handleTabClick = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+
+      setActiveTabId(tabId);
+      setEditorContent(tab.filePath, tab.content);
+      setSelectedFile(tab.filePath);
+    },
+    [tabs]
+  );
+
+  const handleTabClose = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+
+      // Check if tab has unsaved changes
+      if (tab.isDirty) {
+        const shouldClose = window.confirm(
+          `"${tab.filePath}" has unsaved changes. Do you want to close it?`
+        );
+        if (!shouldClose) return;
+      }
+
+      const newTabs = tabs.filter((t) => t.id !== tabId);
+      setTabs(newTabs);
+
+      // If closing active tab, switch to another tab
+      if (activeTabId === tabId) {
+        if (newTabs.length > 0) {
+          const nextTab = newTabs[newTabs.length - 1];
+          setActiveTabId(nextTab.id);
+          setEditorContent(nextTab.filePath, nextTab.content);
+          setSelectedFile(nextTab.filePath);
+        } else {
+          setActiveTabId(null);
+          setCurrentFilePath(null);
+          setSelectedFile(null);
+        }
+      }
+    },
+    [tabs, activeTabId]
+  );
+
+  const handleFileSelect = useCallback(
+    async (path: string) => {
+      try {
+        setSelectedFile(path);
+        const content = await fileSystem.readFile(path);
+        openOrSwitchToTab(path, content);
+        localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
+        localStorage.setItem(SELECTED_FILE_KEY, path);
+      } catch (error) {
+        console.error("Failed to read file:", error);
+        alert(`Failed to read file: ${error}`);
+      }
+    },
+    [openOrSwitchToTab]
+  );
+
+  const handleCreateFile = useCallback(
+    async (parentPath: string | undefined, fileName: string) => {
+      if (!fileName || !fileName.trim()) {
+        return;
+      }
+
+      try {
+        const trimmedName = fileName.trim();
+        const path = parentPath
+          ? `${parentPath}/${trimmedName}`
+          : `/${trimmedName}`;
+
+        await fileSystem.writeFile(path, "");
+        await loadFiles();
+        openOrSwitchToTab(path, "");
+        setSelectedFile(path);
+        localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
+        localStorage.setItem(SELECTED_FILE_KEY, path);
+      } catch (error) {
+        console.error("Failed to create file:", error);
+        alert(
+          `Failed to create file: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    },
+    [loadFiles, openOrSwitchToTab]
+  );
+
+  const handleCreateFolder = useCallback(
+    async (parentPath: string | undefined, folderName: string) => {
+      if (!folderName || !folderName.trim()) {
+        return;
+      }
+
+      try {
+        const trimmedName = folderName.trim();
+        const path = parentPath
+          ? `${parentPath}/${trimmedName}`
+          : `/${trimmedName}`;
+
+        await fileSystem.createDirectory(path);
+        await loadFiles();
+      } catch (error) {
+        console.error("Failed to create folder:", error);
+        alert(
+          `Failed to create folder: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    },
+    [loadFiles]
+  );
+
+  const handleDeleteFile = useCallback((path: string) => {
+    setDeleteConfirmDialog({ path });
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteConfirmDialog) return;
+
+    const path = deleteConfirmDialog.path;
+    setDeleteConfirmDialog(null);
+
+    try {
+      // Check if it's a directory or file
+      const parts = path.split("/").filter(Boolean);
+      if (parts.length === 0) {
+        alert("Cannot delete root directory");
+        return;
+      }
+
+      // Try to delete as file first, if fails try as directory
+      try {
+        await fileSystem.deleteFile(path);
+      } catch {
+        await fileSystem.deleteDirectory(path);
+      }
+
+      await loadFiles();
+
+      // Close tab if deleted file was open
+      const deletedTab = tabs.find((tab) => tab.filePath === path);
+      if (deletedTab) {
+        handleTabClose(deletedTab.id);
+      }
+
+      // Clear editor if deleted file was currently selected
+      if (selectedFile === path) {
+        setSelectedFile(null);
+        setCurrentFilePath(null);
+        localStorage.removeItem(SELECTED_FILE_KEY);
+        localStorage.removeItem(CURRENT_FILE_PATH_KEY);
+      }
+    } catch (error) {
+      console.error("Failed to delete:", error);
+      alert("Failed to delete");
+    }
+  }, [deleteConfirmDialog, loadFiles, selectedFile, tabs, handleTabClose]);
+
+  const handleRenameFile = useCallback(
+    async (path: string, newName: string) => {
+      const parts = path.split("/").filter(Boolean);
+      const currentName = parts[parts.length - 1];
+
+      const trimmedNewName = newName.trim();
+
+      if (!trimmedNewName || trimmedNewName === currentName) {
+        return;
+      }
+
+      // Validate filename
+      if (trimmedNewName.includes("/")) {
+        alert("Filename cannot contain '/'");
+        return;
+      }
+
+      setIsRenaming(true);
+      try {
+        // Check if we're trying to convert between file and directory
+        const isDirectory = await fileSystem.isDirectoryPath(path);
+        const hasExtension = trimmedNewName.includes(".");
+        const currentHasExtension = currentName.includes(".");
+
+        // Prevent converting directory to file or vice versa
+        if (isDirectory && hasExtension && !currentHasExtension) {
+          alert(
+            "Cannot rename a folder to a file name. Folders cannot have file extensions."
+          );
+          setIsRenaming(false);
+          return;
+        }
+
+        const parentPath = parts.slice(0, -1).join("/");
+        const newPath = parentPath
+          ? `/${parentPath}/${trimmedNewName}`
+          : `/${trimmedNewName}`;
+
+        let savedContent: string | null = null;
+        const isCurrentFile = currentFilePath === path;
+
+        if (isCurrentFile && code) {
+          // Save the current file before renaming to ensure it's written
+          savedContent = code;
+          await fileSystem.writeFile(path, code);
+          setSaveStatus("saved");
+
+          // Close the file to release the handle
+          setCurrentFilePath(null);
+          setSelectedFile(null);
+
+          // Rename with the saved content
+          await fileSystem.renameFile(path, newPath, savedContent);
+        } else {
+          // For non-current files, just rename normally
+          await fileSystem.renameFile(path, newPath);
+        }
+        await loadFiles();
+
+        // Update tab path if the file is open in a tab
+        setTabs((prev) =>
+          prev.map((tab) => (tab.filePath === path ? { ...tab, filePath: newPath } : tab))
+        );
+
+        // If this was the current file, reopen it with the new path
+        if (isCurrentFile && savedContent !== null) {
+          setCurrentFilePath(newPath);
+          setSelectedFile(newPath);
+          setCode(savedContent);
+          localStorage.setItem(CURRENT_FILE_PATH_KEY, newPath);
+          localStorage.setItem(SELECTED_FILE_KEY, newPath);
+        } else if (selectedFile === path) {
+          setSelectedFile(newPath);
+          localStorage.setItem(SELECTED_FILE_KEY, newPath);
+        }
+      } catch (error) {
+        console.error("Failed to rename:", error);
+        alert(
+          `Failed to rename: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        // Reload files to ensure UI is in sync
+        await loadFiles();
+      } finally {
+        setIsRenaming(false);
+      }
+    },
+    [loadFiles, selectedFile, currentFilePath, code]
+  );
+
+  const saveCurrentFile = useCallback(async () => {
+    if (!currentFilePath || !code || !activeTabId) return;
+
+    try {
+      setSaveStatus("saving");
+      await fileSystem.writeFile(currentFilePath, code);
+      setSaveStatus("saved");
+
+      // Update tab to mark as not dirty and update savedContent
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTabId
+            ? { ...tab, content: code, savedContent: code, isDirty: false }
+            : tab
+        )
+      );
+    } catch (error) {
+      console.error("Failed to save file:", error);
+      setSaveStatus("unsaved");
+    }
+  }, [currentFilePath, code, activeTabId]);
+
+  // Track unsaved changes and update tab content and dirty state
+  useEffect(() => {
+    if (currentFilePath && code !== undefined && !isRenaming && activeTabId) {
+      // Update current tab's content and dirty state
+      setTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.id === activeTabId) {
+            // Check if content has changed from the saved version
+            const isDirty = tab.savedContent !== code;
+            if (isDirty) {
+              setSaveStatus("unsaved");
+            }
+            return { ...tab, content: code, isDirty };
+          }
+          return tab;
+        })
+      );
+    }
+  }, [code, currentFilePath, isRenaming, activeTabId]);
+
+  // Persist sidebar visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem(
+      "mq-playground.sidebar-visible",
+      String(isSidebarVisible)
+    );
+  }, [isSidebarVisible]);
+
+  // Add keyboard shortcut for save (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveCurrentFile();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [saveCurrentFile]);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarVisible((prev) => !prev);
+  }, []);
 
   const beforeMount = (monaco: Monaco) => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -866,7 +1391,20 @@ export const Playground = () => {
     <div className="playground-container">
       {!isEmbed && (
         <header className="playground-header">
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {isOPFSSupported && (
+              <button
+                className="header-icon-button"
+                onClick={toggleSidebar}
+                title={isSidebarVisible ? "Hide Sidebar" : "Show Sidebar"}
+              >
+                {isSidebarVisible ? (
+                  <VscLayoutSidebarLeft size={16} />
+                ) : (
+                  <VscLayoutSidebarLeftOff size={16} />
+                )}
+              </button>
+            )}
             <a
               href="https://mqlang.org/"
               style={{ textDecoration: "none", paddingTop: "4px" }}
@@ -899,8 +1437,30 @@ export const Playground = () => {
       )}
 
       <div className="playground-content">
+        {isOPFSSupported && isSidebarVisible && (
+          <div className="file-tree-panel">
+            <FileTree
+              files={files}
+              onFileSelect={handleFileSelect}
+              onRefresh={loadFiles}
+              onCreateFile={handleCreateFile}
+              onCreateFolder={handleCreateFolder}
+              onDeleteFile={handleDeleteFile}
+              onRenameFile={handleRenameFile}
+              selectedFile={selectedFile}
+            />
+          </div>
+        )}
         <div className="left-panel">
           <div className="editor-container">
+            {tabs.length > 0 && (
+              <TabBar
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onTabClick={handleTabClick}
+                onTabClose={handleTabClose}
+              />
+            )}
             <div className="editor-header code">
               <h2>Code</h2>
               <div className="editor-actions">
@@ -929,6 +1489,31 @@ export const Playground = () => {
                     ))}
                   </select>
                 </div>
+                {currentFilePath && (
+                  <button
+                    className="button save-button"
+                    onClick={saveCurrentFile}
+                    disabled={saveStatus === "saved"}
+                    title={
+                      saveStatus === "saved"
+                        ? "No changes to save"
+                        : "Save file (Ctrl+S)"
+                    }
+                  >
+                    <span className="save-button-content">
+                      {saveStatus === "saving" ? (
+                        "Saving..."
+                      ) : saveStatus === "unsaved" ? (
+                        <>
+                          <div>Save</div>
+                          <div>*</div>
+                        </>
+                      ) : (
+                        "✓ Saved"
+                      )}
+                    </span>
+                  </button>
+                )}
                 <button className="button" onClick={handleCopy}>
                   Copy
                 </button>
@@ -1004,22 +1589,22 @@ export const Playground = () => {
           </div>
         </div>
         <div className="right-panel">
-          <div className="editor-header output">
-            <div className="tab-container">
-              <button
-                className={`tab ${activeTab === "output" ? "active" : ""}`}
-                onClick={() => setActiveTab("output")}
-              >
-                Output
-              </button>
-              <button
-                className={`tab ${activeTab === "ast" ? "active" : ""}`}
-                onClick={() => setActiveTab("ast")}
-              >
-                AST
-              </button>
-            </div>
-            {!isEmbed && (
+          <div className="tab-container">
+            <button
+              className={`tab ${activeTab === "output" ? "active" : ""}`}
+              onClick={() => setActiveTab("output")}
+            >
+              Output
+            </button>
+            <button
+              className={`tab ${activeTab === "ast" ? "active" : ""}`}
+              onClick={() => setActiveTab("ast")}
+            >
+              AST
+            </button>
+          </div>
+          {!isEmbed && (
+            <div className="editor-header output">
               <div className="editor-actions">
                 {activeTab === "output" && (
                   <>
@@ -1103,8 +1688,8 @@ export const Playground = () => {
                   </button>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
           <div className="editor-content result-container">
             {activeTab === "output" && (
               <Editor
@@ -1143,6 +1728,55 @@ export const Playground = () => {
           </div>
         </div>
       </div>
+
+      {!isEmbed && (
+        <footer className="playground-footer">
+          <div className="footer-left">
+            {currentFilePath && (
+              <>
+                <div className="footer-item">
+                  <span className="current-file-path">{currentFilePath}</span>
+                </div>
+                <div className="save-status">
+                  {saveStatus === "saved" && (
+                    <span className="save-status-item saved">
+                      <VscCheck size={14} /> Saved
+                    </span>
+                  )}
+                  {saveStatus === "saving" && (
+                    <span className="save-status-item saving">
+                      <VscLoading size={14} className="spinning" /> Saving...
+                    </span>
+                  )}
+                  {saveStatus === "unsaved" && (
+                    <span className="save-status-item unsaved">
+                      <VscSave size={14} /> Unsaved
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+            {!currentFilePath && isOPFSSupported && (
+              <span
+                style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
+              >
+                No file selected
+              </span>
+            )}
+          </div>
+        </footer>
+      )}
+
+      {deleteConfirmDialog && (
+        <ConfirmDialog
+          title="Delete File"
+          message={`Are you sure you want to delete "${deleteConfirmDialog.path}"?`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirmDialog(null)}
+        />
+      )}
     </div>
   );
 };
