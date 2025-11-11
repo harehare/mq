@@ -4,6 +4,7 @@ pub const DICT: &str = "dict";
 pub const GET: &str = "get";
 pub const SLICE: &str = "slice";
 pub const ATTR: &str = "attr";
+pub const LEN: &str = "len";
 
 pub const EQ: &str = "eq";
 pub const NE: &str = "ne";
