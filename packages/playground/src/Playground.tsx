@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import * as mq from "mq-web";
@@ -6,6 +6,7 @@ import { languages } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { TabBar, Tab } from "./components/TabBar";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
 import {
   VscLayoutSidebarLeft,
@@ -39,6 +40,8 @@ const INPUT_FORMAT_KEY = "mq-playground.input_format";
 const SELECTED_FILE_KEY = "mq-playground.selected_file";
 const CURRENT_FILE_PATH_KEY = "mq-playground.current_file_path";
 const SIDEBAR_VISIBLE_KEY = "mq-playground.sidebar-visible";
+const TABS_KEY = "mq-playground.tabs";
+const ACTIVE_TAB_ID_KEY = "mq-playground.active_tab_id";
 
 const EXAMPLE_CATEGORIES: ExampleCategory[] = [
   {
@@ -402,6 +405,44 @@ export const Playground = () => {
     path: string;
   } | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [tabs, setTabs] = useState<Tab[]>(() => {
+    // Restore tabs from localStorage on initial load
+    try {
+      const savedTabs = localStorage.getItem(TABS_KEY);
+      return savedTabs ? JSON.parse(savedTabs) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeTabId, setActiveTabId] = useState<string | null>(() => {
+    // Restore active tab ID from localStorage on initial load
+    return localStorage.getItem(ACTIVE_TAB_ID_KEY);
+  });
+  const tabsRef = useRef<Tab[]>([]);
+  const hasInitialized = useRef(false);
+
+  // Keep tabsRef in sync with tabs state
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  // Persist tabs to localStorage whenever they change
+  useEffect(() => {
+    if (tabs.length > 0) {
+      localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+    } else {
+      localStorage.removeItem(TABS_KEY);
+    }
+  }, [tabs]);
+
+  // Persist active tab ID to localStorage whenever it changes
+  useEffect(() => {
+    if (activeTabId) {
+      localStorage.setItem(ACTIVE_TAB_ID_KEY, activeTabId);
+    } else {
+      localStorage.removeItem(ACTIVE_TAB_ID_KEY);
+    }
+  }, [activeTabId]);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -413,6 +454,12 @@ export const Playground = () => {
   }, []);
 
   useEffect(() => {
+    // Prevent double initialization in React 18 Strict Mode
+    if (hasInitialized.current) {
+      return;
+    }
+    hasInitialized.current = true;
+
     const initFileSystem = async () => {
       // Check if OPFS is supported
       const supported = OPFSFileSystem.isSupported();
@@ -429,26 +476,44 @@ export const Playground = () => {
         await fileSystem.initialize();
         await loadFiles();
 
-        // Restore last selected file if not loading from URL hash
-        if (!window.location.hash) {
+        // Get initial tabs and activeTabId from localStorage
+        const savedTabs = localStorage.getItem(TABS_KEY);
+        const initialTabs = savedTabs ? JSON.parse(savedTabs) : [];
+        const savedActiveTabId = localStorage.getItem(ACTIVE_TAB_ID_KEY);
+
+        // Restore active tab content if tabs were restored from localStorage
+        if (!window.location.hash && savedActiveTabId && initialTabs.length > 0) {
+          const activeTab = initialTabs.find((tab: Tab) => tab.id === savedActiveTabId);
+          if (activeTab) {
+            try {
+              // Verify the file still exists and load its current content
+              const content = await fileSystem.readFile(activeTab.filePath);
+              setCode(content);
+              setCurrentFilePath(activeTab.filePath);
+              setSelectedFile(activeTab.filePath);
+
+              const fileType = getFileType(activeTab.filePath);
+              if (fileType === "md" || fileType === "mdx") {
+                setMarkdown(content);
+                setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
+              }
+            } catch (error) {
+              console.error("Failed to restore active tab:", error);
+              // If active tab file doesn't exist, clear it
+              setTabs((prev) => prev.filter((tab) => tab.id !== savedActiveTabId));
+              setActiveTabId(null);
+            }
+          }
+        } else if (!window.location.hash && initialTabs.length === 0) {
+          // Only open a new tab if no tabs were restored
           const savedFilePath = localStorage.getItem(CURRENT_FILE_PATH_KEY);
           if (savedFilePath) {
             try {
               const content = await fileSystem.readFile(savedFilePath);
-              const extension = savedFilePath.split(".").pop()?.toLowerCase();
-
-              if (extension === "mq") {
-                setCode(content);
-                setCurrentFilePath(savedFilePath);
-                setSelectedFile(savedFilePath);
-              } else if (extension === "md" || extension === "mdx") {
-                setMarkdown(content);
-                setInputFormat(extension === "mdx" ? "mdx" : "markdown");
-                setSelectedFile(savedFilePath);
-              }
+              openOrSwitchToTab(savedFilePath, content);
+              setSelectedFile(savedFilePath);
             } catch (error) {
               console.error("Failed to restore last file:", error);
-              // Clear invalid saved file path
               localStorage.removeItem(CURRENT_FILE_PATH_KEY);
               localStorage.removeItem(SELECTED_FILE_KEY);
             }
@@ -461,6 +526,7 @@ export const Playground = () => {
     };
 
     initFileSystem();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
 
     if (window.location.hash) {
       try {
@@ -645,46 +711,122 @@ export const Playground = () => {
     []
   );
 
+  const getFileType = (filePath: string): Tab["fileType"] => {
+    const extension = filePath.split(".").pop()?.toLowerCase();
+    if (extension === "mq") return "mq";
+    if (extension === "md") return "md";
+    if (extension === "mdx") return "mdx";
+    return "other";
+  };
+
+  const openOrSwitchToTab = useCallback((filePath: string, content: string) => {
+    // Check if tab already exists using ref to get the latest state
+    const existingTab = tabsRef.current.find((tab) => tab.filePath === filePath);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setCode(existingTab.content);
+      setCurrentFilePath(filePath);
+      const fileType = getFileType(filePath);
+      if (fileType === "md" || fileType === "mdx") {
+        setMarkdown(existingTab.content);
+        setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
+      }
+      return;
+    }
+
+    // Create new tab
+    const newTab: Tab = {
+      id: `tab-${Date.now()}-${Math.random()}`,
+      filePath,
+      content,
+      savedContent: content, // Initially, content and savedContent are the same
+      fileType: getFileType(filePath),
+      isDirty: false,
+    };
+
+    setTabs((prevTabs) => [...prevTabs, newTab]);
+    setActiveTabId(newTab.id);
+    setCode(content);
+    setCurrentFilePath(filePath);
+
+    const fileType = getFileType(filePath);
+    if (fileType === "md" || fileType === "mdx") {
+      setMarkdown(content);
+      setInputFormat(fileType === "mdx" ? "mdx" : "markdown");
+    }
+  }, []);
+
+  const handleTabClick = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+
+      setActiveTabId(tabId);
+      setCode(tab.content);
+      setCurrentFilePath(tab.filePath);
+      setSelectedFile(tab.filePath);
+
+      if (tab.fileType === "md" || tab.fileType === "mdx") {
+        setMarkdown(tab.content);
+        setInputFormat(tab.fileType === "mdx" ? "mdx" : "markdown");
+      }
+    },
+    [tabs]
+  );
+
+  const handleTabClose = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+
+      // Check if tab has unsaved changes
+      if (tab.isDirty) {
+        const shouldClose = window.confirm(
+          `"${tab.filePath}" has unsaved changes. Do you want to close it?`
+        );
+        if (!shouldClose) return;
+      }
+
+      const newTabs = tabs.filter((t) => t.id !== tabId);
+      setTabs(newTabs);
+
+      // If closing active tab, switch to another tab
+      if (activeTabId === tabId) {
+        if (newTabs.length > 0) {
+          const nextTab = newTabs[newTabs.length - 1];
+          setActiveTabId(nextTab.id);
+          setCode(nextTab.content);
+          setCurrentFilePath(nextTab.filePath);
+          setSelectedFile(nextTab.filePath);
+
+          if (nextTab.fileType === "md" || nextTab.fileType === "mdx") {
+            setMarkdown(nextTab.content);
+            setInputFormat(nextTab.fileType === "mdx" ? "mdx" : "markdown");
+          }
+        } else {
+          setActiveTabId(null);
+          setCurrentFilePath(null);
+          setSelectedFile(null);
+        }
+      }
+    },
+    [tabs, activeTabId]
+  );
+
   const handleFileSelect = useCallback(
     async (path: string) => {
       try {
-        // Save current file before switching if there's unsaved content
-        if (currentFilePath && code !== undefined && !isRenaming) {
-          try {
-            setSaveStatus("saving");
-            await fileSystem.writeFile(currentFilePath, code);
-            setSaveStatus("saved");
-          } catch (saveError) {
-            console.error("Failed to auto-save before switch:", saveError);
-            // Continue with file switch even if save fails
-          }
-        }
-
         setSelectedFile(path);
         const content = await fileSystem.readFile(path);
-        const extension = path.split(".").pop()?.toLowerCase();
-
-        if (extension === "mq") {
-          setCode(content);
-          setCurrentFilePath(path);
-          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
-        } else if (extension === "md" || extension === "mdx") {
-          setMarkdown(content);
-          setInputFormat(extension === "mdx" ? "mdx" : "markdown");
-          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
-        } else {
-          // For other file types, show in code editor
-          setCode(content);
-          setCurrentFilePath(path);
-          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
-        }
+        openOrSwitchToTab(path, content);
+        localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to read file:", error);
         alert(`Failed to read file: ${error}`);
       }
     },
-    [currentFilePath, code, isRenaming]
+    [openOrSwitchToTab]
   );
 
   const handleCreateFile = useCallback(
@@ -701,17 +843,9 @@ export const Playground = () => {
 
         await fileSystem.writeFile(path, "");
         await loadFiles();
+        openOrSwitchToTab(path, "");
         setSelectedFile(path);
-
-        const extension = trimmedName.split(".").pop()?.toLowerCase();
-        if (extension === "mq") {
-          setCode("");
-          setCurrentFilePath(path);
-          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
-        } else if (extension === "md" || extension === "mdx") {
-          setMarkdown("");
-          localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
-        }
+        localStorage.setItem(CURRENT_FILE_PATH_KEY, path);
         localStorage.setItem(SELECTED_FILE_KEY, path);
       } catch (error) {
         console.error("Failed to create file:", error);
@@ -722,7 +856,7 @@ export const Playground = () => {
         );
       }
     },
-    [loadFiles]
+    [loadFiles, openOrSwitchToTab]
   );
 
   const handleCreateFolder = useCallback(
@@ -778,6 +912,12 @@ export const Playground = () => {
 
       await loadFiles();
 
+      // Close tab if deleted file was open
+      const deletedTab = tabs.find((tab) => tab.filePath === path);
+      if (deletedTab) {
+        handleTabClose(deletedTab.id);
+      }
+
       // Clear editor if deleted file was currently selected
       if (selectedFile === path) {
         setSelectedFile(null);
@@ -789,7 +929,7 @@ export const Playground = () => {
       console.error("Failed to delete:", error);
       alert("Failed to delete");
     }
-  }, [deleteConfirmDialog, loadFiles, selectedFile]);
+  }, [deleteConfirmDialog, loadFiles, selectedFile, tabs, handleTabClose]);
 
   const handleRenameFile = useCallback(
     async (path: string, newName: string) => {
@@ -850,6 +990,11 @@ export const Playground = () => {
         }
         await loadFiles();
 
+        // Update tab path if the file is open in a tab
+        setTabs((prev) =>
+          prev.map((tab) => (tab.filePath === path ? { ...tab, filePath: newPath } : tab))
+        );
+
         // If this was the current file, reopen it with the new path
         if (isCurrentFile && savedContent !== null) {
           setCurrentFilePath(newPath);
@@ -878,24 +1023,46 @@ export const Playground = () => {
   );
 
   const saveCurrentFile = useCallback(async () => {
-    if (!currentFilePath || !code) return;
+    if (!currentFilePath || !code || !activeTabId) return;
 
     try {
       setSaveStatus("saving");
       await fileSystem.writeFile(currentFilePath, code);
       setSaveStatus("saved");
+
+      // Update tab to mark as not dirty and update savedContent
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTabId
+            ? { ...tab, content: code, savedContent: code, isDirty: false }
+            : tab
+        )
+      );
     } catch (error) {
       console.error("Failed to save file:", error);
       setSaveStatus("unsaved");
     }
-  }, [currentFilePath, code]);
+  }, [currentFilePath, code, activeTabId]);
 
-  // Track unsaved changes
+  // Track unsaved changes and update tab content and dirty state
   useEffect(() => {
-    if (currentFilePath && code !== undefined && !isRenaming) {
-      setSaveStatus("unsaved");
+    if (currentFilePath && code !== undefined && !isRenaming && activeTabId) {
+      // Update current tab's content and dirty state
+      setTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.id === activeTabId) {
+            // Check if content has changed from the saved version
+            const isDirty = tab.savedContent !== code;
+            if (isDirty) {
+              setSaveStatus("unsaved");
+            }
+            return { ...tab, content: code, isDirty };
+          }
+          return tab;
+        })
+      );
     }
-  }, [code, currentFilePath, isRenaming]);
+  }, [code, currentFilePath, isRenaming, activeTabId]);
 
   // Persist sidebar visibility to localStorage
   useEffect(() => {
@@ -1307,6 +1474,14 @@ export const Playground = () => {
         )}
         <div className="left-panel">
           <div className="editor-container">
+            {tabs.length > 0 && (
+              <TabBar
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onTabClick={handleTabClick}
+                onTabClose={handleTabClose}
+              />
+            )}
             <div className="editor-header code">
               <h2>Code</h2>
               <div className="editor-actions">
@@ -1435,22 +1610,22 @@ export const Playground = () => {
           </div>
         </div>
         <div className="right-panel">
-          <div className="editor-header output">
-            <div className="tab-container">
-              <button
-                className={`tab ${activeTab === "output" ? "active" : ""}`}
-                onClick={() => setActiveTab("output")}
-              >
-                Output
-              </button>
-              <button
-                className={`tab ${activeTab === "ast" ? "active" : ""}`}
-                onClick={() => setActiveTab("ast")}
-              >
-                AST
-              </button>
-            </div>
-            {!isEmbed && (
+          <div className="tab-container">
+            <button
+              className={`tab ${activeTab === "output" ? "active" : ""}`}
+              onClick={() => setActiveTab("output")}
+            >
+              Output
+            </button>
+            <button
+              className={`tab ${activeTab === "ast" ? "active" : ""}`}
+              onClick={() => setActiveTab("ast")}
+            >
+              AST
+            </button>
+          </div>
+          {!isEmbed && (
+            <div className="editor-header output">
               <div className="editor-actions">
                 {activeTab === "output" && (
                   <>
@@ -1534,8 +1709,8 @@ export const Playground = () => {
                   </button>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
           <div className="editor-content result-container">
             {activeTab === "output" && (
               <Editor
