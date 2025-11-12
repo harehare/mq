@@ -180,6 +180,8 @@ pub struct WasmModuleResolver {
     cache: Rc<RefCell<HashMap<String, String>>>,
     /// Root directory handle for OPFS access
     root_dir: Rc<RefCell<Option<opfs::persistent::DirectoryHandle>>>,
+    /// Flag indicating whether OPFS is available
+    is_available: Rc<RefCell<bool>>,
 }
 
 impl Default for WasmModuleResolver {
@@ -193,20 +195,25 @@ impl WasmModuleResolver {
         Self {
             cache: Rc::new(RefCell::new(HashMap::new())),
             root_dir: Rc::new(RefCell::new(None)),
+            is_available: Rc::new(RefCell::new(false)),
         }
     }
 
     /// Initializes the OPFS root directory handle
     ///
-    /// # Errors
-    /// Returns error if OPFS is not available or initialization fails
-    pub async fn initialize(&self) -> Result<(), JsValue> {
-        let root = opfs::persistent::app_specific_dir()
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to get OPFS root: {:?}", e)))?;
-
-        *self.root_dir.borrow_mut() = Some(root);
-        Ok(())
+    /// If OPFS is not available, this method will silently fail and the resolver
+    /// will operate as a NoOp resolver (only using manually added modules via `add_module`).
+    pub async fn initialize(&self) {
+        match opfs::persistent::app_specific_dir().await {
+            Ok(root) => {
+                *self.root_dir.borrow_mut() = Some(root);
+                *self.is_available.borrow_mut() = true;
+            }
+            Err(_) => {
+                // OPFS is not available, resolver will work as NoOp
+                *self.is_available.borrow_mut() = false;
+            }
+        }
     }
 
     /// Preloads all `.mq` modules from OPFS into the cache
@@ -214,24 +221,28 @@ impl WasmModuleResolver {
     /// This method scans the OPFS root directory for all `.mq` files and loads them into cache.
     /// Module names are stored without the `.mq` extension (e.g., `csv.mq` becomes `csv`).
     ///
-    /// # Errors
-    /// Returns error if OPFS access fails or file reading fails
-    pub async fn preload_modules(&self) -> Result<(), JsValue> {
-        let root = self
-            .root_dir
-            .borrow()
-            .as_ref()
-            .ok_or_else(|| JsValue::from_str("OPFS not initialized. Call initialize() first."))?
-            .clone();
+    /// If OPFS is not available, this method returns immediately without error.
+    pub async fn preload_modules(&self) {
+        // Skip if OPFS is not available
+        if !*self.is_available.borrow() {
+            return;
+        }
 
-        let mut entries = root
-            .entries()
-            .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to get directory entries: {:?}", e)))?;
+        let root = match self.root_dir.borrow().as_ref() {
+            Some(r) => r.clone(),
+            None => return, // Should not happen if is_available is true, but be defensive
+        };
+
+        let mut entries = match root.entries().await {
+            Ok(e) => e,
+            Err(_) => return, // Failed to get directory entries
+        };
 
         while let Some(result) = entries.next().await {
-            let (name, entry) =
-                result.map_err(|e| JsValue::from_str(&format!("Failed to read directory entry: {:?}", e)))?;
+            let (name, entry) = match result {
+                Ok(e) => e,
+                Err(_) => continue, // Skip entries that fail to read
+            };
 
             match entry {
                 opfs::DirectoryEntry::File(file_handle) => {
@@ -241,13 +252,15 @@ impl WasmModuleResolver {
                     }
 
                     // Read file contents
-                    let data = file_handle
-                        .read()
-                        .await
-                        .map_err(|e| JsValue::from_str(&format!("Failed to read file '{}': {:?}", name, e)))?;
+                    let data = match file_handle.read().await {
+                        Ok(d) => d,
+                        Err(_) => continue, // Skip files that fail to read
+                    };
 
-                    let contents = String::from_utf8(data)
-                        .map_err(|e| JsValue::from_str(&format!("Failed to decode file '{}' as UTF-8: {}", name, e)))?;
+                    let contents = match String::from_utf8(data) {
+                        Ok(c) => c,
+                        Err(_) => continue, // Skip files that are not valid UTF-8
+                    };
 
                     // Store with module name (without .mq extension)
                     let module_name = name.strip_suffix(".mq").unwrap_or(&name);
@@ -259,8 +272,6 @@ impl WasmModuleResolver {
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Manually adds a module to the cache
@@ -298,8 +309,8 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
 #[wasm_bindgen(js_name=run, skip_typescript)]
 pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
     let resolver = WasmModuleResolver::new();
-    resolver.initialize().await?;
-    resolver.preload_modules().await?;
+    resolver.initialize().await;
+    resolver.preload_modules().await;
 
     let options: Options = serde_wasm_bindgen::from_value(options)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
@@ -672,10 +683,10 @@ mod tests {
 
         // Initialize OPFS
         let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
 
-        // Initialize OPFS - this may fail if OPFS is not available in the test environment
-        if resolver.initialize().await.is_err() {
-            // Skip test if OPFS is not available
+        // Skip test if OPFS is not available
+        if !*resolver.is_available.borrow() {
             return;
         }
 
@@ -713,10 +724,7 @@ mod tests {
         }
 
         // Preload modules from OPFS
-        resolver
-            .preload_modules()
-            .await
-            .expect("Failed to preload modules from OPFS");
+        resolver.preload_modules().await;
 
         // Verify the module was loaded into cache
         let resolved_content = resolver
@@ -752,9 +760,10 @@ mod tests {
 
         // Initialize OPFS
         let resolver = WasmModuleResolver::new();
+        resolver.initialize().await;
 
-        if resolver.initialize().await.is_err() {
-            // Skip test if OPFS is not available
+        // Skip test if OPFS is not available
+        if !*resolver.is_available.borrow() {
             return;
         }
 
@@ -793,7 +802,7 @@ mod tests {
         }
 
         // Preload all modules
-        resolver.preload_modules().await.expect("Failed to preload modules");
+        resolver.preload_modules().await;
 
         // Verify all modules are loaded
         assert!(resolver.resolve("math").is_ok());
