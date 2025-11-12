@@ -898,17 +898,13 @@ impl Formatter {
     }
 
     fn append_leading_trivia(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
-        let mut prev_is_newline = false;
-
         for trivia in &node.leading_trivia {
             match trivia {
-                mq_lang::CstTrivia::Whitespace(_) => {
-                    prev_is_newline = false;
-                }
+                mq_lang::CstTrivia::Whitespace(_) => {}
                 comment @ mq_lang::CstTrivia::Comment(_) => {
                     if self.is_prev_pipe() {
                         self.append_space();
-                    } else if node.has_new_line() && prev_is_newline {
+                    } else if node.has_new_line() && self.output.ends_with('\n') {
                         self.append_indent(indent_level);
                     }
 
@@ -917,15 +913,11 @@ impl Formatter {
                     }
 
                     self.output.push_str(&comment.to_string());
-                    prev_is_newline = false;
                 }
                 mq_lang::CstTrivia::NewLine => {
                     self.output.push('\n');
-                    prev_is_newline = true;
                 }
-                _ => {
-                    prev_is_newline = false;
-                }
+                _ => {}
             }
         }
     }
@@ -1900,11 +1892,11 @@ end
     )]
     #[case::comment_preserves_indent_after_newline_array(
         "[1,\n    # comment for 2\n  2]",
-        "[1,\n# comment for 2\n  2]\n"
+        "[1,\n  # comment for 2\n  2]\n"
     )]
     #[case::comment_preserves_indent_after_newline_dict(
         "{\n  \"a\": 1,\n    # comment for b\n  \"b\": 2\n}",
-        "{\n  \"a\": 1,\n# comment for b\n  \"b\": 2\n}\n"
+        "{\n  \"a\": 1,\n  # comment for b\n  \"b\": 2\n}\n"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
