@@ -171,7 +171,7 @@ struct OutputArgs {
         short = 'U',
         long = "update",
         short_alias='i',
-        aliases= ["in-place", "inplace"],
+        aliases=["in-place", "inplace"],
         default_value_t = false
     )]
     update: bool,
