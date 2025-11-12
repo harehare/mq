@@ -6,7 +6,7 @@ export INSTALL_DOC="../docs/books/src/start/install.md"
 
 # Update Cargo.toml files
 tmpfile=$(mktemp)
-mq -I text 'include "update_version" | update_crate_version()' "../Cargo.toml" > "$tmpfile" && mv "$tmpfile" "Cargo.toml"
+mq -I text 'include "update_version" | update_crate_version()' "../Cargo.toml" > "$tmpfile" && mv "$tmpfile" "../Cargo.toml"
 
 # Update package.json files
 for dir in ../packages ../editors; do
