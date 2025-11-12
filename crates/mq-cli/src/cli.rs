@@ -166,8 +166,14 @@ struct OutputArgs {
     #[arg(short = 'F', long, value_enum, default_value_t)]
     output_format: OutputFormat,
 
-    /// Update the input markdown
-    #[arg(short = 'U', long, default_value_t = false)]
+    /// Update the input markdown (aliases: -i, --in-place, --inplace)
+    #[arg(
+        short = 'U',
+        long = "update",
+        short_alias='i',
+        aliases=["in-place", "inplace"],
+        default_value_t = false
+    )]
     update: bool,
 
     /// Unbuffered output
