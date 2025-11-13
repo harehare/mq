@@ -1,0 +1,192 @@
+import "csv"
+| import "json"
+| import "toml"
+| import "yaml"
+| import "xml"
+| import "fuzzy"
+| include "test"
+
+| let csv_input = "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n"
+| def test_csv_parse_for_dict():
+    let result = csv::csv_parse(csv_input, true)
+    | assert_eq(len(result), 6)
+  end
+
+| def test_csv_to_json_for_dict():
+    let result = csv::csv_to_json(csv::csv_parse(csv_input, true))
+    | assert_eq(result, "[{\"a\":\"1,2\",\"b\":\"2,3\",\"c\":\"3,4\"},{\"a\":\"4\",\"b\":\"5\",\"c\":\"6\"},{\"a\":\"multi\\nline\",\"b\":\"7\",\"c\":\"8\"},{\"a\":\"9\",\"b\":\"10\",\"c\":\"quoted,comma\"},{\"a\":\"\",\"b\":\"11\",\"c\":\"12\"},{\"a\":\"13\",\"b\":\"14\",\"c\":\"15\"}]")
+  end
+
+| def test_csv_parse_for_array():
+    let result = csv::csv_parse(csv_input, false)
+    | assert_eq(len(result), 7)
+  end
+
+| def test_csv_to_json_for_array():
+    let result = csv::csv_to_json(csv::csv_parse(csv_input, false))
+    | assert_eq(result, "[[\"a\",\"b\",\"c\"],[\"1,2\",\"2,3\",\"3,4\"],[\"4\",\"5\",\"6\"],[\"multi\\nline\",\"7\",\"8\"],[\"9\",\"10\",\"quoted,comma\"],[\"\",\"11\",\"12\"],[\"13\",\"14\",\"15\"]]")
+  end
+
+| let json_input = "{\"users\":[{\"id\":1,\"name\":\"Alice\",\"email\":\"alice@example.com\",\"roles\":[\"admin\",\"user\"]},{\"id\":2,\"name\":\"Bob\",\"email\":\"bob@example.com\",\"roles\":[\"user\"]},{\"id\":3,\"name\":\"Charlie\",\"email\":\"charlie@example.com\",\"roles\":[\"editor\",\"user\"]}],\"meta\":{\"count\":3,\"generated_at\":\"2024-06-01T12:00:00Z\"}}"
+| def test_json_parse():
+    let result = json::json_parse(json_input)
+    | assert_eq(len(result["users"]), 3)
+  end
+
+| def test_json_stringify():
+    let result = json::json_stringify(json::json_parse(json_input))
+    | assert_eq(result, "{\"users\": [{\"name\": \"Alice\", \"id\": 1, \"email\": \"alice@example.com\", \"roles\": [\"admin\", \"user\"]}, {\"name\": \"Bob\", \"id\": 2, \"email\": \"bob@example.com\", \"roles\": [\"user\"]}, {\"name\": \"Charlie\", \"id\": 3, \"email\": \"charlie@example.com\", \"roles\": [\"editor\", \"user\"]}], \"meta\": {\"count\": 3, \"generated_at\": \"2024-06-01T12:00:00Z\"}}")
+  end
+
+| def test_json_to_markdown_table():
+    let result = json::json_parse(json_input)
+    | let result = json::json_to_markdown_table(result["users"])
+    | assert_eq(result, "| name | id | email | roles |\n| --- | --- | --- | --- |\n| Alice | 1 | alice@example.com | [\"admin\", \"user\"] |\n| Bob | 2 | bob@example.com | [\"user\"] |\n| Charlie | 3 | charlie@example.com | [\"editor\", \"user\"] |")
+  end
+
+| let toml_input = "[package]\nauthors = [\"Test Author <test@example.com>\"]\ndescription = \"A test TOML configuration file\"\nedition = \"2021\"\nlicense = \"MIT\"\nname = \"test-package\"\nversion = \"1.0.0\"\n\n[dependencies]\nclap = \"4.0\"\nserde = \"1.0\"\ntokio = {version = \"1.0\", features = [\"full\"]}\n\n[dev-dependencies]\nassert_cmd = \"2.0\"\npredicates = \"3.0\"\n\n[features]\ndefault = [\"json\"]\njson = [\"serde_json\"]\nyaml = [\"serde_yaml\"]\n\n[[bin]]\nname = \"test-cli\"\npath = \"src/main.rs\"\n\n[build-dependencies]\ncc = \"1.0\"\n\n[profile.release]\ncodegen-units = 1\nlto = true\nopt-level = 3\n\n[workspace]\nmembers = [\n  \"crate1\",\n  \"crate2\",\n  \"subdir/crate3\",\n]\n\n[metadata.docs.rs]\nall-features = true\nrustdoc-args = [\"--cfg\", \"docsrs\"]\n\n# Configuration section\n[config]\ndebug = true\nmax_connections = 100\ntimeout = 30\n\n[config.database]\nhost = \"localhost\"\nname = \"testdb\"\npassword = \"secret\"\nport = 5432\nuser = \"admin\"\n\n[config.server]\nhost = \"0.0.0.0\"\nport = 8080\nworkers = 4\n\n# Array of tables\n[[servers]]\nip = \"10.0.0.1\"\nname = \"alpha\"\nrole = \"frontend\"\n\n[[servers]]\nip = \"10.0.0.2\"\nname = \"beta\"\nrole = \"backend\"\n\n# Nested configuration\n[logging]\nformat = \"json\"\nlevel = \"info\"\n\n[logging.file]\nmax_size = \"10MB\"\npath = \"/var/log/app.log\"\nrotate = true\n\n[logging.console]\ncolors = true\nenabled = true\n\n# Test data arrays\ntest_booleans = [true, false, true]\ntest_floats = [3.14, 2.71, 1.41]\ntest_numbers = [1, 2, 3, 42]\ntest_strings = [\"hello\", \"world\", \"test\"]\n\n# Mixed data types\n[mixed_data]\narray_value = [1, 2, 3]\nboolean_value = true\ndate_value = 2024-01-01T00:00:00Z\nfloat_value = 3.14159\ninteger_value = 42\nstring_value = \"test string\"\n\n[mixed_data.nested]\nkey1 = \"value1\"\nkey2 = \"value2\"\n\n# Different number formats\nbin_number = 0b11010110\nfloat_with_exponent = 5e+22\nfloat_with_underscore = 224_617.445_991_228\nhex_number = 0xDEADBEEF\nint_with_underscore = 1_000_000\noct_number = 0o755\n\n# Date and time formats\nlocal_date = 1979-05-27\nlocal_datetime = 1979-05-27T07:32:00\nlocal_time = 07:32:00\noffset_datetime = 1979-05-27T07:32:00-08:00\n\n# Arrays with different types\nheterogeneous_array = [[1, 2], [\"a\", \"b\", \"c\"]]\nnested_array = [[\"gamma\", \"delta\"], [1, 2]]\n\n# Inline tables\ninline_table = {x = 1, y = 2}\nnested_inline = {person = {name = \"John\", age = 30}}\n\n# Special values\ninfinity = inf\nnegative_infinity = -inf\nnot_a_number = nan\n\n# Empty values\nempty_array = []\nempty_string = \"\"\n\n# Comments with Unicode\n# これは日本語のコメントです\nrussian_comment = \"Привет мир\" # This is a Russian greeting\n\n# Complex nested structure\n[[products]]\nname = \"Hammer\"\nsku = 738594937\n\n[[products]]\ncolor = \"gray\"\nname = \"Nail\"\nsku = 284758393\n\n[tool]\nname = \"cargo\"\nversion = \"1.70.0\"\n\n[tool.settings]\ncompression = true\nformat = \"json\"\n\n[tool.features]\ndefault = [\"std\"]\nno-std = [\"core\"]\nstd = []\n\n# More array of tables examples\n[[database.connection]]\nconnection_max = 5000\nenabled = true\nports = [8001, 8001, 8002]\nserver = \"192.168.1.1\"\n\n[[database.connection]]\nconnection_max = 300\nenabled = false\nports = [8001]\nserver = \"192.168.1.2\"\n\n# Key patterns\n\"127.0.0.1\" = \"localhost\"\nbarke_key = \"value\"\n\"character encoding\" = \"UTF-8\"\nquoted_key = \"value\"\n\"ʎǝʞ\" = \"upside down key\"\n"
+| def test_toml_parse():
+    let result = toml::toml_parse(toml_input)
+    | assert_eq(len(result), 21)
+  end
+
+| def test_toml_to_json():
+    let result = toml::toml_to_json(toml::toml_parse(toml_input))
+    | assert_eq(result, "{\"package\":{\"name\":\"test-package\",\"authors\":[\"Test Author <test@example.com>\"],\"description\":\"A test TOML configuration file\",\"edition\":\"2021\",\"license\":\"MIT\",\"version\":\"1.0.0\"},\"dependencies\":{\"clap\":\"4.0\",\"serde\":\"1.0\",\"tokio\":{\"version\":\"1.0\",\"features\":[\"full\"]}},\"features\":{\"json\":[\"serde_json\"],\"yaml\":[\"serde_yaml\"],\"default\":[\"json\"]},\"dev-dependencies\":{\"assert_cmd\":\"2.0\",\"predicates\":\"3.0\"},\"bin\":[{\"name\":\"test-cli\",\"path\":\"src/main.rs\"}],\"build-dependencies\":{\"cc\":\"1.0\"},\"profile\":{\"release\":{\"codegen-units\":1,\"lto\":true,\"opt-level\":3}},\"workspace\":{\"members\":[\"crate1\",\"crate2\",\"subdir/crate3\"]},\"metadata\":{\"docs\":{\"rs\":{\"all-features\":true,\"rustdoc-args\":[\"--cfg\",\"docsrs\"]}}},\"config\":{\"debug\":true,\"max_connections\":100,\"timeout\":30,\"database\":{\"name\":\"testdb\",\"host\":\"localhost\",\"password\":\"secret\",\"port\":5432,\"user\":\"admin\"},\"server\":{\"host\":\"0.0.0.0\",\"port\":8080,\"workers\":4}},\"database\":{\"connection\":[{\"server\":\"192.168.1.1\",\"enabled\":true,\"connection_max\":5000,\"ports\":[8001,8001,8002]},{\"server\":\"192.168.1.2\",\"enabled\":false,\"connection_max\":300,\"ports\":[8001]}]},\"servers\":[{\"name\":\"alpha\",\"ip\":\"10.0.0.1\",\"role\":\"frontend\"},{\"name\":\"beta\",\"ip\":\"10.0.0.2\",\"role\":\"backend\"}],\"logging\":{\"level\":\"info\",\"format\":\"json\",\"file\":{\"path\":\"/var/log/app.log\",\"max_size\":\"10MB\",\"rotate\":true},\"console\":{\"colors\":true,\"enabled\":true,\"test_booleans\":[true,false,true],\"test_floats\":[3.14,2.71,1.41],\"test_numbers\":[1,2,3,42],\"test_strings\":[\"hello\",\"world\",\"test\"]}},\"mixed_data\":{\"array_value\":[1,2,3],\"boolean_value\":true,\"date_value\":\"2024-01-01T00:00:00Z\",\"float_value\":3.14159,\"integer_value\":42,\"string_value\":\"test string\",\"nested\":{\"key1\":\"value1\",\"key2\":\"value2\",\"bin_number\":0,\"b11010110\":null,\"float_with_exponent\":5,\"e\":22,\"float_with_underscore\":224617.445991,\"hex_number\":0,\"xDEADBEEF\":null,\"int_with_underscore\":1000000,\"oct_number\":0,\"o755\":null,\"local_date\":\"1979-05-27\",\"local_datetime\":\"1979-05-27T07:32:00\",\"local_time\":\"07:32:00\",\"offset_datetime\":\"1979-05-27T07:32:00-08:00\",\"heterogeneous_array\":[1,2,\"a\",\"b\",\"c\"],\"nested_array\":[\"gamma\",\"delta\",1,2],\"inline_table\":{\"x\":1,\"y\":2},\"nested_inline\":{\"person\":{\"name\":\"John\",\"age\":30}},\"infinity\":9223372036854775807,\"negative_infinity\":-9223372036854775808,\"not_a_number\":NaN,\"empty_array\":[],\"empty_string\":\"\",\"\":null,\"russian_comment\":\"Привет мир\"}},\"products\":[{\"name\":\"Hammer\",\"sku\":738594937},{\"name\":\"Nail\",\"sku\":284758393,\"color\":\"gray\"}],\"tool\":{\"name\":\"cargo\",\"version\":\"1.70.0\",\"features\":{\"default\":[\"std\"],\"no-std\":[\"core\"],\"std\":[]},\"settings\":{\"format\":\"json\",\"compression\":true}},\"127.0.0.1\":\"localhost\",\"barke_key\":\"value\",\"character encoding\":\"UTF-8\",\"quoted_key\":\"value\",\"ʎǝʞ\":\"upside down key\"}")
+  end
+
+| let yaml_input = "---\nstring: hello\nnumber: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\nmultiline: |\n  This is a\n  multiline string\nquoted: \"quoted string\"\nsingle_quoted: 'single quoted string'\ndate: 2024-06-01\ntimestamp: 2024-06-01T12:34:56Z\nempty_array: []\nempty_object: {}\nanchors:\n  &anchor_val anchored value\nref: *anchor_val\ncomplex:\n  - foo: bar\n    baz:\n      - qux\n      - quux\n  - corge: grault\nspecial_chars: \"!@#$%^&*()_+-=[]{}|;:',.<>/?\"\nunicode: \"こんにちは世界\"\nbool_list:\n  - true\n  - false\nnull_list:\n  - null\n  - ~"
+| def test_yaml_parse():
+    let result = yaml::yaml_parse(yaml_input)
+    | assert_eq(len(keys(result)), 23)
+  end
+
+| def test_yaml_to_json():
+    let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
+    | assert_eq(result, "{\"array\": [\"item1\", \"item2\", \"item3\"], \"nested\": {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}}, \"empty_array\": \"[]\", \"string\": \"hello\", \"number\": 42, \"float\": \"3.14\", \"bool_true\": true, \"bool_false\": false, \"null_value\": null, \"object\": {\"key1\": \"value1\", \"key2\": \"value2\"}, \"multiline\": \"This is a\\nmultiline string\", \"quoted\": \"quoted string\", \"single_quoted\": \"single quoted string\", \"date\": \"2024-06-01\", \"timestamp\": \"2024-06-01T12:34:56Z\", \"empty_object\": \"{}\", \"anchors\": \"&anchor_val anchored value\", \"ref\": \"*anchor_val\", \"complex\": [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"], \"special_chars\": \"!@#$%^&*()_+-=[]{}|;:',.<>/?\", \"unicode\": \"こんにちは世界\", \"bool_list\": [true, false], \"null_list\": [null, null]}")
+  end
+
+| def test_yaml_to_markdown_table():
+    let result = yaml::yaml_to_markdown_table(yaml::yaml_parse(yaml_input))
+    | assert_eq(result, "| Key | Value |\n| --- | --- |\n| array | [\"item1\", \"item2\", \"item3\"] |\n| nested | {\"arr\": [\"a\", \"b\"], \"obj\": {\"subkey\": \"subval\"}} |\n| empty_array | [] |\n| string | hello |\n| number | 42 |\n| float | 3.14 |\n| bool_true | true |\n| bool_false | false |\n| null_value |  |\n| object | {\"key1\": \"value1\", \"key2\": \"value2\"} |\n| multiline | This is a\\nmultiline string |\n| quoted | quoted string |\n| single_quoted | single quoted string |\n| date | 2024-06-01 |\n| timestamp | 2024-06-01T12:34:56Z |\n| empty_object | {} |\n| anchors | &anchor_val anchored value |\n| ref | *anchor_val |\n| complex | [{\"baz\": [\"qux\", \"quux\"]}, \"corge: grault\"] |\n| special_chars | !@#$%^&*()_+-=[]{}|;:',.<>/? |\n| unicode | こんにちは世界 |\n| bool_list | [true, false] |\n| null_list | [, ] |")
+  end
+
+| let xml_input = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- test --><users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>"
+| def test_xml_parse():
+    let result = xml::xml_parse(xml_input)
+    | assert_eq(len(result["children"]), 3)
+  end
+
+| def test_xml_stringify():
+    let result = xml::xml_stringify(xml::xml_parse(xml_input))
+    | assert_eq(result, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>\n")
+  end
+
+| def test_xml_to_markdown_table():
+    let result = xml::xml_to_markdown_table(xml::xml_parse(xml_input))
+    | assert_eq(result, "| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | user | id=1 |  |\n| 1 | user | id=2 |  |\n| 2 | user | id=3 |  |\n\n## Children of user:\n\n| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | name |  | Alice |\n| 1 | email |  | alice@example.com |\n| 2 | roles |  |  |\n\n### Children of name:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| name |  | Alice | 0 |\n\n### Children of email:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| email |  | alice@example.com | 0 |\n\n### Children of roles:\n\n| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | role |  | admin |\n| 1 | role |  | user |\n\n#### Children of role:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| role |  | admin | 0 |\n\n#### Children of role:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| role |  | user | 0 |\n\n## Children of user:\n\n| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | name |  | Bob |\n| 1 | email |  | bob@example.com |\n| 2 | roles |  |  |\n\n### Children of name:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| name |  | Bob | 0 |\n\n### Children of email:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| email |  | bob@example.com | 0 |\n\n### Children of roles:\n\n| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | role |  | user |\n\n#### Children of role:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| role |  | user | 0 |\n\n## Children of user:\n\n| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | name |  | Charlie |\n| 1 | email |  | charlie@example.com |\n| 2 | roles |  |  |\n\n### Children of name:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| name |  | Charlie | 0 |\n\n### Children of email:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| email |  | charlie@example.com | 0 |\n\n### Children of roles:\n\n| Index | Tag | Attributes | Text |\n| --- | --- | --- | --- |\n| 0 | role |  | editor |\n| 1 | role |  | user |\n\n#### Children of role:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| role |  | editor | 0 |\n\n#### Children of role:\n\n| Tag | Attributes | Text | Children |\n| --- | --- | --- | --- |\n| role |  | user | 0 |")
+  end
+
+| def test_levenshtein():
+    let result1 = fuzzy::levenshtein("flaw", "lawn")
+    | assert_eq(result1, 2)
+
+    | let result2 = fuzzy::levenshtein("", "")
+    | assert_eq(result2, 0)
+
+    | let result3 = fuzzy::levenshtein("a", "")
+    | assert_eq(result3, 1)
+
+    | let result4 = fuzzy::levenshtein("", "a")
+    | assert_eq(result4, 1)
+
+    | let result5 = fuzzy::levenshtein("abc", "abc")
+    | assert_eq(result5, 0)
+  end
+
+| def test_jaro_winkler():
+    let result1 = fuzzy::jaro_winkler("flaw", "lawn")
+    | assert(result1 > 0 && result1 < 1)
+
+    | let result2 = fuzzy::jaro_winkler("", "")
+    | assert_eq(result2, 1)
+
+    | let result3 = fuzzy::jaro_winkler("a", "")
+    | assert_eq(result3, 0)
+
+    | let result4 = fuzzy::jaro_winkler("", "a")
+    | assert_eq(result4, 0)
+
+    | let result5 = fuzzy::jaro_winkler("abc", "abc")
+    | assert_eq(result5, 1)
+  end
+
+| def test_fuzzy_best_match():
+    let result1 = fuzzy::fuzzy_best_match("lawn", "lawn")
+    | assert_eq(result1, {"score": 1, "text": "lawn"})
+
+    | let result2 = fuzzy::fuzzy_best_match(["flaw", "lawn", "pawn"], "lawn")
+    | assert_eq(result2, {"score": 1, "text": "lawn"})
+
+    | let result3 = fuzzy::fuzzy_best_match(["lawn", "flaw", "claw"], "flaw")
+    | assert_eq(result3, {"score": 1, "text": "flaw"})
+
+    | let result4 = fuzzy::fuzzy_best_match(["lawn", "claw"], "flaw")
+    | assert(result4["score"] < 1 && (result4["text"] == "lawn" || result4["text"] == "claw"))
+
+    | let result5 = fuzzy::fuzzy_best_match([], "flaw")
+    | assert_eq(result5, None)
+  end
+
+| def test_fuzzy_match_levenshtein():
+    let result1 = fuzzy::fuzzy_match_levenshtein("lawn", "lawn")
+    | assert_eq(result1, [{"score": 0, "text": "lawn"}])
+
+    | let result2 = fuzzy::fuzzy_match_levenshtein("back", "book")
+    | assert_eq(result2, [{"score": 2, "text": "back"}])
+  end
+
+| def test_fuzzy_filter():
+    let result1 = fuzzy::fuzzy_filter(["flaw", "lawn", "pawn"], "lawn", 0.9)
+    | assert_eq(len(result1), 1)
+
+    | let result2 = fuzzy::fuzzy_filter(["lawn", "claw"], "lawn", 0.7)
+    | assert_eq(len(result2), 1)
+
+    | let result3 = fuzzy::fuzzy_filter(["lawn", "claw"], "flaw", 0.6)
+    | assert_eq(len(result3), 2)
+
+    | let result4 = fuzzy::fuzzy_filter([], "flaw", 0.8)
+    | assert_eq(len(result4), 0)
+  end
+
+|
+
+run_tests([
+  # csv
+  test_case("CSV Parse for Dict", test_csv_parse_for_dict),
+  test_case("CSV to JSON for Dict", test_csv_to_json_for_dict),
+  test_case("CSV Parse for Array", test_csv_parse_for_array),
+  test_case("CSV to JSON for Array", test_csv_to_json_for_array),
+  # json
+  test_case("JSON Parse", test_json_parse),
+  test_case("JSON Stringify", test_json_stringify),
+  test_case("JSON to Markdown Table", test_json_to_markdown_table),
+  # toml
+  test_case("TOML Parse", test_toml_parse),
+  test_case("TOML to JSON", test_toml_to_json),
+  # yaml
+  test_case("YAML Parse", test_yaml_parse),
+  test_case("YAML to JSON", test_yaml_to_json),
+  test_case("YAML to Markdown Table", test_yaml_to_markdown_table),
+  # xml
+  test_case("XML Parse", test_xml_parse),
+  test_case("XML Stringify", test_xml_stringify),
+  test_case("XML to Markdown Table", test_xml_to_markdown_table),
+  # fuzz
+  test_case("Levenshtein Distance", test_levenshtein),
+  test_case("Jaro-Winkler Distance", test_jaro_winkler),
+  test_case("Fuzzy Best Match", test_fuzzy_best_match),
+  test_case("Fuzzy Filter", test_fuzzy_filter),
+  test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein)
+])
