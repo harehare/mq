@@ -1019,15 +1019,13 @@ export const Playground = () => {
         const newPath = targetPath ? `${targetPath}/${fileName}` : `/${fileName}`;
 
         // Check if a file/folder with the same name already exists at the target
-        try {
-          await fileSystem.readFile(newPath);
+        const exists = await fileSystem.fileExists(newPath);
+        if (exists) {
           const targetLocation = targetPath ? `"${targetPath}"` : "root";
           alert(
             `A file or folder named "${fileName}" already exists in ${targetLocation}`
           );
           return;
-        } catch {
-          // File doesn't exist, we can proceed
         }
 
         // Check if source is a directory
