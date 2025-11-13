@@ -388,8 +388,6 @@ export const FileTree = ({
     dragOverRoot: false,
   });
 
-  // Clean up drag state on unmount
-
   // Context Menu Handlers
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, node: FileNode) => {
