@@ -123,42 +123,88 @@ def _failed(message):
   "\x1b[31m" + message + "\x1b[0m"
 end
 
+# Formats duration in seconds with fixed width padding
+def _format_duration(duration_ms):
+  let duration_s = duration_ms / 1000
+  | let duration_str = to_string(duration_s)
+  | let duration_str = if (contains(duration_str, ".")):
+      duration_str
+    else:
+      duration_str + ".0"
+  | let duration_str = if (len(split(duration_str, ".")[1]) == 1):
+      duration_str + "00"
+    elif (len(split(duration_str, ".")[1]) == 2):
+      duration_str + "0"
+    else:
+      duration_str
+  # Pad to fixed width: [   X.XXXs]
+  | let padding_needed = 7 - len(duration_str)
+  | let padding = if (padding_needed > 0):
+      repeat(" ", padding_needed)
+    else:
+      ""
+  | "[" + padding + duration_str + "s]"
+end
+
 # Executes multiple test functions
 def run_tests(tests):
   let test_count = 0
   | let failed_count = 0
+  | let final_test_count = len(tests)
+
+  # Print starting message
+  | let start_msg = "    Starting " + to_string(final_test_count) + " tests"
+  | let _ = print(start_msg)
+
+  # Run tests and collect results
   | let test_results = foreach (test, tests):
       if (is_dict(test) && contains(test, "name") && contains(test, "func")):
         _run_test(get(test, "name"), get(test, "func"))
       else:
         error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
     end
-  | let final_test_count = len(test_results)
+
   | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
   | let passed_count = final_test_count - final_failed_count
+  | let total_duration = fold(map(test_results, fn(r): r["duration"];), 0, fn(acc, d): acc + d;)
 
-  # Print test results
-  | let results = ["\x1b[1m\x1b[36m=== mq Test Suite Results ===\x1b[0m"]
-  | let results = results + foreach (result, test_results):
+  # Print each test result
+  | let results = foreach (result, test_results):
       let name = result["name"]
       | let status = result["status"]
-      | let duration = result["duration"]
+      | let duration_str = _format_duration(result["duration"])
       | if (status == "passed"):
-          [_succeed("✅ " + name + " (" + to_string(duration) + "ms)")]
+          [_succeed("        PASS") + " " + duration_str + " " + name]
         else:
-          [_failed("❌ " + name + " (" + to_string(duration) + "ms)"), "    └─ " + _failed(result["error"])]
+          [_failed("        FAIL") + " " + duration_str + " " + name]
     end
-  | let results = results + ["\x1b[1m\x1b[36m=== Summary ===\x1b[0m"]
-  | let results = results + ["Tests run: " + to_string(final_test_count)]
-  | let results = results + ["Passed: " + to_string(passed_count)]
-  | let results = results + ["Failed: " + to_string(final_failed_count)]
-  | if (final_failed_count == 0):
-      results + [_succeed("🎉 All tests passed! 🚀")]
+  | let _ = print(join(flatten(results), "\n"))
+
+  # Print failures section if any
+  | let _ = if (final_failed_count > 0):
+      do
+        let failures = filter(test_results, fn(r): r["status"] == "failed";)
+        | let failure_msgs = ["\n\x1b[1mFailures:\x1b[0m\n"]
+        | let failure_msgs = failure_msgs + foreach (failure, failures):
+                  ["---- " + failure["name"] + " ----", "    " + failure["error"], ""]
+                end
+        | print(join(flatten(failure_msgs), "\n"))
+      end
     else:
-      results + [_failed("💥 " + to_string(final_failed_count) + " test(s) failed")]
-  | flatten()
-  | join("\n")
-  | print()
+      self
+
+  # Print summary
+  | let summary_duration = _format_duration(total_duration)
+  | let summary = "\x1b[1m------------\x1b[0m"
+  | let summary = summary + "\n\x1b[1m     Summary " + summary_duration + " " + to_string(final_test_count) + " tests run: " + to_string(passed_count) + " passed"
+  | let summary = if (final_failed_count > 0):
+      summary + ", " + to_string(final_failed_count) + " failed"
+    else:
+      summary
+  | let summary = summary + "\x1b[0m"
+  | let _ = print(summary)
+
+  # Exit with error code if tests failed
   | if (final_failed_count > 0): halt(1)
 end
 
