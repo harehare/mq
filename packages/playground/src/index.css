@@ -185,7 +185,6 @@ body {
 }
 
 .editor-header.output {
-  background-color: light-dark(#ffffff, #1e1e1e);
   border-bottom: none;
   justify-content: flex-end;
   height: auto;
@@ -386,13 +385,6 @@ body {
 /* Mobile breakpoint - stacks vertically */
 @media (max-width: 768px) {
 
-  .file-tree-panel {
-    width: 100%;
-    max-width: 100%;
-    height: 200px;
-    resize: none;
-  }
-
   .header-icon-button {
     padding: 4px;
   }
@@ -411,10 +403,12 @@ body {
   .left-panel,
   .right-panel {
     width: 100%;
+    flex: 1;
   }
 
   .playground-content {
     flex-direction: column;
+    overflow-y: auto;
   }
 
   .editor-container {
