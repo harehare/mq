@@ -131,9 +131,10 @@ def _format_duration(duration_ms):
       duration_str
     else:
       duration_str + ".0"
-  | let duration_str = if (len(split(duration_str, ".")[1]) == 1):
+  | let duration_split = split(duration_str, ".")
+  | let duration_str = if (len(duration_split[1]) == 1):
       duration_str + "00"
-    elif (len(split(duration_str, ".")[1]) == 2):
+    elif (len(duration_split[1]) == 2):
       duration_str + "0"
     else:
       duration_str
