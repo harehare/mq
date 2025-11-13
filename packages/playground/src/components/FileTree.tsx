@@ -389,15 +389,6 @@ export const FileTree = ({
   });
 
   // Clean up drag state on unmount
-  useEffect(() => {
-    return () => {
-      setDragState({
-        draggingNode: null,
-        dragOverNode: null,
-        dragOverRoot: false,
-      });
-    };
-  }, []);
 
   // Context Menu Handlers
   const handleContextMenu = useCallback(
