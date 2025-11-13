@@ -137,6 +137,66 @@ diags.forEach((diag) => {
 });
 ```
 
+### Working with OPFS (Origin Private File System)
+
+mq-web supports importing custom modules from OPFS (Origin Private File System), allowing you to create and reuse mq modules in web environments. When you call the `run()` function, mq-web automatically loads all `.mq` files from OPFS and makes them available for import.
+
+#### Creating Module Files in OPFS
+
+```typescript
+import { run } from "mq-web";
+
+// Get the OPFS root directory
+const root = await navigator.storage.getDirectory();
+
+// Create a module file
+const fileHandle = await root.getFileHandle("utils.mq", { create: true });
+const writable = await fileHandle.createWritable();
+await writable.write(`
+  def double(x): x * 2;
+  def triple(x): x * 3;
+`);
+await writable.close();
+
+// Create another module file
+const textUtilsHandle = await root.getFileHandle("text_utils.mq", { create: true });
+const textWritable = await textUtilsHandle.createWritable();
+await textWritable.write(`
+  def shout(text): text | upcase() | s"\${self}!!!";
+`);
+await textWritable.close();
+```
+
+#### Importing OPFS Modules
+
+Once you've created `.mq` module files in OPFS, you can import and use them in your mq code. The `run()` function automatically preloads all `.mq` files from OPFS:
+
+```typescript
+import { run } from "mq-web";
+
+// Import and use the module
+const markdown = "5";
+
+const result1 = await run(`
+  import "utils"
+  | to_number() | utils::double()
+`, markdown);
+// Output: 10
+
+const result2 = await run(`
+  import "text_utils"
+  | text_utils::shout()
+`, "hello world");
+// Output: HELLO WORLD!!!
+```
+
+#### Module Resolution Rules
+
+- Module files must have a `.mq` extension in OPFS (e.g., `utils.mq`)
+- When importing, use the module name without the extension (e.g., `import "utils"`)
+- Modules are automatically preloaded from the OPFS root directory when you call `run()`
+- Use the `module_name::function_name()` syntax to call functions from imported modules
+
 ## License
 
 MIT License - see the main [mq](https://github.com/harehare/mq) repository for details.
