@@ -8,6 +8,7 @@ import { FileTree } from "./components/FileTree";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { TabBar, Tab } from "./components/TabBar";
 import { fileSystem, FileNode, OPFSFileSystem } from "./utils/fileSystem";
+import { isMobile, isDesktop } from "./utils/deviceDetection";
 import {
   VscLayoutSidebarLeft,
   VscLayoutSidebarLeftOff,
@@ -395,8 +396,14 @@ export const Playground = () => {
       return sidebarParam === "true";
     }
 
-    // Fall back to localStorage
-    return localStorage.getItem(SIDEBAR_VISIBLE_KEY) !== "false";
+    // On mobile, default to hidden
+    if (isMobile()) {
+      return false;
+    }
+
+    // Desktop: check localStorage, default to true if not set
+    const storedValue = localStorage.getItem(SIDEBAR_VISIBLE_KEY);
+    return storedValue === null ? true : storedValue !== "false";
   });
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved"
@@ -1001,6 +1008,82 @@ export const Playground = () => {
     [loadFiles, selectedFile, currentFilePath, code]
   );
 
+  const handleMoveFile = useCallback(
+    async (sourcePath: string, targetPath: string) => {
+      try {
+        // Get the filename from the source path
+        const sourceParts = sourcePath.split("/").filter(Boolean);
+        const fileName = sourceParts[sourceParts.length - 1];
+
+        // Construct the new path (handle root case where targetPath is empty)
+        const newPath = targetPath ? `${targetPath}/${fileName}` : `/${fileName}`;
+
+        // Check if a file/folder with the same name already exists at the target
+        const exists = await fileSystem.fileExists(newPath);
+        if (exists) {
+          const targetLocation = targetPath ? targetPath : "root";
+          alert(
+            `A file or folder named "${fileName}" already exists in "${targetLocation}"`
+          );
+          return;
+        }
+
+        // Check if source is a directory
+        const isDirectory = await fileSystem.isDirectoryPath(sourcePath);
+        const isCurrentFile = currentFilePath === sourcePath;
+        let savedContent: string | null = null;
+
+        if (isCurrentFile && code && !isDirectory) {
+          // Save the current file before moving
+          savedContent = code;
+          await fileSystem.writeFile(sourcePath, code);
+          setSaveStatus("saved");
+
+          // Close the file to release the handle
+          setCurrentFilePath(null);
+          setSelectedFile(null);
+
+          // Move the file
+          await fileSystem.renameFile(sourcePath, newPath, savedContent);
+        } else {
+          // For non-current files or directories, just move normally
+          await fileSystem.renameFile(sourcePath, newPath);
+        }
+
+        await loadFiles();
+
+        // Update tab path if the file is open in a tab
+        setTabs((prev) =>
+          prev.map((tab) =>
+            tab.filePath === sourcePath ? { ...tab, filePath: newPath } : tab
+          )
+        );
+
+        // If this was the current file, reopen it with the new path
+        if (isCurrentFile && savedContent !== null) {
+          setCurrentFilePath(newPath);
+          setSelectedFile(newPath);
+          setCode(savedContent);
+          localStorage.setItem(CURRENT_FILE_PATH_KEY, newPath);
+          localStorage.setItem(SELECTED_FILE_KEY, newPath);
+        } else if (selectedFile === sourcePath) {
+          setSelectedFile(newPath);
+          localStorage.setItem(SELECTED_FILE_KEY, newPath);
+        }
+      } catch (error) {
+        console.error("Failed to move:", error);
+        alert(
+          `Failed to move: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        // Reload files to ensure UI is in sync
+        await loadFiles();
+      }
+    },
+    [loadFiles, selectedFile, currentFilePath, code]
+  );
+
   const saveCurrentFile = useCallback(async () => {
     if (!currentFilePath || !code || !activeTabId) return;
 
@@ -1392,7 +1475,7 @@ export const Playground = () => {
       {!isEmbed && (
         <header className="playground-header">
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {isOPFSSupported && (
+            {isOPFSSupported && isDesktop() && (
               <button
                 className="header-icon-button"
                 onClick={toggleSidebar}
@@ -1437,7 +1520,7 @@ export const Playground = () => {
       )}
 
       <div className="playground-content">
-        {isOPFSSupported && isSidebarVisible && (
+        {isOPFSSupported && isSidebarVisible && isDesktop() && (
           <div className="file-tree-panel">
             <FileTree
               files={files}
@@ -1447,6 +1530,7 @@ export const Playground = () => {
               onCreateFolder={handleCreateFolder}
               onDeleteFile={handleDeleteFile}
               onRenameFile={handleRenameFile}
+              onMoveFile={handleMoveFile}
               selectedFile={selectedFile}
             />
           </div>
