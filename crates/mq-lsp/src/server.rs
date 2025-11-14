@@ -25,7 +25,7 @@ struct Backend {
     hir: Arc<RwLock<mq_hir::Hir>>,
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
     error_map: DashMap<String, Vec<(std::string::String, mq_lang::Range)>>,
-    cst_nodes_map: DashMap<String, Vec<Arc<mq_lang::CstNode>>>,
+    text_map: DashMap<String, String>,
 }
 
 impl LanguageServer for Backend {
@@ -67,7 +67,7 @@ impl LanguageServer for Backend {
 
         // Remove error information for the closed file
         self.error_map.remove(&uri_string);
-        self.cst_nodes_map.remove(&uri_string);
+        self.text_map.remove(&uri_string);
 
         // Remove from source map
         self.source_map.write().unwrap().remove_by_left(&uri_string);
@@ -188,9 +188,9 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
-        let nodes = self.cst_nodes_map.get(&params.text_document.uri.to_string()).unwrap();
+        let text = self.text_map.get(&params.text_document.uri.to_string()).unwrap();
         let formatted_text = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig { indent_width: 2 }))
-            .format_with_cst(nodes.to_vec())
+            .format(&text)
             .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::ParseError))?;
 
         Ok(Some(vec![lsp_types::TextEdit {
@@ -214,7 +214,7 @@ impl Backend {
 
         let uri_string = uri.to_string();
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
-        self.cst_nodes_map.insert(uri_string.clone(), nodes);
+        self.text_map.insert(uri_string.clone(), text.to_string());
         self.error_map.insert(uri_string, errors.error_ranges(&text));
     }
 
@@ -228,7 +228,7 @@ impl Backend {
 
         // Add parsing errors if they exist
         if let Some(errors) = file_errors {
-            diagnostics.extend(errors.iter().cloned().map(|(message, item)| {
+            diagnostics.extend(errors.iter().map(|(message, item)| {
                 lsp_types::Diagnostic::new_simple(
                     lsp_types::Range::new(
                         lsp_types::Position {
@@ -240,12 +240,11 @@ impl Backend {
                             character: (item.end.column - 1) as u32,
                         },
                     ),
-                    message,
+                    message.to_string(),
                 )
             }));
         }
 
-        // Acquire locks once for all HIR operations, inside a scope to ensure guards are dropped before await
         {
             let source_map_guard = self.source_map.read().unwrap();
             if let Some(source_id) = source_map_guard.get_by_left(&uri_string) {
@@ -365,7 +364,7 @@ pub async fn start(config: LspConfig) {
         hir: Arc::new(RwLock::new(mq_hir::Hir::new(config.module_paths))),
         source_map: RwLock::new(BiMap::new()),
         error_map: DashMap::new(),
-        cst_nodes_map: DashMap::new(),
+        text_map: DashMap::new(),
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
@@ -384,7 +383,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -422,15 +421,15 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
         let text = "def main():1;";
 
-        let (nodes, errors) = mq_lang::parse_recovery(text);
-        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        let (_, errors) = mq_lang::parse_recovery(text);
+        backend.text_map.insert(uri.to_string(), text.to_string());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         let result = backend
@@ -458,7 +457,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -486,7 +485,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -513,7 +512,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -539,7 +538,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -597,7 +596,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -633,7 +632,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -675,7 +674,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -707,8 +706,8 @@ mod tests {
             .await;
 
         // Check if content was updated
-        let nodes = backend.cst_nodes_map.get(&uri.to_string()).unwrap();
-        assert!(!nodes.is_empty());
+        let text = backend.text_map.get(&uri.to_string());
+        assert!(text.is_some());
     }
 
     #[tokio::test]
@@ -718,7 +717,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -738,7 +737,7 @@ mod tests {
 
         // Verify data exists before close
         assert!(backend.error_map.contains_key(&uri.to_string()));
-        assert!(backend.cst_nodes_map.contains_key(&uri.to_string()));
+        assert!(backend.text_map.contains_key(&uri.to_string()));
         assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
 
         // Close the file
@@ -752,7 +751,7 @@ mod tests {
 
         // Verify data is cleaned up after close
         assert!(!backend.error_map.contains_key(&uri.to_string()));
-        assert!(!backend.cst_nodes_map.contains_key(&uri.to_string()));
+        assert!(!backend.text_map.contains_key(&uri.to_string()));
         assert!(!backend.source_map.read().unwrap().contains_left(&uri.to_string()));
     }
 
@@ -763,7 +762,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -771,8 +770,8 @@ mod tests {
 
         // Setup some content with errors
         let text = "def main(): invalid_syntax";
-        let (nodes, errors) = mq_lang::parse_recovery(text);
-        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        let (_, errors) = mq_lang::parse_recovery(text);
+        backend.text_map.insert(uri.to_string(), text.to_string());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         backend
@@ -800,7 +799,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -826,7 +825,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -861,7 +860,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -869,8 +868,8 @@ mod tests {
 
         // Add content with parsing errors
         let text = "def main() 1;"; // Missing colon
-        let (nodes, errors) = mq_lang::parse_recovery(text);
-        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        let (_, errors) = mq_lang::parse_recovery(text);
+        backend.text_map.insert(uri.to_string(), text.to_string());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(text));
 
         // We can't directly test client.publish_diagnostics was called with correct diagnostics,
@@ -885,7 +884,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -897,7 +896,7 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend.text_map.insert(uri.to_string(), code.to_string());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unused functions are detected
@@ -920,15 +919,15 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
         let text = "def main() 1;";
-        let (nodes, _) = mq_lang::parse_recovery(text);
-        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        let _ = mq_lang::parse_recovery(text);
+        backend.text_map.insert(uri.to_string(), text.to_string());
         backend.error_map.insert(
             uri.to_string(),
             vec![(
@@ -962,7 +961,7 @@ mod tests {
             hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
             source_map: RwLock::new(BiMap::new()),
             error_map: DashMap::new(),
-            cst_nodes_map: DashMap::new(),
+            text_map: DashMap::new(),
         });
 
         let backend = service.inner();
@@ -974,7 +973,7 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.cst_nodes_map.insert(uri.to_string(), nodes);
+        backend.text_map.insert(uri.to_string(), code.to_string());
         backend.error_map.insert(uri.to_string(), errors.error_ranges(code));
 
         // Check unreachable code warnings are detected
