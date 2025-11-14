@@ -71,13 +71,14 @@ impl Hir {
     /// Returns an iterator over symbols for a specific source using the index.
     /// This is much faster than iterating over all symbols and filtering.
     pub fn symbols_for_source(&self, source_id: SourceId) -> impl Iterator<Item = (SymbolId, &Symbol)> + '_ {
-        if let Some(symbol_ids) = self.source_symbols.get(&source_id) {
-            symbol_ids
-                .iter()
-                .filter_map(move |&symbol_id| self.symbols.get(symbol_id).map(|symbol| (symbol_id, symbol)))
-        } else {
-            std::iter::empty()
-        }
+        self.source_symbols
+            .get(&source_id)
+            .into_iter()
+            .flat_map(move |symbol_ids| {
+                symbol_ids
+                    .iter()
+                    .filter_map(move |&symbol_id| self.symbols.get(symbol_id).map(|symbol| (symbol_id, symbol)))
+            })
     }
 
     /// Returns a list of unused user-defined functions for a given source
