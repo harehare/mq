@@ -43,14 +43,14 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.format_with_cst(nodes)
+        self.format_with_cst(&nodes)
     }
 
     pub fn format_with_cst(
         &mut self,
-        nodes: Vec<mq_lang::Shared<mq_lang::CstNode>>,
+        nodes: &Vec<mq_lang::Shared<mq_lang::CstNode>>,
     ) -> Result<String, mq_lang::CstErrorReporter> {
-        for node in &nodes {
+        for node in nodes {
             self.format_node(mq_lang::Shared::clone(node), 0);
         }
 

@@ -22,6 +22,7 @@ pub struct Hir {
     pub(crate) sources: SlotMap<SourceId, Source>,
     pub(crate) source_scopes: FxHashMap<SourceId, ScopeId>,
     pub(crate) references: FxHashMap<SymbolId, SymbolId>,
+    pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
 }
 
 impl Default for Hir {
@@ -59,6 +60,7 @@ impl Hir {
             module_loader: mq_lang::ModuleLoader::new(mq_lang::LocalFsModuleResolver::new(Some(module_paths))),
             source_scopes,
             references: FxHashMap::default(),
+            source_symbols: FxHashMap::default(),
         }
     }
 
@@ -66,19 +68,29 @@ impl Hir {
         symbol.source.source_id == Some(self.builtin.source_id)
     }
 
+    /// Returns an iterator over symbols for a specific source using the index.
+    /// This is much faster than iterating over all symbols and filtering.
+    pub fn symbols_for_source(&self, source_id: SourceId) -> impl Iterator<Item = (SymbolId, &Symbol)> + '_ {
+        self.source_symbols
+            .get(&source_id)
+            .into_iter()
+            .flat_map(move |symbol_ids| {
+                symbol_ids
+                    .iter()
+                    .filter_map(move |&symbol_id| self.symbols.get(symbol_id).map(|symbol| (symbol_id, symbol)))
+            })
+    }
+
     /// Returns a list of unused user-defined functions for a given source
     pub fn unused_functions(&self, source_id: SourceId) -> Vec<(SymbolId, &Symbol)> {
-        // Build usage map and collect functions in a single pass (O(n))
+        // Build usage map and collect functions using the index for fast lookup
+        // This only iterates over symbols from the specific source, not all symbols
         let mut usage_map: FxHashMap<&SmolStr, bool> = FxHashMap::default();
         let mut user_functions = Vec::new();
 
-        for (symbol_id, symbol) in &self.symbols {
+        for (symbol_id, symbol) in self.symbols_for_source(source_id) {
             // Collect user-defined functions from this source
-            if symbol.is_function()
-                && symbol.source.source_id == Some(source_id)
-                && !self.is_builtin_symbol(symbol)
-                && !symbol.is_internal_function()
-            {
+            if symbol.is_function() && !self.is_builtin_symbol(symbol) && !symbol.is_internal_function() {
                 if let Some(ref name) = symbol.value {
                     usage_map.entry(name).or_insert(false);
                     user_functions.push((symbol_id, symbol));
@@ -87,13 +99,12 @@ impl Hir {
             // Mark functions as used if they're referenced
             else if let Some(ref name) = symbol.value
                 && matches!(symbol.kind, SymbolKind::Call | SymbolKind::Ref | SymbolKind::Argument)
-                && symbol.source.source_id == Some(source_id)
             {
                 usage_map.entry(name).and_modify(|used| *used = true).or_insert(true);
             }
         }
 
-        // Filter out used functions (O(m) where m = number of user functions)
+        // Filter out used functions (O(m) where m = number of user functions in this source)
         user_functions
             .into_iter()
             .filter(|(_, symbol)| {
@@ -237,8 +248,11 @@ impl Hir {
         let source_id = self
             .source_by_url(&url)
             .inspect(|source_id| {
+                // Remove symbols from this source
                 self.symbols
                     .retain(|_, symbol| symbol.source.source_id != Some(*source_id));
+                // Clear the index for this source
+                self.source_symbols.remove(source_id);
             })
             .unwrap_or_else(|| self.add_source(Source::new(Some(url))));
 
@@ -1256,7 +1270,14 @@ impl Hir {
     }
 
     fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
-        self.symbols.insert(symbol)
+        let source_id = symbol.source.source_id;
+        let symbol_id = self.symbols.insert(symbol);
+
+        if let Some(source_id) = source_id {
+            self.source_symbols.entry(source_id).or_default().push(symbol_id);
+        }
+
+        symbol_id
     }
 
     fn add_source(&mut self, source: Source) -> SourceId {
