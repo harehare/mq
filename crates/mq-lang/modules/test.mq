@@ -139,7 +139,7 @@ def _format_duration(duration_ms):
     else:
       duration_str
   # Pad to fixed width: [   X.XXXs]
-  | let padding_needed = 7 - len(duration_str)
+  | let padding_needed = 8 - len(duration_str)
   | let padding = if (padding_needed > 0):
       repeat(" ", padding_needed)
     else:
