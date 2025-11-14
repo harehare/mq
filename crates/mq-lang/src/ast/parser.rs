@@ -748,27 +748,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let _ = self.tokens.next();
 
             match self.tokens.next() {
-                Some(t) if t.kind == TokenKind::RBracket => {
-                    let _ = self.tokens.next(); // consume ']'
-
-                    Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(&original_token)),
-                        expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(constants::SLICE, Some(Shared::clone(&original_token))),
-                            smallvec![
-                                Shared::clone(&target_node),
-                                first_node,
-                                Shared::new(Node {
-                                    token_id: self.token_arena.alloc(Shared::clone(&original_token)),
-                                    expr: Shared::new(Expr::Call(
-                                        IdentWithToken::new_with_token(constants::LEN, None),
-                                        smallvec![target_node],
-                                    )),
-                                })
-                            ],
-                        )),
-                    })
-                }
+                Some(t) if t.kind == TokenKind::RBracket => Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(&original_token)),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(constants::SLICE, Some(Shared::clone(&original_token))),
+                        smallvec![
+                            Shared::clone(&target_node),
+                            first_node,
+                            Shared::new(Node {
+                                token_id: self.token_arena.alloc(Shared::clone(&original_token)),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::LEN, None),
+                                    smallvec![target_node],
+                                )),
+                            })
+                        ],
+                    )),
+                }),
                 Some(t) => {
                     let second_node = self.parse_expr(Shared::clone(t))?;
 
