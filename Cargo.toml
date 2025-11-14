@@ -20,7 +20,7 @@ members = [
   "crates/mq-lsp",
   "crates/mq-hir",
   "crates/mq-formatter",
-  "fuzz",
+  "crates/fuzz",
   "crates/mq-wasm",
   "crates/mq-test",
   "crates/mq-mcp",
