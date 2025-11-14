@@ -221,6 +221,8 @@ enum Commands {
         /// Check if files are formatted without modifying them
         #[arg(short, long)]
         check: bool,
+        /// Path to the mq file to format
+        files: Vec<PathBuf>,
     },
     /// Show functions documentation for the query
     Docs {
@@ -256,17 +258,26 @@ impl Cli {
                     .block_on(async { mq_mcp::start().await });
                 Ok(())
             }
-            Some(Commands::Fmt { indent_width, check }) => {
+            Some(Commands::Fmt {
+                indent_width,
+                check,
+                files,
+            }) => {
                 let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                     indent_width: *indent_width,
                 }));
-                for (_, content) in self.read_contents()? {
+
+                for file in files {
+                    if !file.exists() {
+                        return Err(miette!("File not found: {}", file.display()));
+                    }
+                    let content = fs::read_to_string(file).into_diagnostic()?;
                     let formatted = formatter.format(&content).into_diagnostic()?;
 
                     if *check && formatted != content {
                         return Err(miette!("The input is not formatted"));
                     } else {
-                        println!("{}", formatted);
+                        fs::write(file, formatted).into_diagnostic()?;
                     }
                 }
 
@@ -753,6 +764,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: false,
+                files: vec![temp_file_path.clone()],
             }),
             query: None,
             files: Some(vec![temp_file_path]),
@@ -779,6 +791,7 @@ mod tests {
             commands: Some(Commands::Fmt {
                 indent_width: 2,
                 check: true,
+                files: vec![temp_file_path.clone()],
             }),
             query: None,
             files: Some(vec![temp_file_path]),
