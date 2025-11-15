@@ -97,9 +97,7 @@ def remove_column(table, col_index):
       del(row, col_index)
     end
   | set(table, :rows, rows)
-end
-
-# Map a function over each row in the table.
+enCargo.toml Map a function over each row in the table.
 def map_rows(table, f):
   set(table, :rows, map(table[:rows], f))
 end
