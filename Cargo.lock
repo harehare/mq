@@ -2819,6 +2819,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-typechecker"
+version = "0.5.1"
+dependencies = [
+ "itertools 0.14.0",
+ "miette",
+ "mq-hir",
+ "mq-lang",
+ "rstest",
+ "rustc-hash 2.1.1",
+ "slotmap",
+ "smol_str",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "mq-wasm"
 version = "0.5.16"
 dependencies = [
