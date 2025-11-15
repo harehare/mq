@@ -28,6 +28,7 @@ members = [
   "crates/mq-web-api",
   "crates/mq-dap",
   "crates/mq-crawler",
+  "crates/mq-typechecker",
 ]
 resolver = "3"
 
@@ -47,6 +48,7 @@ mq-markdown = {path = "./crates/mq-markdown"}
 mq-mcp = {path = "./crates/mq-mcp"}
 mq-repl = {path = "./crates/mq-repl"}
 mq-test = {path = "./crates/mq-test"}
+mq-typechecker = {path = "./crates/mq-typechecker"}
 proptest = "1.9"
 regex-lite = "0.1.8"
 rstest = "0.26.1"
