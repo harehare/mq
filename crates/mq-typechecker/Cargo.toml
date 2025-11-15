@@ -1,0 +1,22 @@
+[package]
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license-file.workspace = true
+name = "mq-typechecker"
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+itertools.workspace = true
+mq-lang = {workspace = true, features = ["cst"]}
+mq-hir.workspace = true
+rustc-hash.workspace = true
+slotmap = "1.0.7"
+smol_str.workspace = true
+thiserror.workspace = true
+miette.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
