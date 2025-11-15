@@ -1940,7 +1940,7 @@ impl Node {
                 "value" => {
                     c.value = value_str;
                 }
-                "lang" => {
+                "lang" | "language" => {
                     c.lang = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 "meta" => {

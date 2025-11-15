@@ -3483,7 +3483,7 @@ pub fn eval_builtin(runtime_value: &RuntimeValue, ident: &Ident, args: Args) -> 
 
 pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool {
     match selector {
-        ast::Selector::Code(lang) => node.is_code(lang.clone()),
+        ast::Selector::Code => node.is_code(None),
         ast::Selector::InlineCode => node.is_inline_code(),
         ast::Selector::InlineMath => node.is_inline_math(),
         ast::Selector::Strong => node.is_strong(),
@@ -3875,16 +3875,12 @@ mod tests {
         let result = eval_builtin(&first_arg, &ident, args);
         assert_eq!(result, Ok(RuntimeValue::Boolean(true)));
     }
+
     #[rstest]
     #[case::code(
         Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), fence: true, meta: None, position: None }),
-        ast::Selector::Code(Some("rust".into())),
+        ast::Selector::Code,
         true
-    )]
-    #[case::code_wrong_lang(
-        Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), fence: true, meta: None, position: None }),
-        ast::Selector::Code(Some("python".into())),
-        false
     )]
     #[case::inline_code(
         Node::CodeInline(mq_markdown::CodeInline { value: "test".into(), position: None }),

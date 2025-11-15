@@ -1672,19 +1672,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     token_id: self.token_arena.alloc(Shared::clone(&token)),
                     expr: Shared::new(Expr::Selector(Selector::Yaml)),
                 })),
-                ".code" => {
-                    if let Ok(s) = self.parse_string_arg(Shared::clone(&token)) {
-                        Ok(Shared::new(Node {
-                            token_id: self.token_arena.alloc(Shared::clone(&token)),
-                            expr: Shared::new(Expr::Selector(Selector::Code(Some(SmolStr::new(s))))),
-                        }))
-                    } else {
-                        Ok(Shared::new(Node {
-                            token_id: self.token_arena.alloc(Shared::clone(&token)),
-                            expr: Shared::new(Expr::Selector(Selector::Code(None))),
-                        }))
-                    }
-                }
+                ".code" => Ok(Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(&token)),
+                    expr: Shared::new(Expr::Selector(Selector::Code)),
+                })),
                 ".mdx_js_esm" => Ok(Shared::new(Node {
                     token_id: self.token_arena.alloc(Shared::clone(&token)),
                     expr: Shared::new(Expr::Selector(Selector::MdxJsEsm)),
@@ -1805,17 +1796,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    #[inline(always)]
-    fn parse_string_arg(&mut self, token: Shared<Token>) -> Result<String, ParseError> {
-        let args = self.parse_string_args(Shared::clone(&token))?;
-
-        if args.len() == 1 {
-            Ok(args[0].clone())
-        } else {
-            Err(ParseError::UnexpectedToken((*token).clone()))
-        }
-    }
-
     fn parse_int_array_arg(&mut self, token: &Shared<Token>) -> Result<ArrayIndex, ParseError> {
         self.next_token(|token_kind| matches!(token_kind, TokenKind::LBracket))?;
 
@@ -1860,40 +1840,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         module_id: _,
                     } => {
                         args.push(n.value() as i64);
-                    }
-                    Token {
-                        range: _,
-                        kind: TokenKind::RParen,
-                        module_id: _,
-                    } => break,
-                    Token {
-                        range: _,
-                        kind: TokenKind::Comma,
-                        module_id: _,
-                    } => continue,
-                    token => return Err(ParseError::UnexpectedToken((*token).clone())),
-                },
-                None => return Err(ParseError::InsufficientTokens((*arg_token).clone())),
-            }
-        }
-
-        Ok(args)
-    }
-
-    fn parse_string_args(&mut self, arg_token: Shared<Token>) -> Result<Vec<String>, ParseError> {
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::LParen))?;
-
-        let mut args = Vec::with_capacity(8);
-
-        loop {
-            match self.tokens.next() {
-                Some(token) => match &**token {
-                    Token {
-                        range: _,
-                        kind: TokenKind::StringLiteral(s),
-                        module_id: _,
-                    } => {
-                        args.push(s.to_owned());
                     }
                     Token {
                         range: _,
@@ -2821,16 +2767,11 @@ mod tests {
     #[case::code_selector_with_language(
         vec![
             token(TokenKind::Selector(SmolStr::new(".code"))),
-            token(TokenKind::LParen),
-            token(TokenKind::StringLiteral("rust".to_owned())),
-            token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
         Ok(vec![Shared::new(Node {
             token_id: 2.into(),
-            expr: Shared::new(Expr::Selector(Selector::Code(Some(SmolStr::new(
-                "rust",
-            ))))),
+            expr: Shared::new(Expr::Selector(Selector::Code)),
         })]))]
     #[case::table_selector(
         vec![
@@ -5669,7 +5610,7 @@ mod tests {
     #[case::html_full(".html", Selector::Html)]
     #[case::image(".image", Selector::Image)]
     #[case::image_ref(".image_ref", Selector::ImageRef)]
-    #[case::code(".code", Selector::Code(None))]
+    #[case::code(".code", Selector::Code)]
     #[case::code_inline(".code_inline", Selector::InlineCode)]
     #[case::math_inline(".math_inline", Selector::InlineMath)]
     #[case::link(".link", Selector::Link)]
@@ -5715,7 +5656,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(".code", "rust", Selector::Code(Some(SmolStr::new("rust"))))]
     #[case(".h", "2", Selector::Heading(Some(2)))]
     #[case(".list", "3", Selector::List(Some(3), None))]
     fn test_parse_selector_with_args(
@@ -6005,7 +5945,7 @@ mod tests {
                         match base_selector {
                             "h" => assert_eq!(*selector, Selector::Heading(None)),
                             "h1" => assert_eq!(*selector, Selector::Heading(Some(1))),
-                            "code" => assert_eq!(*selector, Selector::Code(None)),
+                            "code" => assert_eq!(*selector, Selector::Code),
                             "text" => assert_eq!(*selector, Selector::Text),
                             _ => panic!("Unexpected base selector: {}", base_selector),
                         }

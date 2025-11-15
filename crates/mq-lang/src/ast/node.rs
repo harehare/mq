@@ -13,7 +13,6 @@ use std::{
 
 type Depth = u8;
 type Index = usize;
-type Lang = SmolStr;
 pub type Params = SmallVec<[Shared<Node>; 4]>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
@@ -198,7 +197,7 @@ pub enum Selector {
     Link,
     LinkRef,
     Strong,
-    Code(Option<Lang>),
+    Code,
     Math,
     Heading(Option<Depth>),
     Table(Option<usize>, Option<usize>),
