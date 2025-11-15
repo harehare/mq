@@ -1927,15 +1927,23 @@ impl Node {
         let value_str = value.as_string();
 
         match self {
-            Node::Footnote(f) if attr == "ident" => {
-                f.ident = value_str;
+            Node::Footnote(f) => {
+                if attr == "ident" {
+                    f.ident = value_str;
+                }
             }
-            Node::Html(h) if attr == "value" || attr == "text" => {
-                h.value = value_str;
-            }
-            Node::Text(t) if attr == "value" || attr == "text" => {
-                t.value = value_str;
-            }
+            Node::Html(h) => match attr {
+                "value" | "text" => {
+                    h.value = value_str;
+                }
+                _ => (),
+            },
+            Node::Text(t) => match attr {
+                "value" | "text" => {
+                    t.value = value_str;
+                }
+                _ => (),
+            },
             Node::Code(c) => match attr {
                 "value" => {
                     c.value = value_str;
@@ -1954,21 +1962,36 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::CodeInline(ci) if attr == "value" || attr == "text" => {
-                ci.value = value_str.into();
-            }
-            Node::MathInline(mi) if attr == "value" || attr == "text" => {
-                mi.value = value_str.into();
-            }
-            Node::Math(m) if attr == "value" || attr == "text" => {
-                m.value = value_str;
-            }
-            Node::Yaml(y) if attr == "value" || attr == "text" => {
-                y.value = value_str;
-            }
-            Node::Toml(t) if attr == "value" || attr == "text" => {
-                t.value = value_str;
-            }
+            Node::CodeInline(ci) => match attr {
+                "value" | "text" => {
+                    ci.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MathInline(mi) => match attr {
+                "value" | "text" => {
+                    mi.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::Math(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str;
+                }
+                _ => (),
+            },
+            Node::Yaml(y) => match attr {
+                "value" | "text" => {
+                    y.value = value_str;
+                }
+                _ => (),
+            },
+            Node::Toml(t) => match attr {
+                "value" | "text" => {
+                    t.value = value_str;
+                }
+                _ => (),
+            },
             Node::Image(i) => match attr {
                 "alt" => {
                     i.alt = value_str;
@@ -2043,12 +2066,15 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::Heading(h) if attr == "depth" => {
-                h.depth = match value {
-                    AttrValue::Integer(i) => i as u8,
-                    _ => value_str.parse::<u8>().unwrap_or(h.depth),
-                };
-            }
+            Node::Heading(h) => match attr {
+                "depth" | "level" => {
+                    h.depth = match value {
+                        AttrValue::Integer(i) => i as u8,
+                        _ => value_str.parse::<u8>().unwrap_or(h.depth),
+                    };
+                }
+                _ => (),
+            },
             Node::List(l) => match attr {
                 "index" => {
                     l.index = match value {
@@ -2107,38 +2133,61 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::TableHeader(th) if attr == "align" => {
-                th.align = value_str
-                    .split(',')
-                    .map(|s| match s.trim() {
-                        ":---" => TableAlignKind::Left,
-                        "---:" => TableAlignKind::Right,
-                        ":---:" => TableAlignKind::Center,
-                        "---" => TableAlignKind::None,
-                        _ => TableAlignKind::None,
-                    })
-                    .collect();
+            Node::TableHeader(th) => {
+                if attr == "align" {
+                    th.align = value_str
+                        .split(',')
+                        .map(|s| match s.trim() {
+                            ":---" => TableAlignKind::Left,
+                            "---:" => TableAlignKind::Right,
+                            ":---:" => TableAlignKind::Center,
+                            "---" => TableAlignKind::None,
+                            _ => TableAlignKind::None,
+                        })
+                        .collect();
+                }
             }
-            Node::MdxFlowExpression(m) if attr == "value" || attr == "text" => {
-                m.value = value_str.into();
+            Node::MdxFlowExpression(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MdxTextExpression(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MdxJsEsm(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MdxJsxFlowElement(m) => {
+                if attr == "name" {
+                    m.name = if value_str.is_empty() { None } else { Some(value_str) };
+                }
             }
-            Node::MdxTextExpression(m) if attr == "value" || attr == "text" => {
-                m.value = value_str.into();
+            Node::MdxJsxTextElement(m) => {
+                if attr == "name" {
+                    m.name = if value_str.is_empty() {
+                        None
+                    } else {
+                        Some(value_str.into())
+                    };
+                }
             }
-            Node::MdxJsEsm(m) if attr == "value" || attr == "text" => {
-                m.value = value_str.into();
-            }
-            Node::MdxJsxFlowElement(m) if attr == "name" => {
-                m.name = if value_str.is_empty() { None } else { Some(value_str) };
-            }
-            Node::MdxJsxTextElement(m) if attr == "name" => {
-                m.name = if value_str.is_empty() {
-                    None
-                } else {
-                    Some(value_str.into())
-                };
-            }
-            _ => (),
+            Node::Delete(_)
+            | Node::Blockquote(_)
+            | Node::Emphasis(_)
+            | Node::Strong(_)
+            | Node::TableRow(_)
+            | Node::Break(_)
+            | Node::HorizontalRule(_)
+            | Node::Fragment(_)
+            | Node::Empty => (),
         }
     }
 
