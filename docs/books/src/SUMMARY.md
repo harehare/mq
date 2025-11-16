@@ -34,6 +34,7 @@
   - [Builtin selectors and functions](reference/builtins.md)
     - [Builtin functions](reference/builtin_functions.md)
     - [Builtin selectors](reference/builtin_selectors.md)
+    - [Selectors](reference/selectors.md)
     - [CSV functions](reference/csv_functions.md)
     - [Fuzzy functions](reference/fuzzy_functions.md)
     - [JSON functions](reference/json_functions.md)
