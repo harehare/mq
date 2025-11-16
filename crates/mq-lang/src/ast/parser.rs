@@ -1580,7 +1580,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if let TokenKind::Selector(selector) = &token.kind {
             match selector.as_str() {
                 // Handles heading selectors like `.h` or `.h(level)`.
-                ".h" => self.parse_selector_heading_args(Shared::clone(&token)),
+                ".h" => Ok(Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(&token)),
+                    expr: Shared::new(Expr::Selector(Selector::Heading(None))),
+                })),
                 ".h1" => self.parse_head(token, 1),
                 ".h2" => self.parse_head(token, 2),
                 ".h3" => self.parse_head(token, 3),
@@ -1765,22 +1768,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(&token)),
                 expr: Shared::new(Expr::Selector(Selector::List(None, None))),
-            }))
-        }
-    }
-
-    // Parses arguments for heading selectors like `.h(level)` or just `.h`.
-    // Example: .h(1) or .h
-    fn parse_selector_heading_args(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
-        if let Ok(depth) = self.parse_int_arg(Shared::clone(&token)) {
-            Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(&token)),
-                expr: Shared::new(Expr::Selector(Selector::Heading(Some(depth as u8)))),
-            }))
-        } else {
-            Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(&token)),
-                expr: Shared::new(Expr::Selector(Selector::Heading(None))),
             }))
         }
     }
@@ -2560,15 +2547,12 @@ mod tests {
     #[case::h_selector(
         vec![
             token(TokenKind::Selector(SmolStr::new(".h"))),
-            token(TokenKind::LParen),
-            token(TokenKind::NumberLiteral(3.into())),
-            token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Selector(Selector::Heading(Some(3)))),
+                expr: Shared::new(Expr::Selector(Selector::Heading(None))),
             })
         ]))]
     #[case::h_selector_without_number(
@@ -5656,7 +5640,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(".h", "2", Selector::Heading(Some(2)))]
     #[case(".list", "3", Selector::List(Some(3), None))]
     fn test_parse_selector_with_args(
         #[case] selector_str: &str,
