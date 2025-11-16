@@ -49,6 +49,7 @@ impl Error {
                 ParseError::ExpectedClosingParen(token) => Some(token),
                 ParseError::ExpectedClosingBrace(token) => Some(token),
                 ParseError::ExpectedClosingBracket(token) => Some(token),
+                ParseError::UnknownSelector(token) => Some(token),
             },
             InnerError::Eval(err) => match err {
                 EvalError::UserDefined { token, .. } => Some(token),
@@ -83,6 +84,7 @@ impl Error {
                     ParseError::ExpectedClosingParen(token) => Some(token),
                     ParseError::ExpectedClosingBrace(token) => Some(token),
                     ParseError::ExpectedClosingBracket(token) => Some(token),
+                    ParseError::UnknownSelector(token) => Some(token),
                 },
                 ModuleError::InvalidModule => None,
             },

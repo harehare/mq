@@ -19,4 +19,6 @@ pub enum ParseError {
     ExpectedClosingBrace(Token),
     #[error("Expected a closing bracket `]` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     ExpectedClosingBracket(Token),
+    #[error("Unknown selector: {0}")]
+    UnknownSelector(Token),
 }

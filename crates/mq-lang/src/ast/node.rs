@@ -1,12 +1,13 @@
-use super::{Program, TokenId};
+use super::{Program, TokenId, error::ParseError};
 #[cfg(feature = "ast-json")]
 use crate::arena::ArenaId;
-use crate::{Ident, Shared, Token, arena::Arena, lexer, number::Number, range::Range};
+use crate::{Ident, Shared, Token, TokenKind, arena::Arena, lexer, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::{
+    convert::TryFrom,
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
 };
@@ -208,6 +209,161 @@ pub enum Selector {
     MdxTextExpression,
     MdxJsEsm,
     MdxJsxFlowElement,
+}
+
+impl TryFrom<&Token> for Selector {
+    type Error = ParseError;
+
+    fn try_from(token: &Token) -> Result<Self, Self::Error> {
+        if let TokenKind::Selector(s) = &token.kind {
+            match s.as_str() {
+                // Heading selectors
+                ".h" => Ok(Selector::Heading(None)),
+                ".h1" => Ok(Selector::Heading(Some(1))),
+                ".h2" => Ok(Selector::Heading(Some(2))),
+                ".h3" => Ok(Selector::Heading(Some(3))),
+                ".h4" => Ok(Selector::Heading(Some(4))),
+                ".h5" => Ok(Selector::Heading(Some(5))),
+                ".h6" => Ok(Selector::Heading(Some(6))),
+
+                // Blockquote
+                ".>" | ".blockquote" => Ok(Selector::Blockquote),
+
+                // Footnote
+                ".^" | ".footnote" => Ok(Selector::Footnote),
+
+                // MDX JSX Flow Element
+                ".<" | ".mdx_jsx_flow_element" => Ok(Selector::MdxJsxFlowElement),
+
+                // Emphasis
+                ".**" | ".emphasis" => Ok(Selector::Emphasis),
+
+                // Math
+                ".$$" | ".math" => Ok(Selector::Math),
+
+                // Horizontal Rule
+                ".horizontal_rule" | ".---" | ".***" | ".___" => Ok(Selector::HorizontalRule),
+
+                // MDX Text Expression
+                ".{}" | ".mdx_text_expression" => Ok(Selector::MdxTextExpression),
+
+                // Footnote Reference
+                ".[^]" | ".footnote_ref" => Ok(Selector::FootnoteRef),
+
+                // Definition
+                ".definition" => Ok(Selector::Definition),
+
+                // Break
+                ".break" => Ok(Selector::Break),
+
+                // Delete
+                ".delete" => Ok(Selector::Delete),
+
+                // HTML
+                ".<>" | ".html" => Ok(Selector::Html),
+
+                // Image
+                ".image" => Ok(Selector::Image),
+
+                // Image Reference
+                ".image_ref" => Ok(Selector::ImageRef),
+
+                // Inline Code
+                ".code_inline" => Ok(Selector::InlineCode),
+
+                // Inline Math
+                ".math_inline" => Ok(Selector::InlineMath),
+
+                // Link
+                ".link" => Ok(Selector::Link),
+
+                // Link Reference
+                ".link_ref" => Ok(Selector::LinkRef),
+
+                // List
+                ".list" => Ok(Selector::List(None, None)),
+
+                // TOML
+                ".toml" => Ok(Selector::Toml),
+
+                // Strong
+                ".strong" => Ok(Selector::Strong),
+
+                // YAML
+                ".yaml" => Ok(Selector::Yaml),
+
+                // Code
+                ".code" => Ok(Selector::Code),
+
+                // MDX JS ESM
+                ".mdx_js_esm" => Ok(Selector::MdxJsEsm),
+
+                // MDX JSX Text Element
+                ".mdx_jsx_text_element" => Ok(Selector::MdxJsxTextElement),
+
+                // MDX Flow Expression
+                ".mdx_flow_expression" => Ok(Selector::MdxFlowExpression),
+
+                // Text
+                ".text" => Ok(Selector::Text),
+
+                // Table
+                ".table" => Ok(Selector::Table(None, None)),
+
+                _ => Err(ParseError::UnknownSelector(token.clone())),
+            }
+        } else {
+            Err(ParseError::UnexpectedToken(token.clone()))
+        }
+    }
+}
+
+impl Display for Selector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Selector::Heading(None) => write!(f, ".h"),
+            Selector::Heading(Some(1)) => write!(f, ".h1"),
+            Selector::Heading(Some(2)) => write!(f, ".h2"),
+            Selector::Heading(Some(3)) => write!(f, ".h3"),
+            Selector::Heading(Some(4)) => write!(f, ".h4"),
+            Selector::Heading(Some(5)) => write!(f, ".h5"),
+            Selector::Heading(Some(6)) => write!(f, ".h6"),
+            Selector::Heading(Some(n)) => write!(f, ".h{}", n),
+            Selector::Blockquote => write!(f, ".blockquote"),
+            Selector::Footnote => write!(f, ".footnote"),
+            Selector::List(None, None) => write!(f, ".list"),
+            Selector::List(Some(idx), None) => write!(f, ".list({})", idx),
+            Selector::List(idx, ordered) => write!(f, ".list({:?}, {:?})", idx, ordered),
+            Selector::Toml => write!(f, ".toml"),
+            Selector::Yaml => write!(f, ".yaml"),
+            Selector::Break => write!(f, ".break"),
+            Selector::InlineCode => write!(f, ".code_inline"),
+            Selector::InlineMath => write!(f, ".math_inline"),
+            Selector::Delete => write!(f, ".delete"),
+            Selector::Emphasis => write!(f, ".emphasis"),
+            Selector::FootnoteRef => write!(f, ".footnote_ref"),
+            Selector::Html => write!(f, ".html"),
+            Selector::Image => write!(f, ".image"),
+            Selector::ImageRef => write!(f, ".image_ref"),
+            Selector::MdxJsxTextElement => write!(f, ".mdx_jsx_text_element"),
+            Selector::Link => write!(f, ".link"),
+            Selector::LinkRef => write!(f, ".link_ref"),
+            Selector::Strong => write!(f, ".strong"),
+            Selector::Code => write!(f, ".code"),
+            Selector::Math => write!(f, ".math"),
+            Selector::Table(None, None) => write!(f, ".table"),
+            Selector::Table(Some(row), None) => write!(f, ".[{}]", row),
+            Selector::Table(Some(row), Some(col)) => write!(f, ".[{}][{}]", row, col),
+            Selector::Table(None, Some(col)) => write!(f, ".[][{}]", col),
+            Selector::Text => write!(f, ".text"),
+            Selector::HorizontalRule => write!(f, ".horizontal_rule"),
+            Selector::Definition => write!(f, ".definition"),
+            Selector::MdxFlowExpression => write!(f, ".mdx_flow_expression"),
+            Selector::MdxTextExpression => write!(f, ".mdx_text_expression"),
+            Selector::MdxJsEsm => write!(f, ".mdx_js_esm"),
+            Selector::MdxJsxFlowElement => write!(f, ".mdx_jsx_flow_element"),
+        }
+    }
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -656,5 +812,119 @@ mod tests {
             expr: Shared::new(expr),
         };
         assert_eq!(node.range(Shared::new(arena)), expected);
+    }
+
+    #[rstest]
+    // Heading selectors
+    #[case::heading(".h", Selector::Heading(None), ".h")]
+    #[case::heading_h1(".h1", Selector::Heading(Some(1)), ".h1")]
+    #[case::heading_h2(".h2", Selector::Heading(Some(2)), ".h2")]
+    #[case::heading_h3(".h3", Selector::Heading(Some(3)), ".h3")]
+    #[case::heading_h4(".h4", Selector::Heading(Some(4)), ".h4")]
+    #[case::heading_h5(".h5", Selector::Heading(Some(5)), ".h5")]
+    #[case::heading_h6(".h6", Selector::Heading(Some(6)), ".h6")]
+    // Blockquote
+    #[case::blockquote(".blockquote", Selector::Blockquote, ".blockquote")]
+    #[case::blockquote_alias(".>", Selector::Blockquote, ".blockquote")]
+    // Footnote
+    #[case::footnote(".footnote", Selector::Footnote, ".footnote")]
+    #[case::footnote_alias(".^", Selector::Footnote, ".footnote")]
+    // MDX JSX Flow Element
+    #[case::mdx_jsx_flow_element(".mdx_jsx_flow_element", Selector::MdxJsxFlowElement, ".mdx_jsx_flow_element")]
+    #[case::mdx_jsx_flow_element_alias(".<", Selector::MdxJsxFlowElement, ".mdx_jsx_flow_element")]
+    // Emphasis
+    #[case::emphasis(".emphasis", Selector::Emphasis, ".emphasis")]
+    #[case::emphasis_alias(".**", Selector::Emphasis, ".emphasis")]
+    // Math
+    #[case::math(".math", Selector::Math, ".math")]
+    #[case::math_alias(".$$", Selector::Math, ".math")]
+    // Horizontal Rule
+    #[case::horizontal_rule(".horizontal_rule", Selector::HorizontalRule, ".horizontal_rule")]
+    #[case::horizontal_rule_alias_dash(".---", Selector::HorizontalRule, ".horizontal_rule")]
+    #[case::horizontal_rule_alias_star(".***", Selector::HorizontalRule, ".horizontal_rule")]
+    #[case::horizontal_rule_alias_underscore(".___", Selector::HorizontalRule, ".horizontal_rule")]
+    // MDX Text Expression
+    #[case::mdx_text_expression(".mdx_text_expression", Selector::MdxTextExpression, ".mdx_text_expression")]
+    #[case::mdx_text_expression_alias(".{}", Selector::MdxTextExpression, ".mdx_text_expression")]
+    // Footnote Reference
+    #[case::footnote_ref(".footnote_ref", Selector::FootnoteRef, ".footnote_ref")]
+    #[case::footnote_ref_alias(".[^]", Selector::FootnoteRef, ".footnote_ref")]
+    // Definition
+    #[case::definition(".definition", Selector::Definition, ".definition")]
+    // Break
+    #[case::break_selector(".break", Selector::Break, ".break")]
+    // Delete
+    #[case::delete(".delete", Selector::Delete, ".delete")]
+    // HTML
+    #[case::html(".html", Selector::Html, ".html")]
+    #[case::html_alias(".<>", Selector::Html, ".html")]
+    // Image
+    #[case::image(".image", Selector::Image, ".image")]
+    // Image Reference
+    #[case::image_ref(".image_ref", Selector::ImageRef, ".image_ref")]
+    // Inline Code
+    #[case::code_inline(".code_inline", Selector::InlineCode, ".code_inline")]
+    // Inline Math
+    #[case::math_inline(".math_inline", Selector::InlineMath, ".math_inline")]
+    // Link
+    #[case::link(".link", Selector::Link, ".link")]
+    // Link Reference
+    #[case::link_ref(".link_ref", Selector::LinkRef, ".link_ref")]
+    // List
+    #[case::list(".list", Selector::List(None, None), ".list")]
+    // TOML
+    #[case::toml(".toml", Selector::Toml, ".toml")]
+    // Strong
+    #[case::strong(".strong", Selector::Strong, ".strong")]
+    // YAML
+    #[case::yaml(".yaml", Selector::Yaml, ".yaml")]
+    // Code
+    #[case::code(".code", Selector::Code, ".code")]
+    // MDX JS ESM
+    #[case::mdx_js_esm(".mdx_js_esm", Selector::MdxJsEsm, ".mdx_js_esm")]
+    // MDX JSX Text Element
+    #[case::mdx_jsx_text_element(".mdx_jsx_text_element", Selector::MdxJsxTextElement, ".mdx_jsx_text_element")]
+    // MDX Flow Expression
+    #[case::mdx_flow_expression(".mdx_flow_expression", Selector::MdxFlowExpression, ".mdx_flow_expression")]
+    // Text
+    #[case::text(".text", Selector::Text, ".text")]
+    // Table
+    #[case::table(".table", Selector::Table(None, None), ".table")]
+    fn test_selector_try_from_and_display(
+        #[case] input: &str,
+        #[case] expected_selector: Selector,
+        #[case] expected_display: &str,
+    ) {
+        // Test TryFrom
+        let selector = Selector::try_from(&Token {
+            kind: TokenKind::Selector(SmolStr::new(input)),
+            range: Range {
+                start: Position::new(0, 0),
+                end: Position::new(0, 0),
+            },
+            module_id: ArenaId::new(0),
+        })
+        .expect("Should parse valid selector");
+        assert_eq!(selector, expected_selector);
+
+        // Test Display
+        assert_eq!(selector.to_string(), expected_display);
+    }
+
+    #[test]
+    fn test_selector_try_from_unknown() {
+        let token = Token {
+            kind: TokenKind::Selector(SmolStr::new(".unknown")),
+            range: Range {
+                start: Position::new(0, 0),
+                end: Position::new(0, 0),
+            },
+            module_id: ArenaId::new(0),
+        };
+        let result = Selector::try_from(&token);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert_eq!(e, ParseError::UnknownSelector(token));
+        }
     }
 }
