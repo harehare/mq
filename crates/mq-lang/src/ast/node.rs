@@ -18,6 +18,9 @@ pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
 pub type MatchArms = SmallVec<[MatchArm; 4]>;
 
+type Index = usize;
+type Depth = u8;
+
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 pub struct Node {
