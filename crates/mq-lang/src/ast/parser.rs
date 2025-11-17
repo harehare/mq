@@ -1571,7 +1571,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_selector_direct(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
         if let TokenKind::Selector(selector) = &token.kind {
             if selector == "." {
-                self.parse_selector_table_args(Shared::clone(&token))
+                if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LBracket)) {
+                    self.parse_selector_table_args(Shared::clone(&token))
+                } else {
+                    Ok(Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(&token)),
+                        expr: Shared::new(Expr::Self_),
+                    }))
+                }
             } else {
                 let selector = Selector::try_from(&*token)?;
 
@@ -5363,6 +5370,17 @@ mod tests {
                     )),
                 })
             ]))]
+    #[case::selector_dot_is_self(
+                vec![
+                    token(TokenKind::Selector(SmolStr::new("."))),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Shared::new(Expr::Self_),
+                    })
+                ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
