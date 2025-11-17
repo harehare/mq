@@ -88,6 +88,18 @@ def map(v, f):
       foreach (x, v): f(x);
 end
 
+# Applies a function to each element and flattens the result into a single array
+def flat_map(v, f):
+  let flat_map_dict = fn(v, f):
+      let mapped = do foreach (x, entries(v)): f(x); | flatten(mapped) | dict(mapped);
+    end
+
+  | if (is_dict(v)):
+      flat_map_dict(v, f)
+    else:
+      foreach (x, v): f(x); | flatten()
+end
+
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f):
   let filter_dict = fn(v, f):
@@ -202,8 +214,10 @@ end
 def fill(value, n):
   if (n < 0):
     error("n must be non-negative")
+  elif (n == 0):
+    []
   else:
-    foreach (i, range(0, n)): value;
+    foreach (i, range(0, n - 1)): value;
 end
 
 # Prints the debug information of the given value.
@@ -251,18 +265,17 @@ end
 
 # Skips elements from the beginning of an array while the provided function returns true
 def skip_while(arr, f):
-  let i = 0
-  | let si =
-    if (not(is_array(arr))):
-      error("first argument must be an array")
-    elif (is_empty(arr)):
-      0
-    else:
-      until (and(i < len(arr), f(get(arr, i)))):
-        let i = i + 1 | i;
-  | if (is_none(si)): []
-    else:
-      slice(arr, si, len(arr))
+  let si = if (not(is_array(arr))):
+    error("first argument must be an array")
+  elif (is_empty(arr)):
+    0
+  else:
+    do
+      let i = 0
+      | until (i < len(arr) && f(get(arr, i))):
+          let i = i + 1 | i;
+    end
+  | slice(arr, if (is_none(si)): 0 else: si, len(arr))
 end
 
 # Takes elements from the beginning of an array while the provided function returns true
