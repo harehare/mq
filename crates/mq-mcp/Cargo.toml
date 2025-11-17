@@ -13,7 +13,7 @@ miette.workspace = true
 mq-hir.workspace = true
 mq-lang.workspace = true
 mq-markdown.workspace = true
-rmcp = {version = "0.8.5", features = ["server"]}
+rmcp = {version = "0.9.0", features = ["server"]}
 serde = {workspace = true, features = ["derive"]}
 serde_json.workspace = true
 tokio = {version = "1.48.0", features = ["macros", "rt-multi-thread", "io-std"]}
