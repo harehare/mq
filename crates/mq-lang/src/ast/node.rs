@@ -12,8 +12,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-type Depth = u8;
-type Index = usize;
 pub type Params = SmallVec<[Shared<Node>; 4]>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
