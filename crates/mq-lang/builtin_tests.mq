@@ -1,0 +1,427 @@
+include "test"
+
+# Type checking tests
+| def test_is_array():
+    let result1 = is_array([1, 2, 3])
+    | assert_eq(result1, true)
+
+    | let result2 = is_array("string")
+    | assert_eq(result2, false)
+
+    | let result3 = is_array(42)
+    | assert_eq(result3, false)
+  end
+
+| def test_is_bool():
+    let result1 = is_bool(true)
+    | assert_eq(result1, true)
+
+    | let result2 = is_bool(false)
+    | assert_eq(result2, true)
+
+    | let result3 = is_bool(1)
+    | assert_eq(result3, false)
+  end
+
+| def test_is_number():
+    let result1 = is_number(42)
+    | assert_eq(result1, true)
+
+    | let result2 = is_number(3.14)
+    | assert_eq(result2, true)
+
+    | let result3 = is_number("42")
+    | assert_eq(result3, false)
+  end
+
+| def test_is_string():
+    let result1 = is_string("hello")
+    | assert_eq(result1, true)
+
+    | let result2 = is_string(42)
+    | assert_eq(result2, false)
+
+    | let result3 = is_string([])
+    | assert_eq(result3, false)
+  end
+
+| def test_is_none():
+    let result1 = is_none(None)
+    | assert_eq(result1, true)
+
+    | let result2 = is_none(0)
+    | assert_eq(result2, false)
+
+    | let result3 = is_none("")
+    | assert_eq(result3, false)
+  end
+
+| def test_is_dict():
+    let result1 = is_dict(dict())
+    | assert_eq(result1, true)
+
+    | let result2 = is_dict({"key": "value"})
+    | assert_eq(result2, true)
+
+    | let result3 = is_dict([])
+    | assert_eq(result3, false)
+  end
+
+# String manipulation tests
+| def test_contains():
+    let result1 = contains("hello world", "world")
+    | assert_eq(result1, true)
+
+    | let result2 = contains("hello world", "foo")
+    | assert_eq(result2, false)
+
+    | let result3 = contains({"a": 1, "b": 2}, "a")
+    | assert_eq(result3, true)
+
+    | let result4 = contains({"a": 1, "b": 2}, "c")
+    | assert_eq(result4, false)
+  end
+
+| def test_ltrimstr():
+    let result1 = ltrimstr("hello world", "hello ")
+    | assert_eq(result1, "world")
+
+    | let result2 = ltrimstr("hello world", "foo")
+    | assert_eq(result2, "hello world")
+
+    | let result3 = ltrimstr("test", "test")
+    | assert_eq(result3, "")
+  end
+
+| def test_rtrimstr():
+    let result1 = rtrimstr("hello world", " world")
+    | assert_eq(result1, "hello")
+
+    | let result2 = rtrimstr("hello world", "foo")
+    | assert_eq(result2, "hello world")
+
+    | let result3 = rtrimstr("test", "test")
+    | assert_eq(result3, "")
+  end
+
+# Collection tests
+| def test_is_empty():
+    let result1 = is_empty([])
+    | assert_eq(result1, true)
+
+    | let result2 = is_empty("")
+    | assert_eq(result2, true)
+
+    | let result3 = is_empty(dict())
+    | assert_eq(result3, true)
+
+    | let result4 = is_empty([1, 2, 3])
+    | assert_eq(result4, false)
+
+    | let result5 = is_empty("hello")
+    | assert_eq(result5, false)
+
+    | let result6 = is_empty(None)
+    | assert_eq(result6, true)
+  end
+
+# Selector tests
+| def test_select():
+    let result1 = select(42, true)
+    | assert_eq(result1, 42)
+
+    | let result2 = select(42, false)
+    | assert_eq(result2, None)
+  end
+
+| def test_arrays():
+    let result1 = arrays([1, 2, 3])
+    | assert_eq(result1, [1, 2, 3])
+
+    | let result2 = arrays("not an array")
+    | assert_eq(result2, None)
+  end
+
+| def test_booleans():
+    let result1 = booleans(true)
+    | assert_eq(result1, true)
+
+    | let result2 = booleans(42)
+    | assert_eq(result2, None)
+  end
+
+| def test_numbers():
+    let result1 = numbers(42)
+    | assert_eq(result1, 42)
+
+    | let result2 = numbers("42")
+    | assert_eq(result2, None)
+  end
+
+# Array manipulation tests
+| def test_map():
+    let result1 = map([1, 2, 3], fn(x): x * 2;)
+    | assert_eq(result1, [2, 4, 6])
+
+    | let result2 = map({"a": 1, "b": 2}, fn(x): [x[0], x[1] * 2];)
+    | assert_eq(result2, {"a": 2, "b": 4})
+  end
+
+| def test_flat_map():
+    let result1 = flat_map([1, 2, 3], fn(x): [x, x * 2];)
+    | assert_eq(result1, [1, 2, 2, 4, 3, 6])
+
+    | let result2 = flat_map([[1, 2], [3, 4]], fn(x): x;)
+    | assert_eq(result2, [1, 2, 3, 4])
+  end
+
+| def test_filter():
+    let result1 = filter([1, 2, 3, 4, 5], fn(x): x > 2;)
+    | assert_eq(result1, [3, 4, 5])
+
+    | let result2 = filter({"a": 1, "b": 2, "c": 3}, fn(x): x[1] > 1;)
+    | assert_eq(result2, {"b": 2, "c": 3})
+  end
+
+| def test_first():
+    let result1 = first([1, 2, 3])
+    | assert_eq(result1, 1)
+
+    | let result2 = first([])
+    | assert_eq(result2, None)
+  end
+
+| def test_last():
+    let result1 = last([1, 2, 3])
+    | assert_eq(result1, 3)
+
+    | let result2 = last([42])
+    | assert_eq(result2, 42)
+  end
+
+| def test_second():
+    let result1 = second([1, 2, 3])
+    | assert_eq(result1, 2)
+
+    | let result2 = second([42])
+    | assert_eq(result2, None)
+  end
+
+| def test_fill():
+    let result1 = fill("x", 3)
+    | assert_eq(result1, ["x", "x", "x"])
+
+    | let result2 = fill(0, 0)
+    | assert_eq(result2, [])
+
+    | let result3 = fill(42, 2)
+    | assert_eq(result3, [42, 42])
+  end
+
+| def test_skip():
+    let result1 = skip([1, 2, 3, 4, 5], 2)
+    | assert_eq(result1, [3, 4, 5])
+
+    | let result2 = skip([1, 2, 3], 0)
+    | assert_eq(result2, [1, 2, 3])
+
+    | let result3 = skip([1, 2, 3], 5)
+    | assert_eq(result3, [])
+  end
+
+| def test_take():
+    let result1 = take([1, 2, 3, 4, 5], 3)
+    | assert_eq(result1, [1, 2, 3])
+
+    | let result2 = take([1, 2, 3], 0)
+    | assert_eq(result2, [])
+
+    | let result3 = take([1, 2, 3], 5)
+    | assert_eq(result3, [1, 2, 3])
+  end
+
+| def test_find_index():
+    let result1 = find_index([1, 2, 3, 4, 5], fn(x): x == 3;)
+    | assert_eq(result1, 2)
+
+    | let result2 = find_index([1, 2, 3, 4, 5], fn(x): x > 10;)
+    | assert_eq(result2, -1)
+
+    | let result3 = find_index([10, 20, 30], fn(x): x == 10;)
+    | assert_eq(result3, 0)
+  end
+
+| def test_skip_while():
+    let result1 = skip_while([1, 2, 3, 4, 5], fn(x): x < 3;)
+    | assert_eq(result1, [3, 4, 5])
+
+    | let result2 = skip_while([1, 2, 3], fn(x): x > 10;)
+    | assert_eq(result2, [1, 2, 3])
+
+    | let result3 = skip_while([], fn(x): x < 5;)
+    | assert_eq(result3, [])
+  end
+
+| def test_take_while():
+    let result1 = take_while([1, 2, 3, 4, 5], fn(x): x < 4;)
+    | assert_eq(result1, [1, 2, 3])
+
+    | let result2 = take_while([1, 2, 3], fn(x): x > 10;)
+    | assert_eq(result2, [])
+
+    | let result3 = take_while([], fn(x): x < 5;)
+    | assert_eq(result3, [])
+  end
+
+| def test_group_by():
+    let result1 = group_by([1, 2, 3, 4, 5, 6], fn(x): x % 2;)
+    | assert_eq(result1["0"], [2, 4, 6])
+    | assert_eq(result1["1"], [1, 3, 5])
+
+    | let result2 = group_by([], fn(x): x;)
+    | assert_eq(result2, dict())
+  end
+
+| def test_any():
+    let result1 = any([1, 2, 3, 4, 5], fn(x): x > 3;)
+    | assert_eq(result1, true)
+
+    | let result2 = any([1, 2, 3], fn(x): x > 10;)
+    | assert_eq(result2, false)
+
+    | let result3 = any([], fn(x): x > 0;)
+    | assert_eq(result3, false)
+  end
+
+| def test_all():
+    let result1 = all([1, 2, 3, 4, 5], fn(x): x > 0;)
+    | assert_eq(result1, true)
+
+    | let result2 = all([1, 2, 3, 4, 5], fn(x): x > 3;)
+    | assert_eq(result2, false)
+
+    | let result3 = all([], fn(x): x > 0;)
+    | assert_eq(result3, true)
+  end
+
+| def test_in():
+    let result1 = in([1, 2, 3, 4, 5], 3)
+    | assert_eq(result1, true)
+
+    | let result2 = in([1, 2, 3], 10)
+    | assert_eq(result2, false)
+
+    | let result3 = in([1, 2, 3, 4, 5], [2, 3])
+    | assert_eq(result3, true)
+
+    | let result4 = in("hello world", "world")
+    | assert_eq(result4, true)
+  end
+
+| def test_to_csv():
+    let result1 = to_csv([1, 2, 3])
+    | assert_eq(result1, "1,2,3")
+
+    | let result2 = to_csv("test")
+    | assert_eq(result2, "test")
+  end
+
+| def test_to_tsv():
+    let result1 = to_tsv([1, 2, 3])
+    | assert_eq(result1, "1\t2\t3")
+
+    | let result2 = to_tsv("test")
+    | assert_eq(result2, "test")
+  end
+
+| def test_fold():
+    let result1 = fold([1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;)
+    | assert_eq(result1, 15)
+
+    | let result2 = fold([1, 2, 3], 1, fn(acc, x): acc * x;)
+    | assert_eq(result2, 6)
+
+    | let result3 = fold([], 10, fn(acc, x): acc + x;)
+    | assert_eq(result3, 10)
+  end
+
+| def test_unique_by():
+    let result1 = unique_by([1, 2, 3, 2, 1, 4], fn(x): x;)
+    | assert_eq(result1, [1, 2, 3, 4])
+
+    | let result2 = unique_by([{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];)
+    | assert_eq(len(result2), 2)
+
+    | let result3 = unique_by([], fn(x): x;)
+    | assert_eq(result3, [])
+  end
+
+| def test_identity():
+    let result1 = identity(42)
+    | assert_eq(result1, 42)
+
+    | let result2 = identity("test")
+    | assert_eq(result2, "test")
+
+    | let result3 = identity([1, 2, 3])
+    | assert_eq(result3, [1, 2, 3])
+  end
+
+| def test_transpose():
+    let result1 = transpose([[1, 2, 3], [4, 5, 6]])
+    | assert_eq(result1, [[1, 4], [2, 5], [3, 6]])
+
+    | let result2 = transpose([])
+    | assert_eq(result2, [])
+
+    | let result3 = transpose([[1, 2], [3, 4], [5, 6]])
+    | assert_eq(result3, [[1, 3, 5], [2, 4, 6]])
+  end
+
+run_tests([
+  # Type checking
+  test_case("is_array", test_is_array),
+  test_case("is_bool", test_is_bool),
+  test_case("is_number", test_is_number),
+  test_case("is_string", test_is_string),
+  test_case("is_none", test_is_none),
+  test_case("is_dict", test_is_dict),
+
+  # String manipulation
+  test_case("contains", test_contains),
+  test_case("ltrimstr", test_ltrimstr),
+  test_case("rtrimstr", test_rtrimstr),
+
+  # Collection operations
+  test_case("is_empty", test_is_empty),
+
+  # Selectors
+  test_case("select", test_select),
+  test_case("arrays", test_arrays),
+  test_case("booleans", test_booleans),
+  test_case("numbers", test_numbers),
+
+  # Array manipulation
+  test_case("map", test_map),
+  test_case("flat_map", test_flat_map),
+  test_case("filter", test_filter),
+  test_case("first", test_first),
+  test_case("last", test_last),
+  test_case("second", test_second),
+  test_case("fill", test_fill),
+  test_case("skip", test_skip),
+  test_case("take", test_take),
+  test_case("find_index", test_find_index),
+  test_case("skip_while", test_skip_while),
+  test_case("take_while", test_take_while),
+  test_case("group_by", test_group_by),
+  test_case("any", test_any),
+  test_case("all", test_all),
+  test_case("in", test_in),
+  test_case("to_csv", test_to_csv),
+  test_case("to_tsv", test_to_tsv),
+  test_case("fold", test_fold),
+  test_case("unique_by", test_unique_by),
+  test_case("identity", test_identity),
+  test_case("transpose", test_transpose)
+])
