@@ -484,7 +484,7 @@ impl<'a> Parser<'a> {
         };
 
         // Check for attribute access: ident.attr -> attr(ident, "attr")
-        if let Some(attr_node) = self.try_parse_attribute_access(node.clone(), children.clone()) {
+        if let Some(attr_node) = self.try_parse_attribute_access(&mut node, &mut children) {
             return Ok(attr_node);
         }
 
@@ -513,7 +513,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_attribute_access(&mut self, mut node: Node, mut children: Vec<Shared<Node>>) -> Option<Shared<Node>> {
+    fn try_parse_attribute_access(
+        &mut self,
+        node: &mut Node,
+        children: &mut Vec<Shared<Node>>,
+    ) -> Option<Shared<Node>> {
         if let Some(peek_token) = self.tokens.peek()
             && matches!(&peek_token.kind, TokenKind::Selector(s) if s.len() > 1)
         {
@@ -534,8 +538,8 @@ impl<'a> Parser<'a> {
             // Add the original node as the first argument
             children.push(Shared::new(attr_node));
 
-            node.children = children;
-            Some(Shared::new(node))
+            node.children = std::mem::take(children);
+            Some(Shared::new(std::mem::take(node)))
         } else {
             None
         }
@@ -1364,9 +1368,9 @@ impl<'a> Parser<'a> {
     fn parse_self(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let children: Vec<Shared<Node>> = Vec::with_capacity(16);
+        let mut children: Vec<Shared<Node>> = Vec::with_capacity(16);
 
-        let node = Node {
+        let mut node = Node {
             kind: NodeKind::Self_,
             token: Some(Shared::clone(token.unwrap())),
             leading_trivia,
@@ -1375,7 +1379,7 @@ impl<'a> Parser<'a> {
         };
 
         // Check for attribute access: ..attr -> attr(., "attr")
-        if let Some(attr_node) = self.try_parse_attribute_access(node.clone(), children) {
+        if let Some(attr_node) = self.try_parse_attribute_access(&mut node, &mut children) {
             return Ok(attr_node);
         }
 
