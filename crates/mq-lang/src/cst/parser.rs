@@ -484,38 +484,8 @@ impl<'a> Parser<'a> {
         };
 
         // Check for attribute access: ident.attr -> attr(ident, "attr")
-        if let Some(peek_token) = self.tokens.peek()
-            && matches!(&peek_token.kind, TokenKind::Selector(s) if s.starts_with(".") && s.len() > 1)
-        {
-            let selector_token = Shared::clone(peek_token);
-
-            // Consume the selector token
-            self.tokens.next();
-
-            // Create a Call node for attr(ident, "attr")
-            let mut attr_node = Node {
-                kind: NodeKind::Call,
-                token: Some(Shared::clone(&selector_token)),
-                leading_trivia: node.leading_trivia.clone(),
-                trailing_trivia: Vec::new(),
-                children: Vec::new(),
-            };
-
-            // Add the identifier as the first argument
-            children.push(Shared::new(node));
-
-            // Create a string literal node for the attribute name
-            let attr_literal = Node {
-                kind: NodeKind::Literal,
-                token: Some(Shared::clone(&selector_token)),
-                leading_trivia: Vec::new(),
-                trailing_trivia: Vec::new(),
-                children: Vec::new(),
-            };
-            children.push(Shared::new(attr_literal));
-
-            attr_node.children = children;
-            return Ok(Shared::new(attr_node));
+        if let Some(attr_node) = self.try_parse_attribute_access(node.clone(), children.clone()) {
+            return Ok(attr_node);
         }
 
         match self.tokens.peek() {
@@ -540,6 +510,34 @@ impl<'a> Parser<'a> {
             }
             Some(token) if matches!(token.kind, TokenKind::LBracket) => self.parse_bracket_access(node),
             _ => Ok(Shared::new(node)),
+        }
+    }
+
+    fn try_parse_attribute_access(&mut self, mut node: Node, mut children: Vec<Shared<Node>>) -> Option<Shared<Node>> {
+        if let Some(peek_token) = self.tokens.peek()
+            && matches!(&peek_token.kind, TokenKind::Selector(s) if s.len() > 1)
+        {
+            let selector_token = Shared::clone(peek_token);
+
+            // Consume the selector token
+            self.tokens.next();
+
+            // Create a Call node for attr(node, "attr")
+            let attr_node = Node {
+                kind: NodeKind::Selector,
+                token: Some(Shared::clone(&selector_token)),
+                leading_trivia: node.leading_trivia.clone(),
+                trailing_trivia: Vec::new(),
+                children: Vec::new(),
+            };
+
+            // Add the original node as the first argument
+            children.push(Shared::new(attr_node));
+
+            node.children = children;
+            Some(Shared::new(node))
+        } else {
+            None
         }
     }
 
@@ -1366,6 +1364,7 @@ impl<'a> Parser<'a> {
     fn parse_self(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
+        let children: Vec<Shared<Node>> = Vec::with_capacity(16);
 
         let node = Node {
             kind: NodeKind::Self_,
@@ -1374,6 +1373,11 @@ impl<'a> Parser<'a> {
             trailing_trivia,
             children: Vec::new(),
         };
+
+        // Check for attribute access: ..attr -> attr(., "attr")
+        if let Some(attr_node) = self.try_parse_attribute_access(node.clone(), children) {
+            return Ok(attr_node);
+        }
 
         match self.tokens.peek() {
             Some(token) if matches!(token.kind, TokenKind::LBracket) => self.parse_bracket_access(node),
@@ -3180,21 +3184,40 @@ mod tests {
         (
             vec![
                 Shared::new(Node {
-                    kind: NodeKind::Call,
-                    token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
+                    kind: NodeKind::Ident,
+                    token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: vec![
                         Shared::new(Node {
-                            kind: NodeKind::Ident,
-                            token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),
                         }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::self_attribute_access(
+        vec![
+            Shared::new(token(TokenKind::Self_)),
+            Shared::new(token(TokenKind::Selector(".name".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Self_,
+                    token: Some(Shared::new(token(TokenKind::Self_))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
                         Shared::new(Node {
-                            kind: NodeKind::Literal,
-                            token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".name".into())))),
                             leading_trivia: Vec::new(),
                             trailing_trivia: Vec::new(),
                             children: Vec::new(),

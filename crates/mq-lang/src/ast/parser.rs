@@ -454,7 +454,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_dot_attr_access(
+    fn parse_attribute_access(
         &mut self,
         base_node: Shared<Node>,
         token_id: TokenId,
@@ -494,7 +494,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_id,
             expr: Shared::new(Expr::Self_),
         });
-        let node = self.parse_dot_attr_access(self_node, token_id)?;
+        let node = self.parse_attribute_access(self_node, token_id)?;
 
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::LBracket) => self.parse_bracket_access(node, token),
@@ -651,7 +651,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     ))),
                 });
 
-                self.parse_dot_attr_access(base_node, token_id)
+                self.parse_attribute_access(base_node, token_id)
             }
             Some(TokenKind::DoubleColon) => {
                 // Parse qualified access: module::function(), module::ident, or module::module2::method
@@ -745,7 +745,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     self.parse_bracket_access(call_node, ident_token)
                 } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(_))) {
-                    self.parse_dot_attr_access(call_node, token_id)
+                    self.parse_attribute_access(call_node, token_id)
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
                     Ok(call_node)
                 } else {
