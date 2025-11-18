@@ -881,7 +881,7 @@ impl Hir {
             ..
         } = &**node
         {
-            self.symbols.insert(Symbol {
+            let symbol_id = self.symbols.insert(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Selector,
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -889,6 +889,10 @@ impl Hir {
                 doc: node.comments(),
                 parent,
             });
+
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
         }
     }
 
@@ -1561,7 +1565,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::until("until (true): 1;", "until", SymbolKind::Until)]
     #[case::literal("42", "42", SymbolKind::Number)]
     #[case::selector(".h", ".h", SymbolKind::Selector)]
-    #[case::selector(".code.lang", ".code.lang", SymbolKind::Selector)]
+    #[case::selector(".code.lang", ".code", SymbolKind::Selector)]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]

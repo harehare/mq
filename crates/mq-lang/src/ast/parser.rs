@@ -605,6 +605,35 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_ident(&mut self, ident: &str, ident_token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
         match self.tokens.peek().map(|t| &t.kind) {
+            Some(TokenKind::Selector(selector)) if selector.starts_with(".") && selector.len() > 1 => {
+                // Parse attribute access: ident.attr -> attr(ident, "attr")
+                let selector_token = self.tokens.next().unwrap();
+                let attribute_name = &selector[1..]; // Skip the leading '.'
+
+                // Create the base identifier node
+                let base_node = Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(&ident_token)),
+                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                        ident,
+                        Some(Shared::clone(&ident_token)),
+                    ))),
+                });
+
+                // Create the attribute string literal
+                let attr_literal = Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(selector_token)),
+                    expr: Shared::new(Expr::Literal(Literal::String(attribute_name.to_string()))),
+                });
+
+                // Create the attr() function call
+                Ok(Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(&ident_token)),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(constants::ATTR, Some(Shared::clone(selector_token))),
+                        smallvec![base_node, attr_literal],
+                    )),
+                }))
+            }
             Some(TokenKind::DoubleColon) => {
                 // Parse qualified access: module::function(), module::ident, or module::module2::method
                 // Build the module path by collecting all identifiers separated by '::'
@@ -1532,21 +1561,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_selector_with_attribute(
         &mut self,
         token: Shared<Token>,
-        attr_pos: usize,
+        attr_token: Shared<Token>,
     ) -> Result<Shared<Node>, ParseError> {
-        if let TokenKind::Selector(selector) = &token.kind {
-            let base_selector = &selector[..attr_pos];
-            let attribute = &selector[attr_pos + 1..]; // Skip the dot
-
-            // Create a new token for the base selector
-            let base_token = Shared::new(Token {
-                range: token.range.clone(),
-                kind: TokenKind::Selector(SmolStr::new(base_selector)),
-                module_id: token.module_id,
-            });
-
+        if let TokenKind::Selector(attr_selector) = &attr_token.kind {
+            let attribute = &attr_selector[1..]; // Skip the dot
             // Parse the base selector recursively
-            let base_node = self.parse_selector_direct(base_token)?;
+            let base_node = self.parse_selector_direct(Shared::clone(&token))?;
 
             // Create the attribute string literal
             let attr_literal = Shared::new(Node {
@@ -1593,13 +1613,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_selector(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
-        if let TokenKind::Selector(selector) = &token.kind {
-            // Check if the selector has an attribute suffix (e.g., ".h.text")
-            if let Some(attr_pos) = selector[1..].find('.').map(|pos| pos + 1) {
-                return self.parse_selector_with_attribute(token, attr_pos);
+        if let TokenKind::Selector(_) = &token.kind {
+            if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
+                && let Some(attr_token) = self.tokens.next()
+            {
+                return self.parse_selector_with_attribute(token, Shared::clone(attr_token));
             }
 
-            // Use the direct parser for normal selectors
             self.parse_selector_direct(token)
         } else {
             Err(ParseError::InsufficientTokens((*token).clone()))
@@ -1898,6 +1918,30 @@ mod tests {
             token(TokenKind::Def),
         ],
         Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
+    #[case::ident_attribute_access(
+        vec![
+            token(TokenKind::Ident(SmolStr::new("c"))),
+            token(TokenKind::Selector(SmolStr::new(".lang"))),
+            token(TokenKind::Eof),
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 2.into(),
+                expr: Shared::new(Expr::Call(
+                    IdentWithToken::new_with_token(constants::ATTR, Some(Shared::new(token(TokenKind::Selector(SmolStr::new(".lang")))))),
+                    smallvec![
+                        Shared::new(Node {
+                            token_id: 0.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                        }),
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("lang".to_owned()))),
+                        }),
+                    ],
+                )),
+            })
+        ]))]
     #[case::error(
         vec![
             token(TokenKind::Ident(SmolStr::new("contains"))),
@@ -3893,12 +3937,13 @@ mod tests {
                         Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
     #[case::attr_h_text(
         vec![
-            token(TokenKind::Selector(".h.text".into())),
+            token(TokenKind::Selector(".h".into())),
+            token(TokenKind::Selector(".text".into())),
         ],
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(IdentWithToken::new_with_token(constants::ATTR, Some(Shared::new(token(TokenKind::Selector(".h.text".into()))))),
+                expr: Shared::new(Expr::Call(IdentWithToken::new_with_token(constants::ATTR, Some(Shared::new(token(TokenKind::Selector(".h".into()))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
@@ -3913,12 +3958,13 @@ mod tests {
                 ))})]))]
     #[case::attr(
         vec![
-            token(TokenKind::Selector(".list.checked".into())),
+            token(TokenKind::Selector(".list".into())),
+            token(TokenKind::Selector(".checked".into())),
         ],
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(IdentWithToken::new_with_token(constants::ATTR, Some(Shared::new(token(TokenKind::Selector(".list.checked".into()))))),
+                expr: Shared::new(Expr::Call(IdentWithToken::new_with_token(constants::ATTR, Some(Shared::new(token(TokenKind::Selector(".list".into()))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
@@ -5668,30 +5714,32 @@ mod tests {
     }
 
     #[rstest]
-    #[case::h_text(".h.text", "h", "text")]
-    #[case::h1_text(".h1.text", "h1", "text")]
-    #[case::code_html(".code.html", "code", "html")]
-    #[case::text_markdown(".text.markdown", "text", "markdown")]
+    #[case::h_text(vec![".h", ".text"], "h", "text")]
+    #[case::h1_text(vec![".h1", ".text"], "h1", "text")]
+    #[case::code_html(vec![".code", ".html"], "code", "html")]
+    #[case::text_markdown(vec![".text", ".markdown"], "text", "markdown")]
     fn test_parse_selector_with_attribute(
-        #[case] selector_str: &str,
+        #[case] selectors: Vec<&str>,
         #[case] base_selector: &str,
         #[case] attribute: &str,
     ) {
         let mut arena = Arena::new(10);
-        let token = Shared::new(Token {
-            range: Range::default(),
-            kind: TokenKind::Selector(SmolStr::new(selector_str)),
-            module_id: 1.into(),
-        });
+        let mut tokens = selectors
+            .iter()
+            .map(|selector| {
+                Shared::new(Token {
+                    range: Range::default(),
+                    kind: TokenKind::Selector(SmolStr::new(selector)),
+                    module_id: 1.into(),
+                })
+            })
+            .collect::<Vec<_>>();
 
-        let tokens = [
-            Shared::clone(&token),
-            Shared::new(Token {
-                range: Range::default(),
-                kind: TokenKind::Eof,
-                module_id: 1.into(),
-            }),
-        ];
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: 1.into(),
+        }));
 
         let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 

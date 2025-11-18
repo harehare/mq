@@ -483,6 +483,41 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
+        // Check for attribute access: ident.attr -> attr(ident, "attr")
+        if let Some(peek_token) = self.tokens.peek()
+            && matches!(&peek_token.kind, TokenKind::Selector(s) if s.starts_with(".") && s.len() > 1)
+        {
+            let selector_token = Shared::clone(peek_token);
+
+            // Consume the selector token
+            self.tokens.next();
+
+            // Create a Call node for attr(ident, "attr")
+            let mut attr_node = Node {
+                kind: NodeKind::Call,
+                token: Some(Shared::clone(&selector_token)),
+                leading_trivia: node.leading_trivia.clone(),
+                trailing_trivia: Vec::new(),
+                children: Vec::new(),
+            };
+
+            // Add the identifier as the first argument
+            children.push(Shared::new(node));
+
+            // Create a string literal node for the attribute name
+            let attr_literal = Node {
+                kind: NodeKind::Literal,
+                token: Some(Shared::clone(&selector_token)),
+                leading_trivia: Vec::new(),
+                trailing_trivia: Vec::new(),
+                children: Vec::new(),
+            };
+            children.push(Shared::new(attr_literal));
+
+            attr_node.children = children;
+            return Ok(Shared::new(attr_node));
+        }
+
         match self.tokens.peek() {
             Some(token) if matches!(token.kind, TokenKind::LParen) => {
                 let mut args = self.parse_args()?;
@@ -828,12 +863,8 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        match &**token {
-            Token {
-                range: _,
-                kind: TokenKind::Selector(s),
-                ..
-            } if s == "." => {
+        match &token.kind {
+            TokenKind::Selector(s) if s == "." => {
                 let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
                 // []
@@ -844,12 +875,7 @@ impl<'a> Parser<'a> {
                     None => return Err(ParseError::UnexpectedEOFDetected),
                 };
 
-                if let Token {
-                    range: _,
-                    kind: TokenKind::NumberLiteral(_),
-                    ..
-                } = &*token
-                {
+                if matches!(token.kind, TokenKind::NumberLiteral(_)) {
                     children
                         .push(self.next_node(|kind| matches!(kind, TokenKind::NumberLiteral(_)), NodeKind::Literal)?);
                 }
@@ -859,12 +885,7 @@ impl<'a> Parser<'a> {
                     None => return Err(ParseError::UnexpectedEOFDetected),
                 };
 
-                if let Token {
-                    range: _,
-                    kind: TokenKind::RBracket,
-                    ..
-                } = &*token
-                {
+                if token.kind == TokenKind::RBracket {
                     children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                 } else {
                     return Err(ParseError::UnexpectedToken(Shared::clone(&token)));
@@ -876,12 +897,7 @@ impl<'a> Parser<'a> {
                 };
 
                 // [][]
-                if let Token {
-                    range: _,
-                    kind: TokenKind::LBracket,
-                    ..
-                } = &*token
-                {
+                if token.kind == TokenKind::LBracket {
                     children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
                 } else {
                     node.children = children;
@@ -893,12 +909,7 @@ impl<'a> Parser<'a> {
                     None => return Err(ParseError::UnexpectedEOFDetected),
                 };
 
-                if let Token {
-                    range: _,
-                    kind: TokenKind::NumberLiteral(_),
-                    ..
-                } = &*token
-                {
+                if matches!(token.kind, TokenKind::NumberLiteral(_)) {
                     children
                         .push(self.next_node(|kind| matches!(kind, TokenKind::NumberLiteral(_)), NodeKind::Literal)?);
                 }
@@ -908,12 +919,7 @@ impl<'a> Parser<'a> {
                     None => return Err(ParseError::UnexpectedEOFDetected),
                 };
 
-                if let Token {
-                    range: _,
-                    kind: TokenKind::RBracket,
-                    ..
-                } = &*token
-                {
+                if token.kind == TokenKind::RBracket {
                     children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                 } else {
                     return Err(ParseError::UnexpectedToken(Shared::clone(&token)));
@@ -922,33 +928,14 @@ impl<'a> Parser<'a> {
                 node.children = children;
                 Ok(Shared::new(node))
             }
-            Token {
-                range: _,
-                kind: TokenKind::Selector(s),
-                ..
-            } if s == ".h" || s == ".code" || s == ".list" => {
-                let token = match self.tokens.peek() {
-                    Some(token) => Shared::clone(token),
-                    None => return Err(ParseError::UnexpectedEOFDetected),
-                };
-
-                match token.kind {
-                    TokenKind::LParen => {
-                        let mut children: Vec<Shared<Node>> = Vec::with_capacity(8);
-                        let mut args = self.parse_args()?;
-
-                        if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-                            return Err(ParseError::UnexpectedToken(Shared::clone(&token)));
-                        }
-                        children.append(&mut args);
-
-                        node.children = children;
-                        Ok(Shared::new(node))
-                    }
-                    _ => Ok(Shared::new(node)),
+            _ => {
+                if self.try_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
+                    node.children =
+                        vec![self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?];
                 }
+
+                Ok(Shared::new(node))
             }
-            _ => Ok(Shared::new(node)),
         }
     }
 
@@ -3185,6 +3172,39 @@ mod tests {
             ErrorReporter::default()
         )
     )]
+    #[case::ident_attribute_access(
+        vec![
+            Shared::new(token(TokenKind::Ident("c".into()))),
+            Shared::new(token(TokenKind::Selector(".lang".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Literal,
+                            token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
     #[case::include(
         vec![
             Shared::new(token(TokenKind::Include)),
@@ -3236,48 +3256,6 @@ mod tests {
                 }),
             ],
             ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Ident("y".into()))))], 100)
-        )
-    )]
-    #[case::code_selector(
-        vec![
-            Shared::new(token(TokenKind::Selector(".code".into()))),
-            Shared::new(token(TokenKind::LParen)),
-            Shared::new(token(TokenKind::StringLiteral("test".into()))),
-            Shared::new(token(TokenKind::RParen)),
-        ],
-        (
-            vec![
-                Shared::new(Node {
-                    kind: NodeKind::Selector,
-                    token: Some(Shared::new(token(TokenKind::Selector(".code".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
-                    children: vec![
-                        Shared::new(Node {
-                            kind: NodeKind::Token,
-                            token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
-                            children: Vec::new(),
-                        }),
-                        Shared::new(Node {
-                            kind: NodeKind::Literal,
-                            token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
-                            children: Vec::new(),
-                        }),
-                        Shared::new(Node {
-                            kind: NodeKind::Token,
-                            token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
-                            children: Vec::new(),
-                        }),
-                    ],
-                }),
-            ],
-            ErrorReporter::default()
         )
     )]
     #[case::until(
