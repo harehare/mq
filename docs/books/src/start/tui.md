@@ -5,11 +5,11 @@ The Text-based User Interface (TUI) provides an interactive way to explore and q
 ## Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/harehare/mqt/main/bin/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/harehare/mq-tui/main/bin/install.sh | bash
 ```
 
 ```sh
-$ mqt file.md
+$ mq tui file.md
 ```
 
 ## TUI Features
