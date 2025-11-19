@@ -482,6 +482,7 @@ pub enum MdxAttributeValue {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize), serde(untagged))]
 pub enum AttrValue {
+    Array(Vec<Node>),
     String(String),
     Number(f64),
     Integer(i64),
@@ -545,6 +546,7 @@ impl AttrValue {
             AttrValue::Number(n) => n.to_string(),
             AttrValue::Integer(i) => i.to_string(),
             AttrValue::Boolean(b) => b.to_string(),
+            AttrValue::Array(arr) => values_to_string(arr, &RenderOptions::default()),
             AttrValue::Null => String::new(),
         }
     }
@@ -556,6 +558,7 @@ impl AttrValue {
             AttrValue::Number(n) => Some(*n as i64),
             AttrValue::Integer(i) => Some(*i),
             AttrValue::Boolean(b) => Some(*b as i64),
+            AttrValue::Array(arr) => Some(arr.len() as i64),
             AttrValue::Null => None,
         }
     }
@@ -567,6 +570,7 @@ impl AttrValue {
             AttrValue::Number(n) => Some(*n),
             AttrValue::Integer(i) => Some(*i as f64),
             AttrValue::Boolean(_) => None,
+            AttrValue::Array(arr) => Some(arr.len() as f64),
             AttrValue::Null => None,
         }
     }
@@ -939,7 +943,7 @@ impl Node {
                         options.list_style.to_string()
                     },
                     checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| ""),
-                    Self::values_to_string(values, options)
+                    values_to_string(&values, options)
                 )
             }
             Self::TableRow(TableRow { values, .. }) => values
@@ -953,15 +957,15 @@ impl Node {
                 ..
             }) => {
                 if last_cell_in_row || last_cell_of_in_table {
-                    format!("|{}|", Self::values_to_string(values, options))
+                    format!("|{}|", values_to_string(&values, options))
                 } else {
-                    format!("|{}", Self::values_to_string(values, options))
+                    format!("|{}", values_to_string(&values, options))
                 }
             }
             Self::TableHeader(TableHeader { align, .. }) => {
                 format!("|{}|", align.iter().map(|a| a.to_string()).join("|"))
             }
-            Self::Blockquote(Blockquote { values, .. }) => Self::values_to_string(values, options)
+            Self::Blockquote(Blockquote { values, .. }) => values_to_string(&values, options)
                 .split('\n')
                 .map(|line| format!("> {}", line))
                 .join("\n"),
@@ -999,23 +1003,19 @@ impl Node {
                 )
             }
             Self::Delete(Delete { values, .. }) => {
-                format!("~~{}~~", Self::values_to_string(values, options))
+                format!("~~{}~~", values_to_string(&values, options))
             }
             Self::Emphasis(Emphasis { values, .. }) => {
-                format!("*{}*", Self::values_to_string(values, options))
+                format!("*{}*", values_to_string(&values, options))
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
-                format!("[^{}]: {}", ident, Self::values_to_string(values, options))
+                format!("[^{}]: {}", ident, values_to_string(&values, options))
             }
             Self::FootnoteRef(FootnoteRef { label, .. }) => {
                 format!("[^{}]", label.unwrap_or_default())
             }
             Self::Heading(Heading { depth, values, .. }) => {
-                format!(
-                    "{} {}",
-                    "#".repeat(depth as usize),
-                    Self::values_to_string(values, options)
-                )
+                format!("{} {}", "#".repeat(depth as usize), values_to_string(&values, options))
             }
             Self::Html(Html { value, .. }) => value,
             Self::Image(Image { alt, url, title, .. }) => format!(
@@ -1040,7 +1040,7 @@ impl Node {
             Self::Link(Link { url, title, values, .. }) => {
                 format!(
                     "[{}]({}{})",
-                    Self::values_to_string(values, options),
+                    values_to_string(&values, options),
                     url.to_string_with(options),
                     title
                         .map(|title| format!(" {}", title.to_string_with(options)))
@@ -1048,7 +1048,7 @@ impl Node {
                 )
             }
             Self::LinkRef(LinkRef { values, label, .. }) => {
-                let ident = Self::values_to_string(values, options);
+                let ident = values_to_string(&values, options);
 
                 label
                     .map(|label| {
@@ -1087,7 +1087,7 @@ impl Node {
                         "<{}{}>{}</{}>",
                         name,
                         attributes,
-                        Self::values_to_string(mdx_jsx_flow_element.children, options),
+                        values_to_string(&mdx_jsx_flow_element.children, options),
                         name
                     )
                 }
@@ -1114,7 +1114,7 @@ impl Node {
                         "<{}{}>{}</{}>",
                         name,
                         attributes,
-                        Self::values_to_string(mdx_jsx_text_element.children, options),
+                        values_to_string(&mdx_jsx_text_element.children, options),
                         name
                     )
                 }
@@ -1172,12 +1172,12 @@ impl Node {
 
     pub fn value(&self) -> String {
         match self.clone() {
-            Self::Blockquote(v) => Self::values_to_value(v.values),
+            Self::Blockquote(v) => values_to_value(v.values),
             Self::Definition(d) => d.url.as_str().to_string(),
-            Self::Delete(v) => Self::values_to_value(v.values),
-            Self::Heading(h) => Self::values_to_value(h.values),
-            Self::Emphasis(v) => Self::values_to_value(v.values),
-            Self::Footnote(f) => Self::values_to_value(f.values),
+            Self::Delete(v) => values_to_value(v.values),
+            Self::Heading(h) => values_to_value(h.values),
+            Self::Emphasis(v) => values_to_value(v.values),
+            Self::Footnote(f) => values_to_value(f.values),
             Self::FootnoteRef(f) => f.ident,
             Self::Html(v) => v.value,
             Self::Yaml(v) => v.value,
@@ -1189,21 +1189,21 @@ impl Node {
             Self::Link(l) => l.url.as_str().to_string(),
             Self::LinkRef(l) => l.ident,
             Self::Math(v) => v.value,
-            Self::List(l) => Self::values_to_value(l.values),
-            Self::TableCell(c) => Self::values_to_value(c.values),
-            Self::TableRow(c) => Self::values_to_value(c.values),
+            Self::List(l) => values_to_value(l.values),
+            Self::TableCell(c) => values_to_value(c.values),
+            Self::TableRow(c) => values_to_value(c.values),
             Self::Code(c) => c.value,
-            Self::Strong(v) => Self::values_to_value(v.values),
+            Self::Strong(v) => values_to_value(v.values),
             Self::Text(t) => t.value,
             Self::Break { .. } => String::new(),
             Self::TableHeader(_) => String::new(),
             Self::MdxFlowExpression(mdx) => mdx.value.to_string(),
-            Self::MdxJsxFlowElement(mdx) => Self::values_to_value(mdx.children),
+            Self::MdxJsxFlowElement(mdx) => values_to_value(mdx.children),
             Self::MdxTextExpression(mdx) => mdx.value.to_string(),
-            Self::MdxJsxTextElement(mdx) => Self::values_to_value(mdx.children),
+            Self::MdxJsxTextElement(mdx) => values_to_value(mdx.children),
             Self::MdxJsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
-            Self::Fragment(v) => Self::values_to_value(v.values),
+            Self::Fragment(v) => values_to_value(v.values),
             Self::Empty => String::new(),
         }
     }
@@ -1755,10 +1755,8 @@ impl Node {
         match self {
             Node::Footnote(Footnote { ident, values, .. }) => match attr {
                 "ident" => Some(AttrValue::String(ident.clone())),
-                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
-                    values.clone(),
-                    &RenderOptions::default(),
-                ))),
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Html(Html { value, .. }) => match attr {
@@ -1817,10 +1815,8 @@ impl Node {
             Node::Link(Link { url, title, values, .. }) => match attr {
                 "url" => Some(AttrValue::String(url.as_str().to_string())),
                 "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
-                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
-                    values.clone(),
-                    &RenderOptions::default(),
-                ))),
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::LinkRef(LinkRef { ident, label, .. }) => match attr {
@@ -1848,10 +1844,8 @@ impl Node {
             },
             Node::Heading(Heading { depth, values, .. }) => match attr {
                 "depth" | "level" => Some(AttrValue::Integer(*depth as i64)),
-                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
-                    values.clone(),
-                    &RenderOptions::default(),
-                ))),
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::List(List {
@@ -1866,10 +1860,8 @@ impl Node {
                 "level" => Some(AttrValue::Integer(*level as i64)),
                 "ordered" => Some(AttrValue::Boolean(*ordered)),
                 "checked" => checked.map(AttrValue::Boolean),
-                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
-                    values.clone(),
-                    &RenderOptions::default(),
-                ))),
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::TableCell(TableCell {
@@ -1884,10 +1876,8 @@ impl Node {
                 "row" => Some(AttrValue::Integer(*row as i64)),
                 "last_cell_in_row" => Some(AttrValue::Boolean(*last_cell_in_row)),
                 "last_cell_of_in_table" => Some(AttrValue::Boolean(*last_cell_of_in_table)),
-                "value" | "text" => Some(AttrValue::String(Self::values_to_string(
-                    values.clone(),
-                    &RenderOptions::default(),
-                ))),
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::TableHeader(TableHeader { align, .. }) => match attr {
@@ -1916,8 +1906,40 @@ impl Node {
                 "name" => name.as_ref().map(|n| AttrValue::String(n.to_string())),
                 _ => None,
             },
-            Node::Break(_) | Node::HorizontalRule(_) | Node::Fragment(_) | Node::Empty => None,
-            Node::Blockquote(_) | Node::Delete(_) | Node::Emphasis(_) | Node::Strong(_) | Node::TableRow(_) => None,
+            Node::Strong(Strong { values, .. }) => match attr {
+                "value" | "text" => Some(AttrValue::String(values_to_string(
+                    values.as_ref(),
+                    &RenderOptions::default(),
+                ))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            Node::Blockquote(Blockquote { values, .. }) => match attr {
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            Node::Delete(Delete { values, .. }) => match attr {
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            Node::Emphasis(Emphasis { values, .. }) => match attr {
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            Node::TableRow(TableRow { values, .. }) => match attr {
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            Node::Fragment(Fragment { values, .. }) => match attr {
+                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
+                _ => None,
+            },
+            Node::Break(_) | Node::HorizontalRule(_) | Node::Empty => None,
         }
     }
 
@@ -1927,20 +1949,28 @@ impl Node {
         let value_str = value.as_string();
 
         match self {
-            Node::Footnote(f) if attr == "ident" => {
-                f.ident = value_str;
+            Node::Footnote(f) => {
+                if attr == "ident" {
+                    f.ident = value_str;
+                }
             }
-            Node::Html(h) if attr == "value" || attr == "text" => {
-                h.value = value_str;
-            }
-            Node::Text(t) if attr == "value" || attr == "text" => {
-                t.value = value_str;
-            }
+            Node::Html(h) => match attr {
+                "value" | "text" => {
+                    h.value = value_str;
+                }
+                _ => (),
+            },
+            Node::Text(t) => match attr {
+                "value" | "text" => {
+                    t.value = value_str;
+                }
+                _ => (),
+            },
             Node::Code(c) => match attr {
                 "value" => {
                     c.value = value_str;
                 }
-                "lang" => {
+                "lang" | "language" => {
                     c.lang = if value_str.is_empty() { None } else { Some(value_str) };
                 }
                 "meta" => {
@@ -1954,21 +1984,36 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::CodeInline(ci) if attr == "value" || attr == "text" => {
-                ci.value = value_str.into();
-            }
-            Node::MathInline(mi) if attr == "value" || attr == "text" => {
-                mi.value = value_str.into();
-            }
-            Node::Math(m) if attr == "value" || attr == "text" => {
-                m.value = value_str;
-            }
-            Node::Yaml(y) if attr == "value" || attr == "text" => {
-                y.value = value_str;
-            }
-            Node::Toml(t) if attr == "value" || attr == "text" => {
-                t.value = value_str;
-            }
+            Node::CodeInline(ci) => match attr {
+                "value" | "text" => {
+                    ci.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MathInline(mi) => match attr {
+                "value" | "text" => {
+                    mi.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::Math(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str;
+                }
+                _ => (),
+            },
+            Node::Yaml(y) => match attr {
+                "value" | "text" => {
+                    y.value = value_str;
+                }
+                _ => (),
+            },
+            Node::Toml(t) => match attr {
+                "value" | "text" => {
+                    t.value = value_str;
+                }
+                _ => (),
+            },
             Node::Image(i) => match attr {
                 "alt" => {
                     i.alt = value_str;
@@ -2043,12 +2088,15 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::Heading(h) if attr == "depth" => {
-                h.depth = match value {
-                    AttrValue::Integer(i) => i as u8,
-                    _ => value_str.parse::<u8>().unwrap_or(h.depth),
-                };
-            }
+            Node::Heading(h) => match attr {
+                "depth" | "level" => {
+                    h.depth = match value {
+                        AttrValue::Integer(i) => i as u8,
+                        _ => value_str.parse::<u8>().unwrap_or(h.depth),
+                    };
+                }
+                _ => (),
+            },
             Node::List(l) => match attr {
                 "index" => {
                     l.index = match value {
@@ -2107,38 +2155,61 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::TableHeader(th) if attr == "align" => {
-                th.align = value_str
-                    .split(',')
-                    .map(|s| match s.trim() {
-                        ":---" => TableAlignKind::Left,
-                        "---:" => TableAlignKind::Right,
-                        ":---:" => TableAlignKind::Center,
-                        "---" => TableAlignKind::None,
-                        _ => TableAlignKind::None,
-                    })
-                    .collect();
+            Node::TableHeader(th) => {
+                if attr == "align" {
+                    th.align = value_str
+                        .split(',')
+                        .map(|s| match s.trim() {
+                            ":---" => TableAlignKind::Left,
+                            "---:" => TableAlignKind::Right,
+                            ":---:" => TableAlignKind::Center,
+                            "---" => TableAlignKind::None,
+                            _ => TableAlignKind::None,
+                        })
+                        .collect();
+                }
             }
-            Node::MdxFlowExpression(m) if attr == "value" || attr == "text" => {
-                m.value = value_str.into();
+            Node::MdxFlowExpression(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MdxTextExpression(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MdxJsEsm(m) => match attr {
+                "value" | "text" => {
+                    m.value = value_str.into();
+                }
+                _ => (),
+            },
+            Node::MdxJsxFlowElement(m) => {
+                if attr == "name" {
+                    m.name = if value_str.is_empty() { None } else { Some(value_str) };
+                }
             }
-            Node::MdxTextExpression(m) if attr == "value" || attr == "text" => {
-                m.value = value_str.into();
+            Node::MdxJsxTextElement(m) => {
+                if attr == "name" {
+                    m.name = if value_str.is_empty() {
+                        None
+                    } else {
+                        Some(value_str.into())
+                    };
+                }
             }
-            Node::MdxJsEsm(m) if attr == "value" || attr == "text" => {
-                m.value = value_str.into();
-            }
-            Node::MdxJsxFlowElement(m) if attr == "name" => {
-                m.name = if value_str.is_empty() { None } else { Some(value_str) };
-            }
-            Node::MdxJsxTextElement(m) if attr == "name" => {
-                m.name = if value_str.is_empty() {
-                    None
-                } else {
-                    Some(value_str.into())
-                };
-            }
-            _ => (),
+            Node::Delete(_)
+            | Node::Blockquote(_)
+            | Node::Emphasis(_)
+            | Node::Strong(_)
+            | Node::TableRow(_)
+            | Node::Break(_)
+            | Node::HorizontalRule(_)
+            | Node::Fragment(_)
+            | Node::Empty => (),
         }
     }
 
@@ -2629,57 +2700,57 @@ impl Node {
             },
         }
     }
+}
 
-    #[inline(always)]
-    fn values_to_string(values: Vec<Node>, options: &RenderOptions) -> String {
-        let mut pre_position: Option<Position> = None;
-        values
-            .iter()
-            .map(|value| {
-                if let Some(pos) = value.position() {
-                    let new_line_count = pre_position
+#[inline(always)]
+fn values_to_string(values: &[Node], options: &RenderOptions) -> String {
+    let mut pre_position: Option<Position> = None;
+    values
+        .iter()
+        .map(|value| {
+            if let Some(pos) = value.position() {
+                let new_line_count = pre_position
+                    .as_ref()
+                    .map(|p: &Position| pos.start.line - p.end.line)
+                    .unwrap_or_default();
+
+                let space = if new_line_count > 0
+                    && pre_position
                         .as_ref()
-                        .map(|p: &Position| pos.start.line - p.end.line)
-                        .unwrap_or_default();
-
-                    let space = if new_line_count > 0
-                        && pre_position
-                            .as_ref()
-                            .map(|p| pos.start.line > p.end.line)
-                            .unwrap_or_default()
-                    {
-                        " ".repeat(pos.start.column.saturating_sub(1))
-                    } else {
-                        "".to_string()
-                    };
-
-                    pre_position = Some(pos);
-
-                    if space.is_empty() {
-                        format!("{}{}", "\n".repeat(new_line_count), value.to_string_with(options))
-                    } else {
-                        format!(
-                            "{}{}",
-                            "\n".repeat(new_line_count),
-                            value
-                                .to_string_with(options)
-                                .lines()
-                                .map(|line| format!("{}{}", space, line))
-                                .join("\n")
-                        )
-                    }
+                        .map(|p| pos.start.line > p.end.line)
+                        .unwrap_or_default()
+                {
+                    " ".repeat(pos.start.column.saturating_sub(1))
                 } else {
-                    pre_position = None;
-                    value.to_string_with(options)
-                }
-            })
-            .collect::<String>()
-    }
+                    "".to_string()
+                };
 
-    #[inline(always)]
-    fn values_to_value(values: Vec<Node>) -> String {
-        values.iter().map(|value| value.value()).collect::<String>()
-    }
+                pre_position = Some(pos);
+
+                if space.is_empty() {
+                    format!("{}{}", "\n".repeat(new_line_count), value.to_string_with(options))
+                } else {
+                    format!(
+                        "{}{}",
+                        "\n".repeat(new_line_count),
+                        value
+                            .to_string_with(options)
+                            .lines()
+                            .map(|line| format!("{}{}", space, line))
+                            .join("\n")
+                    )
+                }
+            } else {
+                pre_position = None;
+                value.to_string_with(options)
+            }
+        })
+        .collect::<String>()
+}
+
+#[inline(always)]
+fn values_to_value(values: Vec<Node>) -> String {
+    values.iter().map(|value| value.value()).collect::<String>()
 }
 
 #[cfg(test)]
@@ -4063,7 +4134,7 @@ mod tests {
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None}), "name", Some(AttrValue::String("span".to_string())))]
     #[case(Node::Break(Break{position: None}), "value", None)]
     #[case(Node::HorizontalRule(HorizontalRule{position: None}), "value", None)]
-    #[case(Node::Fragment(Fragment{values: Vec::new()}), "value", None)]
+    #[case(Node::Fragment(Fragment{values: Vec::new()}), "value", Some(AttrValue::String("".to_string())))]
     #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), "value", Some(AttrValue::String("heading text".to_string())))]
     #[case(Node::Heading(Heading{depth: 2, values: vec![], position: None}), "value", Some(AttrValue::String("".to_string())))]
     #[case(Node::Heading(Heading{depth: 3, values: vec![
@@ -4100,7 +4171,7 @@ mod tests {
         "value",
         Some(AttrValue::String("cell_value".to_string()))
     )]
-    #[case(
+    #[case::footnote(
         Node::Footnote(Footnote {
             ident: "id".to_string(),
             values: vec![Node::Text(Text {
@@ -4112,7 +4183,7 @@ mod tests {
         "value",
         Some(AttrValue::String("footnote value".to_string()))
     )]
-    #[case(
+    #[case::link(
         Node::Link(Link {
             url: Url::new("https://example.com".to_string()),
             title: Some(Title::new("Example".to_string())),
@@ -4125,7 +4196,142 @@ mod tests {
         "value",
         Some(AttrValue::String("link text".to_string()))
     )]
-    #[case(Node::Empty, "value", None)]
+    #[case::empty(Node::Empty, "value", None)]
+    #[case::heading(
+        Node::Heading(Heading {
+            depth: 1,
+            values: vec![
+            Node::Text(Text {
+                value: "child1".to_string(),
+                position: None,
+            }),
+            Node::Text(Text {
+                value: "child2".to_string(),
+                position: None,
+            }),
+            ],
+            position: None,
+        }),
+        "children",
+        Some(AttrValue::Array(vec![
+            Node::Text(Text {
+            value: "child1".to_string(),
+            position: None,
+            }),
+            Node::Text(Text {
+            value: "child2".to_string(),
+            position: None,
+            }),
+        ]))
+        )]
+    #[case::list(
+        Node::List(List {
+            index: 0,
+            level: 1,
+            checked: None,
+            ordered: false,
+            values: vec![
+            Node::Text(Text {
+                value: "item1".to_string(),
+                position: None,
+            }),
+            ],
+            position: None,
+        }),
+        "children",
+        Some(AttrValue::Array(vec![
+            Node::Text(Text {
+            value: "item1".to_string(),
+            position: None,
+            }),
+        ]))
+        )]
+    #[case::blockquote(
+        Node::Blockquote(Blockquote {
+            values: vec![
+            Node::Text(Text {
+                value: "quote".to_string(),
+                position: None,
+            }),
+            ],
+            position: None,
+        }),
+        "cn",
+        Some(AttrValue::Array(vec![
+            Node::Text(Text {
+            value: "quote".to_string(),
+            position: None,
+            }),
+        ]))
+        )]
+    #[case::link(
+        Node::Link(Link {
+            url: Url::new("url".to_string()),
+            title: None,
+            values: vec![
+            Node::Text(Text {
+                value: "link".to_string(),
+                position: None,
+            }),
+            ],
+            position: None,
+        }),
+        "values",
+        Some(AttrValue::Array(vec![
+            Node::Text(Text {
+            value: "link".to_string(),
+            position: None,
+            }),
+        ]))
+        )]
+    #[case::table_cell(
+        Node::TableCell(TableCell {
+            column: 0,
+            row: 0,
+            last_cell_in_row: false,
+            last_cell_of_in_table: false,
+            values: vec![
+            Node::Text(Text {
+                value: "cell".to_string(),
+                position: None,
+            }),
+            ],
+            position: None,
+        }),
+        "children",
+        Some(AttrValue::Array(vec![
+            Node::Text(Text {
+            value: "cell".to_string(),
+            position: None,
+            }),
+        ]))
+        )]
+    #[case::strong(
+        Node::Strong(Strong {
+            values: vec![
+            Node::Text(Text {
+                value: "bold".to_string(),
+                position: None,
+            }),
+            ],
+            position: None,
+        }),
+        "children",
+        Some(AttrValue::Array(vec![
+            Node::Text(Text {
+            value: "bold".to_string(),
+            position: None,
+            }),
+        ]))
+        )]
+    #[case::em(
+        Node::Emphasis(Emphasis {
+            values: vec![],
+            position: None,
+        }),
+        "children",
+        Some(AttrValue::Array(vec![]))
+        )]
     fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
     }

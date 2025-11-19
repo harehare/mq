@@ -63,7 +63,7 @@ impl Trivia {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Node {
     pub kind: NodeKind,
     pub token: Option<Shared<Token>>,
@@ -72,7 +72,7 @@ pub struct Node {
     pub children: Vec<Shared<Node>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum NodeKind {
     Array,
     BinaryOp(BinaryOp),
@@ -88,6 +88,7 @@ pub enum NodeKind {
     Elif,
     Else,
     Env,
+    #[default]
     Eof,
     Fn,
     Foreach,

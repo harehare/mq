@@ -178,6 +178,9 @@ impl From<mq_markdown::AttrValue> for RuntimeValue {
             mq_markdown::AttrValue::Number(n) => RuntimeValue::Number(n.into()),
             mq_markdown::AttrValue::Integer(n) => RuntimeValue::Number(n.into()),
             mq_markdown::AttrValue::Boolean(b) => RuntimeValue::Boolean(b),
+            mq_markdown::AttrValue::Array(arr) => {
+                RuntimeValue::Array(arr.into_iter().map(RuntimeValue::from).collect())
+            }
             mq_markdown::AttrValue::Null => RuntimeValue::NONE,
         }
     }

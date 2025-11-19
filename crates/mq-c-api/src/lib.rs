@@ -400,12 +400,12 @@ mod tests {
         mq_free_result(result);
 
         // Test with null input
-        let result = unsafe { mq_eval(engine, make_c_string("."), ptr::null(), make_c_string("text")) };
+        let result = unsafe { mq_eval(engine, make_c_string(".a"), ptr::null(), make_c_string("text")) };
         assert!(!result.error_msg.is_null());
         mq_free_result(result);
 
         // Test with null format
-        let result = unsafe { mq_eval(engine, make_c_string("."), make_c_string("test"), ptr::null()) };
+        let result = unsafe { mq_eval(engine, make_c_string(".a"), make_c_string("test"), ptr::null()) };
         assert!(!result.error_msg.is_null());
         mq_free_result(result);
 

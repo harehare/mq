@@ -499,7 +499,7 @@ fn ident(input: Span) -> IResult<Span, Token> {
     map(
         recognize(pair(
             alt((alpha1, tag("_"), tag(MARKDOWN))),
-            many0(alt((alphanumeric1, tag("_"), tag("-"), tag("."), tag("*")))),
+            many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*")))),
         )),
         |span: Span| match *span.fragment() {
             "true" => {
@@ -886,12 +886,37 @@ mod tests {
             Options::default(),
             Ok(vec![
                     Token {
-                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 8 } },
-                        kind: TokenKind::Selector(SmolStr::new(".h.text")),
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 3 } },
+                        kind: TokenKind::Selector(SmolStr::new(".h")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 3 }, end: Position { line: 1, column: 8 } },
+                        kind: TokenKind::Selector(SmolStr::new(".text")),
                         module_id: 1.into(),
                     },
                     Token {
                         range: Range { start: Position { line: 1, column: 8 }, end: Position { line: 1, column: 8 } },
+                        kind: TokenKind::Eof,
+                        module_id: 1.into(),
+                    }
+                ])
+            )]
+    #[case::selector_with_dot_h_level(".h.level",
+            Options::default(),
+            Ok(vec![
+                    Token {
+                        range: Range { start: Position { line: 1, column: 1 }, end: Position { line: 1, column: 3 } },
+                        kind: TokenKind::Selector(SmolStr::new(".h")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 3 }, end: Position { line: 1, column: 9 } },
+                        kind: TokenKind::Selector(SmolStr::new(".level")),
+                        module_id: 1.into(),
+                    },
+                    Token {
+                        range: Range { start: Position { line: 1, column: 9 }, end: Position { line: 1, column: 9 } },
                         kind: TokenKind::Eof,
                         module_id: 1.into(),
                     }
@@ -1077,6 +1102,7 @@ mod tests {
             }
         ])
     )]
+
     fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, LexerError>) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
     }
