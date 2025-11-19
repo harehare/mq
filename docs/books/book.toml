@@ -2,7 +2,6 @@
 authors = ["Takahiro Sato"]
 description = "Reference on the mq."
 language = "en"
-multilingual = false
 src = "src"
 title = "mq - jq like tool for markdown processing"
 
