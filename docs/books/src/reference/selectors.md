@@ -182,10 +182,10 @@ Transform each selected node:
 
 ```mq
 # Get all heading levels
-.h | map(.level)
+.h | map(fn(h): h.level;)
 
 # Get all code block languages
-.code | map(.lang)
+.code | map(fn(c): c.lang;)
 ```
 
 ### Using filter()
@@ -198,17 +198,6 @@ Filter nodes based on attribute values:
 
 # Get only rust code blocks
 .code | filter(fn(c): c.lang == "rust";)
-```
-
-## Practical Examples
-
-### Generate Table of Contents
-
-```mq
-.h
-| let link = to_link("#" + to_text(self), to_text(self), "")
-| let level = .h.depth
-| if (!is_none(level)): to_md_list(link, level)
 ```
 
 ### Extract Code Languages
@@ -226,16 +215,7 @@ Filter nodes based on attribute values:
 ### Filter High-Level Headings
 
 ```mq
-.h | select(.level <= 2)
-```
-
-### Create Language Statistics
-
-```mq
-.code
-| map(.lang)
-| group_by(identity)
-| map(fn(g): {"language": g.key, "count": len(g.value)};)
+select(.h.level <= 2)
 ```
 
 ## Setting Attributes
