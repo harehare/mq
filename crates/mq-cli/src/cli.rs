@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use miette::miette;
@@ -9,6 +10,7 @@ use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
+use std::process::Command;
 use std::str::FromStr;
 use std::{fs, path::PathBuf};
 
@@ -39,6 +41,10 @@ pub struct Cli {
     #[clap(subcommand)]
     commands: Option<Commands>,
 
+    /// List all available subcommands (built-in and external)
+    #[arg(long)]
+    list: bool,
+
     /// Number of files to process before switching to parallel processing
     #[arg(short = 'P', default_value_t = 10)]
     parallel_threshold: usize,
@@ -47,6 +53,7 @@ pub struct Cli {
     query: Option<String>,
     files: Option<Vec<PathBuf>>,
 }
+
 /// Represents the input format for processing.
 /// - Markdown: Standard Markdown parsing.
 /// - Mdx: MDX parsing.
@@ -236,7 +243,153 @@ enum Commands {
 }
 
 impl Cli {
+    /// Get the path to the external commands directory (~/.mq/bin)
+    fn get_external_commands_dir() -> Option<PathBuf> {
+        let home_dir = dirs::home_dir()?;
+        let mq_bin_dir = home_dir.join(".mq").join("bin");
+        if mq_bin_dir.exists() && mq_bin_dir.is_dir() {
+            Some(mq_bin_dir)
+        } else {
+            None
+        }
+    }
+
+    /// Find all external commands (mq-* files in ~/.mq/bin)
+    fn find_external_commands() -> Vec<String> {
+        let mut commands = Vec::new();
+
+        if let Some(bin_dir) = Self::get_external_commands_dir()
+            && let Ok(entries) = fs::read_dir(bin_dir)
+        {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string()
+                    && file_name.starts_with("mq-")
+                {
+                    // Remove "mq-" prefix to get the subcommand name
+                    let subcommand = file_name.strip_prefix("mq-").unwrap();
+                    commands.push(subcommand.to_string());
+                }
+            }
+        }
+
+        commands.sort();
+        commands
+    }
+
+    /// Execute an external subcommand
+    fn execute_external_command(&self, args: &[String]) -> miette::Result<()> {
+        if args.is_empty() {
+            return Err(miette!("No subcommand specified"));
+        }
+
+        let subcommand = &args[0];
+        let bin_dir = Self::get_external_commands_dir()
+            .ok_or_else(|| miette!("External commands directory (~/.mq/bin) not found"))?;
+
+        let command_path = bin_dir.join(format!("mq-{}", subcommand));
+
+        if !command_path.exists() {
+            return Err(miette!(
+                "External subcommand 'mq-{}' not found in ~/.mq/bin\nSearched at: {}",
+                subcommand,
+                command_path.display()
+            ));
+        }
+
+        // Check if the file is executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = fs::metadata(&command_path).into_diagnostic()?;
+            let permissions = metadata.permissions();
+            if permissions.mode() & 0o111 == 0 {
+                return Err(miette!(
+                    "External subcommand 'mq-{}' is not executable. Run: chmod +x {}",
+                    subcommand,
+                    command_path.display()
+                ));
+            }
+        }
+
+        // Execute the external command with remaining arguments
+        let status = Command::new(&command_path).args(&args[1..]).status().map_err(|e| {
+            miette!(
+                "Failed to execute external subcommand 'mq-{}' at {}: {}",
+                subcommand,
+                command_path.display(),
+                e
+            )
+        })?;
+
+        if !status.success() {
+            let code = status.code().unwrap_or(1);
+            std::process::exit(code);
+        }
+
+        Ok(())
+    }
+
+    /// List all available subcommands (built-in and external)
+    fn list_commands(&self) -> miette::Result<()> {
+        let mut output = vec![
+            format!("{}", "Built-in subcommands:".bold().cyan()),
+            format!(
+                "  {} - Start a REPL session for interactive query execution",
+                "repl".green()
+            ),
+            format!("  {} - Start a language server for mq", "lsp".green()),
+            format!("  {} - Start an MCP server for mq", "mcp".green()),
+            format!(
+                "  {} - Format mq files based on specified formatting options",
+                "fmt".green()
+            ),
+            format!("  {} - Show functions documentation for the query", "docs".green()),
+        ];
+
+        #[cfg(feature = "debugger")]
+        output.push(format!("  {} - Start a debug adapter for mq", "dap".green()));
+
+        let external_commands = Self::find_external_commands();
+        if !external_commands.is_empty() {
+            output.push("".to_string());
+            output.push(format!("{}", "External subcommands (from ~/.mq/bin):".bold().yellow()));
+            for cmd in external_commands {
+                output.push(format!("  {}", cmd.bright_yellow()));
+            }
+        }
+
+        println!("{}", output.join("\n"));
+        Ok(())
+    }
+
     pub fn run(&self) -> miette::Result<()> {
+        if self.list {
+            return self.list_commands();
+        }
+
+        // Check if query is actually an external subcommand
+        // This handles the case where clap parses "mq test arg1" as query="test", files=["arg1"]
+        if !self.input.from_file
+            && self.commands.is_none()
+            && let Some(query_value) = &self.query
+            && let Some(bin_dir) = Self::get_external_commands_dir()
+        {
+            // Only treat as external command if query_value is a valid file name
+            if query_value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                let command_path = bin_dir.join(format!("mq-{}", query_value));
+                if command_path.exists() {
+                    let mut args = vec![query_value.clone()];
+                    if let Some(files) = &self.files {
+                        args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
+                    }
+                    return self.execute_external_command(&args);
+                }
+            }
+        }
+
         if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None) && self.output.update {
             return Err(miette!("The output format is not supported for the update option"));
         }
@@ -857,5 +1010,57 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_find_external_commands() {
+        // This test will only pass if ~/.mq/bin exists and contains mq-* files
+        let commands = Cli::find_external_commands();
+        // We can't assert specific commands, but we can check the function works
+        assert!(commands.iter().all(|cmd| !cmd.is_empty()));
+    }
+
+    #[test]
+    fn test_get_external_commands_dir() {
+        // This test checks if the function returns a valid path or None
+        let dir = Cli::get_external_commands_dir();
+        if let Some(path) = dir {
+            assert!(path.ends_with(".mq/bin") || path.ends_with(".mq\\bin"));
+        }
+    }
+
+    #[test]
+    fn test_external_command_execution() {
+        // Create a temporary directory for testing
+        let temp_dir = std::env::temp_dir().join("mq-cli-test");
+        let bin_dir = temp_dir.join(".mq").join("bin");
+        fs::create_dir_all(&bin_dir).expect("Failed to create test directory");
+
+        defer! {
+            if temp_dir.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+            }
+        }
+
+        // Create a test external command
+        let test_cmd_path = bin_dir.join("mq-testcmd");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::write(&test_cmd_path, "#!/bin/sh\necho 'test output'").expect("Failed to write test command");
+            let mut perms = fs::metadata(&test_cmd_path)
+                .expect("Failed to get metadata")
+                .permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&test_cmd_path, perms).expect("Failed to set permissions");
+        }
+        #[cfg(not(unix))]
+        {
+            fs::write(&test_cmd_path, "@echo off\necho test output").expect("Failed to write test command");
+        }
+
+        // Note: We can't easily test execute_external_command without modifying HOME
+        // This test just verifies the command file was created correctly
+        assert!(test_cmd_path.exists());
     }
 }
