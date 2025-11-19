@@ -50,6 +50,7 @@ Since LLM inputs are primarily in Markdown format, mq provides efficient tools f
 - **REPL Support**: Interactive command-line REPL for testing and experimenting.
 - **IDE Support**: VSCode Extension and Language Server **Protocol** (LSP) support for custom function development.
 - **Debugger**: Includes an experimental debugger (`mq-dbg`) for inspecting and stepping through mq queries interactively.
+- **External Subcommands**: Extend mq with custom subcommands by placing executable files starting with `mq-` in `~/.mq/bin/`.
 
 ## Installation
 
@@ -161,6 +162,8 @@ Arguments:
   [FILES]...       
 
 Options:
+      --list
+          List all available subcommands (built-in and external)
   -A, --aggregate
           Aggregate all input files/content into a single array
   -f, --from-file
@@ -277,6 +280,30 @@ markitdown https://github.com/harehare/mq | mq '.code'
 # Extract table from markdown
 markitdown test.xlsx | mq '.[][]'
 ```
+
+### External Subcommands
+
+You can extend `mq` with custom subcommands by creating executable files starting with `mq-` in `~/.mq/bin/`:
+
+```sh
+# Create a custom subcommand
+cat > ~/.mq/bin/mq-hello << 'EOF'
+#!/bin/bash
+echo "Hello from mq-hello!"
+echo "Arguments: $@"
+EOF
+chmod +x ~/.mq/bin/mq-hello
+
+# Use the custom subcommand
+mq hello world
+# Output: Hello from mq-hello!
+#         Arguments: world
+
+# List all available subcommands
+mq --list
+```
+
+This makes it easy to add your own tools and workflows to `mq` without modifying the core binary.
 
 ## Support
 

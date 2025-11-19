@@ -28,6 +28,7 @@ use_mimalloc = ["mimalloc"]
 [dependencies]
 clap.workspace = true
 colored.workspace = true
+dirs.workspace = true
 itertools.workspace = true
 miette = {workspace = true, features = ["fancy"]}
 mimalloc = {version = "0.1.48", features = ["v3"], optional = true}

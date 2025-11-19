@@ -2650,6 +2650,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "colored 3.0.0",
+ "dirs 6.0.0",
  "itertools 0.14.0",
  "miette",
  "mimalloc",
