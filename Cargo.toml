@@ -23,7 +23,6 @@ members = [
   "crates/fuzz",
   "crates/mq-wasm",
   "crates/mq-test",
-  "crates/mq-mcp",
   "crates/mq-python",
   "crates/mq-web-api",
   "crates/mq-dap",
@@ -44,7 +43,6 @@ mq-hir = {path = "./crates/mq-hir"}
 mq-lang = {path = "./crates/mq-lang"}
 mq-lsp = {path = "./crates/mq-lsp"}
 mq-markdown = {path = "./crates/mq-markdown"}
-mq-mcp = {path = "./crates/mq-mcp"}
 mq-repl = {path = "./crates/mq-repl"}
 mq-test = {path = "./crates/mq-test"}
 proptest = "1.9"

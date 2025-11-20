@@ -25,13 +25,13 @@ bench-local:
 build:
     cargo build --release -p mq-cli --bin mq
     cargo build --release -p mq-cli --bin mq-dbg --features="debugger"
-    cargo build --release -p mq-mcp -p mq-lsp -p mq-crawler
+    cargo build --release -p mq-lsp -p mq-crawler
 
 # Build for a specific target architecture
 build-target target:
     cargo build --release --target {{target}} -p mq-cli --bin mq
     cargo build --release --target {{target}} -p mq-cli --bin mq-dbg --features="debugger"
-    cargo build --release --target {{target}} -p mq-mcp -p mq-lsp -p mq-crawler
+    cargo build --release --target {{target}} -p mq-lsp -p mq-crawler
 
 # Build benchmarks with codspeed
 [working-directory: 'crates/mq-lang']

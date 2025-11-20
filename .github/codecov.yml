@@ -5,7 +5,6 @@ ignore:
   - "crates/mq-python"
   - "crates/mq-repl/src/repl.rs"
   - "crates/mq-wasm"
-  - "crates/mq-mcp"
   - "crates/mq-web-api"
   - "crates/mq-dap/src/server.rs"
   - "crates/mq-lang/src/eval/debugger.rs"

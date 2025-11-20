@@ -218,8 +218,6 @@ enum Commands {
         #[clap(short = 'M', long)]
         module_paths: Option<Vec<PathBuf>>,
     },
-    /// Start an MCP server for mq
-    Mcp,
     /// Format mq files based on specified formatting options.
     Fmt {
         /// Number of spaces for indentation
@@ -338,7 +336,6 @@ impl Cli {
                 "repl".green()
             ),
             format!("  {} - Start a language server for mq", "lsp".green()),
-            format!("  {} - Start an MCP server for mq", "mcp".green()),
             format!(
                 "  {} - Format mq files based on specified formatting options",
                 "fmt".green()
@@ -403,12 +400,6 @@ impl Cli {
                 tokio::runtime::Runtime::new()
                     .into_diagnostic()?
                     .block_on(async { mq_lsp::start(LspConfig::new(module_paths.clone().unwrap_or_default())).await });
-                Ok(())
-            }
-            Some(Commands::Mcp) => {
-                let _ = tokio::runtime::Runtime::new()
-                    .into_diagnostic()?
-                    .block_on(async { mq_mcp::start().await });
                 Ok(())
             }
             Some(Commands::Fmt {
