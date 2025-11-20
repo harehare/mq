@@ -228,6 +228,17 @@ def debug(msg):
 def sort_by(arr, f):
   let decorate_arr = foreach (x, arr): [f(x), x]; | _sort_by_impl(decorate_arr) | map(second);
 
+# Returns the count of elements in the array that satisfy the provided function.
+def count_by(arr, f):
+  let i = 0
+  | if (not(is_array(arr))):
+      0
+    elif (is_empty(arr)):
+      0
+    else:
+      filter(arr, f) | len()
+end
+
 # Skips the first n elements of an array and returns the rest
 def skip(arr, n):
   if (n < 0):
