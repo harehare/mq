@@ -30,7 +30,6 @@ The mq project follows this main directory structure:
   - `mq-lang` - Implementation of the mq
   - `mq-lsp` - Language Server Protocol implementation
   - `mq-markdown` - Markdown parser and manipulation utilities
-  - `mq-mcp` - MCP implementation for mq
   - `mq-python` - Python bindings for integrating mq functionality into Python applications
   - `mq-repl` - REPL (Read-Eval-Print Loop) for mq
   - `mq-test` - Test utilities and helpers for mq

@@ -134,7 +134,7 @@ pip install markdown-query
 
 mq provides an MCP server implementation that allows AI assistants to process Markdown and HTML content using mq's query language.
 
-- [mq-mcp documentation](crates/mq-mcp/README.md)
+- [mq-mcp documentation](https://github.com/harehare/mq-mcp)
 - [Getting started with MCP](https://mqlang.org/book/start/mcp)
 
 ## Usage
@@ -158,8 +158,8 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]  
-  [FILES]...       
+  [QUERY OR FILE]
+  [FILES]...
 
 Options:
       --list
@@ -181,7 +181,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-          
+
       --csv
           Include the built-in CSV module
       --fuzzy

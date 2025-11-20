@@ -39,7 +39,6 @@ jobs:
           mv target/${{ matrix.target }}/release/mq${{ matrix.ext }} target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-dbg${{ matrix.ext }} target/${{ matrix.target }}/release/mq-dbg-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-lsp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name}}${{ matrix.ext }}
-          mv target/${{ matrix.target }}/release/mq-mcp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-mcp-${{ matrix.asset_name}}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mqcr${{ matrix.ext }} target/${{ matrix.target }}/release/mqcr-${{ matrix.asset_name}}${{ matrix.ext }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -49,7 +48,6 @@ jobs:
             target/${{ matrix.target }}/release/mq-${{ matrix.asset_name}}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-dbg-${{ matrix.asset_name}}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mq-lsp-${{ matrix.asset_name }}${{ matrix.ext }}
-            target/${{ matrix.target }}/release/mq-mcp-${{ matrix.asset_name }}${{ matrix.ext }}
             target/${{ matrix.target }}/release/mqcr-${{ matrix.asset_name }}${{ matrix.ext }}
           if-no-files-found: error
           retention-days: 1
