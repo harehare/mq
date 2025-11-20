@@ -2,17 +2,6 @@
 categories.workspace = true
 description = "Command-line interface for mq Markdown processing tool"
 edition.workspace = true
-exclude = [
-  ".github",
-  "editors/*",
-  "playground/*",
-  ".goreleaser.yaml",
-  "justfile",
-  "tests",
-  "examples",
-  "docs",
-  "Dockerfile",
-]
 homepage.workspace = true
 keywords.workspace = true
 license.workspace = true
