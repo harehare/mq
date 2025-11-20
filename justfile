@@ -75,6 +75,7 @@ fmt:
     cargo fmt --all -- --check
 
 test-mq:
+    cargo run -p mq-cli --bin mq -- -f crates/mq-lang/builtin_tests.mq
     cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/module_tests.mq
 
 test-doc:
