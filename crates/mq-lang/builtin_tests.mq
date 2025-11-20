@@ -282,6 +282,20 @@ include "test"
     | assert_eq(result2, dict())
   end
 
+| def test_count_by():
+    let result1 = count_by([1, 2, 3, 4, 5], fn(x): x > 2;)
+    | assert_eq(result1, 3)
+
+    | let result2 = count_by([1, 2, 3, 4, 5], fn(x): x > 10;)
+    | assert_eq(result2, 0)
+
+    | let result3 = count_by([], fn(x): x > 0;)
+    | assert_eq(result3, 0)
+
+    | let result4 = count_by([2, 4, 6, 8], fn(x): x % 2 == 0;)
+    | assert_eq(result4, 4)
+  end
+
 | def test_any():
     let result1 = any([1, 2, 3, 4, 5], fn(x): x > 3;)
     | assert_eq(result1, true)
@@ -415,6 +429,7 @@ run_tests([
   test_case("skip_while", test_skip_while),
   test_case("take_while", test_take_while),
   test_case("group_by", test_group_by),
+  test_case("count_by", test_count_by),
   test_case("any", test_any),
   test_case("all", test_all),
   test_case("in", test_in),
