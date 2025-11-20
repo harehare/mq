@@ -230,13 +230,12 @@ def sort_by(arr, f):
 
 # Returns the count of elements in the array that satisfy the provided function.
 def count_by(arr, f):
-  let i = 0
-  | if (not(is_array(arr))):
-      0
-    elif (is_empty(arr)):
-      0
-    else:
-      filter(arr, f) | len()
+  if (not(is_array(arr))):
+    0
+  elif (is_empty(arr)):
+    0
+  else:
+    filter(arr, f) | len()
 end
 
 # Skips the first n elements of an array and returns the rest
