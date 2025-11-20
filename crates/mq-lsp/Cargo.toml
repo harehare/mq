@@ -1,10 +1,11 @@
 [package]
+categories.workspace = true
+description = "Language Server Protocol implementation for mq query language"
 edition.workspace = true
 homepage.workspace = true
 keywords.workspace = true
-license-file.workspace = true
+license.workspace = true
 name = "mq-lsp"
-readme.workspace = true
 repository.workspace = true
 version.workspace = true
 

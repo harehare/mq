@@ -1,10 +1,11 @@
 [package]
+categories.workspace = true
+description = "Python bindings for mq Markdown processing"
 edition.workspace = true
 homepage.workspace = true
 keywords.workspace = true
-license-file.workspace = true
+license.workspace = true
 name = "mq-python"
-readme.workspace = true
 repository.workspace = true
 version.workspace = true
 

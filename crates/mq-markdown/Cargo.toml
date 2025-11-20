@@ -1,10 +1,11 @@
 [package]
+categories.workspace = true
+description = "Markdown parsing and manipulation utilities for mq"
 edition.workspace = true
 homepage.workspace = true
 keywords.workspace = true
-license-file.workspace = true
+license.workspace = true
 name = "mq-markdown"
-readme.workspace = true
 repository.workspace = true
 version.workspace = true
 

@@ -1,43 +1,50 @@
 # mq-lang
 
-`mq-lang` provides a parser and evaluator for a [mq](https://github.com/harehare/mq).
+Core language implementation for mq query language.
 
-### Examples
+## Overview
 
-```rs
+`mq-lang` provides a parser and evaluator for the [mq](https://github.com/harehare/mq) query language. It handles parsing, evaluation, and execution of mq queries.
+
+## Examples
+
+### Basic Evaluation
+
+```rust
+use mq_lang::{DefaultEngine, Value};
+use mq_markdown::Markdown;
+
 let code = "add(\"world!\")";
-let input = vec![mq_lang::Value::Markdown(
-  mq_markdown::Markdown::from_str("Hello,").unwrap()
+let input = vec![Value::Markdown(
+    "Hello,".parse::<Markdown>().unwrap()
 )].into_iter();
-let mut engine = mq_lang::DefaultEngine::default();
+let mut engine = DefaultEngine::default();
 
-assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
+let result = engine.eval(code, input).unwrap();
+// Result: Value::String("Hello,world!".to_string())
+```
 
-// Parse code into AST nodes
-use mq_lang::{tokenize, LexerOptions, AstParser, Arena};
-use std::rc::Shared;
-use std::cell::SharedCell;
+### Parsing Code
 
-let code = "1 + 2";
-let token_arena = Shared::new(SharedCell::new(Arena::new()));
-let ast = mq_lang::parse(code, token_arena).unwrap();
-
-assert_eq!(ast.nodes.len(), 1);
-
-// Parse code into CST nodes
-use mq_lang::{tokenize, LexerOptions, CstParser};
-use std::sync::Arc;
+```rust
+use mq_lang::parse_recovery;
 
 let code = "1 + 2";
-let (cst_nodes, errors) = mq_lang::parse_recovery(code);
+let (cst_nodes, errors) = parse_recovery(code);
 
 assert!(!errors.has_errors());
 assert!(!cst_nodes.is_empty());
 ```
 
-### Features
+## Features
 
-- `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree)
-  to/from JSON format. This also enables the `Engine::eval_ast` method for direct
-  AST execution. When this feature is enabled, `serde` and `serde_json` dependencies
-  are included.
+- `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree) to/from JSON format
+- `cst`: Enables Concrete Syntax Tree support for error recovery parsing
+- `debugger`: Enables debugging support (requires `sync` feature)
+- `file-io`: Enables file I/O operations
+- `sync`: Enables thread-safe operations
+- `std`: Enables standard library support (default)
+
+## License
+
+Licensed under the MIT License.

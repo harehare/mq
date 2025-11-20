@@ -1,10 +1,11 @@
 [package]
+categories.workspace = true
+description = "High-level Internal Representation (HIR) for mq query language"
 edition.workspace = true
 homepage.workspace = true
 keywords.workspace = true
-license-file.workspace = true
+license.workspace = true
 name = "mq-hir"
-readme.workspace = true
 repository.workspace = true
 version.workspace = true
 

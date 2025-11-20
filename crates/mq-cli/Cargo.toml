@@ -1,4 +1,6 @@
 [package]
+categories.workspace = true
+description = "Command-line interface for mq Markdown processing tool"
 edition.workspace = true
 exclude = [
   ".github",
@@ -13,9 +15,8 @@ exclude = [
 ]
 homepage.workspace = true
 keywords.workspace = true
-license-file.workspace = true
+license.workspace = true
 name = "mq-cli"
-readme.workspace = true
 repository.workspace = true
 version.workspace = true
 
