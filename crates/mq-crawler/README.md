@@ -107,4 +107,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## License
 
-Part of the mq project - see the main repository for license information.
+Licensed under the MIT License.

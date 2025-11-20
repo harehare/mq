@@ -5,10 +5,11 @@ documentation = "https://mqlang.org/book/"
 edition = "2024"
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
-license-file = "LICENSE"
+license = "MIT"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.1"
+categories = ["command-line-utilities", "text-processing"]
 
 [workspace]
 members = [

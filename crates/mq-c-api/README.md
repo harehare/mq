@@ -86,4 +86,4 @@ Functions return `NULL` or error codes to indicate failures. Check return values
 
 ## License
 
-Licensed under the MIT License. See the main project LICENSE file for details.
+Licensed under the MIT License.

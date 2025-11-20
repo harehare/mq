@@ -1,10 +1,11 @@
 [package]
+categories.workspace = true
+description = "Web API bindings for mq"
 edition.workspace = true
 homepage.workspace = true
 keywords.workspace = true
-license-file.workspace = true
+license.workspace = true
 name = "mq-web-api"
-readme.workspace = true
 repository.workspace = true
 version.workspace = true
 
