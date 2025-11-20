@@ -134,8 +134,7 @@ pip install markdown-query
 
 mq provides an MCP server implementation that allows AI assistants to process Markdown and HTML content using mq's query language.
 
-- [mq-mcp documentation](crates/mq-mcp/README.md)
-- [mq-mcp repository](https://github.com/harehare/mq-mcp)
+- [mq-mcp documentation](https://github.com/harehare/mq-mcp)
 - [Getting started with MCP](https://mqlang.org/book/start/mcp)
 
 ## Usage
