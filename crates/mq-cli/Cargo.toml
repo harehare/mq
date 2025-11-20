@@ -19,6 +19,10 @@ readme.workspace = true
 repository.workspace = true
 version.workspace = true
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+pkg-fmt = "bin"
+
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
 default = ["std", "use_mimalloc"]
