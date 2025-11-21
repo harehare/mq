@@ -1,19 +1,20 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "Python bindings for mq Markdown processing"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-python"
-repository.workspace = true
-version.workspace = true
+publish = false
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [lib]
 crate-type = ["cdylib"]
 name = "mq"
 
 [dependencies]
-mq-lang.workspace = true
-mq-markdown.workspace = true
+mq-lang = {path = "../mq-lang", version = "0.5.1"}
+mq-markdown = {path = "../mq-markdown", version = "0.5.1"}
 pyo3 = {version = "0.27.1", features = ["extension-module", "abi3-py39"]}

@@ -1,13 +1,13 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "Directory crawler for batch Markdown file processing"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-crawler"
-repository.workspace = true
-version.workspace = true
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [dependencies]
 clap = {version = "4.5", features = ["derive"]}
@@ -15,9 +15,9 @@ crossbeam = "0.8.4"
 dashmap = "6.1.0"
 fantoccini = "0.22.0"
 futures = "0.3"
-miette.workspace = true
-mq-lang.workspace = true
-mq-markdown.workspace = true
+miette = {version = "7.6.0", features = ["fancy"]}
+mq-lang = {path = "../mq-lang", version = "0.5.1"}
+mq-markdown = {path = "../mq-markdown", version = "0.5.1"}
 reqwest = {version = "0.12", features = ["json", "rustls-tls"]}
 robots_txt = "0.7"
 scraper = "0.24"
@@ -26,7 +26,7 @@ serde_json = "1.0"
 tokio = {version = "1", features = ["full"]}
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features = ["env-filter"]}
-url.workspace = true
+url = "2.5.7"
 
 [[bin]]
 doc = false
@@ -35,4 +35,4 @@ path = "src/main.rs"
 
 [dev-dependencies]
 httpmock = "0.8.2"
-rstest.workspace = true
+rstest = "0.26.1"

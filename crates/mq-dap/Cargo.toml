@@ -1,22 +1,22 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "Debug Adapter Protocol implementation for mq"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-dap"
-repository.workspace = true
-version.workspace = true
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [dependencies]
 crossbeam-channel = "0.5.15"
 dap = "0.4.1-alpha1"
-miette = {workspace = true, features = ["fancy"]}
-mq-lang = {workspace = true, features = ["debugger"]}
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
+miette = {version = "7.6.0", features = ["fancy"]}
+mq-lang = {path = "../mq-lang", version = "0.5.1", features = ["debugger"]}
+serde = "1.0"
+serde_json = "1.0"
+thiserror = "2.0.17"
 tokio = {version = "1.48", features = ["full"]}
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features = ["env-filter"]}
