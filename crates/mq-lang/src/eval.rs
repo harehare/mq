@@ -10,6 +10,7 @@ use crate::{
     IdentWithToken, LocalFsModuleResolver, ModuleResolver,
     eval::{env::EnvError, runtime_value::ModuleEnv},
     module::{self, error::ModuleError},
+    selector::Selector,
 };
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
@@ -558,7 +559,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &ast::Selector) -> RuntimeValue {
+    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
                 if builtin::eval_selector(node_value, ident) {
@@ -3173,12 +3174,12 @@ mod tests {
         ])]))]
     #[case::text_selector(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
         vec![
-            ast_node(ast::Expr::Selector(ast::Selector::Text)),
+            ast_node(ast::Expr::Selector(Selector::Text)),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)]))]
     #[case::text_selector_heading(vec![RuntimeValue::Markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Heading 1".to_string().into()], position: None}), None)],
         vec![
-            ast_node(ast::Expr::Selector(ast::Selector::Text)),
+            ast_node(ast::Expr::Selector(Selector::Text)),
         ],
         Ok(vec![RuntimeValue::Markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment { values: vec!["Heading 1".to_string().into()] }), None)]))]
     #[case::to_md_table_row(vec![RuntimeValue::Array(vec![

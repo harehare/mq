@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Token, module::ModuleId};
+use crate::{Token, module::ModuleId, selector};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {
@@ -19,6 +19,6 @@ pub enum ParseError {
     ExpectedClosingBrace(Token),
     #[error("Expected a closing bracket `]` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     ExpectedClosingBracket(Token),
-    #[error("Unknown selector: {0}")]
-    UnknownSelector(Token),
+    #[error(transparent)]
+    UnknownSelector(selector::UnknownSelector),
 }

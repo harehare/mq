@@ -549,7 +549,7 @@ impl Hir {
                     self.add_symbol(Symbol {
                         value: Some(text.into()),
                         kind: SymbolKind::String,
-                        source: SourceInfo::new(Some(source_id), Some(range.clone())),
+                        source: SourceInfo::new(Some(source_id), Some(*range)),
                         scope: scope_id,
                         doc: node.comments(),
                         parent,
@@ -559,7 +559,7 @@ impl Hir {
                     self.symbols.insert(Symbol {
                         value: Some(ident.clone()),
                         kind: SymbolKind::Variable,
-                        source: SourceInfo::new(Some(source_id), Some(range.clone())),
+                        source: SourceInfo::new(Some(source_id), Some(*range)),
                         scope: scope_id,
                         doc: node.comments(),
                         parent,

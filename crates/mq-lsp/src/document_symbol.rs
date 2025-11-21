@@ -17,7 +17,7 @@ pub fn response(
             .find_symbols_in_source(*source_id)
             .iter()
             .filter_map(|symbol| {
-                symbol.source.text_range.clone().and_then(|text_range| {
+                symbol.source.text_range.and_then(|text_range| {
                     let kind = match &symbol.kind {
                         mq_hir::SymbolKind::Function(_) => SymbolKind::FUNCTION,
                         mq_hir::SymbolKind::Variable => SymbolKind::FIELD,

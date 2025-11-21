@@ -4,6 +4,7 @@ use crate::{
     Position, Range, Shared, Token, TokenKind,
     ast::constants,
     cst::node::{BinaryOp, UnaryOp},
+    selector::{self, Selector},
 };
 
 use super::{
@@ -63,6 +64,7 @@ impl ErrorReporter {
                     ParseError::UnexpectedToken(token) => &token.range,
                     ParseError::InsufficientTokens(token) => &token.range,
                     ParseError::ExpectedClosingBracket(token) => &token.range,
+                    ParseError::UnknownSelector(selector::UnknownSelector(token)) => &token.range,
                     ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Greater,
                 };
 
@@ -70,6 +72,7 @@ impl ErrorReporter {
                     ParseError::UnexpectedToken(token) => &token.range,
                     ParseError::InsufficientTokens(token) => &token.range,
                     ParseError::ExpectedClosingBracket(token) => &token.range,
+                    ParseError::UnknownSelector(selector::UnknownSelector(token)) => &token.range,
                     ParseError::UnexpectedEOFDetected => return std::cmp::Ordering::Less,
                 };
 
@@ -94,9 +97,10 @@ impl ErrorReporter {
                 (
                     e.to_string(),
                     match e {
-                        ParseError::UnexpectedToken(token) => token.range.clone(),
-                        ParseError::InsufficientTokens(token) => token.range.clone(),
-                        ParseError::ExpectedClosingBracket(token) => token.range.clone(),
+                        ParseError::UnexpectedToken(token) => token.range,
+                        ParseError::InsufficientTokens(token) => token.range,
+                        ParseError::ExpectedClosingBracket(token) => token.range,
+                        ParseError::UnknownSelector(selector::UnknownSelector(token)) => token.range,
                         ParseError::UnexpectedEOFDetected => Range {
                             start: Position {
                                 line: text.lines().count() as u32,
@@ -174,12 +178,8 @@ impl<'a> Parser<'a> {
                 None => break,
             };
 
-            match &*token {
-                Token {
-                    range: _,
-                    kind: TokenKind::Eof,
-                    ..
-                } if root => {
+            match &token.kind {
+                TokenKind::Eof if root => {
                     if !nodes.is_empty() {
                         self.tokens.next();
 
@@ -194,11 +194,7 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                Token {
-                    range: _,
-                    kind: TokenKind::Pipe,
-                    ..
-                } => {
+                TokenKind::Pipe => {
                     self.tokens.next();
                     let trailing_trivia = self.parse_trailing_trivia();
 
@@ -213,16 +209,7 @@ impl<'a> Parser<'a> {
 
                     continue;
                 }
-                Token {
-                    range: _,
-                    kind: TokenKind::SemiColon,
-                    ..
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::End,
-                    ..
-                } => {
+                TokenKind::SemiColon | TokenKind::End => {
                     self.tokens.next();
                     let trailing_trivia = self.parse_trailing_trivia();
 
@@ -273,19 +260,10 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                Token {
-                    range: _,
-                    kind: TokenKind::Def,
-                    ..
-                }
-                | Token {
-                    range: _,
-                    kind: TokenKind::Let,
-                    ..
-                } => {}
-                token => {
+                TokenKind::Def | TokenKind::Let => {}
+                _ => {
                     self.errors
-                        .report(ParseError::UnexpectedToken(Shared::new(token.clone())));
+                        .report(ParseError::UnexpectedToken(Shared::new((*token).clone())));
                     break;
                 }
             }
@@ -686,102 +664,26 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
 
-        match &*token {
-            Token {
-                range: _,
-                kind: TokenKind::Ident(_),
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::StringLiteral(_),
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::BoolLiteral(_),
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::NumberLiteral(_),
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::None,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Selector(_),
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::InterpolatedString(_),
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Self_,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::LBracket,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Not,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Minus,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Fn,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Until,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Foreach,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::While,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::If,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::LParen,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::Colon,
-                ..
-            }
-            | Token {
-                range: _,
-                kind: TokenKind::LBrace,
-                ..
-            } => self.parse_expr(leading_trivia, false, false),
+        match &token.kind {
+            TokenKind::Ident(_)
+            | TokenKind::StringLiteral(_)
+            | TokenKind::BoolLiteral(_)
+            | TokenKind::NumberLiteral(_)
+            | TokenKind::None
+            | TokenKind::Selector(_)
+            | TokenKind::InterpolatedString(_)
+            | TokenKind::Self_
+            | TokenKind::LBracket
+            | TokenKind::Not
+            | TokenKind::Minus
+            | TokenKind::Fn
+            | TokenKind::Until
+            | TokenKind::Foreach
+            | TokenKind::While
+            | TokenKind::If
+            | TokenKind::LParen
+            | TokenKind::Colon
+            | TokenKind::LBrace => self.parse_expr(leading_trivia, false, false),
             _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
         }
     }
@@ -931,7 +833,14 @@ impl<'a> Parser<'a> {
                 Ok(Shared::new(node))
             }
             _ => {
-                if self.try_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
+                Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
+
+                if let Some(attr_token) = self.tokens.peek()
+                    && attr_token.is_selector()
+                    && Selector::try_from(&***attr_token)
+                        .map_err(ParseError::UnknownSelector)?
+                        .is_attribute_selector()
+                {
                     node.children =
                         vec![self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?];
                 }
@@ -3032,13 +2941,13 @@ mod tests {
     )]
     #[case::selector1(
         vec![
-            Shared::new(token(TokenKind::Selector(".#(2)".into()))),
+            Shared::new(token(TokenKind::Selector(".h1".into()))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Selector,
-                    token: Some(Shared::new(token(TokenKind::Selector(".#(2)".into())))),
+                    token: Some(Shared::new(token(TokenKind::Selector(".h1".into())))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: Vec::new(),
@@ -3165,16 +3074,25 @@ mod tests {
     )]
     #[case::selector4(
         vec![
-            Shared::new(token(TokenKind::Selector(".list.checked".into()))),
+            Shared::new(token(TokenKind::Selector(".list".into()))),
+            Shared::new(token(TokenKind::Selector(".checked".into()))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Selector,
-                    token: Some(Shared::new(token(TokenKind::Selector(".list.checked".into())))),
+                    token: Some(Shared::new(token(TokenKind::Selector(".list".into())))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
-                    children: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".checked".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        })
+                    ],
                 }),
             ],
             ErrorReporter::default()
@@ -6671,6 +6589,41 @@ mod tests {
                 }),
             ],
             ErrorReporter::default()
+        )
+    )]
+    #[case::selector_existing_and_non_existing(
+        vec![
+            Shared::new(token(TokenKind::Selector(".h".into()))),
+            Shared::new(token(TokenKind::Selector(".value".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Selector,
+                    token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".value".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
+        )
+    )]
+    #[case::selector_non_existing(
+        vec![
+            Shared::new(token(TokenKind::Selector(".notfound".into()))),
+        ],
+        (
+            vec![],
+            ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected, ParseError::UnknownSelector(selector::UnknownSelector(token(TokenKind::Selector(".notfound".into()))))], 100)
         )
     )]
     fn test_parse(#[case] input: Vec<Shared<Token>>, #[case] expected: (Vec<Shared<Node>>, ErrorReporter)) {

@@ -2,6 +2,7 @@ use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
+use crate::selector::Selector;
 use crate::{Ident, Shared};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
@@ -9,7 +10,7 @@ use std::iter::Peekable;
 
 use super::constants;
 use super::error::ParseError;
-use super::node::{AccessTarget, Args, Branches, Expr, Literal, Node, Selector};
+use super::node::{AccessTarget, Args, Branches, Expr, Literal, Node};
 use super::{Program, TokenId};
 
 type IfExpr = (Option<Shared<Node>>, Shared<Node>);
@@ -467,6 +468,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if let TokenKind::Selector(selector) = &selector_token.kind
             && selector.len() > 1
         {
+            if !Selector::try_from(&*selector_token)
+                .map_err(ParseError::UnknownSelector)?
+                .is_attribute_selector()
+            {
+                return Err(ParseError::UnexpectedToken((*selector_token).clone()));
+            }
+
             let attribute_name = &selector[1..]; // Skip the leading '.'
             let attr_literal_token_id = self.token_arena.alloc(Shared::clone(&selector_token));
             let attr_literal = Shared::new(Node {
@@ -828,7 +836,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }
                         None => {
                             return Err(ParseError::ExpectedClosingBracket(Token {
-                                range: original_token.range.clone(),
+                                range: original_token.range,
                                 kind: TokenKind::Eof,
                                 module_id: self.module_id,
                             }));
@@ -856,7 +864,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 None => {
                     return Err(ParseError::ExpectedClosingBracket(Token {
-                        range: original_token.range.clone(),
+                        range: original_token.range,
                         kind: TokenKind::Eof,
                         module_id: self.module_id,
                     }));
@@ -1585,6 +1593,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             // Parse the base selector recursively
             let base_node = self.parse_selector_direct(Shared::clone(&token))?;
 
+            if !Selector::try_from(&*attr_token)
+                .map_err(ParseError::UnknownSelector)?
+                .is_attribute_selector()
+            {
+                return Err(ParseError::UnexpectedToken((*attr_token).clone()));
+            }
+
             // Create the attribute string literal
             let attr_literal = Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(&token)),
@@ -1617,7 +1632,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }))
                 }
             } else {
-                let selector = Selector::try_from(&*token)?;
+                let selector = Selector::try_from(&*token).map_err(ParseError::UnknownSelector)?;
 
                 Ok(Shared::new(Node {
                     token_id: self.token_arena.alloc(Shared::clone(&token)),
@@ -1718,7 +1733,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             } // Consume and return.
             // Token found but does not match expected kinds.
             Some(token) => Err(ParseError::UnexpectedToken(Token {
-                range: token.range.clone(),
+                range: token.range,
                 kind: token.kind.clone(),
                 module_id: token.module_id,
             })),
@@ -1734,7 +1749,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Module, ast::node::MatchArm, range::Range};
+    use crate::{Module, ast::node::MatchArm, range::Range, selector};
 
     use super::*;
     use rstest::rstest;
@@ -1966,7 +1981,7 @@ mod tests {
             token(TokenKind::Selector(SmolStr::new("inline_code"))),
             token(TokenKind::Eof)
         ],
-        Err(ParseError::UnknownSelector(token(TokenKind::Selector(SmolStr::new("inline_code"))))))]
+        Err(ParseError::UnknownSelector(selector::UnknownSelector::new(token(TokenKind::Selector(SmolStr::new("inline_code")))))))]
     #[case::def1(
         vec![
             token(TokenKind::Def),
@@ -3952,10 +3967,10 @@ mod tests {
                             token(TokenKind::Eof)
                         ],
                         Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
-    #[case::attr_h_text(
+    #[case::attr_h_value(
         vec![
             token(TokenKind::Selector(".h".into())),
-            token(TokenKind::Selector(".text".into())),
+            token(TokenKind::Selector(".value".into())),
         ],
         Ok(vec![
             Shared::new(Node {
@@ -3968,7 +3983,7 @@ mod tests {
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("text".to_owned()))),
+                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
                         }),
 
                     ],
@@ -5529,7 +5544,7 @@ mod tests {
     #[case::self_with_attr(
                     vec![
                         token(TokenKind::Self_),
-                        token(TokenKind::Selector(SmolStr::new(".field"))),
+                        token(TokenKind::Selector(SmolStr::new(".value"))),
                         token(TokenKind::Eof)
                     ],
                     Ok(vec![
@@ -5544,7 +5559,7 @@ mod tests {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("field".to_owned()))),
+                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
                                     }),
                                 ],
                             )),
@@ -5837,10 +5852,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case::h_text(vec![".h", ".text"], "h", "text")]
-    #[case::h1_text(vec![".h1", ".text"], "h1", "text")]
-    #[case::code_html(vec![".code", ".html"], "code", "html")]
-    #[case::text_markdown(vec![".text", ".markdown"], "text", "markdown")]
+    #[case::h_value(vec![".h", ".value"], "h", "value")]
+    #[case::h1_value(vec![".h1", ".value"], "h1", "value")]
+    #[case::code_lang(vec![".code", ".lang"], "code", "lang")]
+    #[case::text_value(vec![".text", ".value"], "text", "value")]
     fn test_parse_selector_with_attribute(
         #[case] selectors: Vec<&str>,
         #[case] base_selector: &str,

@@ -114,8 +114,14 @@ pub enum TokenKind {
 }
 
 impl Token {
+    #[inline(always)]
     pub fn is_eof(&self) -> bool {
         matches!(self.kind, TokenKind::Eof)
+    }
+
+    #[inline(always)]
+    pub fn is_selector(&self) -> bool {
+        matches!(self.kind, TokenKind::Selector(_))
     }
 }
 
