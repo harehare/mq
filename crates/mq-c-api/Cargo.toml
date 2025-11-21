@@ -1,18 +1,19 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "C API for integrating mq into C applications"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-c-api"
-repository.workspace = true
-version.workspace = true
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [dependencies]
 libc = "0.2"
-mq-lang.workspace = true
-mq-markdown.workspace = true
+mq-lang = {path = "../mq-lang", version = "0.5.1"}
+mq-markdown = {path = "../mq-markdown", version = "0.5.1"}
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

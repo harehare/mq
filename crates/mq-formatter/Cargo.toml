@@ -1,17 +1,17 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "Code formatter for mq query language"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-formatter"
-repository.workspace = true
-version.workspace = true
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [dependencies]
-mq-lang = {workspace = true, features = ["cst"]}
-rustc-hash.workspace = true
+mq-lang = {path = "../mq-lang", version = "0.5.1", features = ["cst"]}
+rustc-hash = "2.1.1"
 
 [dev-dependencies]
-rstest.workspace = true
+rstest = "0.26.1"

@@ -1,19 +1,19 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "Test utilities and helpers for mq"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-test"
 publish = false
-repository.workspace = true
-version.workspace = true
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [lib]
 bench = false
 doctest = false
 
 [dependencies]
-proptest.workspace = true
+proptest = "1.9"
 scopeguard = "1.2.0"

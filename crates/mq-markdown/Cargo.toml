@@ -1,25 +1,25 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "Markdown parsing and manipulation utilities for mq"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-markdown"
-repository.workspace = true
-version.workspace = true
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [dependencies]
 ego-tree = {version = "0.10.0", optional = true}
-itertools.workspace = true
+itertools = "0.14.0"
 markdown = "1.0.0"
-miette.workspace = true
-rustc-hash.workspace = true
+miette = {version = "7.6.0"}
+rustc-hash = "2.1.1"
 scraper = {version = "0.24.0", optional = true}
-serde = {workspace = true, features = ["derive"], optional = true}
-serde_json = {workspace = true, optional = true}
+serde = {version = "1.0", features = ["derive"], optional = true}
+serde_json = {version = "1.0", optional = true}
 serde_yaml = {version = "0.9", optional = true}
-smol_str.workspace = true
+smol_str = "0.3.4"
 
 [dev-dependencies]
 rstest = "0.26.1"

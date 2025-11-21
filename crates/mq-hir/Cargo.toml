@@ -1,23 +1,23 @@
 [package]
-categories.workspace = true
+categories = ["command-line-utilities", "text-processing"]
 description = "High-level Internal Representation (HIR) for mq query language"
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license.workspace = true
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-hir"
-repository.workspace = true
-version.workspace = true
+repository = "https://github.com/harehare/mq"
+version = "0.5.1"
 
 [dependencies]
-itertools.workspace = true
-mq-lang = {workspace = true, features = ["cst"]}
-rustc-hash.workspace = true
+itertools = "0.14.0"
+mq-lang = {path = "../mq-lang", version = "0.5.1", features = ["cst"]}
+rustc-hash = "2.1.1"
 slotmap = "1.0.7"
-smol_str.workspace = true
+smol_str = "0.3.4"
 strsim = "0.11.1"
-thiserror.workspace = true
-url.workspace = true
+thiserror = "2.0.17"
+url = "2.5.7"
 
 [dev-dependencies]
-rstest.workspace = true
+rstest = "0.26.1"
