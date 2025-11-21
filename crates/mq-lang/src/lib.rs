@@ -52,6 +52,7 @@ mod module;
 mod number;
 mod optimizer;
 mod range;
+mod selector;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
@@ -88,6 +89,7 @@ pub use module::{
 };
 pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
+pub use selector::{AttrKind, Selector};
 
 pub type DefaultEngine = Engine<LocalFsModuleResolver>;
 pub type DefaultModuleLoader = ModuleLoader<LocalFsModuleResolver>;

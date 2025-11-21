@@ -55,9 +55,9 @@ impl Trivia {
 
     pub fn range(&self) -> Range {
         match self {
-            Trivia::Comment(token) => token.range.clone(),
-            Trivia::Whitespace(token) => token.range.clone(),
-            Trivia::Tab(token) => token.range.clone(),
+            Trivia::Comment(token) => token.range,
+            Trivia::Whitespace(token) => token.range,
+            Trivia::Tab(token) => token.range,
             _ => Range::default(),
         }
     }
@@ -160,7 +160,7 @@ impl Node {
     }
 
     pub fn range(&self) -> Range {
-        self.token.as_ref().map(|token| token.range.clone()).unwrap_or_default()
+        self.token.as_ref().map(|token| token.range).unwrap_or_default()
     }
 
     pub fn node_range(&self) -> Range {
@@ -168,11 +168,7 @@ impl Node {
             self.range()
         } else {
             let start = self.range().start;
-            let end = self
-                .children
-                .last()
-                .map(|child| child.range().end)
-                .unwrap_or(start.clone());
+            let end = self.children.last().map(|child| child.range().end).unwrap_or(start);
             Range { start, end }
         }
     }

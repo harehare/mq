@@ -2,8 +2,12 @@ use miette::{Diagnostic, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    Module, ModuleLoader, ModuleResolver, ast::error::ParseError, eval::error::EvalError, lexer::error::LexerError,
-    module, module::error::ModuleError,
+    Module, ModuleLoader, ModuleResolver,
+    ast::error::ParseError,
+    eval::error::EvalError,
+    lexer::error::LexerError,
+    module::{self, error::ModuleError},
+    selector,
 };
 
 #[allow(clippy::useless_conversion)]
@@ -49,7 +53,7 @@ impl Error {
                 ParseError::ExpectedClosingParen(token) => Some(token),
                 ParseError::ExpectedClosingBrace(token) => Some(token),
                 ParseError::ExpectedClosingBracket(token) => Some(token),
-                ParseError::UnknownSelector(token) => Some(token),
+                ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
             },
             InnerError::Eval(err) => match err {
                 EvalError::UserDefined { token, .. } => Some(token),
@@ -84,7 +88,7 @@ impl Error {
                     ParseError::ExpectedClosingParen(token) => Some(token),
                     ParseError::ExpectedClosingBrace(token) => Some(token),
                     ParseError::ExpectedClosingBracket(token) => Some(token),
-                    ParseError::UnknownSelector(token) => Some(token),
+                    ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
                 },
                 ModuleError::InvalidModule => None,
             },

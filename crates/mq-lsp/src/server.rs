@@ -256,7 +256,7 @@ impl Backend {
                     if symbol.source.source_id == Some(*source_id)
                         && let Some(ref text_range) = symbol.source.text_range
                     {
-                        range_map.insert(text_range.clone(), true);
+                        range_map.insert(text_range, true);
                     }
                 }
 

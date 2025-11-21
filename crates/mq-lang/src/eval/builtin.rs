@@ -2,6 +2,7 @@ use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
 use crate::ident::all_symbols;
 use crate::number::{self, Number};
+use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input};
 use base64::prelude::*;
 use itertools::Itertools;
@@ -3481,21 +3482,21 @@ pub fn eval_builtin(runtime_value: &RuntimeValue, ident: &Ident, args: Args) -> 
     )
 }
 
-pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool {
+pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
     match selector {
-        ast::Selector::Code => node.is_code(None),
-        ast::Selector::InlineCode => node.is_inline_code(),
-        ast::Selector::InlineMath => node.is_inline_math(),
-        ast::Selector::Strong => node.is_strong(),
-        ast::Selector::Emphasis => node.is_emphasis(),
-        ast::Selector::Delete => node.is_delete(),
-        ast::Selector::Link => node.is_link(),
-        ast::Selector::LinkRef => node.is_link_ref(),
-        ast::Selector::Image => node.is_image(),
-        ast::Selector::Heading(depth) => node.is_heading(*depth),
-        ast::Selector::HorizontalRule => node.is_horizontal_rule(),
-        ast::Selector::Blockquote => node.is_blockquote(),
-        ast::Selector::Table(row, column) => match (row, column, node.clone()) {
+        Selector::Code => node.is_code(None),
+        Selector::InlineCode => node.is_inline_code(),
+        Selector::InlineMath => node.is_inline_math(),
+        Selector::Strong => node.is_strong(),
+        Selector::Emphasis => node.is_emphasis(),
+        Selector::Delete => node.is_delete(),
+        Selector::Link => node.is_link(),
+        Selector::LinkRef => node.is_link_ref(),
+        Selector::Image => node.is_image(),
+        Selector::Heading(depth) => node.is_heading(*depth),
+        Selector::HorizontalRule => node.is_horizontal_rule(),
+        Selector::Blockquote => node.is_blockquote(),
+        Selector::Table(row, column) => match (row, column, node.clone()) {
             (
                 Some(row1),
                 Some(column1),
@@ -3514,10 +3515,10 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool
             (None, None, mq_markdown::Node::TableCell(_)) => true,
             _ => false,
         },
-        ast::Selector::Html => node.is_html(),
-        ast::Selector::Footnote => node.is_footnote(),
-        ast::Selector::MdxJsxFlowElement => node.is_mdx_jsx_flow_element(),
-        ast::Selector::List(index, checked) => match (index, node.clone()) {
+        Selector::Html => node.is_html(),
+        Selector::Footnote => node.is_footnote(),
+        Selector::MdxJsxFlowElement => node.is_mdx_jsx_flow_element(),
+        Selector::List(index, checked) => match (index, node.clone()) {
             (
                 Some(index),
                 mq_markdown::Node::List(mq_markdown::List {
@@ -3529,18 +3530,19 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &ast::Selector) -> bool
             (_, mq_markdown::Node::List(mq_markdown::List { .. })) => true,
             _ => false,
         },
-        ast::Selector::MdxJsEsm => node.is_mdx_js_esm(),
-        ast::Selector::Text => node.is_text(),
-        ast::Selector::Toml => node.is_toml(),
-        ast::Selector::Yaml => node.is_yaml(),
-        ast::Selector::Break => node.is_break(),
-        ast::Selector::MdxTextExpression => node.is_mdx_text_expression(),
-        ast::Selector::FootnoteRef => node.is_footnote_ref(),
-        ast::Selector::ImageRef => node.is_image_ref(),
-        ast::Selector::MdxJsxTextElement => node.is_mdx_jsx_text_element(),
-        ast::Selector::Math => node.is_math(),
-        ast::Selector::MdxFlowExpression => node.is_mdx_flow_expression(),
-        ast::Selector::Definition => node.is_definition(),
+        Selector::MdxJsEsm => node.is_mdx_js_esm(),
+        Selector::Text => node.is_text(),
+        Selector::Toml => node.is_toml(),
+        Selector::Yaml => node.is_yaml(),
+        Selector::Break => node.is_break(),
+        Selector::MdxTextExpression => node.is_mdx_text_expression(),
+        Selector::FootnoteRef => node.is_footnote_ref(),
+        Selector::ImageRef => node.is_image_ref(),
+        Selector::MdxJsxTextElement => node.is_mdx_jsx_text_element(),
+        Selector::Math => node.is_math(),
+        Selector::MdxFlowExpression => node.is_mdx_flow_expression(),
+        Selector::Definition => node.is_definition(),
+        Selector::Attr(_) => false, // Attribute selectors don't match nodes directly
     }
 }
 
@@ -3879,168 +3881,168 @@ mod tests {
     #[rstest]
     #[case::code(
         Node::Code(mq_markdown::Code { value: "test".into(), lang: Some("rust".into()), fence: true, meta: None, position: None }),
-        ast::Selector::Code,
+        Selector::Code,
         true
     )]
     #[case::inline_code(
         Node::CodeInline(mq_markdown::CodeInline { value: "test".into(), position: None }),
-        ast::Selector::InlineCode,
+        Selector::InlineCode,
         true
     )]
     #[case::inline_math(
         Node::MathInline(mq_markdown::MathInline { value: "test".into(), position: None }),
-        ast::Selector::InlineMath,
+        Selector::InlineMath,
         true
     )]
     #[case::strong(
         Node::Strong(mq_markdown::Strong { values: vec!["test".to_string().into()], position: None }),
-        ast::Selector::Strong,
+        Selector::Strong,
         true
     )]
     #[case::emphasis(
         Node::Emphasis(mq_markdown::Emphasis{ values: vec!["test".to_string().into()], position: None }),
-        ast::Selector::Emphasis,
+        Selector::Emphasis,
         true
     )]
     #[case::delete(
         Node::Delete(mq_markdown::Delete{ values: vec!["test".to_string().into()], position: None }),
-        ast::Selector::Delete,
+        Selector::Delete,
         true
     )]
     #[case::link(
         Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("https://example.com".into()), values: Vec::new(), title: None, position: None }),
-        ast::Selector::Link,
+        Selector::Link,
         true
     )]
     #[case::heading_matching_depth(
         Node::Heading(mq_markdown::Heading { depth: 2, values: vec!["test".to_string().into()], position: None }),
-        ast::Selector::Heading(Some(2)),
+        Selector::Heading(Some(2)),
         true
     )]
     #[case::heading_wrong_depth(
         Node::Heading(mq_markdown::Heading { depth: 2, values: vec!["test".to_string().into()], position: None }),
-        ast::Selector::Heading(Some(3)),
+        Selector::Heading(Some(3)),
         false
     )]
     #[case::table_cell_with_matching_row_col(
         Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
                                                last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
-        ast::Selector::Table(Some(1), Some(2)),
+        Selector::Table(Some(1), Some(2)),
         true
     )]
     #[case::table_cell_with_wrong_row(
         Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
                                                last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
-        ast::Selector::Table(Some(2), Some(2)),
+        Selector::Table(Some(2), Some(2)),
         false
     )]
     #[case::table_cell_with_only_row(
         Node::TableCell(mq_markdown::TableCell { row: 1, column: 2, values: vec!["test".to_string().into()],
                                                last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
-        ast::Selector::Table(Some(1), None),
+        Selector::Table(Some(1), None),
         true
     )]
     #[case::list_with_matching_index_checked(
         Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
-        ast::Selector::List(Some(1), Some(true)),
+        Selector::List(Some(1), Some(true)),
         true
     )]
     #[case::list_with_wrong_index(
         Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
-        ast::Selector::List(Some(2), Some(true)),
+        Selector::List(Some(2), Some(true)),
         false
     )]
     #[case::list_without_index(
         Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
-        ast::Selector::List(None, None),
+        Selector::List(None, None),
         true
     )]
     #[case::text(
         Node::Text(mq_markdown::Text { value: "test".into(), position: None }),
-        ast::Selector::Text,
+        Selector::Text,
         true
     )]
     #[case::html(
         Node::Html(mq_markdown::Html { value: "<div>test</div>".into(), position: None }),
-        ast::Selector::Html,
+        Selector::Html,
         true
     )]
     #[case::yaml(
         Node::Yaml(mq_markdown::Yaml { value: "test".into(), position: None }),
-        ast::Selector::Yaml,
+        Selector::Yaml,
         true
     )]
     #[case::toml(
         Node::Toml(mq_markdown::Toml { value: "test".into(), position: None }),
-        ast::Selector::Toml,
+        Selector::Toml,
         true
     )]
     #[case::break_(
         Node::Break(mq_markdown::Break{position: None}),
-        ast::Selector::Break,
+        Selector::Break,
         true
     )]
     #[case::image(
         Node::Image(mq_markdown::Image { alt: "".to_string(), url: "".to_string(), title: None, position: None }),
-        ast::Selector::Image,
+        Selector::Image,
         true
     )]
     #[case::image_ref(
         Node::ImageRef(mq_markdown::ImageRef{ alt: "".to_string(), ident: "".to_string(), label: None, position: None }),
-        ast::Selector::ImageRef,
+        Selector::ImageRef,
         true
     )]
     #[case::footnote(
         Node::Footnote(mq_markdown::Footnote{ident: "".to_string(), values: vec!["test".to_string().into()], position: None}),
-        ast::Selector::Footnote,
+        Selector::Footnote,
         true
     )]
     #[case::footnote_ref(
         Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "".to_string(), label: None, position: None}),
-        ast::Selector::FootnoteRef,
+        Selector::FootnoteRef,
         true
     )]
     #[case::math(
         Node::Math(mq_markdown::Math { value: "E=mc^2".into(), position: None }),
-        ast::Selector::Math,
+        Selector::Math,
         true
     )]
     #[case::horizontal_rule(
         Node::HorizontalRule(mq_markdown::HorizontalRule{ position: None }),
-        ast::Selector::HorizontalRule,
+        Selector::HorizontalRule,
         true
     )]
     #[case::blockquote(
         Node::Blockquote(mq_markdown::Blockquote{ values: vec!["test".to_string().into()], position: None }),
-        ast::Selector::Blockquote,
+        Selector::Blockquote,
         true
     )]
     #[case::definition(
         Node::Definition(mq_markdown::Definition { ident: "id".to_string(), url: mq_markdown::Url::new("url".into()), label: None, title: None, position: None }),
-        ast::Selector::Definition,
+        Selector::Definition,
         true
     )]
     #[case::mdx_jsx_flow_element(
         Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
-        ast::Selector::MdxJsxFlowElement,
+        Selector::MdxJsxFlowElement,
         true
     )]
     #[case::mdx_flow_expression(
         Node::MdxFlowExpression(mq_markdown::MdxFlowExpression{ value: "value".into(), position: None }),
-        ast::Selector::MdxFlowExpression,
+        Selector::MdxFlowExpression,
         true
     )]
     #[case::mdx_text_expression(
         Node::MdxTextExpression(mq_markdown::MdxTextExpression{ value: "value".into(), position: None }),
-        ast::Selector::MdxTextExpression,
+        Selector::MdxTextExpression,
         true
     )]
     #[case::mdx_js_esm(
         Node::MdxJsEsm(mq_markdown::MdxJsEsm{ value: "value".into(), position: None }),
-        ast::Selector::MdxJsEsm,
+        Selector::MdxJsEsm,
         true
     )]
-    fn test_eval_selector(#[case] node: Node, #[case] selector: ast::Selector, #[case] expected: bool) {
+    fn test_eval_selector(#[case] node: Node, #[case] selector: Selector, #[case] expected: bool) {
         assert_eq!(eval_selector(&node, &selector), expected);
     }
 

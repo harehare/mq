@@ -183,7 +183,7 @@ impl DebuggerHandler {
                         .call_stack
                         .iter()
                         .filter_map(|frame| {
-                            let range = self.engine.token_arena().read().unwrap()[frame.token_id].range.clone();
+                            let range = self.engine.token_arena().read().unwrap()[frame.token_id].range;
 
                             match &*frame.expr {
                                 mq_lang::AstExpr::Call(ident, _) => Some(format!(

@@ -401,18 +401,18 @@ impl MqAdapter {
                                 if let Some(context) = self.current_debug_context.as_ref() {
                                     (
                                         self.get_source_file_name(Some(context.token.module_id)),
-                                        context.token.range.clone(),
+                                        context.token.range,
                                     )
                                 } else {
                                     (
                                         self.get_source_file_name(None),
-                                        self.engine.token_arena().read().unwrap()[frame.token_id].range.clone(),
+                                        self.engine.token_arena().read().unwrap()[frame.token_id].range,
                                     )
                                 }
                             } else {
                                 (
                                     self.get_source_file_name(None),
-                                    self.engine.token_arena().read().unwrap()[frame.token_id].range.clone(),
+                                    self.engine.token_arena().read().unwrap()[frame.token_id].range,
                                 )
                             };
                             types::StackFrame {

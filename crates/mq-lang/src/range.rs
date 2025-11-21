@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub type Span<'a> = LocatedSpan<&'a str, ModuleId>;
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]
+#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]
 pub struct Position {
     pub line: u32,
     pub column: usize,
@@ -26,7 +26,7 @@ impl Position {
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default, Hash)]
+#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default, Hash)]
 pub struct Range {
     pub start: Position,
     pub end: Position,

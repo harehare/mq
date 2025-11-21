@@ -1755,16 +1755,16 @@ impl Node {
         match self {
             Node::Footnote(Footnote { ident, values, .. }) => match attr {
                 "ident" => Some(AttrValue::String(ident.clone())),
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Html(Html { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "value" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Text(Text { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "value" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Code(Code {
@@ -1774,30 +1774,30 @@ impl Node {
                 fence,
                 ..
             }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "value" => Some(AttrValue::String(value.clone())),
                 "lang" => lang.clone().map(AttrValue::String),
                 "meta" => meta.clone().map(AttrValue::String),
                 "fence" => Some(AttrValue::Boolean(*fence)),
                 _ => None,
             },
             Node::CodeInline(CodeInline { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.to_string())),
+                "value" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MathInline(MathInline { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.to_string())),
+                "value" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::Math(Math { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "value" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Yaml(Yaml { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "value" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Toml(Toml { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.clone())),
+                "value" => Some(AttrValue::String(value.clone())),
                 _ => None,
             },
             Node::Image(Image { alt, url, title, .. }) => match attr {
@@ -1815,7 +1815,7 @@ impl Node {
             Node::Link(Link { url, title, values, .. }) => match attr {
                 "url" => Some(AttrValue::String(url.as_str().to_string())),
                 "title" => title.as_ref().map(|t| AttrValue::String(t.to_value())),
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
@@ -1844,7 +1844,7 @@ impl Node {
             },
             Node::Heading(Heading { depth, values, .. }) => match attr {
                 "depth" | "level" => Some(AttrValue::Integer(*depth as i64)),
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
@@ -1860,7 +1860,7 @@ impl Node {
                 "level" => Some(AttrValue::Integer(*level as i64)),
                 "ordered" => Some(AttrValue::Boolean(*ordered)),
                 "checked" => checked.map(AttrValue::Boolean),
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
@@ -1876,7 +1876,7 @@ impl Node {
                 "row" => Some(AttrValue::Integer(*row as i64)),
                 "last_cell_in_row" => Some(AttrValue::Boolean(*last_cell_in_row)),
                 "last_cell_of_in_table" => Some(AttrValue::Boolean(*last_cell_of_in_table)),
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
@@ -1887,15 +1887,15 @@ impl Node {
                 _ => None,
             },
             Node::MdxFlowExpression(MdxFlowExpression { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.to_string())),
+                "value" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxTextExpression(MdxTextExpression { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.to_string())),
+                "value" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxJsEsm(MdxJsEsm { value, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(value.to_string())),
+                "value" => Some(AttrValue::String(value.to_string())),
                 _ => None,
             },
             Node::MdxJsxFlowElement(MdxJsxFlowElement { name, .. }) => match attr {
@@ -1907,7 +1907,7 @@ impl Node {
                 _ => None,
             },
             Node::Strong(Strong { values, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(values_to_string(
+                "value" => Some(AttrValue::String(values_to_string(
                     values.as_ref(),
                     &RenderOptions::default(),
                 ))),
@@ -1915,27 +1915,27 @@ impl Node {
                 _ => None,
             },
             Node::Blockquote(Blockquote { values, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Delete(Delete { values, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Emphasis(Emphasis { values, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::TableRow(TableRow { values, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
             Node::Fragment(Fragment { values, .. }) => match attr {
-                "value" | "text" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
+                "value" => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 "values" | "children" | "cn" => Some(AttrValue::Array(values.clone())),
                 _ => None,
             },
@@ -1954,18 +1954,16 @@ impl Node {
                     f.ident = value_str;
                 }
             }
-            Node::Html(h) => match attr {
-                "value" | "text" => {
+            Node::Html(h) => {
+                if attr == "value" {
                     h.value = value_str;
                 }
-                _ => (),
-            },
-            Node::Text(t) => match attr {
-                "value" | "text" => {
+            }
+            Node::Text(t) => {
+                if attr == "value" {
                     t.value = value_str;
                 }
-                _ => (),
-            },
+            }
             Node::Code(c) => match attr {
                 "value" => {
                     c.value = value_str;
@@ -1984,36 +1982,31 @@ impl Node {
                 }
                 _ => (),
             },
-            Node::CodeInline(ci) => match attr {
-                "value" | "text" => {
+            Node::CodeInline(ci) => {
+                if attr == "value" {
                     ci.value = value_str.into();
                 }
-                _ => (),
-            },
-            Node::MathInline(mi) => match attr {
-                "value" | "text" => {
+            }
+            Node::MathInline(mi) => {
+                if attr == "value" {
                     mi.value = value_str.into();
                 }
-                _ => (),
-            },
-            Node::Math(m) => match attr {
-                "value" | "text" => {
+            }
+            Node::Math(m) => {
+                if attr == "value" {
                     m.value = value_str;
                 }
-                _ => (),
-            },
-            Node::Yaml(y) => match attr {
-                "value" | "text" => {
+            }
+            Node::Yaml(y) => {
+                if attr == "value" {
                     y.value = value_str;
                 }
-                _ => (),
-            },
-            Node::Toml(t) => match attr {
-                "value" | "text" => {
+            }
+            Node::Toml(t) => {
+                if attr == "value" {
                     t.value = value_str;
                 }
-                _ => (),
-            },
+            }
             Node::Image(i) => match attr {
                 "alt" => {
                     i.alt = value_str;
@@ -2169,24 +2162,21 @@ impl Node {
                         .collect();
                 }
             }
-            Node::MdxFlowExpression(m) => match attr {
-                "value" | "text" => {
+            Node::MdxFlowExpression(m) => {
+                if attr == "value" {
                     m.value = value_str.into();
                 }
-                _ => (),
-            },
-            Node::MdxTextExpression(m) => match attr {
-                "value" | "text" => {
+            }
+            Node::MdxTextExpression(m) => {
+                if attr == "value" {
                     m.value = value_str.into();
                 }
-                _ => (),
-            },
-            Node::MdxJsEsm(m) => match attr {
-                "value" | "text" => {
+            }
+            Node::MdxJsEsm(m) => {
+                if attr == "value" {
                     m.value = value_str.into();
                 }
-                _ => (),
-            },
+            }
             Node::MdxJsxFlowElement(m) => {
                 if attr == "name" {
                     m.name = if value_str.is_empty() { None } else { Some(value_str) };

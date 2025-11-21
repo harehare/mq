@@ -25,7 +25,7 @@ pub fn response(
                 .references(symbol_id)
                 .iter()
                 .filter_map(|(_, symbol)| {
-                    symbol.source.text_range.clone().and_then(|text_range| {
+                    symbol.source.text_range.and_then(|text_range| {
                         symbol.source.source_id.and_then(|id| {
                             source_map.get_by_right(&id).map(|url| Location {
                                 uri: lsp_types::Uri::from_str(url).unwrap(),

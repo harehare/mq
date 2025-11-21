@@ -18,12 +18,11 @@ Once you've selected a node, you can access its attributes using dot notation. T
 
 ### Common Attributes
 
-#### `text` or `value`
+#### `value`
 
-Most nodes support `text` or `value` to get the text content:
+Most nodes support `value` to get the text content:
 
 ```mq
-.h.text        # Gets the text of headings
 .code.value    # Gets the code content
 ```
 
@@ -31,18 +30,18 @@ Most nodes support `text` or `value` to get the text content:
 
 Heading nodes support the following attributes:
 
-| Attribute        | Type    | Description                     | Example    |
-| ---------------- | ------- | ------------------------------- | ---------- |
-| `depth`, `level` | Integer | The heading level (1-6)         | `.h.level` |
-| `text`, `value`  | String  | The text content of the heading | `.h.text`  |
+| Attribute        | Type    | Description              | Example    |
+| ---------------- | ------- | ------------------------ | ---------- |
+| `depth`, `level` | Integer | The heading level (1-6)  | `.h.level` |
+| `value`          | String  | The value of the heading | `.h.value` |
 
 Example:
 
 ```mq
 # Input: # Hello World
 
-.h.level        # Returns: 1
-.h.text         # Returns: "Hello World"
+.h.level # Returns: 1
+.h.value # Returns: "Hello World"
 ```
 
 ### Code Block Attributes
@@ -52,7 +51,7 @@ Code block nodes support the following attributes:
 | Attribute          | Type    | Description                             | Example       |
 | ------------------ | ------- | --------------------------------------- | ------------- |
 | `lang`, `language` | String  | The language of the code block          | `.code.lang`  |
-| `value`, `text`    | String  | The code content                        | `.code.value` |
+| `value`            | String  | The code content                        | `.code.value` |
 | `meta`             | String  | Metadata associated with the code block | `.code.meta`  |
 | `fence`            | Boolean | Whether the code block is fenced        | `.code.fence` |
 
@@ -71,11 +70,11 @@ Example:
 
 Link nodes support the following attributes:
 
-| Attribute       | Type   | Description           | Example       |
-| --------------- | ------ | --------------------- | ------------- |
-| `url`           | String | The URL of the link   | `.link.url`   |
-| `title`         | String | The title of the link | `.link.title` |
-| `text`, `value` | String | The link text         | `.link.text`  |
+| Attribute | Type   | Description           | Example       |
+| --------- | ------ | --------------------- | ------------- |
+| `url`     | String | The URL of the link   | `.link.url`   |
+| `title`   | String | The title of the link | `.link.title` |
+| `value`   | String | The link value        | `.link.value` |
 
 Example:
 
@@ -84,7 +83,7 @@ Example:
 
 .link.url       # Returns: "https://example.com"
 .link.title     # Returns: "Example Site"
-.link.text      # Returns: "Example"
+.link.value     # Returns: "Example"
 ```
 
 ### Image Attributes
@@ -111,13 +110,13 @@ Example:
 
 List nodes support the following attributes:
 
-| Attribute       | Type    | Description                        | Example         |
-| --------------- | ------- | ---------------------------------- | --------------- |
-| `index`         | Integer | The index of the list item         | `.list.index`   |
-| `level`         | Integer | The nesting level of the list item | `.list.level`   |
-| `ordered`       | Boolean | Whether the list is ordered        | `.list.ordered` |
-| `checked`       | Boolean | The checked state (for task lists) | `.list.checked` |
-| `text`, `value` | String  | The text content of the list item  | `.list.text`    |
+| Attribute | Type    | Description                        | Example         |
+| --------- | ------- | ---------------------------------- | --------------- |
+| `index`   | Integer | The index of the list item         | `.list.index`   |
+| `level`   | Integer | The nesting level of the list item | `.list.level`   |
+| `ordered` | Boolean | Whether the list is ordered        | `.list.ordered` |
+| `checked` | Boolean | The checked state (for task lists) | `.list.checked` |
+| `value`   | String  | The text content of the list item  | `.list.value`   |
 
 ### Table Cell Attributes
 
@@ -129,7 +128,7 @@ Table cell nodes support the following attributes:
 | `column`                | Integer | The column number of the cell              | `.[0][0].column`                |
 | `last_cell_in_row`      | Boolean | Whether this is the last cell in the row   | `.[0][0].last_cell_in_row`      |
 | `last_cell_of_in_table` | Boolean | Whether this is the last cell in the table | `.[0][0].last_cell_of_in_table` |
-| `text`, `value`         | String  | The text content of the cell               | `.[0][0].text`                  |
+| `value`                 | String  | The text content of the cell               | `.[0][0].value`                 |
 
 ### Reference Nodes Attributes
 
@@ -147,18 +146,18 @@ Reference nodes (link references, image references, footnotes) support:
 
 MDX nodes support the following attributes:
 
-| Attribute       | Type   | Description                 | Example                      |
-| --------------- | ------ | --------------------------- | ---------------------------- |
-| `name`          | String | The name of the MDX element | `.mdx_jsx_flow_element.name` |
-| `text`, `value` | String | The content of the MDX node | `.mdx_flow_expression.value` |
+| Attribute | Type   | Description                 | Example                      |
+| --------- | ------ | --------------------------- | ---------------------------- |
+| `name`    | String | The name of the MDX element | `.mdx_jsx_flow_element.name` |
+| `value`   | String | The content of the MDX node | `.mdx_flow_expression.value` |
 
 ### Text Nodes Attributes
 
 Text, HTML, YAML, TOML, Math nodes support:
 
-| Attribute       | Type   | Description      | Example       |
-| --------------- | ------ | ---------------- | ------------- |
-| `text`, `value` | String | The text content | `.text.value` |
+| Attribute | Type   | Description      | Example       |
+| --------- | ------ | ---------------- | ------------- |
+| `value`   | String | The text content | `.text.value` |
 
 ## Combining Selectors with Functions
 

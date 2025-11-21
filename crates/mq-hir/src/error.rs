@@ -107,10 +107,8 @@ impl Hir {
                 (
                     e.to_string(),
                     match e {
-                        HirError::UnresolvedSymbol { symbol, .. } => {
-                            symbol.source.text_range.clone().unwrap_or_default()
-                        }
-                        HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.clone().unwrap_or_default(),
+                        HirError::UnresolvedSymbol { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
+                        HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
                     },
                 )
             })
@@ -124,7 +122,7 @@ impl Hir {
                 (
                     w.to_string(),
                     match w {
-                        HirWarning::UnreachableCode { symbol } => symbol.source.text_range.clone().unwrap_or_default(),
+                        HirWarning::UnreachableCode { symbol } => symbol.source.text_range.unwrap_or_default(),
                     },
                 )
             })
