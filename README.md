@@ -305,6 +305,15 @@ mq --list
 
 This makes it easy to add your own tools and workflows to `mq` without modifying the core binary.
 
+#### External Tools
+
+The following external tools are available to extend mq's functionality:
+
+- [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants
+- [mq-view](https://github.com/harehare/mq-view) - viewer for Markdown content
+- [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query
+- [mq-lint](https://github.com/harehare/mq-lint) - Linter for markdown files
+
 ## Support
 
 - 🐛 [Report bugs](https://github.com/harehare/mq/issues)
