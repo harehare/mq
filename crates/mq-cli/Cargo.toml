@@ -11,6 +11,10 @@ readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.2"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+pkg-fmt = "bin"
+
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
 default = ["std", "use_mimalloc"]
