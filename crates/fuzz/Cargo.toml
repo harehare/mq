@@ -2,7 +2,7 @@
 edition = "2024"
 name = "mq-lang-fuzz"
 publish = false
-version = "0.3.0"
+version = "0.5.2"
 
 [package.metadata]
 cargo-fuzz = true
