@@ -1,4 +1,5 @@
 [package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
 description = "Read-Eval-Print Loop (REPL) for mq query language"
 edition = "2024"
@@ -6,6 +7,7 @@ homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
 license = "MIT"
 name = "mq-repl"
+readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.1"
 

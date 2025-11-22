@@ -1,31 +1,62 @@
-# mq-dap
+<h1 align="center">mq-dap</h1>
 
 Debug Adapter Protocol implementation for mq.
 
-## Overview
-
-`mq-dap` provides a Debug Adapter Protocol (DAP) server for the [mq](https://github.com/harehare/mq) query language, enabling debugging support in editors and IDEs that support DAP.
-
-## Features
-
-- **Standard DAP Implementation**: Compatible with any editor or IDE that supports the Debug Adapter Protocol
-- **Breakpoint Support**: Set and manage breakpoints in mq queries
-- **Step Debugging**: Step through query execution line by line
-- **Variable Inspection**: Inspect variables and intermediate values during execution
-- **Call Stack**: View the call stack during debugging sessions
-
 ## Usage
 
-The DAP server is typically started by an editor or IDE that supports DAP. You can also start it manually for testing:
+### Command Line
+
+Start the DAP server (typically done automatically by your editor):
 
 ```bash
-# Start the DAP server (typically done by your editor)
-mq-dap
+# Start the DAP server
+mq-dbg
+
+# Debug a specific query file
+mq-dbg query.mq input.md
 ```
 
-## Editor Integration
+### Debugging Features
 
-To use `mq-dap` with your editor, configure your DAP client to launch the `mq-dap` binary. The specific configuration depends on your editor or IDE.
+Once connected to a DAP client:
+
+1. **Set Breakpoints**: Click in the gutter or use your editor's breakpoint command
+2. **Start Debugging**: Launch the debugger with your query file
+3. **Step Through Code**: Use step over, step in, and step out commands
+4. **Inspect Variables**: Hover over variables or view them in the variables pane
+5. **View Call Stack**: See the current execution stack in the call stack pane
+
+### Example Debug Session
+
+```sh
+# Create a query file
+echo '.h | let y = to_text() | breakpoint() | y' > query.mq
+
+# Start debugging
+mq-dbg query.mq input.md
+```
+
+## Development
+
+### Building from Source
+
+```sh
+git clone https://github.com/harehare/mq
+cd mq
+cargo build --release -p mq-dap
+```
+
+### Running Tests
+
+```sh
+cargo test -p mq-dap
+```
+
+## Support
+
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
+- 💡 [Request features](https://github.com/harehare/mq/issues)
+- 📖 [Read the documentation](https://mqlang.org/book/)
 
 ## License
 

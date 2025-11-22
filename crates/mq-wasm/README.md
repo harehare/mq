@@ -1,4 +1,4 @@
-# mq-wasm
+<h1 align="center">mq-wasm</h1>
 
 WebAssembly bindings for mq Markdown processing.
 
@@ -26,6 +26,13 @@ Try mq in your browser at the [Online Playground](https://mqlang.org/playground)
 ```bash
 wasm-pack build --target web
 ```
+
+## Support
+
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
+- 💡 [Request features](https://github.com/harehare/mq/issues)
+- 📖 [Read the documentation](https://mqlang.org/book/)
+- 🎮 [Try the Playground](https://mqlang.org/playground)
 
 ## License
 
