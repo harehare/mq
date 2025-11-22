@@ -19,6 +19,7 @@
 | `coalesce` | Returns the first non-None value from the two provided arguments. | `value1`, `value2` | coalesce(value1, value2) |
 | `compact` | Removes None values from the given array. | `array` | compact(array) |
 | `contains` |  Checks if string contains a substring | `haystack`, `needle` | contains(haystack, needle) |
+| `count_by` |  Returns the count of elements in the array that satisfy the provided function. | `arr`, `f` | count_by(arr, f) |
 | `debug` |  Prints the debug information of the given value. | `msg` | debug(msg) |
 | `decrease_header_level` | Decreases the level of a markdown heading node by one, down to a minimum of 1. | `heading_node` | decrease_header_level(heading_node) |
 | `del` | Deletes the element at the specified index in the array or string. | `array_or_string`, `index` | del(array_or_string, index) |
@@ -34,6 +35,7 @@
 | `filter` |  Filters the elements of an array based on a provided callback function. | `v`, `f` | filter(v, f) |
 | `find_index` |  Returns the index of the first element in an array that satisfies the provided function. | `arr`, `f` | find_index(arr, f) |
 | `first` |  Returns the first element of an array | `arr` | first(arr) |
+| `flat_map` |  Applies a function to each element and flattens the result into a single array | `v`, `f` | flat_map(v, f) |
 | `flatten` | Flattens a nested array into a single level array. | `array` | flatten(array) |
 | `floor` | Rounds the given number down to the nearest integer. | `number` | floor(number) |
 | `fold` |  Reduces an array to a single value by applying a function, starting from an initial value. | `arr`, `init`, `f` | fold(arr, init, f) |

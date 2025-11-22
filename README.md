@@ -152,18 +152,15 @@ Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 Commands:
   repl  Start a REPL session for interactive query execution
   lsp   Start a language server for mq
-  mcp   Start an MCP server for mq
   fmt   Format mq files based on specified formatting options
   docs  Show functions documentation for the query
   help  Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [QUERY OR FILE]
-  [FILES]...
+  [QUERY OR FILE]  
+  [FILES]...       
 
 Options:
-      --list
-          List all available subcommands (built-in and external)
   -A, --aggregate
           Aggregate all input files/content into a single array
   -f, --from-file
@@ -181,7 +178,7 @@ Options:
       --stream
           Enable streaming mode for processing large files line by line
       --json
-
+          
       --csv
           Include the built-in CSV module
       --fuzzy
@@ -197,7 +194,7 @@ Options:
   -F, --output-format <OUTPUT_FORMAT>
           Set output format [default: markdown] [possible values: markdown, html, text, json, none]
   -U, --update
-          Update the input markdown
+          Update the input markdown (aliases: -i, --in-place, --inplace)
       --unbuffered
           Unbuffered output
       --list-style <LIST_STYLE>
@@ -210,6 +207,8 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
+      --list
+          List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
   -h, --help
