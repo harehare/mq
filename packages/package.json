@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "mq-web": "^0.5.2"
+  }
+}
