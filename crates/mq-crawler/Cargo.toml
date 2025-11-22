@@ -1,7 +1,7 @@
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
-description = "Web crawler for fetching and processing HTML/Markdown content"
+description = "Directory crawler for batch Markdown file processing"
 edition = "2024"
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
