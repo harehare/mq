@@ -6,6 +6,7 @@ homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
 license = "MIT"
 name = "mq-markdown"
+readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.1"
 

@@ -1,49 +1,116 @@
-# mq-lang
+<h1 align="center">mq-lang</h1>
 
-Core language implementation for mq query language.
+Core language implementation for the mq query language - a Markdown processing language with jq-like syntax.
 
-## Overview
+## Installation
 
-`mq-lang` provides a parser and evaluator for the [mq](https://github.com/harehare/mq) query language. It handles parsing, evaluation, and execution of mq queries.
+Add `mq-lang` to your `Cargo.toml`:
 
-## Examples
+```toml
+[dependencies]
+mq-lang = "0.5"
+```
 
-### Basic Evaluation
+For specific features:
+
+```toml
+[dependencies]
+mq-lang = { version = "0.5", features = ["cst", "debugger", "file-io"] }
+```
+
+## Usage
+
+### Basic Query Evaluation
 
 ```rust
-use mq_lang::{DefaultEngine, Value};
+use mq_lang::{DefaultEngine, RuntimeValue};
 use mq_markdown::Markdown;
 
-let code = "add(\"world!\")";
-let input = vec![Value::Markdown(
-    "Hello,".parse::<Markdown>().unwrap()
-)].into_iter();
-let mut engine = DefaultEngine::default();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create an engine
+    let mut engine = DefaultEngine::default();
 
-let result = engine.eval(code, input).unwrap();
-// Result: Value::String("Hello,world!".to_string())
+    // Parse markdown
+    let markdown: Markdown = "# Hello\n\nWorld!".parse()?;
+
+    // Execute a query
+    let input = vec![RuntimeValue::Markdown(markdown)].into_iter();
+    let result = engine.eval(".h | to_text()", input)?;
+
+    println!("{:?}", result); // Output: ["Hello"]
+
+    Ok(())
+}
 ```
 
-### Parsing Code
+### Using Helper Functions
 
 ```rust
-use mq_lang::parse_recovery;
+use mq_lang::{DefaultEngine, parse_markdown_input};
 
-let code = "1 + 2";
-let (cst_nodes, errors) = parse_recovery(code);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut engine = DefaultEngine::default();
 
-assert!(!errors.has_errors());
-assert!(!cst_nodes.is_empty());
+    let markdown = "# Title\n\n- Item 1\n- Item 2";
+    let input = parse_markdown_input(markdown)?;
+
+    // Extract list items
+    let result = engine.eval(".[] | to_text()", input)?;
+    println!("{:?}", result); // Output: ["Item 1", "Item 2"]
+
+    Ok(())
+}
 ```
 
-## Features
+### Processing Different Input Formats
 
-- `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree) to/from JSON format
-- `cst`: Enables Concrete Syntax Tree support for error recovery parsing
-- `debugger`: Enables debugging support (requires `sync` feature)
-- `file-io`: Enables file I/O operations
-- `sync`: Enables thread-safe operations
-- `std`: Enables standard library support (default)
+```rust
+use mq_lang::{DefaultEngine, parse_html_input, parse_mdx_input};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut engine = DefaultEngine::default();
+
+    // Process HTML
+    let html = "<h1>Hello</h1><p>World</p>";
+    let input = parse_html_input(html)?;
+    let result = engine.eval(".h", input)?;
+
+    // Process MDX
+    let mdx = "# Title\n\n<CustomComponent />";
+    let input = parse_mdx_input(mdx)?;
+    let result = engine.eval(".h", input)?;
+
+    Ok(())
+}
+```
+
+## Development
+
+### Building from Source
+
+```bash
+git clone https://github.com/harehare/mq
+cd mq/crates/mq-lang
+cargo build --release
+```
+
+### Running Tests
+
+```bash
+cargo test -p mq-lang
+```
+
+### Running Benchmarks
+
+```bash
+cargo bench -p mq-lang
+```
+
+## Support
+
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
+- 💡 [Request features](https://github.com/harehare/mq/issues)
+- 📖 [Read the documentation](https://mqlang.org/book/)
 
 ## License
 

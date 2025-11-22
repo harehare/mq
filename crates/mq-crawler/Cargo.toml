@@ -1,11 +1,12 @@
 [package]
 categories = ["command-line-utilities", "text-processing"]
-description = "Directory crawler for batch Markdown file processing"
+description = "Web crawler for fetching and processing HTML/Markdown content"
 edition = "2024"
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
 license = "MIT"
 name = "mq-crawler"
+readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.1"
 

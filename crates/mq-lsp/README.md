@@ -1,19 +1,75 @@
-# mq-lsp
+<h1 align="center">mq-lsp</h1>
 
-`mq-lsp` is a Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/). It provides various language features such as syntax highlighting, code completion, go-to-definition, and more.
+Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) query language, providing rich IDE features for mq development.
 
 ## Features
 
-- **Initialization**: Handles the initialization of the LSP server and sets up the server capabilities.
-- **Diagnostics**: Publishes diagnostics information to the client.
-- **Hover**: Provides hover information for symbols.
-- **Completion**: Offers code completion suggestions.
-- **Go To Definition**: Allows navigation to the definition of symbols.
-- **References**: Finds all references to a symbol.
-- **Document Symbols**: Lists all symbols in a document.
-- **Semantic Tokens**: Provides semantic tokens for syntax highlighting.
-- **Formatting**: Formats the document according to the MDQ language formatting rules.
+- 🔍 **Diagnostics**: Real-time syntax and semantic error reporting
+- 💡 **Code Completion**: Intelligent suggestions for selectors, functions, and variables
+- 📖 **Hover Information**: Inline documentation and type information
+- 🎯 **Go To Definition**: Navigate to symbol definitions with a single click
+- 🔗 **Find References**: Locate all usages of a symbol across your workspace
+- 🗂️ **Document Symbols**: Outline view of all symbols in the current file
+- 🎨 **Semantic Tokens**: Enhanced syntax highlighting based on semantic analysis
+- ✨ **Code Formatting**: Automatic code formatting following mq style guidelines
+
+## Installation
+
+### Using with VSCode Extension
+
+The easiest way to use `mq-lsp` is through the VSCode extension:
+
+1. Install the [mq VSCode extension](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
+2. The LSP server is included and configured automatically
+
+### Standalone Installation
+
+#### Using Cargo
+
+```bash
+cargo install mq-lsp
+```
+
+#### From Source
+
+```bash
+git clone https://github.com/harehare/mq
+cd mq/crates/mq-lsp
+cargo build --release
+```
+
+The binary will be available at `target/release/mq-lsp`.
 
 ## Usage
 
-To use this LSP server, you need to integrate it with an LSP client. The server reads from stdin and writes to stdout, making it compatible with various editors and IDEs that support LSP.
+### Running the LSP Server
+
+The LSP server communicates via stdin/stdout following the LSP protocol:
+
+```bash
+mq-lsp
+```
+
+## Development
+
+### Building from Source
+
+```bash
+git clone https://github.com/harehare/mq
+cd mq
+cargo build -p mq-lsp
+```
+
+### Running Tests
+
+```bash
+cargo test -p mq-lsp
+```
+
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
+- 💡 [Request features](https://github.com/harehare/mq/issues)
+- 📖 [Read the documentation](https://mqlang.org/book/)
+
+## License
+
+Licensed under the MIT License.

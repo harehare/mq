@@ -1,4 +1,4 @@
-# mq-web-api
+<h1 align="center">mq-web-api</h1>
 
 Web API server for the mq markdown query language.
 
@@ -108,3 +108,13 @@ curl "http://localhost:8080/api/query/diagnostics?query=invalid%20query"
 - **Structured logging** - JSON and text format logging with tracing
 - **OpenAPI documentation** - Auto-generated API documentation
 - **Database connection pooling** - Efficient database connections with deadpool-libsql
+
+## Support
+
+- 🐛 [Report bugs](https://github.com/harehare/mq/issues)
+- 💡 [Request features](https://github.com/harehare/mq/issues)
+- 📖 [Read the documentation](https://mqlang.org/book/)
+
+## License
+
+Licensed under the MIT License.
