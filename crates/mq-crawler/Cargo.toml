@@ -1,4 +1,5 @@
 [package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
 description = "Web crawler for fetching and processing HTML/Markdown content"
 edition = "2024"
