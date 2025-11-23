@@ -76,7 +76,6 @@
 //!
 //! result = mq.run('.', markdown, options)
 //! ```
-
 pub mod result;
 pub mod value;
 
