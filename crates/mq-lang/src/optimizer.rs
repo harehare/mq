@@ -2393,8 +2393,6 @@ mod proptests {
     use super::*;
     use crate::{Arena, DefaultEngine, SharedCell, strategies};
     use proptest::prelude::*;
-    use strategies::*;
-
     proptest! {
         #[test]
         fn test_optimization_idempotent(
