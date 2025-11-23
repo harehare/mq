@@ -27,6 +27,7 @@ static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> = LazyLock::new(||
 
 /// Maximum number of elements allowed in a generated range
 const MAX_RANGE_SIZE: usize = 1_000_000;
+const MAX_REPEAT_COUNT: usize = 1_000;
 
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
@@ -1215,8 +1216,39 @@ define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
 
 define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+    [RuntimeValue::Array(array), RuntimeValue::Number(n)] | [RuntimeValue::Number(n), RuntimeValue::Array(array)] => {
+        if n.is_int() && n.value() >= 0.0 && n.value() <= MAX_REPEAT_COUNT as f64 {
+            // Integer multiplication within repeat limit: repeat the array
+            repeat(&mut RuntimeValue::Array(std::mem::take(array)), n.value() as usize)
+        } else {
+            // Non-integer, negative, or too large multiplication: multiply each element
+            let result: Result<Vec<RuntimeValue>, Error> = std::mem::take(array)
+                .into_iter()
+                .map(|v| {
+                    let mut args = vec![v, RuntimeValue::Number(*n)];
+                    match args.as_mut_slice() {
+                        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+                        [a, b] => match (to_number(a)?, to_number(b)?) {
+                            (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
+                            (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
+                            _ => Ok(RuntimeValue::Number(0.into())),
+                        },
+                        _ => unreachable!(),
+                    }
+                })
+                .collect();
+            result.map(RuntimeValue::Array)
+        }
+    }
     [v, RuntimeValue::Number(n)] | [RuntimeValue::Number(n), v] => {
-        repeat(v, n.value() as usize)
+        if n.is_int() && n.value() >= 0.0 {
+            repeat(v, n.value() as usize)
+        } else {
+            Err(Error::InvalidTypes(
+                constants::MUL.to_string(),
+                vec![std::mem::take(v), RuntimeValue::Number(*n)],
+            ))
+        }
     }
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
