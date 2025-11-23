@@ -1,22 +1,25 @@
 [package]
-edition.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-license-file.workspace = true
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+categories = ["command-line-utilities", "text-processing"]
+description = "Type checker for mq"
+edition = "2024"
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query"]
+license = "MIT"
 name = "mq-typechecker"
-readme.workspace = true
-repository.workspace = true
-version.workspace = true
+readme = "README.md"
+repository = "https://github.com/harehare/mq"
+version = "0.5.2"
 
 [dependencies]
 itertools.workspace = true
-mq-lang = {workspace = true, features = ["cst"]}
+miette.workspace = true
 mq-hir.workspace = true
+mq-lang = {workspace = true, features = ["cst"]}
 rustc-hash.workspace = true
 slotmap = "1.0.7"
 smol_str.workspace = true
 thiserror.workspace = true
-miette.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
