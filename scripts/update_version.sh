@@ -33,13 +33,13 @@ mq -U --args VERSION $MQ_VERSION '.code | select(contains("docker")) | update(s"
 mq -U --args VERSION $MQ_VERSION '.code | select(contains("docker")) | update(s"$$ docker run --rm ghcr.io/harehare/mq:${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
   && mv INSTALL_DOC.md.tmp $INSTALL_DOC
 
-mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git https://github.com/harehare/mq.git mq-cli")) | gsub("--tag.+", s"--tag v${VERSION}")' $README > README.md.tmp \
+mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git https://github.com/harehare/mq.git mq-run")) | gsub("--tag.+", s"--tag v${VERSION}")' $README > README.md.tmp \
   && mv README.md.tmp $README
 
 mq -U --args VERSION $MQ_VERSION '.code | select(contains("curl -L https://github.com/harehare/mq/releases/download/")) | gsub("v0.4.3", s"v${VERSION}")' $README > README.md.tmp \
   && mv README.md.tmp $README
 
-mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git https://github.com/harehare/mq.git mq-cli")) | gsub("--tag.+", s"--tag v${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
+mq -U --args VERSION $MQ_VERSION '.code | select(contains("cargo install --git https://github.com/harehare/mq.git mq-run")) | gsub("--tag.+", s"--tag v${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \
   && mv INSTALL_DOC.md.tmp $INSTALL_DOC
 
 mq -U --args VERSION $MQ_VERSION '.code | select(contains("https://github.com/harehare/mq/releases/download/")) | gsub("v0.4.0", s"v${VERSION}")' $INSTALL_DOC > INSTALL_DOC.md.tmp \

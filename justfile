@@ -23,14 +23,14 @@ bench-local:
 
 # Build the project in release mode
 build:
-    cargo build --release -p mq-cli --bin mq
-    cargo build --release -p mq-cli --bin mq-dbg --features="debugger"
+    cargo build --release -p mq-run --bin mq
+    cargo build --release -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release -p mq-lsp -p mq-crawler
 
 # Build for a specific target architecture
 build-target target:
-    cargo build --release --target {{target}} -p mq-cli --bin mq
-    cargo build --release --target {{target}} -p mq-cli --bin mq-dbg --features="debugger"
+    cargo build --release --target {{target}} -p mq-run --bin mq
+    cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release --target {{target}} -p mq-lsp -p mq-crawler
 
 # Build benchmarks with codspeed
@@ -75,8 +75,8 @@ fmt:
     cargo fmt --all -- --check
 
 test-mq:
-    cargo run -p mq-cli --bin mq -- -f crates/mq-lang/builtin_tests.mq
-    cargo run -p mq-cli --bin mq -- -f crates/mq-lang/modules/module_tests.mq
+    cargo run -p mq-run --bin mq -- -f crates/mq-lang/builtin_tests.mq
+    cargo run -p mq-run --bin mq -- -f crates/mq-lang/modules/module_tests.mq
 
 test-doc:
     cargo test --doc --workspace

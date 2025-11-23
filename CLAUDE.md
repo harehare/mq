@@ -20,7 +20,7 @@ The mq project follows this main directory structure:
 
 - `/crates` - Contains multiple Rust crates
   - `mq-c-api` - C API for integrating mq functionality into C applications
-  - `mq-cli` - Implementation of the mq command-line interface
+  - `mq-run` - Implementation of the mq command-line interface
   - `mq-crawler` - Tool for crawling directories and collecting Markdown files for batch processing
   - `mq-dap` - Debug Adapter Protocol implementation
   - `mq-formatter` - Code formatter
@@ -146,7 +146,7 @@ Use `just test` to run tests instead of `cargo test`.
 
 ## CLI Tool Coding Rules
 
-- All command-line interface logic must reside in `mq-cli`.
+- All command-line interface logic must reside in `mq-run`.
 - Use `clap` or similar crate for argument parsing.
 - Provide clear, user-friendly error messages using `miette`.
 - Document all commands, flags, and options in code and in the CLI help output.
