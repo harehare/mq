@@ -2391,7 +2391,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use crate::{Arena, DefaultEngine, SharedCell, strategies};
+    use crate::{Arena, DefaultEngine, SharedCell, strategies::*};
     use proptest::prelude::*;
     proptest! {
         #[test]
