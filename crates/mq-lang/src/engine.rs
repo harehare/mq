@@ -326,12 +326,7 @@ mod tests {
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
 
-    use super::*;
-
-    type TempDir = PathBuf;
-    type TempFile = PathBuf;
-
-    fn create_file(name: &str, content: &str) -> (TempDir, TempFile) {
+    fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
         let temp_dir = std::env::temp_dir();
         let temp_file_path = temp_dir.join(name);
         let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
@@ -413,7 +408,7 @@ mod tests {
     #[cfg(feature = "ast-json")]
     #[test]
     fn test_eval_ast() {
-        use crate::{AstExpr, AstLiteral, AstNode};
+        use crate::{AstExpr, AstLiteral, AstNode, Shared};
 
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
@@ -435,6 +430,8 @@ mod tests {
     fn test_engine_thread_usage_with_sync_feature() {
         use std::sync::{Arc, Mutex};
 
+        use crate::Engine;
+
         let engine: Arc<Mutex<Engine>> = Arc::new(Mutex::new(Engine::default()));
         let engine_clone = Arc::clone(&engine);
 
@@ -454,7 +451,7 @@ mod tests {
     #[test]
     fn test_switch_env() {
         use crate::eval::env::Env;
-        use crate::{SharedCell, null_input};
+        use crate::{RuntimeValue, Shared, SharedCell, null_input};
 
         let engine = DefaultEngine::default();
         let env = Shared::new(SharedCell::new(Env::default()));
