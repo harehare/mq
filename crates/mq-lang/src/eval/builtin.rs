@@ -3851,17 +3851,44 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
 
 fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
     match &*value {
-        RuntimeValue::String(s) => Ok(s.repeat(n).into()),
-        node @ RuntimeValue::Markdown(_, _) => node
-            .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(md.value().repeat(n).as_str())))
-            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        RuntimeValue::String(s) => {
+            let total_size = s.len().saturating_mul(n);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "string repeat size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+            Ok(s.repeat(n).into())
+        }
+        node @ RuntimeValue::Markdown(_, _) => {
+            if let Some(md) = node.markdown_node() {
+                let total_size = md.value().len().saturating_mul(n);
+                if total_size > MAX_RANGE_SIZE {
+                    return Err(Error::Runtime(format!(
+                        "markdown repeat size {} exceeds maximum allowed size of {}",
+                        total_size, MAX_RANGE_SIZE
+                    )));
+                }
+                Ok(node.update_markdown_value(md.value().repeat(n).as_str()))
+            } else {
+                Ok(RuntimeValue::NONE)
+            }
+        }
         RuntimeValue::Array(array) => {
             if n == 0 {
                 return Ok(RuntimeValue::EMPTY_ARRAY);
             }
 
-            let mut repeated_array = Vec::with_capacity(array.len() * n);
+            let total_size = array.len().saturating_mul(n);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array repeat size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+
+            let mut repeated_array = Vec::with_capacity(total_size);
             for _ in 0..n {
                 repeated_array.extend_from_slice(array);
             }
@@ -4468,6 +4495,73 @@ mod tests {
         assert!(result.is_ok());
         if let Ok(vec) = result {
             assert_eq!(vec.len(), 26);
+        }
+    }
+
+    #[test]
+    fn test_repeat_size_limit() {
+        // Test that excessively large array repeats are rejected
+        let mut array = RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+        ]);
+        let result = repeat(&mut array, 600_000);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("array repeat size"));
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error for array repeat");
+        }
+
+        // Test that reasonable array repeats still work
+        let mut array = RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+        ]);
+        let result = repeat(&mut array, 10);
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::Array(vec)) = result {
+            assert_eq!(vec.len(), 20);
+        } else {
+            panic!("Expected successful array repeat");
+        }
+
+        // Test that excessively large string repeats are rejected
+        let mut string = RuntimeValue::String("test".to_string());
+        let result = repeat(&mut string, 300_000);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("string repeat size"));
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error for string repeat");
+        }
+
+        // Test that reasonable string repeats still work
+        let mut string = RuntimeValue::String("test".to_string());
+        let result = repeat(&mut string, 10);
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::String(s)) = result {
+            assert_eq!(s.len(), 40);
+        } else {
+            panic!("Expected successful string repeat");
+        }
+
+        // Test edge case at boundary (exactly at limit)
+        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]);
+        let result = repeat(&mut array, 1_000_000);
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::Array(vec)) = result {
+            assert_eq!(vec.len(), 1_000_000);
+        }
+
+        // Test just over the limit
+        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]);
+        let result = repeat(&mut array, 1_000_001);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
         }
     }
 }
