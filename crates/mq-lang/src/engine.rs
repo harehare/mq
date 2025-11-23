@@ -322,9 +322,24 @@ impl<T: ModuleResolver> Engine<T> {
 #[cfg(test)]
 mod tests {
     use crate::DefaultEngine;
+    use scopeguard::defer;
+    use std::io::Write;
+    use std::{fs::File, path::PathBuf};
 
     use super::*;
-    use mq_test::defer;
+
+    type TempDir = PathBuf;
+    type TempFile = PathBuf;
+
+    fn create_file(name: &str, content: &str) -> (TempDir, TempFile) {
+        let temp_dir = std::env::temp_dir();
+        let temp_file_path = temp_dir.join(name);
+        let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+        file.write_all(content.as_bytes())
+            .expect("Failed to write to temp file");
+
+        (temp_dir, temp_file_path)
+    }
 
     #[test]
     fn test_set_paths() {
@@ -352,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_load_module() {
-        let (temp_dir, temp_file_path) = mq_test::create_file("test_module.mq", "def func1(): 42;");
+        let (temp_dir, temp_file_path) = create_file("test_module.mq", "def func1(): 42;");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {
@@ -370,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_error_load_module() {
-        let (temp_dir, temp_file_path) = mq_test::create_file("error.mq", "error");
+        let (temp_dir, temp_file_path) = create_file("error.mq", "error");
         let temp_file_path_clone = temp_file_path.clone();
 
         defer! {

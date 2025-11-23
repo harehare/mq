@@ -19,8 +19,9 @@
 //!
 //! ```rust,no_run
 //! use mq_cli::Cli;
+//! use clap::Parser;
 //!
-//! let cli = Cli::new();
+//! let cli = Cli::parse();
 //! cli.run().expect("CLI execution failed");
 //! ```
 //!

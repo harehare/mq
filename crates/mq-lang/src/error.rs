@@ -294,11 +294,26 @@ impl Diagnostic for Error {
 
 #[cfg(test)]
 mod test {
-    use mq_test::defer;
     use rstest::{fixture, rstest};
+    use scopeguard::defer;
+    use std::io::Write;
+    use std::{fs::File, path::PathBuf};
 
     use super::*;
     use crate::{Arena, LocalFsModuleResolver, Range, Shared, SharedCell, Token, TokenKind, arena::ArenaId};
+
+    type TempDir = PathBuf;
+    type TempFile = PathBuf;
+
+    fn create_file(name: &str, content: &str) -> (TempDir, TempFile) {
+        let temp_dir = std::env::temp_dir();
+        let temp_file_path = temp_dir.join(name);
+        let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+        file.write_all(content.as_bytes())
+            .expect("Failed to write to temp file");
+
+        (temp_dir, temp_file_path)
+    }
 
     #[fixture]
     fn module_loader() -> ModuleLoader {
@@ -481,7 +496,7 @@ mod test {
 
     #[test]
     fn test_from_error_with_module_source() {
-        let (temp_dir, temp_file_path) = mq_test::create_file(
+        let (temp_dir, temp_file_path) = create_file(
             "test_from_error_with_module_source.mq",
             "def func1(): 42; | let val1 = 1",
         );

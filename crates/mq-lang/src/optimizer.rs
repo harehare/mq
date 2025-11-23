@@ -2391,9 +2391,9 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
-    use crate::{Arena, DefaultEngine, SharedCell};
-    use mq_test::strategies::expr::*;
+    use crate::{Arena, DefaultEngine, SharedCell, strategies};
     use proptest::prelude::*;
+    use strategies::*;
 
     proptest! {
         #[test]

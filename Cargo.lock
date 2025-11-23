@@ -2613,11 +2613,11 @@ dependencies = [
  "mq-lsp",
  "mq-markdown",
  "mq-repl",
- "mq-test",
  "rayon",
  "regex-lite",
  "rstest",
  "rustyline",
+ "scopeguard",
  "strum",
  "tokio",
  "url",
@@ -2700,7 +2700,6 @@ dependencies = [
  "itertools 0.14.0",
  "miette",
  "mq-markdown",
- "mq-test",
  "nom 8.0.0",
  "nom_locate",
  "percent-encoding",
@@ -2708,6 +2707,7 @@ dependencies = [
  "regex-lite",
  "rstest",
  "rustc-hash 2.1.1",
+ "scopeguard",
  "serde",
  "serde_json",
  "smallvec",
@@ -2783,19 +2783,11 @@ dependencies = [
  "mq-hir",
  "mq-lang",
  "mq-markdown",
- "mq-test",
  "regex-lite",
  "rstest",
  "rustyline",
- "strum",
-]
-
-[[package]]
-name = "mq-test"
-version = "0.5.2"
-dependencies = [
- "proptest",
  "scopeguard",
+ "strum",
 ]
 
 [[package]]
