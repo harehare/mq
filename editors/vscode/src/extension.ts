@@ -611,10 +611,10 @@ const installServers = async (
     return false;
   }
 
-  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-cli ${
+  const installLspCommand = `cargo install --git https://github.com/harehare/mq.git mq-run ${
     force ? " --force" : ""
   }`;
-  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger" ${
+  const installDapCommand = `cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" ${
     force ? " --force" : ""
   }`;
 

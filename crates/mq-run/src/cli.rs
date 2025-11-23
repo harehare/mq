@@ -1035,7 +1035,7 @@ mod tests {
     #[test]
     fn test_external_command_execution() {
         // Create a temporary directory for testing
-        let temp_dir = std::env::temp_dir().join("mq-cli-test");
+        let temp_dir = std::env::temp_dir().join("mq-run-test");
         let bin_dir = temp_dir.join(".mq").join("bin");
         fs::create_dir_all(&bin_dir).expect("Failed to create test directory");
 

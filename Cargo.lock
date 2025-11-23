@@ -2596,34 +2596,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mq-cli"
-version = "0.5.2"
-dependencies = [
- "assert_cmd",
- "clap",
- "colored 3.0.0",
- "dirs 6.0.0",
- "itertools 0.14.0",
- "miette",
- "mimalloc",
- "mq-dap",
- "mq-formatter",
- "mq-hir",
- "mq-lang",
- "mq-lsp",
- "mq-markdown",
- "mq-repl",
- "rayon",
- "regex-lite",
- "rstest",
- "rustyline",
- "scopeguard",
- "strum",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "mq-crawler"
 version = "0.5.1"
 dependencies = [
@@ -2788,6 +2760,34 @@ dependencies = [
  "rustyline",
  "scopeguard",
  "strum",
+]
+
+[[package]]
+name = "mq-run"
+version = "0.5.2"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "colored 3.0.0",
+ "dirs 6.0.0",
+ "itertools 0.14.0",
+ "miette",
+ "mimalloc",
+ "mq-dap",
+ "mq-formatter",
+ "mq-hir",
+ "mq-lang",
+ "mq-lsp",
+ "mq-markdown",
+ "mq-repl",
+ "rayon",
+ "regex-lite",
+ "rstest",
+ "rustyline",
+ "scopeguard",
+ "strum",
+ "tokio",
+ "url",
 ]
 
 [[package]]

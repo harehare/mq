@@ -69,7 +69,7 @@ export class MqDebugConfigurationProvider
     }
 
     vscode.window.showErrorMessage(
-      'mq-dbg not found in PATH or workspace. Please install it using: cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger"'
+      'mq-dbg not found in PATH or workspace. Please install it using: cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"'
     );
     return undefined;
   }

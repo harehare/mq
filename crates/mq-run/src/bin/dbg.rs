@@ -3,5 +3,5 @@
 use clap::Parser;
 
 fn main() -> miette::Result<()> {
-    mq_cli::Cli::parse().run()
+    mq_run::Cli::parse().run()
 }

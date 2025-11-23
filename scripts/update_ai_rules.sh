@@ -10,4 +10,4 @@ mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("Testing", "tests/**
 mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("Markdown Parser/Utility Coding Rules", "crates/mq-markdown/**/*.rs")' ../.github/copilot-instructions.md > ../.github/instructions/markdown.instructions.md
 mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("Documentation", "**/README.md,docs/**/*.md")' ../.github/copilot-instructions.md > ../.github/instructions/docs.instructions.md
 mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("Rust Crate", "crates/**/*.rs")' ../.github/copilot-instructions.md > ../.github/instructions/rust-crate.instructions.md
-mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("CLI Tool Coding Rules", "crates/mq-cli/**/*.rs")' ../.github/copilot-instructions.md > ../.github/instructions/cli.instructions.md
+mq 'include "ai_rules" | nodes | gen_ai_rules_with_apply_to("CLI Tool Coding Rules", "crates/mq-run/**/*.rs")' ../.github/copilot-instructions.md > ../.github/instructions/cli.instructions.md

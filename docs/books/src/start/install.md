@@ -16,11 +16,11 @@ The installer will:
 ## Cargo
 
 ```sh
-cargo install --git https://github.com/harehare/mq.git mq-cli --tag v0.5.2
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.2
 # Latest Development Version
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq
+$ cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
-$ cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg --features="debugger"
+$ cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 ```
 
 ## Binaries

@@ -23,7 +23,7 @@ The mq project follows this main directory structure:
 
 - `/crates` - Contains multiple Rust crates
   - `mq-c-api` - C API for integrating mq functionality into C applications
-  - `mq-cli` - Implementation of the mq command-line interface
+  - `mq-run` - Implementation of the mq command-line interface
   - `mq-crawler` - Tool for crawling directories and collecting Markdown files for batch processing
   - `mq-formatter` - Code formatter
   - `mq-hir` - High-level Internal Representation (HIR)

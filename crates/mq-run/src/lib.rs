@@ -18,7 +18,7 @@
 //! The CLI is typically used through the `mq` binary, but can be embedded in other applications:
 //!
 //! ```rust,no_run
-//! use mq_cli::Cli;
+//! use mq_run::Cli;
 //! use clap::Parser;
 //!
 //! let cli = Cli::parse();

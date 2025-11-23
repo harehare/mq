@@ -17,7 +17,7 @@ curl -sSL https://mqlang.org/install.sh | bash -s -- --with-debug
 You can do this by building from source:
 
 ```bash
-cargo install --git https://github.com/harehare/mq.git mq-cli --bin mq-dbg
+cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg
 ```
 
 Alternatively, if a prebuilt binary is available for your platform, download it from the [releases page](https://github.com/harehare/mq/releases) and ensure it is in your `PATH`.
