@@ -3946,7 +3946,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         _ => Err(Error::InvalidTypes(
             constants::MUL.to_string(),
-            vec![std::mem::take(value)],
+            vec![std::mem::take(value), RuntimeValue::Number(n.into())],
         )),
     }
 }
