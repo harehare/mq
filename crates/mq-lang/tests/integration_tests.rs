@@ -1559,6 +1559,9 @@ fn engine_with_opt() -> Engine {
     dict.into()
   }].into())
 )]
+#[case::empty_array_iterator_expand("[]*.[]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Number(0.into())].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,

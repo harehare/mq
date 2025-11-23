@@ -1221,7 +1221,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
         (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
-        _ => unreachable!(),
+        _ => Ok(RuntimeValue::Number(0.into())),
     },
     _ => unreachable!(),
 });
