@@ -1,3 +1,61 @@
+//! C API for integrating mq functionality into C applications.
+//!
+//! This crate provides a Foreign Function Interface (FFI) wrapper around the mq language engine,
+//! allowing C and C++ applications to evaluate mq queries against various input formats.
+//!
+//! # Features
+//!
+//! - Create and manage mq engine instances
+//! - Evaluate mq code with markdown, MDX, HTML, or plain text input
+//! - Memory-safe API with proper ownership handling
+//! - Support for multiple input formats: markdown, MDX, HTML, and plain text
+//!
+//! # Basic Usage
+//!
+//! ```c
+//! // Create an engine
+//! MqContext* engine = mq_create();
+//!
+//! // Evaluate some code
+//! MqResult result = mq_eval(
+//!     engine,
+//!     ".h",                   // code
+//!     "# Hello, world!",      // input
+//!     "markdown"              // input format
+//! );
+//!
+//! // Check for errors
+//! if (result.error_msg != NULL) {
+//!     printf("Error: %s\n", result.error_msg);
+//! } else {
+//!     // Process results
+//!     for (size_t i = 0; i < result.values_len; i++) {
+//!         printf("%s\n", result.values[i]);
+//!     }
+//! }
+//!
+//! // Clean up
+//! mq_free_result(result);
+//! mq_destroy(engine);
+//! ```
+//!
+//! # Memory Management
+//!
+//! The API follows these memory management rules:
+//!
+//! - `mq_create()` allocates an engine that must be freed with `mq_destroy()`
+//! - `mq_eval()` returns an `MqResult` that must be freed with `mq_free_result()`
+//! - Individual strings can be freed with `mq_free_string()` if needed
+//! - Always free resources in reverse order of allocation
+//!
+//! # Input Formats
+//!
+//! Supported input formats:
+//! - `"markdown"` - Standard markdown format
+//! - `"mdx"` - Markdown with JSX support
+//! - `"html"` - HTML content converted to markdown
+//! - `"text"` - Plain text, split by lines
+//!
 use libc::c_void;
 use mq_lang::DefaultEngine;
 use mq_lang::{Engine, RuntimeValue};

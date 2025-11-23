@@ -1,6 +1,18 @@
 use assert_cmd::cargo;
-use mq_test::defer;
 use rstest::rstest;
+use scopeguard::defer;
+use std::io::Write;
+use std::{fs::File, path::PathBuf};
+
+pub fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
+    let temp_dir = std::env::temp_dir();
+    let temp_file_path = temp_dir.join(name);
+    let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+    file.write_all(content.as_bytes())
+        .expect("Failed to write to temp file");
+
+    (temp_dir, temp_file_path)
+}
 
 #[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
@@ -197,7 +209,7 @@ fn test_cli_commands(
 
 #[test]
 fn test_cli_run_with_raw_file_and_stdin() -> Result<(), Box<dyn std::error::Error>> {
-    let (_, temp_file_path) = mq_test::create_file("input.txt", "test");
+    let (_, temp_file_path) = create_file("input.txt", "test");
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -223,8 +235,7 @@ fn test_cli_run_with_raw_file_and_stdin() -> Result<(), Box<dyn std::error::Erro
 
 #[test]
 fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
-    let (_, temp_file_path) =
-        mq_test::create_file("test_cli_run_with_file_input.md", "# **title**\n\n- test1\n- test2");
+    let (_, temp_file_path) = create_file("test_cli_run_with_file_input.md", "# **title**\n\n- test1\n- test2");
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -246,7 +257,7 @@ fn test_cli_run_with_file_input() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>> {
-    let (_, temp_file_path) = mq_test::create_file(
+    let (_, temp_file_path) = create_file(
         "test_cli_run_with_query_from_file.mq",
         r#".h | select(contains("title"))"#,
     );
@@ -273,7 +284,7 @@ fn test_cli_run_with_query_from_file() -> Result<(), Box<dyn std::error::Error>>
 #[test]
 fn test_cli_run_with_csv_input() -> Result<(), Box<dyn std::error::Error>> {
     let csv_content = "name,age\nAlice,30\nBob,25";
-    let (_, temp_file_path) = mq_test::create_file("test_cli_run_with_csv_input.csv", csv_content);
+    let (_, temp_file_path) = create_file("test_cli_run_with_csv_input.csv", csv_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -315,7 +326,7 @@ fn test_cli_run_with_html_input() -> Result<(), Box<dyn std::error::Error>> {
 </body>
 </html>
 "#;
-    let (_, temp_file_path) = mq_test::create_file("test_cli_run_with_html_input.html", html_content);
+    let (_, temp_file_path) = create_file("test_cli_run_with_html_input.html", html_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -346,7 +357,7 @@ In {year}, the snowfall was above average.
 
 <Chart color="#fcb32c" year={year} />
 <Component />"##;
-    let (_, temp_file_path) = mq_test::create_file("test_cli_run_with_mdx_input.mdx", mdx_content);
+    let (_, temp_file_path) = create_file("test_cli_run_with_mdx_input.mdx", mdx_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -394,7 +405,7 @@ Content of section 2.
 
 Content of section 3.
 "#;
-    let (_, temp_file_path) = mq_test::create_file("test_cli_sections_n_with_file_input.md", markdown_content);
+    let (_, temp_file_path) = create_file("test_cli_sections_n_with_file_input.md", markdown_content);
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {
@@ -436,7 +447,7 @@ Content of section 3.
 
 #[test]
 fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
-    let (_, temp_file_path) = mq_test::create_file("test_read_file.md", "test");
+    let (_, temp_file_path) = create_file("test_read_file.md", "test");
     let temp_file_path_clone = temp_file_path.clone();
 
     defer! {

@@ -239,6 +239,10 @@ pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
 }
 
 #[cfg(test)]
+#[path = "../tests/strategies.rs"]
+pub(crate) mod strategies;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

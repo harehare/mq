@@ -25,5 +25,5 @@ rustyline = {version = "17.0.2", default-features = false, features = ["custom-b
 strum = {version = "0.27.2", features = ["derive"]}
 
 [dev-dependencies]
-mq-test = {path = "../mq-test", version = "0.5.1"}
 rstest = "0.26.1"
+scopeguard = "1.2.0"

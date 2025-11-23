@@ -1,3 +1,81 @@
+//! Python bindings for the mq markdown processing library.
+//!
+//! This crate provides Python bindings for mq, allowing Python applications to
+//! process markdown, MDX, and HTML using the mq query language.
+//!
+//! # Features
+//!
+//! - Process markdown, MDX, HTML, and plain text from Python
+//! - Full mq query language support
+//! - Multiple input and output format options
+//! - Configurable rendering options
+//! - Type-safe Python API using PyO3
+//!
+//! # Installation
+//!
+//! ```bash
+//! pip install mq
+//! ```
+//!
+//! # Python Usage
+//!
+//! Basic usage example:
+//!
+//! ```python
+//! import mq
+//!
+//! # Process markdown with mq
+//! result = mq.run('.h', '# Hello\n## World', mq.Options(input_format=mq.InputFormat.MARKDOWN))
+//! for value in result.values:
+//!     print(value)
+//! ```
+//!
+//! Filter and transform markdown:
+//!
+//! ```python
+//! import mq
+//!
+//! markdown = """
+//! # Introduction
+//! Some text here.
+//!
+//! ## Section 1
+//! More content.
+//!
+//! ## Section 2
+//! Even more content.
+//! """
+//!
+//! # Get only level 2 headings
+//! result = mq.run('.h | select(level == 2)', markdown)
+//! for heading in result.values:
+//!     print(heading)
+//! ```
+//!
+//! # Input Formats
+//!
+//! Supported input formats:
+//! - `InputFormat.MARKDOWN` - Standard markdown
+//! - `InputFormat.MDX` - Markdown with JSX
+//! - `InputFormat.HTML` - HTML content
+//! - `InputFormat.TEXT` - Plain text
+//! - `InputFormat.RAW` - Raw string input
+//! - `InputFormat.NULL` - Null input
+//!
+//! # Configuration
+//!
+//! Customize rendering with options:
+//!
+//! ```python
+//! import mq
+//!
+//! options = mq.Options()
+//! options.input_format = mq.InputFormat.MARKDOWN
+//! options.list_style = mq.ListStyle.PLUS
+//! options.link_title_style = mq.TitleSurroundStyle.SINGLE
+//!
+//! result = mq.run('.', markdown, options)
+//! ```
 pub mod result;
 pub mod value;
 

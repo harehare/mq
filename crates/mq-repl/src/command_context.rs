@@ -228,9 +228,21 @@ impl CommandContext {
 }
 #[cfg(test)]
 mod tests {
-    use mq_test::defer;
+    use scopeguard::defer;
+    use std::io::Write;
+    use std::{fs::File, path::PathBuf};
 
     use super::*;
+
+    fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
+        let temp_dir = std::env::temp_dir();
+        let temp_file_path = temp_dir.join(name);
+        let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+        file.write_all(content.as_bytes())
+            .expect("Failed to write to temp file");
+
+        (temp_dir, temp_file_path)
+    }
 
     #[test]
     fn test_command_from_string() {
@@ -366,7 +378,7 @@ mod tests {
     fn test_execute_load_file() {
         let engine = mq_lang::DefaultEngine::default();
         let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
-        let (_, temp_file_path) = mq_test::create_file(
+        let (_, temp_file_path) = create_file(
             "test_execute_load_file.md",
             "# Header\n\nParagraph text.\n\n- List item 1\n- List item 2",
         );

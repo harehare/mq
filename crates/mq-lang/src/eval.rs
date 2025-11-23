@@ -1259,9 +1259,24 @@ mod tests {
     use crate::{Token, TokenKind};
 
     use super::*;
-    use mq_test::defer;
     use rstest::{fixture, rstest};
+    use scopeguard::defer;
     use smallvec::{SmallVec, smallvec};
+    use std::io::Write;
+    use std::{fs::File, path::PathBuf};
+
+    type TempDir = PathBuf;
+    type TempFile = PathBuf;
+
+    fn create_file(name: &str, content: &str) -> (TempDir, TempFile) {
+        let temp_dir = std::env::temp_dir();
+        let temp_file_path = temp_dir.join(name);
+        let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+        file.write_all(content.as_bytes())
+            .expect("Failed to write to temp file");
+
+        (temp_dir, temp_file_path)
+    }
 
     #[fixture]
     fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -5415,7 +5430,7 @@ mod tests {
 
     #[test]
     fn test_include() {
-        let (temp_dir, temp_file_path) = mq_test::create_file("test_module.mq", "def func1(): 42; | let val1 = 1");
+        let (temp_dir, temp_file_path) = create_file("test_module.mq", "def func1(): 42; | let val1 = 1");
 
         defer! {
             if temp_file_path.exists() {
@@ -5444,7 +5459,7 @@ mod tests {
     #[test]
     fn test_import_qualified_access_function() {
         let (temp_dir, temp_file_path) =
-            mq_test::create_file("test_qualified.mq", r#"def greet(name): "Hello, " + name + "!";"#);
+            create_file("test_qualified.mq", r#"def greet(name): "Hello, " + name + "!";"#);
 
         defer! {
             if temp_file_path.exists() {
@@ -5478,7 +5493,7 @@ mod tests {
 
     #[test]
     fn test_import_qualified_access_value() {
-        let (temp_dir, temp_file_path) = mq_test::create_file("test_qualified_val.mq", r#"let answer = 42"#);
+        let (temp_dir, temp_file_path) = create_file("test_qualified_val.mq", r#"let answer = 42"#);
 
         defer! {
             if temp_file_path.exists() {
@@ -5511,7 +5526,7 @@ mod tests {
 
     #[test]
     fn test_import_qualified_access_with_args() {
-        let (temp_dir, temp_file_path) = mq_test::create_file(
+        let (temp_dir, temp_file_path) = create_file(
             "test_qualified_math.mq",
             r#"def add2(a, b): a + b;
             def multiply(x, y): x * y;"#,

@@ -41,9 +41,9 @@ sync = []
 
 [dev-dependencies]
 divan = {version = "3.0.5", package = "codspeed-divan-compat"}
-mq-test = {path = "../mq-test", version = "0.5.1"}
 proptest = "1.9"
 rstest = "0.26.1"
+scopeguard = "1.2.0"
 
 [[bench]]
 harness = false
