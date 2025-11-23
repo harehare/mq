@@ -53,3 +53,7 @@ required-features = ["std"]
 name = "mq-dbg"
 path = "src/bin/dbg.rs"
 required-features = ["debugger"]
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
