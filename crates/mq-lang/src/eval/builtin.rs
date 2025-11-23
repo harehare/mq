@@ -4501,10 +4501,7 @@ mod tests {
     #[test]
     fn test_repeat_size_limit() {
         // Test that excessively large array repeats are rejected
-        let mut array = RuntimeValue::Array(vec![
-            RuntimeValue::Number(1.into()),
-            RuntimeValue::Number(2.into()),
-        ]);
+        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]);
         let result = repeat(&mut array, 600_000);
         assert!(result.is_err());
         if let Err(Error::Runtime(msg)) = result {
@@ -4515,10 +4512,7 @@ mod tests {
         }
 
         // Test that reasonable array repeats still work
-        let mut array = RuntimeValue::Array(vec![
-            RuntimeValue::Number(1.into()),
-            RuntimeValue::Number(2.into()),
-        ]);
+        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]);
         let result = repeat(&mut array, 10);
         assert!(result.is_ok());
         if let Ok(RuntimeValue::Array(vec)) = result {
