@@ -1,4 +1,4 @@
-# mq-typechecker
+<h1 align="center">mq-typechecker</h1>
 
 Type inference and checking for the mq language using Hindley-Milner type inference.
 
