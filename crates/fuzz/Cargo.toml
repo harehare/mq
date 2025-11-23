@@ -1,5 +1,6 @@
 [package]
 edition = "2024"
+license = "MIT"
 name = "mq-lang-fuzz"
 publish = false
 version = "0.5.2"
