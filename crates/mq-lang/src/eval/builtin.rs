@@ -25,6 +25,9 @@ use mq_markdown;
 
 static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> = LazyLock::new(|| Mutex::new(FxHashMap::default()));
 
+/// Maximum number of elements allowed in a generated range
+const MAX_RANGE_SIZE: usize = 1_000_000;
+
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
 pub type Args = Vec<RuntimeValue>;
@@ -1204,7 +1207,8 @@ define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     }
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 / n2).into()),
-        _ => unreachable!(),
+        (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
+        _ => Ok(RuntimeValue::Number(0.into())),
     },
     _ => unreachable!(),
 });
@@ -1216,6 +1220,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     }
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
+        (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
         _ => unreachable!(),
     },
     _ => unreachable!(),
@@ -3643,7 +3648,23 @@ fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<R
         return Err(Error::Runtime("step for range must not be zero".to_string()));
     }
 
-    let mut result = Vec::with_capacity(((end - start) / step).unsigned_abs() + 1);
+    // Calculate the size of the range to prevent capacity overflow
+    let range_size = if (step > 0 && end >= start) || (step < 0 && end <= start) {
+        let diff = (end as i128) - (start as i128);
+        let step_i128 = step as i128;
+        ((diff / step_i128).abs() + 1) as usize
+    } else {
+        0
+    };
+
+    if range_size > MAX_RANGE_SIZE {
+        return Err(Error::Runtime(format!(
+            "range size {} exceeds maximum allowed size of {}",
+            range_size, MAX_RANGE_SIZE
+        )));
+    }
+
+    let mut result = Vec::with_capacity(range_size);
     let mut current = start;
 
     if step > 0 {
@@ -3669,8 +3690,23 @@ fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> R
         return Err(Error::Runtime("step for range must not be zero".to_string()));
     }
 
-    let capacity = (end_char as i32 - start_char as i32).unsigned_abs() as usize + 1;
-    let mut result = Vec::with_capacity(capacity);
+    // Calculate the size of the range to prevent capacity overflow
+    let range_size = if (step > 0 && end_char >= start_char) || (step < 0 && end_char <= start_char) {
+        let diff = (end_char as i64) - (start_char as i64);
+        let step_i64 = step as i64;
+        ((diff / step_i64).abs() + 1) as usize
+    } else {
+        0
+    };
+
+    if range_size > MAX_RANGE_SIZE {
+        return Err(Error::Runtime(format!(
+            "range size {} exceeds maximum allowed size of {}",
+            range_size, MAX_RANGE_SIZE
+        )));
+    }
+
+    let mut result = Vec::with_capacity(range_size);
     let mut current = start_char as i32;
     let end = end_char as i32;
 
@@ -3703,12 +3739,25 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
 
     let start_bytes = start.as_bytes();
     let end_bytes = end.as_bytes();
-    let mut result = Vec::with_capacity(
-        (end_bytes.iter().zip(start_bytes.iter()))
-            .map(|(e, s)| e.max(s) - e.min(s))
-            .sum::<u8>() as usize
-            + 1,
-    );
+
+    // Calculate the approximate size of the range to prevent capacity overflow
+    let capacity_estimate = (end_bytes.iter().zip(start_bytes.iter()))
+        .map(|(e, s)| (e.max(s) - e.min(s)) as usize)
+        .try_fold(0usize, |acc, diff| {
+            // Prevent overflow during calculation
+            acc.checked_add(diff)
+                .ok_or_else(|| Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE)))
+        })?
+        + 1;
+
+    if capacity_estimate > MAX_RANGE_SIZE {
+        return Err(Error::Runtime(format!(
+            "range size {} exceeds maximum allowed size of {}",
+            capacity_estimate, MAX_RANGE_SIZE
+        )));
+    }
+
+    let mut result = Vec::with_capacity(capacity_estimate);
     let mut current = start_bytes.to_vec();
 
     loop {
@@ -3818,13 +3867,11 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
             }
             Ok(RuntimeValue::Array(repeated_array))
         }
-        v => {
-            let mut repeated_array = Vec::with_capacity(n);
-            for _ in 0..n {
-                repeated_array.push(v.clone());
-            }
-            Ok(RuntimeValue::Array(repeated_array))
-        }
+        RuntimeValue::None => Ok(RuntimeValue::NONE),
+        _ => Err(Error::InvalidTypes(
+            constants::MUL.to_string(),
+            vec![std::mem::take(value)],
+        )),
     }
 }
 
@@ -4360,5 +4407,67 @@ mod tests {
             result_err2,
             Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))
         );
+    }
+
+    #[test]
+    fn test_range_size_limit() {
+        // Test that excessively large ranges are rejected
+        let result = generate_numeric_range(0, 2_000_000, 1);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error");
+        }
+
+        // Test negative step with large range
+        let result = generate_numeric_range(10_000_000, 0, -1);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error");
+        }
+
+        // Test that reasonable ranges still work
+        let result = generate_numeric_range(0, 100, 1);
+        assert!(result.is_ok());
+        if let Ok(vec) = result {
+            assert_eq!(vec.len(), 101);
+        }
+
+        // Test edge case at boundary (exactly at limit)
+        let result = generate_numeric_range(0, 999_999, 1);
+        assert!(result.is_ok());
+        if let Ok(vec) = result {
+            assert_eq!(vec.len(), 1_000_000);
+        }
+
+        // Test just over the limit
+        let result = generate_numeric_range(0, 1_000_000, 1);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
+        }
+    }
+
+    #[test]
+    fn test_char_range_size_limit() {
+        // Test that excessively large char ranges are rejected
+        // Unicode char range from 0 to max would be too large
+        let result = generate_char_range('\u{0000}', '\u{10FFFF}', Some(1));
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error");
+        }
+
+        // Test that reasonable char ranges still work
+        let result = generate_char_range('a', 'z', None);
+        assert!(result.is_ok());
+        if let Ok(vec) = result {
+            assert_eq!(vec.len(), 26);
+        }
     }
 }

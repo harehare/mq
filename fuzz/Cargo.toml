@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 license = "MIT"
-name = "mq-lang-fuzz"
+name = "mq-fuzz"
 publish = false
 version = "0.5.2"
 
@@ -12,7 +12,7 @@ cargo-fuzz = true
 arbitrary = {version = "1.4.2", features = ["derive"]}
 itertools = "0.14.0"
 libfuzzer-sys = "0.4"
-mq-lang = {path = "../mq-lang", version = "0.5.1"}
+mq-lang = {path = "../crates/mq-lang", version = "0.5.2"}
 
 [[bin]]
 bench = false

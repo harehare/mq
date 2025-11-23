@@ -112,3 +112,11 @@ deps:
 # Update documentation
 docs:
   ./scripts/update_doc.sh
+
+# Publish crates
+publish:
+    cp -r crates/mq-run/assets crates/mq-hir
+    cp -r crates/mq-run/assets crates/mq-lang
+    cp -r crates/mq-run/assets crates/mq-markdown
+    cp -r crates/mq-run/assets crates/mq-repl
+    cargo publish --workspace
