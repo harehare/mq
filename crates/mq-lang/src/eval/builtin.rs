@@ -1191,7 +1191,7 @@ define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args| {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
         [a, b] => match (to_number(a)?, to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 - n2).into()),
-            _ => unreachable!(),
+            _ => Ok(RuntimeValue::Number(0.into())),
         },
         _ => unreachable!(),
     }
