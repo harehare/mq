@@ -1167,12 +1167,26 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args| {
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
+            let total_size = a1.len().saturating_add(a2.len());
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array concatenation size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
             let mut a = std::mem::take(a1);
             a.reserve(a2.len());
             a.extend_from_slice(a2);
             Ok(RuntimeValue::Array(a))
         }
         [RuntimeValue::Array(a1), a2] | [a2, RuntimeValue::Array(a1)] => {
+            let total_size = a1.len().saturating_add(1);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
             let mut a = std::mem::take(a1);
             a.reserve(1);
             a.push(std::mem::take(a2));

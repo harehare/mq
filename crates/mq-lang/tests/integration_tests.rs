@@ -1610,6 +1610,14 @@ fn engine_with_opt() -> Engine {
             RuntimeValue::Number(2000000000.0.into()),
             RuntimeValue::Number(1000000000.0.into())
         ])].into()))]
+#[case::array_concat_normal("[1,2]+[3,4]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+            RuntimeValue::Number(4.into())
+        ])].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,
