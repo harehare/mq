@@ -533,7 +533,7 @@ impl Cli {
                     }
                 }
 
-                handle.flush().ok();
+                handle.flush().into_diagnostic()?;
 
                 if has_error { Err(miette!("Syntax errors or warnings found in one or more files")) } else { Ok(()) }
             }
