@@ -69,11 +69,16 @@ The installer will:
 ### Cargo
 
 ```sh
+# Install from crates.io
+cargo install mq-run
+# Install from Github
 cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.2
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
+# Install using binstall
+cargo binstall mq-run
 ```
 
 ### Binaries
