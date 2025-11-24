@@ -235,6 +235,11 @@ enum Commands {
         #[arg(short = 'M', long)]
         module_names: Option<Vec<String>>,
     },
+    /// Check syntax errors in mq files
+    Check {
+        /// Path to the mq file to check
+        files: Vec<PathBuf>,
+    },
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
@@ -341,6 +346,7 @@ impl Cli {
                 "fmt".green()
             ),
             format!("  {} - Show functions documentation for the query", "docs".green()),
+            format!("  {} - Check syntax errors in mq files", "check".green()),
         ];
 
         #[cfg(feature = "debugger")]
@@ -478,6 +484,58 @@ impl Cli {
                 self.print(doc_values)?;
 
                 Ok(())
+            }
+            Some(Commands::Check { files }) => {
+                let stdout = io::stdout();
+                let mut handle = BufWriter::new(stdout.lock());
+                let mut has_error = false;
+
+                for file in files {
+                    if !file.exists() {
+                        return Err(miette!("File not found: {}", file.display()));
+                    }
+
+                    let content = fs::read_to_string(file).into_diagnostic()?;
+                    let mut hir = mq_hir::Hir::default();
+                    hir.add_code(None, &content);
+
+                    let errors = hir.error_ranges();
+                    let warnings = hir.warning_ranges();
+
+                    if !errors.is_empty() || !warnings.is_empty() {
+                        has_error = true;
+                        writeln!(handle, "{}", format!("Checking: {}", file.display()).bold()).ok();
+
+                        for (message, range) in errors {
+                            writeln!(
+                                handle,
+                                "  {}: {} at line {}, column {}",
+                                "Error".red().bold(),
+                                message,
+                                range.start.line,
+                                range.start.column
+                            )
+                            .ok();
+                        }
+
+                        for (message, range) in warnings {
+                            writeln!(
+                                handle,
+                                "  {}: {} at line {}, column {}",
+                                "Warning".yellow().bold(),
+                                message,
+                                range.start.line,
+                                range.start.column
+                            )
+                            .ok();
+                        }
+                        writeln!(handle).ok();
+                    }
+                }
+
+                handle.flush().ok();
+
+                if has_error { Err(miette!("")) } else { Ok(()) }
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
@@ -1065,5 +1123,71 @@ mod tests {
         // Note: We can't easily test execute_external_command without modifying HOME
         // This test just verifies the command file was created correctly
         assert!(test_cmd_path.exists());
+    }
+
+    #[test]
+    fn test_cli_check_command_valid_file() {
+        let (_, temp_file_path) = create_file("test_check.mq", "def math(): 42;");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Check {
+                files: vec![temp_file_path],
+            }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_check_command_invalid_file() {
+        let (_, temp_file_path) = create_file("test_check_invalid.mq", "def math(): 42; | unknown_var");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Check {
+                files: vec![temp_file_path],
+            }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
+    }
+
+    #[test]
+    fn test_cli_check_command_file_not_found() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            commands: Some(Commands::Check {
+                files: vec![PathBuf::from("nonexistent.mq")],
+            }),
+            query: None,
+            files: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_err());
     }
 }
