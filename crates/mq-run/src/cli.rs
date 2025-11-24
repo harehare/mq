@@ -535,7 +535,7 @@ impl Cli {
 
                 handle.flush().into_diagnostic()?;
 
-                if has_error { Err(miette!("Syntax errors or warnings found in one or more files")) } else { Ok(()) }
+                if has_error { Err(miette!("")) } else { Ok(()) }
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
