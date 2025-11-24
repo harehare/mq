@@ -20,10 +20,10 @@ path = "src/lib.rs"
 futures = "0.3"
 itertools = "0.14.0"
 js-sys = "0.3.77"
-mq-formatter = {path = "../mq-formatter", version = "0.5.1"}
-mq-hir = {path = "../mq-hir", version = "0.5.1"}
-mq-lang = {path = "../mq-lang", version = "0.5.1", features = ["ast-json"]}
-mq-markdown = {path = "../mq-markdown", version = "0.5.1"}
+mq-formatter = {path = "../mq-formatter", version = "0.5.3"}
+mq-hir = {path = "../mq-hir", version = "0.5.3"}
+mq-lang = {path = "../mq-lang", version = "0.5.3", features = ["ast-json"]}
+mq-markdown = {path = "../mq-markdown", version = "0.5.3"}
 opfs = "0.1.4"
 serde = {version = "1.0", features = ["derive"]}
 serde-wasm-bindgen = "0.6.5"

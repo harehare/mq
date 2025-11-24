@@ -2648,7 +2648,7 @@ dependencies = [
 
 [[package]]
 name = "mq-fuzz"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "arbitrary",
  "itertools 0.14.0",

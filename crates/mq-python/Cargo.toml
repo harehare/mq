@@ -17,6 +17,6 @@ crate-type = ["cdylib"]
 name = "mq"
 
 [dependencies]
-mq-lang = {path = "../mq-lang", version = "0.5.1"}
-mq-markdown = {path = "../mq-markdown", version = "0.5.1"}
+mq-lang = {path = "../mq-lang", version = "0.5.3"}
+mq-markdown = {path = "../mq-markdown", version = "0.5.3"}
 pyo3 = {version = "0.27.1", features = ["extension-module", "abi3-py39"]}

@@ -24,13 +24,13 @@ dirs = "6.0.0"
 itertools = "0.14.0"
 miette = {version = "7.6.0", features = ["fancy"]}
 mimalloc = {version = "0.1.48", features = ["v3"], optional = true}
-mq-dap = {path = "../mq-dap", optional = true, version = "0.5.1"}
-mq-formatter = {path = "../mq-formatter", version = "0.5.1"}
-mq-hir = {path = "../mq-hir", version = "0.5.1"}
-mq-lang = {path = "../mq-lang", features = ["file-io"], version = "0.5.1"}
-mq-lsp = {path = "../mq-lsp", version = "0.5.1"}
-mq-markdown = {path = "../mq-markdown", features = ["json", "html-to-markdown"], version = "0.5.1"}
-mq-repl = {path = "../mq-repl", version = "0.5.1"}
+mq-dap = {path = "../mq-dap", optional = true, version = "0.5.3"}
+mq-formatter = {path = "../mq-formatter", version = "0.5.3"}
+mq-hir = {path = "../mq-hir", version = "0.5.3"}
+mq-lang = {path = "../mq-lang", features = ["file-io"], version = "0.5.3"}
+mq-lsp = {path = "../mq-lsp", version = "0.5.3"}
+mq-markdown = {path = "../mq-markdown", features = ["json", "html-to-markdown"], version = "0.5.3"}
+mq-repl = {path = "../mq-repl", version = "0.5.3"}
 rayon = "1.11.0"
 regex-lite = {version = "0.1.8", optional = true}
 rustyline = {version = "17.0.2", optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}

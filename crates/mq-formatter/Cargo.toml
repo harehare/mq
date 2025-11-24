@@ -12,7 +12,7 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.3"
 
 [dependencies]
-mq-lang = {path = "../mq-lang", version = "0.5.1", features = ["cst"]}
+mq-lang = {path = "../mq-lang", version = "0.5.3", features = ["cst"]}
 rustc-hash = "2.1.1"
 
 [dev-dependencies]

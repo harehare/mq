@@ -49,7 +49,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            max_call_stack_depth: 40,
+            max_call_stack_depth: 48,
         }
     }
 }
