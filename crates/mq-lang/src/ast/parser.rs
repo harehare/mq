@@ -1407,6 +1407,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
+        if expr_token.kind == TokenKind::Let {
+            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+        }
+
         let ast = self.parse_expr(Shared::clone(expr_token))?;
 
         if let Some(token) = self.tokens.peek()
@@ -5565,6 +5569,48 @@ mod tests {
                             )),
                         })
                     ]))]
+    #[case::let_with_reserved_keyword_as_value(
+                        vec![
+                            token(TokenKind::Let),
+                            token(TokenKind::Ident(SmolStr::new("aaa"))),
+                            token(TokenKind::Equal),
+                            token(TokenKind::Let), // Using "let" as a value (should error)
+                            token(TokenKind::Eof)
+                        ],
+                        Err(ParseError::UnexpectedToken(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Let,
+                            module_id: 1.into(),
+                        }))
+                    )]
+    #[case::let_with_reserved_keyword_as_variable_and_value(
+                        vec![
+                            token(TokenKind::Let),
+                            token(TokenKind::Let), // Using "let" as a variable name (should error)
+                            token(TokenKind::Equal),
+                            token(TokenKind::Ident(SmolStr::new("vvv"))),
+                            token(TokenKind::Eof)
+                        ],
+                        Err(ParseError::UnexpectedToken(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Let,
+                            module_id: 1.into(),
+                        }))
+                    )]
+    #[case::let_with_reserved_keyword_as_variable_and_value2(
+                        vec![
+                            token(TokenKind::Let),
+                            token(TokenKind::Let), // Using "let" as a variable name (should error)
+                            token(TokenKind::Equal),
+                            token(TokenKind::Let), // Using "let" as a value (should error)
+                            token(TokenKind::Eof)
+                        ],
+                        Err(ParseError::UnexpectedToken(Token {
+                            range: Range::default(),
+                            kind: TokenKind::Let,
+                            module_id: 1.into(),
+                        }))
+                    )]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
