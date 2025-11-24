@@ -48,3 +48,11 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: true
+
+  check-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check bans licenses sources
