@@ -1212,10 +1212,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
             result
         } else if let RuntimeValue::NativeFunction(ident) = fn_value {
-            self.enter_scope()?;
-            let result = self.eval_builtin(runtime_value, node, ident, args, env);
-            self.exit_scope();
-            result
+            self.eval_builtin(runtime_value, node, ident, args, env)
         } else {
             Err(EvalError::InvalidDefinition(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
