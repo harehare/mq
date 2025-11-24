@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-run"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.2"
+version = "0.5.3"
 
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]

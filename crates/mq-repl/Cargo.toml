@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-repl"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.2"
+version = "0.5.3"
 
 [dependencies]
 arboard = {version = "3.6.1", default-features = false}
