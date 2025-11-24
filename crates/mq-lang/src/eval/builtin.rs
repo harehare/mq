@@ -1206,7 +1206,10 @@ define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args| {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
         [a, b] => match (to_number(a)?, to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 - n2).into()),
-            _ => Ok(RuntimeValue::Number(0.into())),
+            _ => Err(Error::InvalidTypes(
+                "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
+                vec![std::mem::take(a), std::mem::take(b)],
+            )),
         },
         _ => unreachable!(),
     }
@@ -1223,7 +1226,10 @@ define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 / n2).into()),
         (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
-        _ => Ok(RuntimeValue::Number(0.into())),
+        _ => Err(Error::InvalidTypes(
+            "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
     },
     _ => unreachable!(),
 });
@@ -4485,126 +4491,138 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_range_size_limit() {
-        // Test that excessively large ranges are rejected
-        let result = generate_numeric_range(0, 2_000_000, 1);
+    #[rstest]
+    #[case::excessively_large_range(0, 2_000_000, 1)]
+    #[case::negative_step_large_range(10_000_000, 0, -1)]
+    #[case::just_over_limit(0, 1_000_000, 1)]
+    fn test_range_size_limit_exceeds(#[case] start: isize, #[case] end: isize, #[case] step: isize) {
+        let result = generate_numeric_range(start, end, step);
         assert!(result.is_err());
         if let Err(Error::Runtime(msg)) = result {
             assert!(msg.contains("exceeds maximum allowed size"));
         } else {
             panic!("Expected Runtime error");
-        }
-
-        // Test negative step with large range
-        let result = generate_numeric_range(10_000_000, 0, -1);
-        assert!(result.is_err());
-        if let Err(Error::Runtime(msg)) = result {
-            assert!(msg.contains("exceeds maximum allowed size"));
-        } else {
-            panic!("Expected Runtime error");
-        }
-
-        // Test that reasonable ranges still work
-        let result = generate_numeric_range(0, 100, 1);
-        assert!(result.is_ok());
-        if let Ok(vec) = result {
-            assert_eq!(vec.len(), 101);
-        }
-
-        // Test edge case at boundary (exactly at limit)
-        let result = generate_numeric_range(0, 999_999, 1);
-        assert!(result.is_ok());
-        if let Ok(vec) = result {
-            assert_eq!(vec.len(), 1_000_000);
-        }
-
-        // Test just over the limit
-        let result = generate_numeric_range(0, 1_000_000, 1);
-        assert!(result.is_err());
-        if let Err(Error::Runtime(msg)) = result {
-            assert!(msg.contains("exceeds maximum allowed size"));
         }
     }
 
-    #[test]
-    fn test_char_range_size_limit() {
-        // Test that excessively large char ranges are rejected
-        // Unicode char range from 0 to max would be too large
-        let result = generate_char_range('\u{0000}', '\u{10FFFF}', Some(1));
+    #[rstest]
+    #[case::reasonable_range(0, 100, 1, 101)]
+    #[case::exactly_at_limit(0, 999_999, 1, 1_000_000)]
+    fn test_range_size_limit_success(
+        #[case] start: isize,
+        #[case] end: isize,
+        #[case] step: isize,
+        #[case] expected_len: usize,
+    ) {
+        let result = generate_numeric_range(start, end, step);
+        assert!(result.is_ok());
+        if let Ok(vec) = result {
+            assert_eq!(vec.len(), expected_len);
+        }
+    }
+
+    #[rstest]
+    #[case::unicode_max_range('\u{0000}', '\u{10FFFF}', Some(1))]
+    fn test_char_range_size_limit_exceeds(#[case] start: char, #[case] end: char, #[case] step: Option<i32>) {
+        let result = generate_char_range(start, end, step);
         assert!(result.is_err());
         if let Err(Error::Runtime(msg)) = result {
             assert!(msg.contains("exceeds maximum allowed size"));
         } else {
             panic!("Expected Runtime error");
         }
+    }
 
-        // Test that reasonable char ranges still work
-        let result = generate_char_range('a', 'z', None);
+    #[rstest]
+    #[case::reasonable_char_range('a', 'z', None, 26)]
+    fn test_char_range_size_limit_success(
+        #[case] start: char,
+        #[case] end: char,
+        #[case] step: Option<i32>,
+        #[case] expected_len: usize,
+    ) {
+        let result = generate_char_range(start, end, step);
         assert!(result.is_ok());
         if let Ok(vec) = result {
-            assert_eq!(vec.len(), 26);
+            assert_eq!(vec.len(), expected_len);
         }
     }
 
-    #[test]
-    fn test_repeat_size_limit() {
-        // Test that excessively large array repeats are rejected
-        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]);
-        let result = repeat(&mut array, 600_000);
+    #[rstest]
+    #[case::excessively_large_array_repeat(
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        600_000,
+        "array repeat size"
+    )]
+    #[case::just_over_limit(
+        vec![RuntimeValue::Number(1.into())],
+        1_000_001,
+        "exceeds maximum allowed size"
+    )]
+    fn test_repeat_array_size_limit_exceeds(
+        #[case] array: Vec<RuntimeValue>,
+        #[case] n: usize,
+        #[case] expected_msg: &str,
+    ) {
+        let mut value = RuntimeValue::Array(array);
+        let result = repeat(&mut value, n);
         assert!(result.is_err());
         if let Err(Error::Runtime(msg)) = result {
-            assert!(msg.contains("array repeat size"));
-            assert!(msg.contains("exceeds maximum allowed size"));
+            assert!(msg.contains(expected_msg));
         } else {
             panic!("Expected Runtime error for array repeat");
         }
+    }
 
-        // Test that reasonable array repeats still work
-        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]);
-        let result = repeat(&mut array, 10);
+    #[rstest]
+    #[case::reasonable_array_repeat(
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        10,
+        20
+    )]
+    #[case::exactly_at_limit(
+        vec![RuntimeValue::Number(1.into())],
+        1_000_000,
+        1_000_000
+    )]
+    fn test_repeat_array_size_limit_success(
+        #[case] array: Vec<RuntimeValue>,
+        #[case] n: usize,
+        #[case] expected_len: usize,
+    ) {
+        let mut value = RuntimeValue::Array(array);
+        let result = repeat(&mut value, n);
         assert!(result.is_ok());
         if let Ok(RuntimeValue::Array(vec)) = result {
-            assert_eq!(vec.len(), 20);
+            assert_eq!(vec.len(), expected_len);
         } else {
             panic!("Expected successful array repeat");
         }
+    }
 
-        // Test that excessively large string repeats are rejected
-        let mut string = RuntimeValue::String("test".to_string());
-        let result = repeat(&mut string, 300_000);
+    #[rstest]
+    #[case::excessively_large_string_repeat("test", 300_000, "string repeat size")]
+    fn test_repeat_string_size_limit_exceeds(#[case] string: &str, #[case] n: usize, #[case] expected_msg: &str) {
+        let mut value = RuntimeValue::String(string.to_string());
+        let result = repeat(&mut value, n);
         assert!(result.is_err());
         if let Err(Error::Runtime(msg)) = result {
-            assert!(msg.contains("string repeat size"));
-            assert!(msg.contains("exceeds maximum allowed size"));
+            assert!(msg.contains(expected_msg));
         } else {
             panic!("Expected Runtime error for string repeat");
         }
+    }
 
-        // Test that reasonable string repeats still work
-        let mut string = RuntimeValue::String("test".to_string());
-        let result = repeat(&mut string, 10);
+    #[rstest]
+    #[case::reasonable_string_repeat("test", 10, 40)]
+    fn test_repeat_string_size_limit_success(#[case] string: &str, #[case] n: usize, #[case] expected_len: usize) {
+        let mut value = RuntimeValue::String(string.to_string());
+        let result = repeat(&mut value, n);
         assert!(result.is_ok());
         if let Ok(RuntimeValue::String(s)) = result {
-            assert_eq!(s.len(), 40);
+            assert_eq!(s.len(), expected_len);
         } else {
             panic!("Expected successful string repeat");
-        }
-
-        // Test edge case at boundary (exactly at limit)
-        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]);
-        let result = repeat(&mut array, 1_000_000);
-        assert!(result.is_ok());
-        if let Ok(RuntimeValue::Array(vec)) = result {
-            assert_eq!(vec.len(), 1_000_000);
-        }
-
-        // Test just over the limit
-        let mut array = RuntimeValue::Array(vec![RuntimeValue::Number(1.into())]);
-        let result = repeat(&mut array, 1_000_001);
-        assert!(result.is_err());
-        if let Err(Error::Runtime(msg)) = result {
-            assert!(msg.contains("exceeds maximum allowed size"));
         }
     }
 }
