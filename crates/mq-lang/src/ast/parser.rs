@@ -323,6 +323,26 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         };
 
+        if !matches!(
+            expr_token.kind,
+            TokenKind::BoolLiteral(_)
+                | TokenKind::StringLiteral(_)
+                | TokenKind::NumberLiteral(_)
+                | TokenKind::If
+                | TokenKind::Foreach
+                | TokenKind::LBrace
+                | TokenKind::LBracket
+                | TokenKind::While
+                | TokenKind::Until
+                | TokenKind::Match
+                | TokenKind::Self_
+                | TokenKind::Selector(_)
+                | TokenKind::Env(_)
+                | TokenKind::Ident(_)
+        ) {
+            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+        }
+
         let expr_node = self.parse_primary_expr(Shared::clone(expr_token))?;
 
         // Convert ! to not() function call
@@ -342,6 +362,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Some(t) => t,
             None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         };
+
+        if !matches!(
+            expr_token.kind,
+            TokenKind::NumberLiteral(_)
+                | TokenKind::If
+                | TokenKind::Foreach
+                | TokenKind::LBrace
+                | TokenKind::LBracket
+                | TokenKind::While
+                | TokenKind::Until
+                | TokenKind::Match
+                | TokenKind::Self_
+                | TokenKind::Env(_)
+                | TokenKind::Ident(_)
+        ) {
+            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+        }
 
         let expr_node = self.parse_primary_expr(Shared::clone(expr_token))?;
 
@@ -4752,7 +4789,7 @@ mod tests {
                     token(TokenKind::Not),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                Err(ParseError::UnexpectedToken(token(TokenKind::Eof))))]
     #[case::break_(
                     vec![
                         token(TokenKind::Break),
@@ -5314,7 +5351,7 @@ mod tests {
             token(TokenKind::Minus),
             token(TokenKind::Eof)
         ],
-        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+        Err(ParseError::UnexpectedToken(token(TokenKind::Eof))))]
     #[case::import_simple(
             vec![
             token(TokenKind::Import),
