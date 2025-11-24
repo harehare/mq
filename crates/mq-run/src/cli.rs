@@ -515,7 +515,7 @@ impl Cli {
                                 range.start.line,
                                 range.start.column
                             )
-                            .ok();
+                            .into_diagnostic()?;
                         }
 
                         for (message, range) in warnings {
@@ -527,9 +527,9 @@ impl Cli {
                                 range.start.line,
                                 range.start.column
                             )
-                            .ok();
+                            .into_diagnostic()?;
                         }
-                        writeln!(handle).ok();
+                        writeln!(handle).into_diagnostic()?;
                     }
                 }
 
