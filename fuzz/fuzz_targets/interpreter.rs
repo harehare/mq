@@ -56,6 +56,13 @@ fuzz_target!(|context: Context| {
         _ => "".to_string(),
     };
 
-    let mut engine = mq_lang::DefaultEngine::default();
-    let _ = engine.eval(&script, vec![mq_lang::RuntimeValue::String("".to_string())].into_iter());
+    let result = std::panic::catch_unwind(|| {
+        let mut engine = mq_lang::DefaultEngine::default();
+        let _ = engine.eval(&script, mq_lang::null_input().into_iter());
+    });
+
+    if result.is_err() {
+        println!("Fuzzing with context: {:?}", context);
+        result.unwrap();
+    }
 });
