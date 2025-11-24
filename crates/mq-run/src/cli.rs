@@ -504,7 +504,7 @@ impl Cli {
 
                     if !errors.is_empty() || !warnings.is_empty() {
                         has_error = true;
-                        writeln!(handle, "{}", format!("Checking: {}", file.display()).bold()).ok();
+                        writeln!(handle, "Checking: {}", file.display()).into_diagnostic()?;
 
                         for (message, range) in errors {
                             writeln!(
