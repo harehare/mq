@@ -1559,6 +1559,65 @@ fn engine_with_opt() -> Engine {
     dict.into()
   }].into())
 )]
+#[case::empty_array_iterator_expand("[]*.[]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::array_mul_decimal("[2,1]*0.2",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(0.4.into()),
+            RuntimeValue::Number(0.2.into())
+        ])].into()))]
+#[case::array_mul_large_number("[0.4,0.2]*5E9",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(2000000000.0.into()),
+            RuntimeValue::Number(1000000000.0.into())
+        ])].into()))]
+#[case::array_mul_small_integer("[1,2]*5",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into())
+        ])].into()))]
+#[case::array_mul_at_boundary("[1,2]*1000",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![{
+            let mut arr = Vec::with_capacity(2000);
+            for _ in 0..1000 {
+                arr.push(RuntimeValue::Number(1.into()));
+                arr.push(RuntimeValue::Number(2.into()));
+            }
+            RuntimeValue::Array(arr)
+        }].into()))]
+#[case::array_mul_over_boundary("[1,2]*1001",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1001.into()),
+            RuntimeValue::Number(2002.into())
+        ])].into()))]
+#[case::range_mul_decimal_large("2..1*.2*5E9",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(2000000000.0.into()),
+            RuntimeValue::Number(1000000000.0.into())
+        ])].into()))]
+#[case::array_concat_normal("[1,2]+[3,4]",
+        vec![RuntimeValue::Number(0.into())],
+        Ok(vec![RuntimeValue::Array(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+            RuntimeValue::Number(4.into())
+        ])].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,

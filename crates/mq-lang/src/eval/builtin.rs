@@ -25,6 +25,10 @@ use mq_markdown;
 
 static REGEX_CACHE: LazyLock<Mutex<FxHashMap<String, Regex>>> = LazyLock::new(|| Mutex::new(FxHashMap::default()));
 
+/// Maximum number of elements allowed in a generated range
+const MAX_RANGE_SIZE: usize = 1_000_000;
+const MAX_REPEAT_COUNT: usize = 1_000;
+
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
 pub type Args = Vec<RuntimeValue>;
@@ -1163,12 +1167,26 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args| {
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
+            let total_size = a1.len().saturating_add(a2.len());
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array concatenation size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
             let mut a = std::mem::take(a1);
             a.reserve(a2.len());
             a.extend_from_slice(a2);
             Ok(RuntimeValue::Array(a))
         }
         [RuntimeValue::Array(a1), a2] | [a2, RuntimeValue::Array(a1)] => {
+            let total_size = a1.len().saturating_add(1);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
             let mut a = std::mem::take(a1);
             a.reserve(1);
             a.push(std::mem::take(a2));
@@ -1188,7 +1206,10 @@ define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args| {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
         [a, b] => match (to_number(a)?, to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 - n2).into()),
-            _ => unreachable!(),
+            _ => Err(Error::InvalidTypes(
+                "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
+                vec![std::mem::take(a), std::mem::take(b)],
+            )),
         },
         _ => unreachable!(),
     }
@@ -1204,19 +1225,58 @@ define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     }
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 / n2).into()),
-        _ => unreachable!(),
+        (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
+        _ => Err(Error::InvalidTypes(
+            "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
     },
     _ => unreachable!(),
 });
 
 define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+    [RuntimeValue::Array(array), RuntimeValue::Number(n)] | [RuntimeValue::Number(n), RuntimeValue::Array(array)] => {
+        if n.is_int() && n.value() >= 0.0 && n.value() <= MAX_REPEAT_COUNT as f64 {
+            // Integer multiplication within repeat limit: repeat the array
+            repeat(&mut RuntimeValue::Array(std::mem::take(array)), n.value() as usize)
+        } else {
+            // Non-integer, negative, or too large multiplication: multiply each element
+            let result: Result<Vec<RuntimeValue>, Error> = std::mem::take(array)
+                .into_iter()
+                .map(|v| {
+                    let mut args = vec![v, RuntimeValue::Number(*n)];
+                    match args.as_mut_slice() {
+                        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
+                        [a, b] => match (to_number(a)?, to_number(b)?) {
+                            (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
+                            (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
+                            _ => Err(Error::InvalidTypes(
+                                constants::MUL.to_string(),
+                                vec![std::mem::take(&mut args[0]), std::mem::take(&mut args[1])],
+                            )),
+                        },
+                        _ => unreachable!(),
+                    }
+                })
+                .collect();
+            result.map(RuntimeValue::Array)
+        }
+    }
     [v, RuntimeValue::Number(n)] | [RuntimeValue::Number(n), v] => {
-        repeat(v, n.value() as usize)
+        if n.is_int() && n.value() >= 0.0 {
+            repeat(v, n.value() as usize)
+        } else {
+            Err(Error::InvalidTypes(
+                constants::MUL.to_string(),
+                vec![std::mem::take(v), RuntimeValue::Number(*n)],
+            ))
+        }
     }
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
-        _ => unreachable!(),
+        (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
+        _ => Ok(RuntimeValue::Number(0.into())),
     },
     _ => unreachable!(),
 });
@@ -3643,7 +3703,23 @@ fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<R
         return Err(Error::Runtime("step for range must not be zero".to_string()));
     }
 
-    let mut result = Vec::with_capacity(((end - start) / step).unsigned_abs() + 1);
+    // Calculate the size of the range to prevent capacity overflow
+    let range_size = if (step > 0 && end >= start) || (step < 0 && end <= start) {
+        let diff = (end as i128) - (start as i128);
+        let step_i128 = step as i128;
+        ((diff / step_i128).abs() + 1) as usize
+    } else {
+        0
+    };
+
+    if range_size > MAX_RANGE_SIZE {
+        return Err(Error::Runtime(format!(
+            "range size {} exceeds maximum allowed size of {}",
+            range_size, MAX_RANGE_SIZE
+        )));
+    }
+
+    let mut result = Vec::with_capacity(range_size);
     let mut current = start;
 
     if step > 0 {
@@ -3669,8 +3745,23 @@ fn generate_char_range(start_char: char, end_char: char, step: Option<i32>) -> R
         return Err(Error::Runtime("step for range must not be zero".to_string()));
     }
 
-    let capacity = (end_char as i32 - start_char as i32).unsigned_abs() as usize + 1;
-    let mut result = Vec::with_capacity(capacity);
+    // Calculate the size of the range to prevent capacity overflow
+    let range_size = if (step > 0 && end_char >= start_char) || (step < 0 && end_char <= start_char) {
+        let diff = (end_char as i64) - (start_char as i64);
+        let step_i64 = step as i64;
+        ((diff / step_i64).abs() + 1) as usize
+    } else {
+        0
+    };
+
+    if range_size > MAX_RANGE_SIZE {
+        return Err(Error::Runtime(format!(
+            "range size {} exceeds maximum allowed size of {}",
+            range_size, MAX_RANGE_SIZE
+        )));
+    }
+
+    let mut result = Vec::with_capacity(range_size);
     let mut current = start_char as i32;
     let end = end_char as i32;
 
@@ -3703,12 +3794,25 @@ fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>
 
     let start_bytes = start.as_bytes();
     let end_bytes = end.as_bytes();
-    let mut result = Vec::with_capacity(
-        (end_bytes.iter().zip(start_bytes.iter()))
-            .map(|(e, s)| e.max(s) - e.min(s))
-            .sum::<u8>() as usize
-            + 1,
-    );
+
+    // Calculate the approximate size of the range to prevent capacity overflow
+    let capacity_estimate = (end_bytes.iter().zip(start_bytes.iter()))
+        .map(|(e, s)| (e.max(s) - e.min(s)) as usize)
+        .try_fold(0usize, |acc, diff| {
+            // Prevent overflow during calculation
+            acc.checked_add(diff)
+                .ok_or_else(|| Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE)))
+        })?
+        + 1;
+
+    if capacity_estimate > MAX_RANGE_SIZE {
+        return Err(Error::Runtime(format!(
+            "range size {} exceeds maximum allowed size of {}",
+            capacity_estimate, MAX_RANGE_SIZE
+        )));
+    }
+
+    let mut result = Vec::with_capacity(capacity_estimate);
     let mut current = start_bytes.to_vec();
 
     loop {
@@ -3802,29 +3906,54 @@ fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
 
 fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
     match &*value {
-        RuntimeValue::String(s) => Ok(s.repeat(n).into()),
-        node @ RuntimeValue::Markdown(_, _) => node
-            .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(md.value().repeat(n).as_str())))
-            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        RuntimeValue::String(s) => {
+            let total_size = s.len().saturating_mul(n);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "string repeat size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+            Ok(s.repeat(n).into())
+        }
+        node @ RuntimeValue::Markdown(_, _) => {
+            if let Some(md) = node.markdown_node() {
+                let total_size = md.value().len().saturating_mul(n);
+                if total_size > MAX_RANGE_SIZE {
+                    return Err(Error::Runtime(format!(
+                        "markdown repeat size {} exceeds maximum allowed size of {}",
+                        total_size, MAX_RANGE_SIZE
+                    )));
+                }
+                Ok(node.update_markdown_value(md.value().repeat(n).as_str()))
+            } else {
+                Ok(RuntimeValue::NONE)
+            }
+        }
         RuntimeValue::Array(array) => {
             if n == 0 {
                 return Ok(RuntimeValue::EMPTY_ARRAY);
             }
 
-            let mut repeated_array = Vec::with_capacity(array.len() * n);
+            let total_size = array.len().saturating_mul(n);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array repeat size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+
+            let mut repeated_array = Vec::with_capacity(total_size);
             for _ in 0..n {
                 repeated_array.extend_from_slice(array);
             }
             Ok(RuntimeValue::Array(repeated_array))
         }
-        v => {
-            let mut repeated_array = Vec::with_capacity(n);
-            for _ in 0..n {
-                repeated_array.push(v.clone());
-            }
-            Ok(RuntimeValue::Array(repeated_array))
-        }
+        RuntimeValue::None => Ok(RuntimeValue::NONE),
+        _ => Err(Error::InvalidTypes(
+            constants::MUL.to_string(),
+            vec![std::mem::take(value), RuntimeValue::Number(n.into())],
+        )),
     }
 }
 
@@ -4360,5 +4489,140 @@ mod tests {
             result_err2,
             Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))
         );
+    }
+
+    #[rstest]
+    #[case::excessively_large_range(0, 2_000_000, 1)]
+    #[case::negative_step_large_range(10_000_000, 0, -1)]
+    #[case::just_over_limit(0, 1_000_000, 1)]
+    fn test_range_size_limit_exceeds(#[case] start: isize, #[case] end: isize, #[case] step: isize) {
+        let result = generate_numeric_range(start, end, step);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error");
+        }
+    }
+
+    #[rstest]
+    #[case::reasonable_range(0, 100, 1, 101)]
+    #[case::exactly_at_limit(0, 999_999, 1, 1_000_000)]
+    fn test_range_size_limit_success(
+        #[case] start: isize,
+        #[case] end: isize,
+        #[case] step: isize,
+        #[case] expected_len: usize,
+    ) {
+        let result = generate_numeric_range(start, end, step);
+        assert!(result.is_ok());
+        if let Ok(vec) = result {
+            assert_eq!(vec.len(), expected_len);
+        }
+    }
+
+    #[rstest]
+    #[case::unicode_max_range('\u{0000}', '\u{10FFFF}', Some(1))]
+    fn test_char_range_size_limit_exceeds(#[case] start: char, #[case] end: char, #[case] step: Option<i32>) {
+        let result = generate_char_range(start, end, step);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains("exceeds maximum allowed size"));
+        } else {
+            panic!("Expected Runtime error");
+        }
+    }
+
+    #[rstest]
+    #[case::reasonable_char_range('a', 'z', None, 26)]
+    fn test_char_range_size_limit_success(
+        #[case] start: char,
+        #[case] end: char,
+        #[case] step: Option<i32>,
+        #[case] expected_len: usize,
+    ) {
+        let result = generate_char_range(start, end, step);
+        assert!(result.is_ok());
+        if let Ok(vec) = result {
+            assert_eq!(vec.len(), expected_len);
+        }
+    }
+
+    #[rstest]
+    #[case::excessively_large_array_repeat(
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        600_000,
+        "array repeat size"
+    )]
+    #[case::just_over_limit(
+        vec![RuntimeValue::Number(1.into())],
+        1_000_001,
+        "exceeds maximum allowed size"
+    )]
+    fn test_repeat_array_size_limit_exceeds(
+        #[case] array: Vec<RuntimeValue>,
+        #[case] n: usize,
+        #[case] expected_msg: &str,
+    ) {
+        let mut value = RuntimeValue::Array(array);
+        let result = repeat(&mut value, n);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains(expected_msg));
+        } else {
+            panic!("Expected Runtime error for array repeat");
+        }
+    }
+
+    #[rstest]
+    #[case::reasonable_array_repeat(
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+        10,
+        20
+    )]
+    #[case::exactly_at_limit(
+        vec![RuntimeValue::Number(1.into())],
+        1_000_000,
+        1_000_000
+    )]
+    fn test_repeat_array_size_limit_success(
+        #[case] array: Vec<RuntimeValue>,
+        #[case] n: usize,
+        #[case] expected_len: usize,
+    ) {
+        let mut value = RuntimeValue::Array(array);
+        let result = repeat(&mut value, n);
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::Array(vec)) = result {
+            assert_eq!(vec.len(), expected_len);
+        } else {
+            panic!("Expected successful array repeat");
+        }
+    }
+
+    #[rstest]
+    #[case::excessively_large_string_repeat("test", 300_000, "string repeat size")]
+    fn test_repeat_string_size_limit_exceeds(#[case] string: &str, #[case] n: usize, #[case] expected_msg: &str) {
+        let mut value = RuntimeValue::String(string.to_string());
+        let result = repeat(&mut value, n);
+        assert!(result.is_err());
+        if let Err(Error::Runtime(msg)) = result {
+            assert!(msg.contains(expected_msg));
+        } else {
+            panic!("Expected Runtime error for string repeat");
+        }
+    }
+
+    #[rstest]
+    #[case::reasonable_string_repeat("test", 10, 40)]
+    fn test_repeat_string_size_limit_success(#[case] string: &str, #[case] n: usize, #[case] expected_len: usize) {
+        let mut value = RuntimeValue::String(string.to_string());
+        let result = repeat(&mut value, n);
+        assert!(result.is_ok());
+        if let Ok(RuntimeValue::String(s)) = result {
+            assert_eq!(s.len(), expected_len);
+        } else {
+            panic!("Expected successful string repeat");
+        }
     }
 }

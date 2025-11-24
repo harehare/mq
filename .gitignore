@@ -95,4 +95,4 @@ example.html
 tsconfig.tsbuildinfo
 
 
-crates/**/assets
+crates/*/assets

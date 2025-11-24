@@ -1212,7 +1212,10 @@ impl<T: ModuleResolver> Evaluator<T> {
 
             result
         } else if let RuntimeValue::NativeFunction(ident) = fn_value {
-            self.eval_builtin(runtime_value, node, ident, args, env)
+            self.enter_scope()?;
+            let result = self.eval_builtin(runtime_value, node, ident, args, env);
+            self.exit_scope();
+            result
         } else {
             Err(EvalError::InvalidDefinition(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -3600,17 +3603,6 @@ mod tests {
             ])
         ],
         Ok(vec!["".to_string().into()]))]
-    #[case::repeat_number(vec![RuntimeValue::Number(42.into())],
-        vec![
-            ast_call("repeat", smallvec![
-                ast_node(ast::Expr::Literal(ast::Literal::Number(3.into())))
-            ])
-        ],
-        Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::Number(42.into()),
-            RuntimeValue::Number(42.into()),
-            RuntimeValue::Number(42.into()),
-        ])]))]
     #[case::repeat_invalid(vec![RuntimeValue::Number(42.into())],
         vec![
             ast_call("repeat", smallvec![
@@ -4947,13 +4939,6 @@ mod tests {
             ])
        ],
        Ok(vec![RuntimeValue::NONE]))]
-    #[case::repeat(vec![RuntimeValue::NONE],
-       vec![
-            ast_call("repeat", smallvec![
-                ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
-            ])
-       ],
-       Ok(vec![RuntimeValue::Array(vec![RuntimeValue::NONE])]))]
     #[case::trim(vec![RuntimeValue::NONE],
        vec![
             ast_call("trim", SmallVec::new())

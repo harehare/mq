@@ -2647,6 +2647,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-fuzz"
+version = "0.5.2"
+dependencies = [
+ "arbitrary",
+ "itertools 0.14.0",
+ "libfuzzer-sys",
+ "mq-lang",
+]
+
+[[package]]
 name = "mq-hir"
 version = "0.5.2"
 dependencies = [
@@ -2686,16 +2696,6 @@ dependencies = [
  "smol_str",
  "string-interner",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "mq-lang-fuzz"
-version = "0.5.2"
-dependencies = [
- "arbitrary",
- "itertools 0.14.0",
- "libfuzzer-sys",
- "mq-lang",
 ]
 
 [[package]]

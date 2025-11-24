@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "fuzz",
   "crates/mq-c-api",
   "crates/mq-run",
   "crates/mq-lang",
@@ -8,7 +9,6 @@ members = [
   "crates/mq-lsp",
   "crates/mq-hir",
   "crates/mq-formatter",
-  "crates/fuzz",
   "crates/mq-wasm",
   "crates/mq-python",
   "crates/mq-web-api",
