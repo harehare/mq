@@ -529,7 +529,7 @@ impl Cli {
                             )
                             .ok();
                         }
-                        writeln!(handle).ok();
+                        writeln!(handle).into_diagnostic()?;
                     }
                 }
 
