@@ -34,9 +34,13 @@ function M.start()
 
   local lsp_config = config.get("lsp")
 
+  -- Build cmd array with executable and arguments
+  local cmd_array = { cmd }
+  vim.list_extend(cmd_array, args)
+
   local client_config = {
     name = "mq",
-    cmd = { cmd, unpack(args) },
+    cmd = cmd_array,
     filetypes = { "mq" },
     root_dir = vim.loop.cwd(),
     on_attach = lsp_config.on_attach,
