@@ -5378,7 +5378,7 @@ mod tests {
                 ],
                 Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "to_markdown".to_string(),
-                                     args: vec!["None".to_string().into()]})))]
+                                     args: vec!["None".into()]})))]
     #[case::error_with_message(vec![RuntimeValue::String("test".to_string())],
         vec![
             ast_call("error", smallvec![
