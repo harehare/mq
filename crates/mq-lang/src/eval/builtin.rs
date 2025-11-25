@@ -3500,7 +3500,7 @@ impl Error {
             Error::InvalidTypes(name, args) => EvalError::InvalidTypes {
                 token: (*get_token(token_arena, node.token_id)).clone(),
                 name: name.clone(),
-                args: args.iter().map(|o| o.to_string().into()).collect::<Vec<_>>(),
+                args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
             },
             Error::InvalidNumberOfArguments(name, expected, got) => EvalError::InvalidNumberOfArguments(
                 (*get_token(token_arena, node.token_id)).clone(),

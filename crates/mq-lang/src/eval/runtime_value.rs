@@ -236,6 +236,13 @@ impl std::fmt::Debug for RuntimeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let v: Cow<'_, str> = match self {
             Self::None => Cow::Borrowed("None"),
+            Self::String(s) => Cow::Owned(format!(r#""{}""#, s)),
+            Self::Array(arr) => Cow::Owned(
+                arr.iter()
+                    .map(|v| format!("{:?}", v))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+            ),
             a => a.string(),
         };
         write!(f, "{}", v)
@@ -737,7 +744,7 @@ mod tests {
             RuntimeValue::Number(Number::from(1.0)),
             RuntimeValue::String("hello".to_string()),
         ]);
-        assert_eq!(format!("{:?}", array), r#"[1, "hello"]"#);
+        assert_eq!(format!("{:?}", array), r#"1, "hello""#);
 
         let node = mq_markdown::Node::Text(mq_markdown::Text {
             value: "test markdown".to_string(),

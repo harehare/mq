@@ -25,7 +25,7 @@ pub enum EvalError {
     InvalidDefinition(ErrorToken, String),
     #[error("Maximum recursion depth exceeded \"{0}\"")]
     RecursionError(u32),
-    #[error("Invalid types for \"{}\", got {}", name, args.join(", "))]
+    #[error(r#"Invalid types for "{}", got {}"#, name, args.join(", "))]
     InvalidTypes {
         token: ErrorToken,
         name: FunctionName,
