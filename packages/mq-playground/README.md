@@ -1,4 +1,4 @@
-# mq Playground
+<h1 align="center">mq Playground</h1>
 
 This is a playground for experimenting with mq, powered by WebAssembly.
 
