@@ -4048,7 +4048,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                              name: "set".to_string(),
-                             args: vec![r#""item1", "item2""#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
+                             args: vec![r#"["item1", "item2"]"#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::del_dict_valid_key(vec![RuntimeValue::Dict(vec![
             (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
             (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
@@ -4446,7 +4446,7 @@ mod tests {
                 ],
                 Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "insert".to_string(),
-                                     args: vec![r#""item1", "item2""#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
+                                     args: vec![r#"["item1", "item2"]"#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::insert_string_middle(vec![RuntimeValue::String("ac".to_string())],
                 vec![
                     ast_call("insert", smallvec![
