@@ -6,7 +6,7 @@
   <a href="https://mqlang.org/playground">Playground 🎮</a>
 </div>
 
-# mq-web
+<h1 align="center">mq-web</h1>
 
 A TypeScript/JavaScript package for running [mq](https://github.com/harehare/mq) (a jq-like command-line tool for Markdown processing) in web environments using WebAssembly.
 

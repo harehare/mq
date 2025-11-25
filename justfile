@@ -7,7 +7,7 @@ run *args:
     cargo run -- {{args}}
 
 # Start the web playground development server
-[working-directory: 'packages/playground']
+[working-directory: 'packages/mq-playground']
 playground:
     npm run dev
 
