@@ -1346,7 +1346,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "starts_with".to_string(),
-                                                    args: vec!["1".into(), "end".to_string().into()]})))]
+                                                    args: vec!["1".into(), "\"end\"".to_string().into()]})))]
     #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("ends_with", smallvec![
@@ -1390,7 +1390,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "ends_with".to_string(),
-                                                    args: vec![1.to_string().into(), "te".into()]})))]
+                                                    args: vec!["1".into(), "\"te\"".into()]})))]
     #[case::downcase(vec![RuntimeValue::String("TEST".to_string())],
        vec![ast_call("downcase", SmallVec::new())],
        Ok(vec![RuntimeValue::String("test".to_string())]))]
@@ -1444,7 +1444,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "replace".to_string(),
-                                                    args: vec![123.to_string().into(), "test".to_string().into(), "exam".to_string().into()]})))]
+                                                    args: vec![123.to_string().into(), "\"test\"".to_string().into(), "\"exam\"".to_string().into()]})))]
     #[case::gsub_regex(vec![RuntimeValue::String("test123".to_string())],
        vec![
             ast_call("gsub", smallvec![
@@ -1470,7 +1470,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "gsub".to_string(),
-                                                    args: vec![123.to_string().into(), "test".to_string().into(), r"\d+".to_string().into()]})))]
+                                                    args: vec![123.to_string().into(), "\"test\"".to_string().into(), "\"\\\\d+\"".to_string().into()]})))]
     #[case::len(vec![RuntimeValue::String("testString".to_string())],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Number(10.into())]))]
@@ -1548,7 +1548,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "index".to_string(),
-                                                    args: vec!["1".into(), "test".into()]})))]
+                                                    args: vec!["1".into(), "\"test\"".into()]})))]
     #[case::array_index(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
         vec![
               ast_call("index", smallvec![
@@ -1585,7 +1585,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "rindex".to_string(),
-                                                    args: vec!["123".into(), "String".into()]})))]
+                                                    args: vec!["123".into(), "\"String\"".into()]})))]
     #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test1".to_string())])],
         vec![
               ast_call("rindex", smallvec![
@@ -2186,7 +2186,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "pow".to_string(),
-                                                    args: vec!["te".to_string().into(), 1.to_string().into()]})))]
+                                                    args: vec!["\"te\"".to_string().into(), "1".to_string().into()]})))]
     #[case::and(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("and", smallvec![
@@ -2295,7 +2295,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "split".to_string(),
-                                                    args: vec![1.to_string().into(), ",".to_string().into()]})))]
+                                                    args: vec![1.to_string().into(), "\",\"".to_string().into()]})))]
     #[case::split_array(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("value1".to_string()),
             RuntimeValue::String("separator".to_string()),
@@ -2383,7 +2383,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "join".to_string(),
-                                                    args: vec![1.to_string().into(), "#".to_string().into()]})))]
+                                                    args: vec![1.to_string().into(), "\"#\"".to_string().into()]})))]
     #[case::reverse_string(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("reverse", SmallVec::new())
@@ -2571,7 +2571,7 @@ mod tests {
             ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "min".to_string(),
-                                                    args: vec!["te".to_string().into(), 1.to_string().into()]})))]
+                                                    args: vec!["\"te\"".to_string().into(), 1.to_string().into()]})))]
     #[case::max(vec![RuntimeValue::String("test".to_string())],
        vec![
             ast_call("max", smallvec![
@@ -2604,7 +2604,7 @@ mod tests {
             ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "max".to_string(),
-                                                    args: vec!["te".to_string().into(), 1.to_string().into()]})))]
+                                                    args: vec!["\"te\"".to_string().into(), 1.to_string().into()]})))]
     #[case::trim(vec![RuntimeValue::String("  test  ".to_string())],
        vec![
             ast_call("trim", SmallVec::new())
@@ -2772,7 +2772,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "regex_match".to_string(),
-                                                    args: vec![123.to_string().into(), r"\d+".to_string().into()]})))]
+                                                    args: vec![123.to_string().into(), "\"\\\\d+\"".to_string().into()]})))]
     #[case::explode(vec![RuntimeValue::String("ABC".to_string())],
        vec![
             ast_call("explode", SmallVec::new())
@@ -2804,7 +2804,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "implode".to_string(),
-                                                    args: vec!["test".to_string().into()]})))]
+                                                    args: vec!["\"test\"".to_string().into()]})))]
     #[case::explode_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "ABC".to_string(), position: None}), None)],
         vec![
              ast_call("explode", SmallVec::new())
@@ -2871,7 +2871,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "trunc".to_string(),
-                                                    args: vec!["42.5".to_string().into()]})))]
+                                                    args: vec!["\"42.5\"".to_string().into()]})))]
     #[case::abs_positive(vec![RuntimeValue::Number(42.into())],
        vec![
             ast_call("abs", SmallVec::new())
@@ -2898,7 +2898,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "abs".to_string(),
-                                                     args: vec!["42".to_string().into()]})))]
+                                                     args: vec!["\"42\"".to_string().into()]})))]
     #[case::ceil(vec![RuntimeValue::Number(42.1.into())],
         vec![
             ast_call("ceil", SmallVec::new())
@@ -2915,7 +2915,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "ceil".to_string(),
-                                                     args: vec!["42".to_string().into()]})))]
+                                                     args: vec!["\"42\"".to_string().into()]})))]
     #[case::round(vec![RuntimeValue::Number(42.5.into())],
         vec![
             ast_call("round", SmallVec::new())
@@ -2932,7 +2932,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "round".to_string(),
-                                                     args: vec!["42.4".to_string().into()]})))]
+                                                     args: vec!["\"42.4\"".to_string().into()]})))]
     #[case::floor(vec![RuntimeValue::Number(42.9.into())],
         vec![
             ast_call("floor", SmallVec::new())
@@ -2949,7 +2949,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "floor".to_string(),
-                                                     args: vec!["42.9".to_string().into()]})))]
+                                                     args: vec!["\"42.9\"".to_string().into()]})))]
     #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])],
         vec![
               ast_call("del", smallvec![
@@ -3333,7 +3333,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "to_date".to_string(),
-                                                     args: vec!["test".to_string().into(), "%Y-%m-%d".to_string().into()]})))]
+                                                     args: vec!["\"test\"".into(), "\"%Y-%m-%d\"".into()]})))]
     #[case::to_string_array(vec![RuntimeValue::Array(vec![
             RuntimeValue::String("test".to_string()),
             RuntimeValue::Number(1.into()),
@@ -3608,7 +3608,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
            name: "repeat".to_string(),
-           args: vec!["42".to_string().into(), "".to_string().into()]})))]
+           args: vec!["42".to_string().into(), "\"\"".to_string().into()]})))]
     #[case::debug(vec![RuntimeValue::String("test".to_string())],
         vec![
             ast_call("stderr", SmallVec::new())
@@ -4035,7 +4035,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                              name: "set".to_string(),
-                             args: vec!["not_an_array".to_string().into(), 0.to_string().into(), "value".to_string().into()]})))]
+                             args: vec!["\"not_an_array\"".to_string().into(), 0.to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::set_array_non_number_index(vec![RuntimeValue::Array(vec![
         RuntimeValue::String("item1".to_string()),
         RuntimeValue::String("item2".to_string()),
@@ -4048,7 +4048,7 @@ mod tests {
         ],
         Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                              name: "set".to_string(),
-                             args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
+                             args: vec![r#"["item1", "item2"]"#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::del_dict_valid_key(vec![RuntimeValue::Dict(vec![
             (Ident::new("key1"), RuntimeValue::String("value1".to_string())),
             (Ident::new("key2"), RuntimeValue::String("value2".to_string())),
@@ -4433,7 +4433,7 @@ mod tests {
                 ],
                 Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "insert".to_string(),
-                                     args: vec![1.to_string().into(), 0.to_string().into(), "value".to_string().into()]})))]
+                                     args: vec![1.to_string().into(), 0.to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::insert_array_non_number_index(vec![RuntimeValue::Array(vec![
                 RuntimeValue::String("item1".to_string()),
                 RuntimeValue::String("item2".to_string()),
@@ -4446,7 +4446,7 @@ mod tests {
                 ],
                 Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "insert".to_string(),
-                                     args: vec![r#"["item1", "item2"]"#.to_string().into(), "not_a_number".to_string().into(), "value".to_string().into()]})))]
+                                     args: vec![r#"["item1", "item2"]"#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::insert_string_middle(vec![RuntimeValue::String("ac".to_string())],
                 vec![
                     ast_call("insert", smallvec![
@@ -4985,7 +4985,7 @@ mod tests {
             Err(InnerError::Eval(EvalError::InvalidTypes{
                 token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() },
                 name: "negate".to_string(),
-                args: vec!["test".to_string().into()]
+                args: vec!["\"test\"".to_string().into()]
             })))]
     #[case::and_true_last_value(
                 vec![RuntimeValue::Boolean(true)],
@@ -5378,7 +5378,7 @@ mod tests {
                 ],
                 Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "to_markdown".to_string(),
-                                     args: vec!["".to_string().into()]})))]
+                                     args: vec!["None".into()]})))]
     #[case::error_with_message(vec![RuntimeValue::String("test".to_string())],
         vec![
             ast_call("error", smallvec![
