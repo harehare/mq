@@ -1470,7 +1470,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "gsub".to_string(),
-                                                    args: vec![123.to_string().into(), "\"test\"".to_string().into(), "\"\\d+\"".to_string().into()]})))]
+                                                    args: vec![123.to_string().into(), "\"test\"".to_string().into(), "\"\\\\d+\"".to_string().into()]})))]
     #[case::len(vec![RuntimeValue::String("testString".to_string())],
        vec![ast_call("len", SmallVec::new())],
        Ok(vec![RuntimeValue::Number(10.into())]))]
@@ -2772,7 +2772,7 @@ mod tests {
        ],
        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "regex_match".to_string(),
-                                                    args: vec![123.to_string().into(), "\"\\d+\"".to_string().into()]})))]
+                                                    args: vec![123.to_string().into(), "\"\\\\d+\"".to_string().into()]})))]
     #[case::explode(vec![RuntimeValue::String("ABC".to_string())],
        vec![
             ast_call("explode", SmallVec::new())
