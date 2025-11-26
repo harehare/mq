@@ -2372,7 +2372,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         SmolStr::new(".h"),
         BuiltinSelectorDoc {
             description: "Selects a heading node with the specified depth.",
-            params: &["depth"],
+            params: &[],
         },
     );
 
@@ -2436,7 +2436,7 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         SmolStr::new(".code"),
         BuiltinSelectorDoc {
             description: "Selects a code block node with the specified language.",
-            params: &["lang"],
+            params: &[],
         },
     );
 
