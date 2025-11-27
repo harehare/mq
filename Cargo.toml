@@ -13,7 +13,7 @@ members = [
   "crates/mq-python",
   "crates/mq-web-api",
   "crates/mq-dap",
-  "crates/mq-crawler",
+  "crates/mq-crawler", "crates/mq-ruby", "crates/mq-java",
 ]
 resolver = "3"
 

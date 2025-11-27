@@ -1,0 +1,11 @@
+[package]
+name = "mq-java"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jni = "0.21.1"
+mq-c-api = { path = "../mq-c-api" }
+
+[lib]
+crate-type = ["cdylib"]

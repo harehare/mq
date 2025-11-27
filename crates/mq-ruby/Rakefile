@@ -1,0 +1,13 @@
+require "rake/clean"
+require "rbconfig"
+
+task default: :build
+
+task :build do
+  sh "cargo build --release"
+  mkdir_p "lib/mq"
+  dlext = RbConfig::CONFIG['DLEXT']
+  cp "../../target/release/libmq_ruby.#{dlext}", "lib/mq/mq_ruby.#{dlext}"
+end
+
+CLEAN.include("lib/mq")

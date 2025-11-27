@@ -1,0 +1,11 @@
+[package]
+name = "mq-ruby"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+magnus = "0.6.0"
+mq-c-api = { path = "../mq-c-api" }
+
+[lib]
+crate-type = ["cdylib"]

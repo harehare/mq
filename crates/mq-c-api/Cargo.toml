@@ -18,7 +18,7 @@ mq-lang = {path = "../mq-lang", version = "0.5.3"}
 mq-markdown = {path = "../mq-markdown", version = "0.5.3"}
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [build-dependencies]
 cbindgen = "0.29.2"
