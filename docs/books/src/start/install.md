@@ -25,7 +25,7 @@ cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run
+cargo binstall mq-run@0.5.3
 ```
 
 ## Binaries
