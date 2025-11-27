@@ -34,10 +34,6 @@ vim.defer_fn(function()
     local lsp = require("mq.lsp")
     lsp.setup_autostart()
 
-    -- Setup DAP if available
-    local dap = require("mq.dap")
-    dap.setup()
-
     vim.g.mq_initialized = true
   end
 end, 0)

@@ -1,7 +1,5 @@
 local M = {}
-local config = require("mq.config")
 local lsp = require("mq.lsp")
-local dap = require("mq.dap")
 local utils = require("mq.utils")
 
 -- Start LSP server
@@ -20,13 +18,13 @@ function M.restart_lsp()
 end
 
 -- Install mq servers
-function M.install_servers()
+function M.install()
   if vim.fn.executable("cargo") ~= 1 then
     utils.error("cargo not found in PATH. Please install Rust toolchain.")
     return
   end
 
-  utils.info("Installing mq servers...")
+  utils.info("Installing mq...")
 
   -- Stop LSP server if running
   if lsp.is_running() then
@@ -35,8 +33,7 @@ function M.install_servers()
 
   -- Run installation command
   local install_cmd =
-      "cargo install --git https://github.com/harehare/mq.git mq-run && "
-      .. 'cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"'
+  "cargo install --git https://github.com/harehare/mq.git mq-run --force"
 
   vim.fn.jobstart(install_cmd, {
     on_exit = function(_, exit_code)
@@ -138,11 +135,6 @@ function M.execute_file()
   end)
 end
 
--- Debug current file
-function M.debug_current_file()
-  dap.debug_current_file()
-end
-
 -- Register all commands
 function M.register_commands()
   -- Prevent duplicate registration
@@ -150,12 +142,8 @@ function M.register_commands()
     return
   end
 
-  vim.api.nvim_create_user_command("MqNew", M.new_file, {
-    desc = "Create new mq file",
-  })
-
-  vim.api.nvim_create_user_command("MqInstallServers", M.install_servers, {
-    desc = "Install mq LSP and DAP servers",
+  vim.api.nvim_create_user_command("MqInstall", M.install, {
+    desc = "Install mq LSP server",
   })
 
   vim.api.nvim_create_user_command("MqStartLSP", M.start_lsp, {
@@ -181,10 +169,6 @@ function M.register_commands()
 
   vim.api.nvim_create_user_command("MqExecuteFile", M.execute_file, {
     desc = "Execute mq file on current file",
-  })
-
-  vim.api.nvim_create_user_command("MqDebug", M.debug_current_file, {
-    desc = "Debug current mq file",
   })
 
   vim.g.mq_commands_registered = true
