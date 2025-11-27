@@ -53,10 +53,10 @@ jobs:
         working-directory: ./docs/books
       - name: Install playground dependencies
         run: npm ci
-        working-directory: ./packages/playground
+        working-directory: ./packages/mq-playground
       - name: Build playground
         run: npm run build
-        working-directory: ./packages/playground
+        working-directory: ./packages/mq-playground
       - name: Copy install script
         run: cp ./scripts/install.sh ./docs
       - name: Deploy
