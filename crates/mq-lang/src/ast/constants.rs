@@ -1,3 +1,5 @@
+pub const SELF: &str = "self";
+
 pub const ARRAY: &str = "array";
 pub const DICT: &str = "dict";
 

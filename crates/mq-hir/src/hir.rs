@@ -555,9 +555,9 @@ impl Hir {
                         parent,
                     });
                 }
-                mq_lang::StringSegment::Ident(ident, range) => {
+                mq_lang::StringSegment::Expr(expr, range) => {
                     self.symbols.insert(Symbol {
-                        value: Some(ident.clone()),
+                        value: Some(expr.clone()),
                         kind: SymbolKind::Variable,
                         source: SourceInfo::new(Some(source_id), Some(*range)),
                         scope: scope_id,

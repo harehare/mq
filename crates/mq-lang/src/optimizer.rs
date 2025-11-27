@@ -145,8 +145,8 @@ impl Optimizer {
             }
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments {
-                    if let ast::StringSegment::Ident(ident) = segment {
-                        used_idents.insert(*ident);
+                    if let ast::StringSegment::Expr(node) = segment {
+                        Self::collect_used_identifiers_in_node(node, used_idents);
                     }
                 }
             }
@@ -677,11 +677,8 @@ impl Optimizer {
             }
             ast::Expr::InterpolatedString(segments) => {
                 for segment in segments.iter_mut() {
-                    if let ast::StringSegment::Ident(ident) = segment
-                        && let Some(expr) = self.constant_table.get(ident)
-                        && let ast::Expr::Literal(lit) = &**expr
-                    {
-                        *segment = ast::StringSegment::Text(lit.to_string());
+                    if let ast::StringSegment::Expr(node) = segment {
+                        self.optimize_node(node);
                     }
                 }
             }
@@ -1112,7 +1109,7 @@ mod tests {
             }),
         ]
     )]
-    #[case::constant_folding_interpolated_string_ident(
+    #[case::constant_folding_interpolated_string_expr(
         vec![
             Shared::new(Node {
                 token_id: 0.into(),
@@ -1128,7 +1125,10 @@ mod tests {
                 token_id: 2.into(),
                 expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Hello, ".to_string()),
-                    ast::StringSegment::Ident(Ident::new("name")),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 3.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("name"))),
+                    })),
                     ast::StringSegment::Text("!".to_string()),
                 ])),
             }),
@@ -1148,13 +1148,16 @@ mod tests {
                 token_id: 2.into(),
                 expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Hello, ".to_string()),
-                    ast::StringSegment::Text("Alice".to_string()),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 3.into(),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Alice".to_string()))),
+                    })),
                     ast::StringSegment::Text("!".to_string()),
                 ])),
             }),
         ]
     )]
-    #[case::constant_folding_interpolated_string_multiple_idents(
+    #[case::constant_folding_interpolated_string_multiple_exprs(
         vec![
             Shared::new(Node {
                 token_id: 0.into(),
@@ -1180,9 +1183,15 @@ mod tests {
                 token_id: 4.into(),
                 expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Name: ".to_string()),
-                    ast::StringSegment::Ident(Ident::new("first")),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 5.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("first"))),
+                    })),
                     ast::StringSegment::Text(" ".to_string()),
-                    ast::StringSegment::Ident(Ident::new("last")),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 6.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("last"))),
+                    })),
                 ])),
             }),
         ],
@@ -1211,14 +1220,20 @@ mod tests {
                 token_id: 4.into(),
                 expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Name: ".to_string()),
-                    ast::StringSegment::Text("Bob".to_string()),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 5.into(),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Bob".to_string()))),
+                    })),
                     ast::StringSegment::Text(" ".to_string()),
-                    ast::StringSegment::Text("Smith".to_string()),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 6.into(),
+                        expr: Shared::new(AstExpr::Literal(Literal::String("Smith".to_string()))),
+                    })),
                 ])),
             }),
         ]
     )]
-    #[case::constant_folding_interpolated_string_ident_non_const(
+    #[case::constant_folding_interpolated_string_expr_non_const(
         vec![
             Shared::new(Node {
                 token_id: 0.into(),
@@ -1237,7 +1252,10 @@ mod tests {
                 token_id: 2.into(),
                 expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Value: ".to_string()),
-                    ast::StringSegment::Ident(Ident::new("dynamic")),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 3.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("dynamic"))),
+                    })),
                 ])),
             }),
         ],
@@ -1259,7 +1277,10 @@ mod tests {
                 token_id: 2.into(),
                 expr: Shared::new(AstExpr::InterpolatedString(vec![
                     ast::StringSegment::Text("Value: ".to_string()),
-                    ast::StringSegment::Ident(Ident::new("dynamic")),
+                    ast::StringSegment::Expr(Shared::new(Node {
+                        token_id: 3.into(),
+                        expr: Shared::new(AstExpr::Ident(IdentWithToken::new("dynamic"))),
+                    })),
                 ])),
             }),
         ]
@@ -2332,7 +2353,10 @@ mod tests {
             token_id: 3.into(),
             expr: Shared::new(AstExpr::InterpolatedString(vec![
                 ast::StringSegment::Text("Hello ".to_string()),
-                ast::StringSegment::Ident(Ident::new("name")),
+                ast::StringSegment::Expr(Shared::new(Node {
+                    token_id: 4.into(),
+                    expr: Shared::new(AstExpr::Ident(IdentWithToken::new("name"))),
+                })),
             ])),
         }),
     ],

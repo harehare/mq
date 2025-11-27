@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub enum StringSegment {
     Text(String, Range),
-    Ident(SmolStr, Range),
+    Expr(SmolStr, Range),
 }
 
 impl Display for StringSegment {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             StringSegment::Text(text, _) => write!(f, "{}", text),
-            StringSegment::Ident(ident, _) => write!(f, "${{{}}}", ident),
+            StringSegment::Expr(expr, _) => write!(f, "${{{}}}", expr),
         }
     }
 }
@@ -212,12 +212,12 @@ mod tests {
         StringSegment::Text("hello".to_string(), Range::default()),
         "hello"
     )]
-    #[case(StringSegment::Ident(SmolStr::new("world"), Range::default()), "${world}")]
+    #[case(StringSegment::Expr(SmolStr::new("world"), Range::default()), "${world}")]
     #[case(
         StringSegment::Text("".to_string(), Range::default()),
         ""
     )]
-    #[case(StringSegment::Ident(SmolStr::new(""), Range::default()), "${}")]
+    #[case(StringSegment::Expr(SmolStr::new(""), Range::default()), "${}")]
     fn string_segment_display_works(#[case] segment: StringSegment, #[case] expected: &str) {
         assert_eq!(segment.to_string(), expected);
     }

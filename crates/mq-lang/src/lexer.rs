@@ -19,6 +19,7 @@ use nom_locate::{LocatedSpan, position};
 use smol_str::SmolStr;
 use token::{StringSegment, Token, TokenKind};
 
+use crate::ast::constants;
 use crate::module::ModuleId;
 use crate::number::Number;
 use crate::range::Range;
@@ -239,7 +240,7 @@ define_token_parser!(range_op, "..", TokenKind::RangeOp);
 define_token_parser!(r_bracket, "]", TokenKind::RBracket);
 define_token_parser!(r_paren, ")", TokenKind::RParen);
 define_token_parser!(r_brace, "}", TokenKind::RBrace);
-define_keyword_parser!(self_, "self", TokenKind::Self_);
+define_keyword_parser!(self_, constants::SELF, TokenKind::Self_);
 define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
 define_keyword_parser!(try_, "try", TokenKind::Try);
 define_keyword_parser!(catch_, "catch", TokenKind::Catch);
@@ -333,7 +334,7 @@ fn number_literal(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-fn interpolation_ident(input: Span) -> IResult<Span, Span> {
+fn interpolation_expr(input: Span) -> IResult<Span, Span> {
     delimited(tag("${"), take_until("}"), char('}')).parse(input)
 }
 
@@ -342,12 +343,12 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
         map(
             |input: Span<'a>| {
                 let (span, start) = position(input)?;
-                let (span, ident) = interpolation_ident(span)?;
+                let (span, expr) = interpolation_expr(span)?;
                 let (span, end) = position(span)?;
                 Ok((
                     span,
                     (
-                        ident,
+                        expr,
                         Range {
                             start: start.into(),
                             end: end.into(),
@@ -355,7 +356,7 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
                     ),
                 ))
             },
-            |(ident, range)| StringSegment::Ident(ident.to_string().into(), range),
+            |(expr, range)| StringSegment::Expr(expr.to_string().into(), range),
         ),
         map(
             |input| {
@@ -765,7 +766,7 @@ mod tests {
             Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 2, column: 2} },
                           kind: TokenKind::InterpolatedString(vec![
                             StringSegment::Text("test".to_string(), Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 7} }),
-                            StringSegment::Ident("val1".to_string().into(), Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }),
+                            StringSegment::Expr("val1".to_string().into(), Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 14} }),
                             StringSegment::Text("test\n".to_string(), Range { start: Position {line: 1, column: 14}, end: Position {line: 2, column: 1 }})
                           ]), module_id: 1.into()},
                    Token{range: Range { start: Position {line: 2, column: 2}, end: Position {line: 2, column: 2} }, kind: TokenKind::Eof, module_id: 1.into()}]
@@ -778,7 +779,7 @@ mod tests {
             Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 15} },
                           kind: TokenKind::InterpolatedString(vec![
                             StringSegment::Text("$".to_string(), Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 5} }),
-                            StringSegment::Ident("test".to_string().into(), Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 12} }),
+                            StringSegment::Expr("test".to_string().into(), Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 12} }),
                             StringSegment::Text("$".to_string(), Range { start: Position {line: 1, column: 12}, end: Position {line: 1, column: 14 }})
                           ]), module_id: 1.into()},
                    Token{range: Range { start: Position {line: 1, column: 15}, end: Position {line: 1, column: 15} }, kind: TokenKind::Eof, module_id: 1.into()}]

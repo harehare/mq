@@ -1,9 +1,10 @@
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
+use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
 use crate::selector::Selector;
-use crate::{Ident, Shared};
+use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
@@ -1511,14 +1512,65 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_interpolated_string(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
         if let TokenKind::InterpolatedString(segments) = &token.kind {
-            let segments = segments.iter().map(|seg| seg.into()).collect::<Vec<_>>();
+            let mut parsed_segments = Vec::new();
+
+            for segment in segments {
+                match segment {
+                    lexer::token::StringSegment::Text(text, _) => {
+                        parsed_segments.push(super::node::StringSegment::Text(text.clone()));
+                    }
+                    lexer::token::StringSegment::Expr(expr_str, range) => {
+                        // Parse the expression string
+                        let expr_str = expr_str.trim();
+
+                        // Handle special cases first
+                        if expr_str == constants::SELF {
+                            parsed_segments.push(super::node::StringSegment::Self_);
+                        } else if let Some(stripped) = expr_str.strip_prefix("$") {
+                            // Environment variable
+                            parsed_segments.push(super::node::StringSegment::Env(SmolStr::from(stripped)));
+                        } else {
+                            // Parse as a full expression
+                            let lexer = Lexer::new(crate::lexer::Options::default());
+                            let tokens = lexer.tokenize(expr_str, token.module_id).map_err(|_| {
+                                ParseError::UnexpectedToken(Token {
+                                    range: *range,
+                                    kind: TokenKind::InterpolatedString(vec![]),
+                                    module_id: token.module_id,
+                                })
+                            })?;
+
+                            let shared_tokens: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
+                            let mut parser = Parser::new(shared_tokens.iter(), self.token_arena, token.module_id);
+                            let expr_node = parser.parse_expr_from_tokens().map_err(|_| {
+                                ParseError::UnexpectedToken(Token {
+                                    range: *range,
+                                    kind: TokenKind::InterpolatedString(vec![]),
+                                    module_id: token.module_id,
+                                })
+                            })?;
+
+                            parsed_segments.push(super::node::StringSegment::Expr(expr_node));
+                        }
+                    }
+                }
+            }
 
             Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(&token)),
-                expr: Shared::new(Expr::InterpolatedString(segments)),
+                expr: Shared::new(Expr::InterpolatedString(parsed_segments)),
             }))
         } else {
             Err(ParseError::UnexpectedToken((*token).clone()))
+        }
+    }
+
+    #[inline(always)]
+    fn parse_expr_from_tokens(&mut self) -> Result<Shared<Node>, ParseError> {
+        if let Some(token) = self.tokens.next() {
+            self.parse_expr(Shared::clone(token))
+        } else {
+            Err(ParseError::UnexpectedEOFDetected(self.module_id))
         }
     }
 
@@ -1790,6 +1842,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ast::node::StringSegment;
     use crate::{Module, ast::node::MatchArm, range::Range, selector};
 
     use super::*;
@@ -6381,5 +6434,151 @@ mod tests {
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
         let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::expr_literal(
+        vec![
+            lexer::token::StringSegment::Text("Value: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("42".into(), Range::default()),
+        ],
+        2,
+        |segments: &[StringSegment]| {
+            matches!(&segments[0], StringSegment::Text(s) if s == "Value: ") &&
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&*node.expr, Expr::Literal(Literal::Number(_))))
+        }
+    )]
+    #[case::expr_string(
+        vec![
+            lexer::token::StringSegment::Text("Result: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("\"hello\"".into(), Range::default()),
+        ],
+        2,
+        |segments: &[StringSegment]| {
+            matches!(&segments[0], StringSegment::Text(s) if s == "Result: ") &&
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&*node.expr, Expr::Literal(Literal::String(s)) if s == "hello"))
+        }
+    )]
+    #[case::expr_call(
+        vec![
+            lexer::token::StringSegment::Text("Result: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("add(1, 2)".into(), Range::default()),
+        ],
+        2,
+        |segments: &[StringSegment]| {
+            matches!(&segments[0], StringSegment::Text(s) if s == "Result: ") &&
+            if let StringSegment::Expr(node) = &segments[1] {
+                if let Expr::Call(ident, args) = &*node.expr {
+                    ident.name == "add".into() && args.len() == 2
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+    )]
+    #[case::expr_self(
+        vec![
+            lexer::token::StringSegment::Text("Value: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("self".into(), Range::default()),
+        ],
+        2,
+        |segments: &[StringSegment]| {
+            matches!(&segments[0], StringSegment::Text(s) if s == "Value: ") &&
+            matches!(&segments[1], StringSegment::Self_)
+        }
+    )]
+    #[case::expr_env(
+        vec![
+            lexer::token::StringSegment::Text("Env: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("$MQ_TEST_INTERPOLATION".into(), Range::default()),
+        ],
+        2,
+        |segments: &[StringSegment]| {
+            unsafe { std::env::set_var("MQ_TEST_INTERPOLATION", "test_value") };
+            matches!(&segments[0], StringSegment::Text(s) if s == "Env: ") &&
+            matches!(&segments[1], StringSegment::Env(var) if var == "MQ_TEST_INTERPOLATION")
+        }
+    )]
+    #[case::multiple_exprs(
+        vec![
+            lexer::token::StringSegment::Text("A: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("1".into(), Range::default()),
+            lexer::token::StringSegment::Text(", B: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("2".into(), Range::default()),
+        ],
+        4,
+        |segments: &[StringSegment]| {
+            matches!(&segments[0], StringSegment::Text(s) if s == "A: ") &&
+            matches!(&segments[1], StringSegment::Expr(_)) &&
+            matches!(&segments[2], StringSegment::Text(s) if s == ", B: ") &&
+            matches!(&segments[3], StringSegment::Expr(_))
+        }
+    )]
+    #[case::mixed_segments(
+        vec![
+            lexer::token::StringSegment::Text("Literal, ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("self".into(), Range::default()),
+            lexer::token::StringSegment::Text(", ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("$MQ_MIXED_TEST".into(), Range::default()),
+            lexer::token::StringSegment::Text(", ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("42".into(), Range::default()),
+        ],
+        6,
+        |segments: &[StringSegment]| {
+            unsafe { std::env::set_var("MQ_MIXED_TEST", "env_value") };
+            matches!(&segments[0], StringSegment::Text(s) if s == "Literal, ") &&
+            matches!(&segments[1], StringSegment::Self_) &&
+            matches!(&segments[2], StringSegment::Text(s) if s == ", ") &&
+            matches!(&segments[3], StringSegment::Env(var) if var == "MQ_MIXED_TEST") &&
+            matches!(&segments[4], StringSegment::Text(s) if s == ", ") &&
+            matches!(&segments[5], StringSegment::Expr(_))
+        }
+    )]
+    #[case::expr_bool(
+        vec![
+            lexer::token::StringSegment::Text("Bool: ".to_string(), Range::default()),
+            lexer::token::StringSegment::Expr("true".into(), Range::default()),
+        ],
+        2,
+        |segments: &[StringSegment]| {
+            matches!(&segments[0], StringSegment::Text(s) if s == "Bool: ") &&
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&*node.expr, Expr::Literal(Literal::Bool(true))))
+        }
+    )]
+    fn test_parse_interpolated_string_with_expr(
+        #[case] input_segments: Vec<lexer::token::StringSegment>,
+        #[case] expected_len: usize,
+        #[case] validator: fn(&[StringSegment]) -> bool,
+    ) {
+        let mut arena = Arena::new(10);
+        let tokens = [
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::InterpolatedString(input_segments),
+                module_id: 1.into(),
+            }),
+            Shared::new(Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: 1.into(),
+            }),
+        ];
+
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::InterpolatedString(segments) = &*program[0].expr {
+                    assert_eq!(segments.len(), expected_len);
+                    assert!(validator(segments), "Validator failed for segments");
+                } else {
+                    panic!("Expected InterpolatedString, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
     }
 }

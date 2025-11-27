@@ -591,7 +591,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
     #[inline(always)]
     fn eval_interpolated_string(
-        &self,
+        &mut self,
         runtime_value: &RuntimeValue,
         segments: &[ast::StringSegment],
         token_id: TokenId,
@@ -602,9 +602,9 @@ impl<T: ModuleResolver> Evaluator<T> {
             .iter()
             .map(|segment| match segment {
                 ast::StringSegment::Text(s) => s.len(),
-                ast::StringSegment::Ident(_) => 32, // Estimated size for variable content
-                ast::StringSegment::Env(_) => 32,   // Estimated size for environment variable
-                ast::StringSegment::Self_ => 64,    // Estimated size for self reference
+                ast::StringSegment::Expr(_) => 32, // Estimated size for expression result
+                ast::StringSegment::Env(_) => 32,  // Estimated size for environment variable
+                ast::StringSegment::Self_ => 64,   // Estimated size for self reference
             })
             .sum();
 
@@ -613,15 +613,15 @@ impl<T: ModuleResolver> Evaluator<T> {
             .try_fold(String::with_capacity(estimated_capacity), |mut acc, segment| {
                 match segment {
                     ast::StringSegment::Text(s) => acc.push_str(s),
-                    ast::StringSegment::Ident(ident) => {
-                        let value = self.eval_ident(*ident, token_id, env)?;
+                    ast::StringSegment::Expr(expr_node) => {
+                        let value = self.eval_expr(runtime_value, expr_node, env)?;
                         acc.push_str(&value.to_string());
                     }
-                    ast::StringSegment::Env(env) => {
-                        acc.push_str(&std::env::var(env).map_err(|_| {
+                    ast::StringSegment::Env(env_var) => {
+                        acc.push_str(&std::env::var(env_var).map_err(|_| {
                             EvalError::EnvNotFound(
                                 (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
-                                env.clone(),
+                                env_var.clone(),
                             )
                         })?);
                     }
@@ -5709,6 +5709,70 @@ mod tests {
             unsafe { std::env::set_var("USER", "tester") };
             Ok(vec![RuntimeValue::String("User: tester!".to_string())])
         }
+    )]
+    #[case::interpolated_string_with_expr_literal(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Value: ".to_string()),
+                ast::StringSegment::Expr(ast_node(ast::Expr::Literal(ast::Literal::Number(42.into())))),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Value: 42".to_string())])
+    )]
+    #[case::interpolated_string_with_expr_string(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Result: ".to_string()),
+                ast::StringSegment::Expr(ast_node(ast::Expr::Literal(ast::Literal::String("hello".to_string())))),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Result: hello".to_string())])
+    )]
+    #[case::interpolated_string_with_expr_call(
+        vec![RuntimeValue::Number(10.into())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Doubled: ".to_string()),
+                ast::StringSegment::Expr(ast_call("add", smallvec![ast_node(ast::Expr::Self_), ast_node(ast::Expr::Self_)])),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Doubled: 20".to_string())])
+    )]
+    #[case::interpolated_string_with_multiple_exprs(
+        vec![RuntimeValue::Number(5.into())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Value: ".to_string()),
+                ast::StringSegment::Expr(ast_node(ast::Expr::Self_)),
+                ast::StringSegment::Text(", Squared: ".to_string()),
+                ast::StringSegment::Expr(ast_call("mul", smallvec![ast_node(ast::Expr::Self_), ast_node(ast::Expr::Self_)])),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Value: 5, Squared: 25".to_string())])
+    )]
+    #[case::interpolated_string_with_expr_and_self(
+        vec![RuntimeValue::String("world".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Expr(ast_node(ast::Expr::Literal(ast::Literal::String("Hello".to_string())))),
+                ast::StringSegment::Text(", ".to_string()),
+                ast::StringSegment::Self_,
+                ast::StringSegment::Text("!".to_string()),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Hello, world!".to_string())])
+    )]
+    #[case::interpolated_string_with_expr_bool(
+        vec![RuntimeValue::String("ignored".to_string())],
+        vec![
+            ast_node(ast::Expr::InterpolatedString(vec![
+                ast::StringSegment::Text("Is true: ".to_string()),
+                ast::StringSegment::Expr(ast_node(ast::Expr::Literal(ast::Literal::Bool(true)))),
+            ])),
+        ],
+        Ok(vec![RuntimeValue::String("Is true: true".to_string())])
     )]
     fn test_interpolated_string_eval(
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
