@@ -18,9 +18,6 @@ function M.setup(opts)
 
   -- Setup LSP autostart
   lsp.setup_autostart()
-
-  -- Setup DAP if available
-  dap.setup()
 end
 
 return M

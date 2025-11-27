@@ -46,8 +46,8 @@ function M.get_selected_text()
   end
 
   -- Get visual selection
-  local _, start_row, start_col, _ = unpack(vim.fn.getpos("'<"))
-  local _, end_row, end_col, _ = unpack(vim.fn.getpos("'>"))
+  local _, start_row, start_col, _ = table.unpack(vim.fn.getpos("'<"))
+  local _, end_row, end_col, _ = table.unpack(vim.fn.getpos("'>"))
 
   local lines = vim.api.nvim_buf_get_lines(0, start_row - 1, end_row, false)
 

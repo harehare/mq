@@ -4,58 +4,6 @@ local lsp = require("mq.lsp")
 local dap = require("mq.dap")
 local utils = require("mq.utils")
 
-local EXAMPLES = [[# To hide these examples, set show_examples to false in setup
-# Extract js code
-.code("js")
-
-# Extract list
-.[]
-
-# Extract table
-.[][]
-
-# Extract MDX
-select(is_mdx())
-
-# Custom function
-def snake_to_camel(x):
-  let words = split(x, "_")
-  | foreach (word, words):
-    let first_char = upcase(first(word))
-    | let rest_str = downcase(slice(word, 1, len(word)))
-    | s"${first_char}${rest_str}";
-  | join("");
-| snake_to_camel()
-
-# Markdown Toc
-.h
-| let link = to_link("#" + to_text(self), to_text(self), "")
-| let level = .h.depth
-| if (!is_none(level)): to_md_list(link, to_number(level))
-
-# CSV parse
-include "csv" | csv_parse("a,b,c\n1,2,3\n4,5,6", true) | csv_to_markdown_table()
-]]
-
--- Create new mq file
-function M.new_file()
-  local content = ""
-  if config.get("show_examples") then
-    content = EXAMPLES
-  end
-
-  -- Create new buffer
-  vim.cmd("enew")
-  local bufnr = vim.api.nvim_get_current_buf()
-
-  -- Set filetype
-  vim.api.nvim_buf_set_option(bufnr, "filetype", "mq")
-
-  -- Set content
-  local lines = vim.split(content, "\n")
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-end
-
 -- Start LSP server
 function M.start_lsp()
   lsp.start()
@@ -87,8 +35,8 @@ function M.install_servers()
 
   -- Run installation command
   local install_cmd =
-    "cargo install --git https://github.com/harehare/mq.git mq-run && "
-    .. 'cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"'
+      "cargo install --git https://github.com/harehare/mq.git mq-run && "
+      .. 'cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"'
 
   vim.fn.jobstart(install_cmd, {
     on_exit = function(_, exit_code)
