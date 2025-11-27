@@ -1,7 +1,7 @@
 use super::{Program, TokenId};
 #[cfg(feature = "ast-json")]
 use crate::arena::ArenaId;
-use crate::{Ident, Shared, Token, arena::Arena, lexer, number::Number, range::Range, selector::Selector};
+use crate::{Ident, Shared, Token, arena::Arena, number::Number, range::Range, selector::Selector};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -175,10 +175,10 @@ impl Display for IdentWithToken {
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone, PartialOrd, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum StringSegment {
     Text(String),
-    Ident(Ident),
+    Expr(Shared<Node>),
     Env(SmolStr),
     Self_,
 }
@@ -201,19 +201,6 @@ pub struct MatchArm {
     pub pattern: Pattern,
     pub guard: Option<Shared<Node>>,
     pub body: Shared<Node>,
-}
-
-impl From<&lexer::token::StringSegment> for StringSegment {
-    fn from(segment: &lexer::token::StringSegment) -> Self {
-        match segment {
-            lexer::token::StringSegment::Text(text, _) => StringSegment::Text(text.to_owned()),
-            lexer::token::StringSegment::Ident(ident, _) if ident == "self" => StringSegment::Self_,
-            lexer::token::StringSegment::Ident(ident, _) if ident.starts_with("$") => {
-                StringSegment::Env(SmolStr::from(&ident[1..]))
-            }
-            lexer::token::StringSegment::Ident(ident, _) => StringSegment::Ident(Ident::new(ident)),
-        }
-    }
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]

@@ -3331,13 +3331,13 @@ mod tests {
     )]
     #[case::interpolated_string(
         vec![
-            Shared::new(token(TokenKind::InterpolatedString(vec![StringSegment::Ident("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())]))),
+            Shared::new(token(TokenKind::InterpolatedString(vec![StringSegment::Expr("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())]))),
         ],
         (
             vec![
                 Shared::new(Node {
                     kind: NodeKind::InterpolatedString,
-                    token: Some(Shared::new(token(TokenKind::InterpolatedString(vec![StringSegment::Ident("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())])))),
+                    token: Some(Shared::new(token(TokenKind::InterpolatedString(vec![StringSegment::Expr("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())])))),
                     leading_trivia: Vec::new(),
                     trailing_trivia: Vec::new(),
                     children: Vec::new(),
