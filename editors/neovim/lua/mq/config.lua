@@ -1,5 +1,18 @@
 local M = {}
 
+-- Get default LSP capabilities
+local function get_default_capabilities()
+  local capabilities = vim.lsp.protocol.make_client_capabilities()
+
+  -- If nvim-cmp is available, use its capabilities
+  local has_cmp, cmp_lsp = pcall(require, "cmp_nvim_lsp")
+  if has_cmp then
+    capabilities = cmp_lsp.default_capabilities(capabilities)
+  end
+
+  return capabilities
+end
+
 -- Default configuration
 M.defaults = {
   -- Path to mq executable (if not in PATH)
@@ -17,7 +30,7 @@ M.defaults = {
   -- LSP server configuration
   lsp = {
     on_attach = nil, -- User-defined on_attach function
-    capabilities = nil, -- User-defined capabilities
+    capabilities = nil, -- User-defined capabilities (will use default if nil)
     settings = {},
   },
 }
@@ -41,6 +54,15 @@ function M.get(key)
     return M.options[key]
   end
   return M.options
+end
+
+-- Get LSP capabilities (use default if not configured)
+function M.get_capabilities()
+  local lsp_config = M.get("lsp")
+  if lsp_config.capabilities then
+    return lsp_config.capabilities
+  end
+  return get_default_capabilities()
 end
 
 return M

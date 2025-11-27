@@ -44,7 +44,7 @@ function M.start()
     filetypes = { "mq" },
     root_dir = vim.loop.cwd(),
     on_attach = lsp_config.on_attach,
-    capabilities = lsp_config.capabilities,
+    capabilities = config.get_capabilities(),
     settings = lsp_config.settings,
   }
 
