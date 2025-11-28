@@ -147,23 +147,75 @@ function M.select_file(files, prompt, callback)
     return
   end
 
-  -- Simple and reliable: use vim.ui.select
-  local items = {}
-  for _, file in ipairs(files) do
+  -- Create a floating window for file selection
+  local buf = vim.api.nvim_create_buf(false, true)
+
+  -- Prepare display lines
+  local lines = { "Select file (press number or <Esc> to cancel):", "" }
+  for i, file in ipairs(files) do
     local relative_path = vim.fn.fnamemodify(file, ":~:.")
-    table.insert(items, relative_path)
+    table.insert(lines, string.format("%d: %s", i, relative_path))
   end
 
-  vim.ui.select(items, {
-    prompt = prompt,
-    format_item = function(item)
-      return item
-    end,
-  }, function(choice, idx)
-    if choice and idx then
-      callback(files[idx])
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+
+  -- Calculate window size
+  local width = math.min(80, vim.o.columns - 4)
+  local height = math.min(#lines + 2, vim.o.lines - 4)
+
+  -- Center the window
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  -- Create floating window
+  local win_opts = {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    title = prompt,
+    title_pos = "center",
+  }
+
+  local win = vim.api.nvim_open_win(buf, true, win_opts)
+
+  -- Set up key mappings
+  local function close_and_select(idx)
+    vim.api.nvim_win_close(win, true)
+    if idx and idx > 0 and idx <= #files then
+      vim.defer_fn(function()
+        callback(files[idx])
+      end, 10)
     end
-  end)
+  end
+
+  -- Map number keys
+  for i = 1, math.min(9, #files) do
+    vim.keymap.set("n", tostring(i), function()
+      close_and_select(i)
+    end, { buffer = buf, nowait = true })
+  end
+
+  -- Map escape and q to cancel
+  vim.keymap.set("n", "<Esc>", function()
+    vim.api.nvim_win_close(win, true)
+  end, { buffer = buf, nowait = true })
+
+  vim.keymap.set("n", "q", function()
+    vim.api.nvim_win_close(win, true)
+  end, { buffer = buf, nowait = true })
+
+  -- Map Enter to select current line (if cursor is on a file line)
+  vim.keymap.set("n", "<CR>", function()
+    local line = vim.api.nvim_win_get_cursor(win)[1]
+    local idx = line - 2  -- Adjust for header lines
+    close_and_select(idx)
+  end, { buffer = buf, nowait = true })
 end
 
 -- Get input format from file extension
