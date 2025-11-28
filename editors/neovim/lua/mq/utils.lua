@@ -138,7 +138,6 @@ function M.find_files(extensions)
     end
   end
 
-  print("Debug - final files count: " .. #files)
   return files
 end
 
