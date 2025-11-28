@@ -1,6 +1,7 @@
 local M = {}
 local lsp = require("mq.lsp")
 local utils = require("mq.utils")
+local dap = require("mq.dap")
 
 function M.start_lsp()
   lsp.start()
@@ -128,6 +129,14 @@ function M.execute_file()
   end)
 end
 
+function M.debug_current_file()
+  dap.debug_current_file()
+end
+
+function M.install_debugger()
+  dap.install()
+end
+
 function M.register_commands()
   -- Prevent duplicate registration
   if vim.g.mq_commands_registered then
@@ -161,6 +170,14 @@ function M.register_commands()
 
   vim.api.nvim_create_user_command("MqExecuteFile", M.execute_file, {
     desc = "Execute mq file on current file",
+  })
+
+  vim.api.nvim_create_user_command("MqDebugFile", M.debug_current_file, {
+    desc = "Debug current mq file",
+  })
+
+  vim.api.nvim_create_user_command("MqInstallDebugger", M.install_debugger, {
+    desc = "Install mq debugger (mq-dbg)",
   })
 
   vim.g.mq_commands_registered = true
