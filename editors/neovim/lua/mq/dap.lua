@@ -20,23 +20,18 @@ function M.setup()
     return false
   end
 
-  -- Configure DAP adapter
   dap.adapters.mq = {
     type = "executable",
     command = mq_dbg_path,
     args = { "dap" },
   }
 
-  -- Configure DAP configurations
   dap.configurations.mq = {
     {
       type = "mq",
       request = "launch",
       name = "Debug mq file",
       queryFile = "${file}",
-      inputFile = function()
-        return M.select_input_file()
-      end,
     },
   }
 
@@ -44,7 +39,6 @@ function M.setup()
   return true
 end
 
--- Find mq-dbg executable
 function M.find_mq_dbg()
   -- Check environment variable for debug binary
   local debug_bin = vim.env._MQ_DBG_DEBUG_BIN
@@ -67,35 +61,6 @@ function M.find_mq_dbg()
   return nil
 end
 
--- Select input file for debugging
-function M.select_input_file()
-  local files = utils.find_files({ "md", "mdx", "html", "csv", "tsv", "txt" })
-
-  if #files == 0 then
-    utils.error("No input files found in workspace")
-    return nil
-  end
-
-  -- Use vim.ui.select for file selection
-  local selected_file = nil
-  local co = coroutine.running()
-
-  utils.select_file(files, "Select input file for debugging:", function(file)
-    selected_file = file
-    if co then
-      coroutine.resume(co)
-    end
-  end)
-
-  -- If we're in a coroutine, wait for selection
-  if co then
-    coroutine.yield()
-  end
-
-  return selected_file
-end
-
--- Start debugging current file
 function M.debug_current_file()
   if not has_dap then
     utils.error("nvim-dap not found. Please install nvim-dap to use debugging features.")
@@ -141,7 +106,6 @@ function M.debug_current_file()
   end)
 end
 
--- Install mq-dbg
 function M.install()
   if vim.fn.executable("cargo") ~= 1 then
     utils.error("cargo not found in PATH. Please install Rust toolchain.")
@@ -151,7 +115,7 @@ function M.install()
   utils.info("Installing mq-dbg...")
 
   local install_cmd =
-    'cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" --force'
+  'cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" --force'
 
   vim.fn.jobstart(install_cmd, {
     on_exit = function(_, exit_code)
