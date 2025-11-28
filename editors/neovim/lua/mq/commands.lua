@@ -2,22 +2,18 @@ local M = {}
 local lsp = require("mq.lsp")
 local utils = require("mq.utils")
 
--- Start LSP server
 function M.start_lsp()
   lsp.start()
 end
 
--- Stop LSP server
 function M.stop_lsp()
   lsp.stop()
 end
 
--- Restart LSP server
 function M.restart_lsp()
   lsp.restart()
 end
 
--- Install mq servers
 function M.install()
   if vim.fn.executable("cargo") ~= 1 then
     utils.error("cargo not found in PATH. Please install Rust toolchain.")
@@ -68,7 +64,6 @@ function M.install()
   })
 end
 
--- Run selected text as mq query
 function M.run_selected_text()
   local selected = utils.get_selected_text()
   if not selected then
@@ -92,7 +87,6 @@ function M.run_selected_text()
   end)
 end
 
--- Execute mq query on current file
 function M.execute_query()
   local bufnr = vim.api.nvim_get_current_buf()
   local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
@@ -113,7 +107,6 @@ function M.execute_query()
   end)
 end
 
--- Execute mq file on current file
 function M.execute_file()
   local bufnr = vim.api.nvim_get_current_buf()
   local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
@@ -135,7 +128,6 @@ function M.execute_file()
   end)
 end
 
--- Register all commands
 function M.register_commands()
   -- Prevent duplicate registration
   if vim.g.mq_commands_registered then

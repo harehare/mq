@@ -1,8 +1,3 @@
-" Vim syntax file for mq
-" Language: mq
-" Maintainer: harehare
-" Latest Revision: 2025-01-25
-
 if exists("b:current_syntax")
   finish
 endif
@@ -22,10 +17,8 @@ syn match mqBoolean "\<\(true\|false\)\>"
 syn match mqConstant "\<None\>"
 
 " Operators
-syn match mqOperator "->"
-syn match mqOperator "=>\@!"
 syn match mqOperator "|"
-syn match mqOperator "\(^\|[^:]\):\([^:]\|$\)\@="
+syn match mqOperator ":"
 syn match mqOperator ";"
 syn match mqOperator "?"
 syn match mqOperator "!"
@@ -34,8 +27,6 @@ syn match mqOperator "-"
 syn match mqOperator "\*"
 syn match mqOperator "/"
 syn match mqOperator "%"
-syn match mqOperator "<\(=\)\@!"
-syn match mqOperator ">\(=\)\@!"
 syn match mqOperator "<="
 syn match mqOperator ">="
 syn match mqOperator "=="
@@ -79,17 +70,6 @@ syn match mqSelector "\.h[1-6]\>"
 " Function calls (must come after selectors and function definitions)
 syn match mqFunctionCall "\<[a-zA-Z_][a-zA-Z0-9_]*\>\ze\s*("
 
-" Built-in functions (common ones from mq)
-syn keyword mqBuiltinFunction contained len first last slice join split upcase downcase
-syn keyword mqBuiltinFunction contained reverse sort unique flatten map filter reduce
-syn keyword mqBuiltinFunction contained is_none is_number is_string is_boolean is_array is_object
-syn keyword mqBuiltinFunction contained to_text to_number to_string to_json to_link to_md_list
-syn keyword mqBuiltinFunction contained select has keys values entries
-syn keyword mqBuiltinFunction contained markdown_table csv_parse csv_to_markdown_table
-
-" Match built-in functions in call position
-syn match mqBuiltinFunctionCall "\<\(len\|first\|last\|slice\|join\|split\|upcase\|downcase\|reverse\|sort\|unique\|flatten\|map\|filter\|reduce\|is_none\|is_number\|is_string\|is_boolean\|is_array\|is_object\|is_mdx\|to_text\|to_number\|to_string\|to_json\|to_link\|to_md_list\|select\|has\|keys\|values\|entries\|markdown_table\|csv_parse\|csv_to_markdown_table\)\>\ze\s*("
-
 " Delimiters
 syn match mqDelimiter "("
 syn match mqDelimiter ")"
@@ -110,6 +90,7 @@ hi def link mqKeywordLet Keyword
 
 hi def link mqBoolean Boolean
 hi def link mqConstant Constant
+hi def link mqType Type
 
 hi def link mqOperator Operator
 
@@ -128,8 +109,6 @@ hi def link mqVariableDef Identifier
 
 hi def link mqSelector Special
 hi def link mqFunctionCall Function
-hi def link mqBuiltinFunction Function
-hi def link mqBuiltinFunctionCall Special
 
 hi def link mqDelimiter Delimiter
 

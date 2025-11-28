@@ -77,7 +77,6 @@ function M.stop()
   utils.info("LSP server stopped")
 end
 
--- Restart LSP server
 function M.restart()
   M.stop()
   vim.defer_fn(function()
@@ -85,7 +84,6 @@ function M.restart()
   end, 100)
 end
 
--- Execute mq command via LSP
 function M.execute_command(command, script, input, input_format)
   if not M.is_running() then
     utils.error("LSP server is not running")
@@ -128,7 +126,6 @@ function M.execute_command(command, script, input, input_format)
   end, 0)
 end
 
--- Setup LSP for mq buffers
 function M.setup_buffer(bufnr)
   if not M.is_running() then
     return
@@ -142,6 +139,7 @@ function M.setup_autostart()
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "mq",
     callback = function(args)
+      print("mq lsp autostart check")
       if config.get("auto_start_lsp") and not M.is_running() then
         M.start()
       elseif M.is_running() then

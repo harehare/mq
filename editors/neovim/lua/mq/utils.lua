@@ -66,28 +66,89 @@ function M.get_selected_text()
   return table.concat(lines, "\n")
 end
 
--- Find files with specific extensions
 function M.find_files(extensions)
   local files = {}
-  local pattern = "**/*.{" .. table.concat(extensions, ",") .. "}"
+  local cwd = vim.fn.getcwd()
 
-  local results = vim.fn.globpath(vim.fn.getcwd(), pattern, false, true)
+  -- Try fd first (fastest)
+  if vim.fn.executable("fd") == 1 then
+    local cmd_parts = { "fd" }
+    for _, ext in ipairs(extensions) do
+      table.insert(cmd_parts, "-e")
+      table.insert(cmd_parts, ext)
+    end
+    table.insert(cmd_parts, "--type")
+    table.insert(cmd_parts, "f")
+    table.insert(cmd_parts, "--absolute-path")
+    table.insert(cmd_parts, ".")
+    table.insert(cmd_parts, cwd)
 
-  for _, file in ipairs(results) do
-    table.insert(files, file)
+    local cmd = table.concat(cmd_parts, " ")
+    local output = vim.fn.systemlist(cmd)
+
+    for _, file in ipairs(output) do
+      if file ~= "" and not vim.startswith(file, "error:") then
+        table.insert(files, file)
+      end
+    end
+
+    return files
   end
 
+  -- Try rg as fallback
+  if vim.fn.executable("rg") == 1 then
+    local cmd_parts = { "rg", "--files" }
+    for _, ext in ipairs(extensions) do
+      table.insert(cmd_parts, "-g")
+      table.insert(cmd_parts, string.format("*.%s", ext))
+    end
+
+    local cmd = table.concat(cmd_parts, " ")
+    local output = vim.fn.systemlist(cmd)
+
+    for _, file in ipairs(output) do
+      if file ~= "" then
+        -- Make path absolute
+        local abs_path = file
+        if not vim.startswith(file, "/") then
+          abs_path = cwd .. "/" .. file
+        end
+        table.insert(files, abs_path)
+      end
+    end
+
+    return files
+  end
+
+  -- Fallback to globpath (slower)
+  local pattern = "**/*.{" .. table.concat(extensions, ",") .. "}"
+  local results = vim.fn.globpath(cwd, pattern, false, true)
+
+  -- globpath returns a list when 4th arg is true
+  if type(results) == "table" then
+    for _, file in ipairs(results) do
+      table.insert(files, file)
+    end
+  elseif type(results) == "string" and results ~= "" then
+    -- Split by newline if it returned a string
+    for file in vim.gsplit(results, "\n") do
+      if file ~= "" then
+        table.insert(files, file)
+      end
+    end
+  end
+
+  print("Debug - final files count: " .. #files)
   return files
 end
 
--- Select file from list
 function M.select_file(files, prompt, callback)
   if #files == 0 then
     M.info("No files found")
     return
   end
 
-  -- Create items for selection
+  -- Simple and reliable: use vim.ui.select
   local items = {}
   for _, file in ipairs(files) do
     local relative_path = vim.fn.fnamemodify(file, ":~:.")
@@ -96,8 +157,11 @@ function M.select_file(files, prompt, callback)
 
   vim.ui.select(items, {
     prompt = prompt,
+    format_item = function(item)
+      return item
+    end,
   }, function(choice, idx)
-    if choice then
+    if choice and idx then
       callback(files[idx])
     end
   end)

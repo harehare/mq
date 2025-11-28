@@ -4,6 +4,16 @@ local M = {}
 local function get_default_capabilities()
   local capabilities = vim.lsp.protocol.make_client_capabilities()
 
+  -- Enable snippet support
+  capabilities.textDocument.completion.completionItem.snippetSupport = true
+  capabilities.textDocument.completion.completionItem.resolveSupport = {
+    properties = {
+      "documentation",
+      "detail",
+      "additionalTextEdits",
+    },
+  }
+
   -- If nvim-cmp is available, use its capabilities
   local has_cmp, cmp_lsp = pcall(require, "cmp_nvim_lsp")
   if has_cmp then
@@ -19,17 +29,13 @@ M.defaults = {
   cmd = "mq",
   -- LSP server arguments
   lsp_args = { "lsp" },
-  -- DAP server command
-  dap_cmd = "mq-dbg",
-  -- DAP server arguments
-  dap_args = { "dap" },
   -- Show examples when creating new file
   show_examples = true,
   -- Automatically start LSP server
   auto_start_lsp = true,
   -- LSP server configuration
   lsp = {
-    on_attach = nil, -- User-defined on_attach function
+    on_attach = nil,    -- User-defined on_attach function
     capabilities = nil, -- User-defined capabilities (will use default if nil)
     settings = {},
   },

@@ -7,15 +7,23 @@ Neovim plugin for [mq](https://mqlang.org/) - a jq-like tool for Markdown proces
 - 🎨 **Syntax Highlighting** - Full syntax support for `.mq` files
 - 🔧 **LSP Integration** - Code completion, diagnostics, and more via Language Server Protocol
 - 🐛 **DAP Integration** - Debug your mq queries with nvim-dap
-- ⚡ **Commands** - Execute mq queries directly from Neovim
+- ⚡  **Commands** - Execute mq queries directly from Neovim
 - 📝 **File Templates** - Create new mq files with helpful examples
 
 ## Requirements
 
 - Neovim >= 0.8.0
 - [mq](https://github.com/harehare/mq) installed (LSP and command execution)
-- [mq-dbg](https://github.com/harehare/mq) installed (optional, for debugging)
 - [nvim-dap](https://github.com/mfussenegger/nvim-dap) (optional, for debugging support)
+
+### Optional (Recommended for Performance)
+
+For faster file searching in `:MqExecuteFile` and `:MqRunSelected` commands:
+- [fd](https://github.com/sharkdp/fd) - Fastest option (recommended)
+- [ripgrep](https://github.com/BurntSushi/ripgrep) - Fast alternative
+- [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) - Enhanced file picker UI
+
+The plugin will automatically use these tools if available, falling back to native Neovim functions if not installed.
 
 ## Installation
 
@@ -96,17 +104,17 @@ require("mq").setup({
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `:MqNew` | Create a new mq file with examples |
-| `:MqInstallServers` | Install mq LSP and DAP servers via cargo |
-| `:MqStartLSP` | Start the mq LSP server |
-| `:MqStopLSP` | Stop the mq LSP server |
-| `:MqRestartLSP` | Restart the mq LSP server |
-| `:MqRunSelected` | Run selected text as mq query (visual mode) |
-| `:MqExecuteQuery` | Execute mq query on current file |
-| `:MqExecuteFile` | Execute mq file on current file |
-| `:MqDebug` | Debug current mq file (requires nvim-dap) |
+| Command             | Description                                 |
+| ------------------- | ------------------------------------------- |
+| `:MqNew`            | Create a new mq file with examples          |
+| `:MqInstallServers` | Install mq LSP and DAP servers via cargo    |
+| `:MqStartLSP`       | Start the mq LSP server                     |
+| `:MqStopLSP`        | Stop the mq LSP server                      |
+| `:MqRestartLSP`     | Restart the mq LSP server                   |
+| `:MqRunSelected`    | Run selected text as mq query (visual mode) |
+| `:MqExecuteQuery`   | Execute mq query on current file            |
+| `:MqExecuteFile`    | Execute mq file on current file             |
+| `:MqDebug`          | Debug current mq file (requires nvim-dap)   |
 
 ## Usage Examples
 
@@ -160,9 +168,6 @@ vim.api.nvim_create_autocmd("FileType", {
     -- Execute file
     vim.keymap.set("n", "<leader>mf", ":MqExecuteFile<CR>", opts)
 
-    -- Debug
-    vim.keymap.set("n", "<leader>md", ":MqDebug<CR>", opts)
-
     -- LSP commands
     vim.keymap.set("n", "<leader>ms", ":MqStartLSP<CR>", opts)
     vim.keymap.set("n", "<leader>mS", ":MqStopLSP<CR>", opts)
@@ -175,6 +180,10 @@ vim.api.nvim_create_autocmd("FileType", {
 When the LSP server is running, you get:
 
 - 📝 **Code Completion** - Auto-complete for mq functions and keywords
+  - Function names with parameter snippets
+  - Variables and parameters in scope
+  - Builtin selectors and functions
+  - Module-qualified completions (e.g., `module::function`)
 - 🔍 **Diagnostics** - Real-time error checking
 - 📖 **Hover Documentation** - View function documentation
 - 🎯 **Go to Definition** - Jump to function definitions
@@ -186,6 +195,40 @@ Use Neovim's built-in LSP commands:
 - `vim.lsp.buf.definition()` - Go to definition
 - `vim.lsp.buf.code_action()` - Show code actions
 - `vim.lsp.buf.rename()` - Rename symbol
+
+### Completion Support
+
+The LSP server provides intelligent code completion with:
+
+- **Trigger Characters**: Completion is automatically triggered on ` `, `|`, and `:`
+- **Snippet Support**: Function completions include parameter placeholders (requires snippet-capable completion plugin like nvim-cmp)
+- **Context-Aware**: Only shows symbols available in the current scope
+- **Module Completions**: Type `module::` to see functions from that module
+
+For the best completion experience, use [nvim-cmp](https://github.com/hrsh7th/nvim-cmp):
+
+```lua
+{
+  "hrsh7th/nvim-cmp",
+  dependencies = {
+    "hrsh7th/cmp-nvim-lsp",
+    "L3MON4D3/LuaSnip", -- for snippet support
+  },
+  config = function()
+    local cmp = require("cmp")
+    cmp.setup({
+      snippet = {
+        expand = function(args)
+          require("luasnip").lsp_expand(args.body)
+        end,
+      },
+      sources = {
+        { name = "nvim_lsp" },
+      },
+    })
+  end,
+}
+```
 
 ## Debugging with nvim-dap
 
