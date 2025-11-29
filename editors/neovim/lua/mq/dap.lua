@@ -106,48 +106,4 @@ function M.debug_current_file()
   end)
 end
 
-function M.install()
-  if vim.fn.executable("cargo") ~= 1 then
-    utils.error("cargo not found in PATH. Please install Rust toolchain.")
-    return
-  end
-
-  utils.info("Installing mq-dbg...")
-
-  local install_cmd =
-  'cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger" --force'
-
-  vim.fn.jobstart(install_cmd, {
-    on_exit = function(_, exit_code)
-      if exit_code == 0 then
-        utils.info("mq-dbg installation completed successfully")
-        -- Try to setup DAP again
-        vim.defer_fn(function()
-          M.setup()
-        end, 500)
-      else
-        utils.error("mq-dbg installation failed with exit code: " .. exit_code)
-      end
-    end,
-    on_stdout = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line ~= "" then
-            print(line)
-          end
-        end
-      end
-    end,
-    on_stderr = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line ~= "" then
-            print(line)
-          end
-        end
-      end
-    end,
-  })
-end
-
 return M

@@ -30,7 +30,7 @@ function M.install()
 
   -- Run installation command
   local install_cmd =
-  "cargo install --git https://github.com/harehare/mq.git mq-run --force"
+  "cargo install --git https://github.com/harehare/mq.git mq-run --force && cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features=\"debugger\" --force"
 
   vim.fn.jobstart(install_cmd, {
     on_exit = function(_, exit_code)
@@ -133,10 +133,6 @@ function M.debug_current_file()
   dap.debug_current_file()
 end
 
-function M.install_debugger()
-  dap.install()
-end
-
 function M.register_commands()
   -- Prevent duplicate registration
   if vim.g.mq_commands_registered then
@@ -174,10 +170,6 @@ function M.register_commands()
 
   vim.api.nvim_create_user_command("MqDebugFile", M.debug_current_file, {
     desc = "Debug current mq file",
-  })
-
-  vim.api.nvim_create_user_command("MqInstallDebugger", M.install_debugger, {
-    desc = "Install mq debugger (mq-dbg)",
   })
 
   vim.g.mq_commands_registered = true

@@ -48,7 +48,6 @@ function M.start()
     settings = lsp_config.settings,
   }
 
-  -- Start the client
   client_id = vim.lsp.start_client(client_config)
 
   if not client_id then
@@ -139,7 +138,6 @@ function M.setup_autostart()
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "mq",
     callback = function(args)
-      print("mq lsp autostart check")
       if config.get("auto_start_lsp") and not M.is_running() then
         M.start()
       elseif M.is_running() then
