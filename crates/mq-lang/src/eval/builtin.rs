@@ -2135,7 +2135,9 @@ define_builtin!(
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().define(std::mem::take(var_ident), std::mem::take(v));
+                env.write()
+                    .unwrap()
+                    .define(std::mem::take(var_ident), std::mem::take(v));
             }
 
             Ok(value.clone())
@@ -2168,23 +2170,26 @@ define_builtin!(
         [RuntimeValue::Symbol(var_name)] => {
             #[cfg(not(feature = "sync"))]
             {
-                env.borrow_mut().resolve(std::mem::take(var_name)).map_err(Into::into)
+                env.borrow().resolve(std::mem::take(var_name)).map_err(Into::into)
             }
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().resolve(std::mem::take(var_name)).map_err(Into::into)
+                env.read()
+                    .unwrap()
+                    .resolve(std::mem::take(var_name))
+                    .map_err(Into::into)
             }
         }
         [RuntimeValue::String(var_name)] => {
             #[cfg(not(feature = "sync"))]
             {
-                env.borrow_mut().resolve(Ident::new(var_name)).map_err(Into::into)
+                env.borrow().resolve(Ident::new(var_name)).map_err(Into::into)
             }
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().resolve(Ident::new(var_name)).map_err(Into::into)
+                env.read().unwrap().resolve(Ident::new(var_name)).map_err(Into::into)
             }
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
