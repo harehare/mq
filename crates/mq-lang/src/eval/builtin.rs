@@ -2165,26 +2165,26 @@ define_builtin!(
     GET_VARIABLE,
     ParamNum::Fixed(1),
     |ident, _, mut args, env| match args.as_mut_slice() {
-        [RuntimeValue::Symbol(ident)] => {
+        [RuntimeValue::Symbol(var_name)] => {
             #[cfg(not(feature = "sync"))]
             {
-                env.borrow_mut().resolve(std::mem::take(ident)).map_err(Into::into)
+                env.borrow_mut().resolve(std::mem::take(var_name)).map_err(Into::into)
             }
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().resolve(std::mem::take(ident)).map_err(Into::into)
+                env.write().unwrap().resolve(std::mem::take(var_name)).map_err(Into::into)
             }
         }
-        [RuntimeValue::String(ident)] => {
+        [RuntimeValue::String(var_name)] => {
             #[cfg(not(feature = "sync"))]
             {
-                env.borrow_mut().resolve(Ident::new(ident)).map_err(Into::into)
+                env.borrow_mut().resolve(Ident::new(var_name)).map_err(Into::into)
             }
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().resolve(Ident::new(ident)).map_err(Into::into)
+                env.write().unwrap().resolve(Ident::new(var_name)).map_err(Into::into)
             }
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
