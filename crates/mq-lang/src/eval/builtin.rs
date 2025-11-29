@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
+use crate::eval::env::Env;
 use crate::ident::all_symbols;
 use crate::number::{self, Number};
 use crate::selector::Selector;
@@ -31,13 +32,14 @@ const MAX_REPEAT_COUNT: usize = 1_000;
 
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
+type SharedEnv = Shared<SharedCell<Env>>;
 pub type Args = Vec<RuntimeValue>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
     pub name: &'static str,
     pub num_params: ParamNum,
-    pub func: fn(&Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
+    pub func: fn(&Ident, &RuntimeValue, Args, &SharedEnv) -> Result<RuntimeValue, Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -80,7 +82,7 @@ impl BuiltinFunction {
     pub fn new(
         name: &'static str,
         num_params: ParamNum,
-        func: fn(&Ident, &RuntimeValue, Args) -> Result<RuntimeValue, Error>,
+        func: fn(&Ident, &RuntimeValue, Args, &SharedEnv) -> Result<RuntimeValue, Error>,
     ) -> Self {
         BuiltinFunction { name, num_params, func }
     }
@@ -93,22 +95,21 @@ macro_rules! define_builtin {
     };
 }
 
-define_builtin!(
-    HALT,
-    ParamNum::Fixed(1),
-    |ident: &Ident, _: &RuntimeValue, mut args: Args| {
-        match args.as_mut_slice() {
-            [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
-            [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-            _ => unreachable!(),
-        }
+define_builtin!(HALT, ParamNum::Fixed(1), |ident: &Ident,
+                                           _: &RuntimeValue,
+                                           mut args: Args,
+                                           _| {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!(),
     }
-);
+});
 
 define_builtin!(
     ERROR,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(message)] => Err(Error::UserDefined(message.to_string())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
@@ -118,7 +119,7 @@ define_builtin!(
 define_builtin!(
     PRINT,
     ParamNum::Fixed(1),
-    |_, current_value, args| match args.as_slice() {
+    |_, current_value, args, _| match args.as_slice() {
         [a] => {
             println!("{}", a);
             Ok(current_value.clone())
@@ -130,7 +131,7 @@ define_builtin!(
 define_builtin!(
     STDERR,
     ParamNum::Fixed(1),
-    |_, current_value, args| match args.as_slice() {
+    |_, current_value, args, _| match args.as_slice() {
         [a] => {
             eprintln!("{}", a);
             Ok(current_value.clone())
@@ -139,19 +140,19 @@ define_builtin!(
     }
 );
 
-define_builtin!(TYPE, ParamNum::Fixed(1), |_, _, args| match args.first() {
+define_builtin!(TYPE, ParamNum::Fixed(1), |_, _, args, _| match args.first() {
     Some(value) => Ok(value.name().to_string().into()),
     None => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(ARRAY, ParamNum::Range(0, u8::MAX), |_, _, args| Ok(
+define_builtin!(ARRAY, ParamNum::Range(0, u8::MAX), |_, _, args, _| Ok(
     RuntimeValue::Array(args.to_vec())
 ));
 
 define_builtin!(
     FLATTEN,
     ParamNum::Fixed(1),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(arrays)] => Ok(flatten(std::mem::take(arrays)).into()),
         [a] => Ok(std::mem::take(a)),
         _ => unreachable!(),
@@ -161,7 +162,7 @@ define_builtin!(
 define_builtin!(
     FROM_DATE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(date_str)] => from_date(date_str),
         [RuntimeValue::Markdown(node_value, _)] => from_date(node_value.value().as_str()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
@@ -172,7 +173,7 @@ define_builtin!(
 define_builtin!(
     TO_DATE,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(ms), RuntimeValue::String(format)] => {
             to_date(*ms, Some(format.as_str()))
         }
@@ -184,7 +185,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(NOW, ParamNum::None, |_, _, _| {
+define_builtin!(NOW, ParamNum::None, |_, _, _, _| {
     Ok(RuntimeValue::Number(
         (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -194,7 +195,7 @@ define_builtin!(NOW, ParamNum::None, |_, _, _| {
     ))
 });
 
-define_builtin!(BASE64, ParamNum::Fixed(1), |ident, _, mut args| {
+define_builtin!(BASE64, ParamNum::Fixed(1), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => base64(s),
         [node @ RuntimeValue::Markdown(_, _)] => node
@@ -214,7 +215,7 @@ define_builtin!(BASE64, ParamNum::Fixed(1), |ident, _, mut args| {
 define_builtin!(
     BASE64D,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s)] => base64d(s),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
@@ -233,7 +234,7 @@ define_builtin!(
 define_builtin!(
     MIN,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
             Ok(std::cmp::min(*n1, *n2).into())
         }
@@ -255,7 +256,7 @@ define_builtin!(
 define_builtin!(
     MAX,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
             Ok(std::cmp::max(*n1, *n2).into())
         }
@@ -277,7 +278,7 @@ define_builtin!(
 define_builtin!(
     TO_HTML,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [RuntimeValue::String(s)] => Ok(mq_markdown::to_html(s).into()),
         [RuntimeValue::Symbol(s)] => Ok(mq_markdown::to_html(&s.as_str()).into()),
@@ -289,7 +290,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(TO_MARKDOWN_STRING, ParamNum::Fixed(1), |_, _, args| {
+define_builtin!(TO_MARKDOWN_STRING, ParamNum::Fixed(1), |_, _, args, _| {
     let args = flatten(args);
 
     Ok(mq_markdown::Markdown::new(
@@ -304,17 +305,19 @@ define_builtin!(TO_MARKDOWN_STRING, ParamNum::Fixed(1), |_, _, args| {
     .into())
 });
 
-define_builtin!(TO_STRING, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_STRING, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [o] => Ok(o.to_string().into()),
     _ => unreachable!(),
 });
 
-define_builtin!(TO_NUMBER, ParamNum::Fixed(1), |_, _, mut args| to_number(&mut args[0]));
+define_builtin!(TO_NUMBER, ParamNum::Fixed(1), |_, _, mut args, _| to_number(
+    &mut args[0]
+));
 
 define_builtin!(
     TO_ARRAY,
     ParamNum::Fixed(1),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(std::mem::take(array))),
         [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
             s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
@@ -328,7 +331,7 @@ define_builtin!(
 define_builtin!(
     URL_ENCODE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s)] => url_encode(s),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
@@ -344,7 +347,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(TO_TEXT, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_TEXT, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::None] => Ok(RuntimeValue::NONE),
     [RuntimeValue::Markdown(node_value, _)] => Ok(node_value.value().into()),
     [RuntimeValue::Array(array)] => Ok(array
@@ -356,7 +359,7 @@ define_builtin!(TO_TEXT, ParamNum::Fixed(1), |_, _, args| match args.as_slice() 
     _ => unreachable!(),
 });
 
-define_builtin!(ENDS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(ENDS_WITH, ParamNum::Fixed(2), |ident, _, mut args, env| {
     match args.as_mut_slice() {
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
@@ -366,7 +369,7 @@ define_builtin!(ENDS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .last()
             .map_or(Ok(RuntimeValue::FALSE), |o| {
-                eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))])
+                eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))], env)
             })
             .unwrap_or(RuntimeValue::FALSE)),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -378,7 +381,7 @@ define_builtin!(ENDS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(STARTS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(STARTS_WITH, ParamNum::Fixed(2), |ident, _, mut args, env| {
     match args.as_mut_slice() {
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
@@ -388,7 +391,7 @@ define_builtin!(STARTS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .first()
             .map_or(Ok(RuntimeValue::FALSE), |o| {
-                eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))])
+                eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))], env)
             })
             .unwrap_or(RuntimeValue::FALSE)),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -400,7 +403,7 @@ define_builtin!(STARTS_WITH, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_re(s, pattern),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
@@ -416,7 +419,7 @@ define_builtin!(REGEX_MATCH, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(DOWNCASE, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(DOWNCASE, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [node @ RuntimeValue::Markdown(_, _)] => node
         .markdown_node()
         .map(|md| Ok(node.update_markdown_value(md.value().to_lowercase().as_str())))
@@ -425,7 +428,7 @@ define_builtin!(DOWNCASE, ParamNum::Fixed(1), |_, _, args| match args.as_slice()
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(GSUB, ParamNum::Fixed(3), |ident, _, mut args| {
+define_builtin!(GSUB, ParamNum::Fixed(3), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [
             RuntimeValue::String(s1),
@@ -449,7 +452,7 @@ define_builtin!(GSUB, ParamNum::Fixed(3), |ident, _, mut args| {
     }
 });
 
-define_builtin!(REPLACE, ParamNum::Fixed(3), |ident, _, mut args| {
+define_builtin!(REPLACE, ParamNum::Fixed(3), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [
             RuntimeValue::String(s1),
@@ -476,7 +479,7 @@ define_builtin!(REPLACE, ParamNum::Fixed(3), |ident, _, mut args| {
 define_builtin!(
     REPEAT,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [v, RuntimeValue::Number(n)] => {
             repeat(v, n.value() as usize)
         }
@@ -491,7 +494,7 @@ define_builtin!(
 define_builtin!(
     EXPLODE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(
             s.chars()
                 .map(|c| RuntimeValue::Number((c as u32).into()))
@@ -515,7 +518,7 @@ define_builtin!(
 define_builtin!(
     IMPLODE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
             let result: String = array
                 .iter()
@@ -534,7 +537,7 @@ define_builtin!(
 define_builtin!(
     TRIM,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s)] => Ok(s.trim().to_string().into()),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
@@ -549,7 +552,7 @@ define_builtin!(
 define_builtin!(
     UPCASE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(md.value().to_uppercase().as_str())),)
@@ -561,21 +564,25 @@ define_builtin!(
     }
 );
 
-define_builtin!(UPDATE, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
-    [
-        node1 @ RuntimeValue::Markdown(_, _),
-        node2 @ RuntimeValue::Markdown(_, _),
-    ] => node2
-        .markdown_node()
-        .map(|md| Ok(node1.update_markdown_value(&md.value())))
-        .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-    [RuntimeValue::Markdown(node_value, _), RuntimeValue::String(s)] => Ok(node_value.with_value(s).into()),
-    [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
-    [_, a] => Ok(std::mem::take(a)),
-    _ => unreachable!(),
-});
+define_builtin!(
+    UPDATE,
+    ParamNum::Fixed(2),
+    |_, _, mut args, _| match args.as_mut_slice() {
+        [
+            node1 @ RuntimeValue::Markdown(_, _),
+            node2 @ RuntimeValue::Markdown(_, _),
+        ] => node2
+            .markdown_node()
+            .map(|md| Ok(node1.update_markdown_value(&md.value())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::Markdown(node_value, _), RuntimeValue::String(s)] => Ok(node_value.with_value(s).into()),
+        [RuntimeValue::None, _] => Ok(RuntimeValue::NONE),
+        [_, a] => Ok(std::mem::take(a)),
+        _ => unreachable!(),
+    }
+);
 
-define_builtin!(SLICE, ParamNum::Fixed(3), |ident, _, mut args| {
+define_builtin!(SLICE, ParamNum::Fixed(3), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [
             RuntimeValue::String(s),
@@ -672,7 +679,7 @@ define_builtin!(SLICE, ParamNum::Fixed(3), |ident, _, mut args| {
     }
 });
 
-define_builtin!(POW, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(POW, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => Ok(RuntimeValue::Number(
             (base.value() as i64).pow(exp.value() as u32).into(),
@@ -685,7 +692,7 @@ define_builtin!(POW, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(INDEX, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(INDEX, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
             (s1.find(s2.as_str()).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
@@ -712,7 +719,7 @@ define_builtin!(INDEX, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(LEN, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(LEN, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.chars().count().into())),
     [node @ RuntimeValue::Markdown(_, _)] => node
         .markdown_node()
@@ -722,7 +729,7 @@ define_builtin!(LEN, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
     _ => unreachable!(),
 });
 
-define_builtin!(UTF8BYTELEN, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(UTF8BYTELEN, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [a] => Ok(RuntimeValue::Number(a.len().into())),
     _ => unreachable!(),
 });
@@ -730,7 +737,7 @@ define_builtin!(UTF8BYTELEN, ParamNum::Fixed(1), |_, _, args| match args.as_slic
 define_builtin!(
     RINDEX,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
             Ok(RuntimeValue::Number(
                 s1.rfind(&*s2).map(|v| v as isize).unwrap_or_else(|| -1).into(),
@@ -766,7 +773,7 @@ define_builtin!(
 define_builtin!(
     RANGE,
     ParamNum::Range(1, 3),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         // Numeric range: range(end)
         [RuntimeValue::Number(end)] => {
             let end_val = end.value() as isize;
@@ -826,7 +833,7 @@ define_builtin!(
 define_builtin!(
     DEL,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
             let mut array = std::mem::take(array);
             array.remove(n.value() as usize);
@@ -859,7 +866,7 @@ define_builtin!(
 define_builtin!(
     JOIN,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => {
             Ok(array.iter().join(s).into())
         }
@@ -874,7 +881,7 @@ define_builtin!(
 define_builtin!(
     REVERSE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
             let mut vec = std::mem::take(array);
             vec.reverse();
@@ -889,7 +896,7 @@ define_builtin!(
 define_builtin!(
     SORT,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
             let mut vec = std::mem::take(array);
             vec.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -914,7 +921,7 @@ define_builtin!(
 define_builtin!(
     _SORT_BY_IMPL,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
             let mut vec = std::mem::take(array);
             vec.sort_by(|a, b| match (a, b) {
@@ -953,7 +960,7 @@ define_builtin!(
 define_builtin!(
     COMPACT,
     ParamNum::Fixed(1),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => Ok(RuntimeValue::Array(
             std::mem::take(array)
                 .into_iter()
@@ -968,7 +975,7 @@ define_builtin!(
 define_builtin!(
     SPLIT,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(split_re(s1, s2)?),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
@@ -1016,7 +1023,7 @@ define_builtin!(
 define_builtin!(
     UNIQ,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
             let mut vec = std::mem::take(array);
             let mut seen = FxHashSet::default();
@@ -1031,7 +1038,7 @@ define_builtin!(
 define_builtin!(
     CEIL,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ceil().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
@@ -1041,7 +1048,7 @@ define_builtin!(
 define_builtin!(
     FLOOR,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().floor().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
@@ -1051,7 +1058,7 @@ define_builtin!(
 define_builtin!(
     ROUND,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().round().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
@@ -1061,7 +1068,7 @@ define_builtin!(
 define_builtin!(
     TRUNC,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().trunc().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
@@ -1071,24 +1078,24 @@ define_builtin!(
 define_builtin!(
     ABS,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().abs().into())),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
     }
 );
 
-define_builtin!(EQ, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(EQ, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [a, b] => Ok((a == b).into()),
     _ => unreachable!(),
 });
 
-define_builtin!(NE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(NE, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [a, b] => Ok((a != b).into()),
     _ => unreachable!(),
 });
 
-define_builtin!(GT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(GT, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
     [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 > s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
@@ -1100,7 +1107,7 @@ define_builtin!(GT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     _ => unreachable!(),
 });
 
-define_builtin!(GTE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(GTE, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
     [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 >= s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
@@ -1112,7 +1119,7 @@ define_builtin!(GTE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     _ => unreachable!(),
 });
 
-define_builtin!(LT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(LT, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
     [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 < s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
@@ -1124,7 +1131,7 @@ define_builtin!(LT, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     _ => unreachable!(),
 });
 
-define_builtin!(LTE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(LTE, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
     [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 <= s2).into()),
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
@@ -1136,7 +1143,7 @@ define_builtin!(LTE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
     _ => unreachable!(),
 });
 
-define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args| {
+define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
             s1.push_str(s2);
@@ -1201,7 +1208,7 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args| {
     }
 });
 
-define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args| {
+define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 - *n2).into()),
         [a, b] => match (to_number(a)?, to_number(b)?) {
@@ -1215,7 +1222,7 @@ define_builtin!(SUB, ParamNum::Fixed(2), |_, _, mut args| {
     }
 });
 
-define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
+define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_slice() {
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
         if n2.is_zero() {
             Err(Error::ZeroDivision)
@@ -1234,7 +1241,7 @@ define_builtin!(DIV, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     _ => unreachable!(),
 });
 
-define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
+define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_slice() {
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
     [RuntimeValue::Array(array), RuntimeValue::Number(n)] | [RuntimeValue::Number(n), RuntimeValue::Array(array)] => {
         if n.is_int() && n.value() >= 0.0 && n.value() <= MAX_REPEAT_COUNT as f64 {
@@ -1281,7 +1288,7 @@ define_builtin!(MUL, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     _ => unreachable!(),
 });
 
-define_builtin!(MOD, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
+define_builtin!(MOD, ParamNum::Fixed(2), |_, _, mut args, _| match args.as_mut_slice() {
     [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
     [a, b] => match (to_number(a)?, to_number(b)?) {
         (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 % n2).into()),
@@ -1293,7 +1300,7 @@ define_builtin!(MOD, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slic
     _ => unreachable!(),
 });
 
-define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args| {
+define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args, _| {
     let mut last_truthy = None;
     for arg in args {
         if !arg.is_truthy() {
@@ -1305,7 +1312,7 @@ define_builtin!(AND, ParamNum::Range(2, u8::MAX), |_, _, args| {
     Ok(last_truthy.unwrap_or(RuntimeValue::Boolean(true)))
 });
 
-define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| {
+define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args, _| {
     for arg in args {
         if arg.is_truthy() {
             let mut arg = arg;
@@ -1315,22 +1322,26 @@ define_builtin!(OR, ParamNum::Range(2, u8::MAX), |_, _, args| {
     Ok(RuntimeValue::Boolean(false))
 });
 
-define_builtin!(NOT, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(NOT, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [a] => Ok((!a.is_truthy()).into()),
     _ => unreachable!(),
 });
 
-define_builtin!(ATTR, ParamNum::Fixed(2), |_, _, mut args| match args.as_mut_slice() {
-    [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] =>
-        Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE)),
-    [a, ..] => Ok(std::mem::take(a)),
-    _ => unreachable!(),
-});
+define_builtin!(
+    ATTR,
+    ParamNum::Fixed(2),
+    |_, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] =>
+            Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE)),
+        [a, ..] => Ok(std::mem::take(a)),
+        _ => unreachable!(),
+    }
+);
 
 define_builtin!(
     SET_ATTR,
     ParamNum::Fixed(3),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(node, selector),
             RuntimeValue::String(attr),
@@ -1367,7 +1378,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(TO_CODE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(TO_CODE, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
         value: a.to_string(),
         lang: Some(lang.to_string()),
@@ -1389,16 +1400,20 @@ define_builtin!(TO_CODE, ParamNum::Fixed(2), |_, _, args| match args.as_slice() 
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_CODE_INLINE, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-    [a] if !a.is_none() => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
-        value: a.to_string().into(),
-        position: None,
-    })
-    .into()),
-    _ => Ok(RuntimeValue::NONE),
-});
+define_builtin!(
+    TO_CODE_INLINE,
+    ParamNum::Fixed(1),
+    |_, _, args, _| match args.as_slice() {
+        [a] if !a.is_none() => Ok(mq_markdown::Node::CodeInline(mq_markdown::CodeInline {
+            value: a.to_string().into(),
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+);
 
-define_builtin!(TO_H, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(TO_H, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::Markdown(node, _), RuntimeValue::Number(depth)] => {
         Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
             depth: (*depth).value() as u8,
@@ -1421,7 +1436,7 @@ define_builtin!(TO_H, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
 define_builtin!(
     INCREASE_HEADER_LEVEL,
     ParamNum::Fixed(1),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, selector)] => {
             if let mq_markdown::Node::Heading(heading) = node {
                 if heading.depth < 6 {
@@ -1443,7 +1458,7 @@ define_builtin!(
 define_builtin!(
     DECREASE_HEADER_LEVEL,
     ParamNum::Fixed(1),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, selector)] => {
             if let mq_markdown::Node::Heading(heading) = node {
                 if heading.depth > 1 {
@@ -1462,14 +1477,14 @@ define_builtin!(
     }
 );
 
-define_builtin!(TO_HR, ParamNum::Fixed(0), |_, _, _| {
+define_builtin!(TO_HR, ParamNum::Fixed(0), |_, _, _, _| {
     Ok(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }).into())
 });
 
 define_builtin!(
     TO_LINK,
     ParamNum::Fixed(3),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [
             RuntimeValue::String(url),
             RuntimeValue::String(value),
@@ -1489,7 +1504,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(TO_IMAGE, ParamNum::Fixed(3), |_, _, args| match args.as_slice() {
+define_builtin!(TO_IMAGE, ParamNum::Fixed(3), |_, _, args, _| match args.as_slice() {
     [
         RuntimeValue::String(url),
         RuntimeValue::String(alt),
@@ -1504,7 +1519,7 @@ define_builtin!(TO_IMAGE, ParamNum::Fixed(3), |_, _, args| match args.as_slice()
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_MATH, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_MATH, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [a] => Ok(mq_markdown::Node::Math(mq_markdown::Math {
         value: a.to_string(),
         position: None,
@@ -1513,16 +1528,20 @@ define_builtin!(TO_MATH, ParamNum::Fixed(1), |_, _, args| match args.as_slice() 
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_MATH_INLINE, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
-    [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
-        value: a.to_string().into(),
-        position: None,
-    })
-    .into()),
-    _ => Ok(RuntimeValue::NONE),
-});
+define_builtin!(
+    TO_MATH_INLINE,
+    ParamNum::Fixed(1),
+    |_, _, args, _| match args.as_slice() {
+        [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
+            value: a.to_string().into(),
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+);
 
-define_builtin!(TO_MD_NAME, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_MD_NAME, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::Markdown(node, _)] => Ok(node.name().to_string().into()),
     _ => Ok(RuntimeValue::NONE),
 });
@@ -1530,7 +1549,7 @@ define_builtin!(TO_MD_NAME, ParamNum::Fixed(1), |_, _, args| match args.as_slice
 define_builtin!(
     SET_LIST_ORDERED,
     ParamNum::Fixed(2),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
             RuntimeValue::Boolean(ordered),
@@ -1544,7 +1563,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(TO_STRONG, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_STRONG, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::Markdown(node, _)] => {
         Ok(mq_markdown::Node::Strong(mq_markdown::Strong {
             values: node.node_values(),
@@ -1560,7 +1579,7 @@ define_builtin!(TO_STRONG, ParamNum::Fixed(1), |_, _, args| match args.as_slice(
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_EM, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_EM, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::Markdown(node, _)] => {
         Ok(mq_markdown::Node::Emphasis(mq_markdown::Emphasis {
             values: node.node_values(),
@@ -1576,7 +1595,7 @@ define_builtin!(TO_EM, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_MD_TEXT, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(TO_MD_TEXT, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [a] if !a.is_none() => Ok(mq_markdown::Node::Text(mq_markdown::Text {
         value: a.to_string(),
         position: None,
@@ -1585,7 +1604,7 @@ define_builtin!(TO_MD_TEXT, ParamNum::Fixed(1), |_, _, args| match args.as_slice
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_MD_LIST, ParamNum::Fixed(2), |_, _, args| match args.as_slice() {
+define_builtin!(TO_MD_LIST, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::Markdown(node, _), RuntimeValue::Number(level)] => {
         Ok(mq_markdown::Node::List(mq_markdown::List {
             values: node.node_values(),
@@ -1611,7 +1630,7 @@ define_builtin!(TO_MD_LIST, ParamNum::Fixed(2), |_, _, args| match args.as_slice
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args| {
+define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args, _| {
     let args_num = args.len();
     let mut current_index = 0;
     let values = args
@@ -1656,7 +1675,7 @@ define_builtin!(TO_MD_TABLE_ROW, ParamNum::Range(1, u8::MAX), |_, _, args| {
     ))
 });
 
-define_builtin!(GET_TITLE, ParamNum::Fixed(1), |_, _, mut args| {
+define_builtin!(GET_TITLE, ParamNum::Fixed(1), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::Definition(mq_markdown::Definition { title, .. }), _)
@@ -1674,7 +1693,7 @@ define_builtin!(GET_TITLE, ParamNum::Fixed(1), |_, _, mut args| {
     }
 });
 
-define_builtin!(GET_URL, ParamNum::Fixed(1), |_, _, args| match args.as_slice() {
+define_builtin!(GET_URL, ParamNum::Fixed(1), |_, _, args, _| match args.as_slice() {
     [RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _)] => {
         Ok(def.url.as_str().into())
     }
@@ -1687,7 +1706,7 @@ define_builtin!(GET_URL, ParamNum::Fixed(1), |_, _, args| match args.as_slice() 
     _ => Ok(RuntimeValue::NONE),
 });
 
-define_builtin!(SET_CHECK, ParamNum::Fixed(2), |_, _, mut args| {
+define_builtin!(SET_CHECK, ParamNum::Fixed(2), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::List(list), _),
@@ -1702,7 +1721,7 @@ define_builtin!(SET_CHECK, ParamNum::Fixed(2), |_, _, mut args| {
     }
 });
 
-define_builtin!(SET_REF, ParamNum::Fixed(2), |_, _, mut args| {
+define_builtin!(SET_REF, ParamNum::Fixed(2), |_, _, mut args, _| {
     match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::Definition(def), _),
@@ -1756,7 +1775,7 @@ define_builtin!(SET_REF, ParamNum::Fixed(2), |_, _, mut args| {
 define_builtin!(
     SET_CODE_BLOCK_LANG,
     ParamNum::Fixed(2),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [
             RuntimeValue::Markdown(mq_markdown::Node::Code(code), _),
             RuntimeValue::String(lang),
@@ -1774,7 +1793,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
+define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args, _| {
     if args.is_empty() {
         Ok(RuntimeValue::new_dict())
     } else {
@@ -1817,7 +1836,7 @@ define_builtin!(DICT, ParamNum::Range(0, u8::MAX), |_, _, args| {
 define_builtin!(
     GET,
     ParamNum::Fixed(2),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map
             .get_mut(&Ident::new(key))
             .map(std::mem::take)
@@ -1852,7 +1871,7 @@ define_builtin!(
 define_builtin!(
     SET,
     ParamNum::Fixed(3),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Dict(map_val), RuntimeValue::String(key_val), value_val] => {
             let mut new_dict = std::mem::take(map_val);
             new_dict.insert(Ident::new(key_val), std::mem::take(value_val));
@@ -1897,7 +1916,7 @@ define_builtin!(
 define_builtin!(
     KEYS,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Dict(map)] => {
             let keys = map
                 .keys()
@@ -1914,7 +1933,7 @@ define_builtin!(
 define_builtin!(
     VALUES,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Dict(map)] => {
             let values = map.values().cloned().collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(values))
@@ -1928,7 +1947,7 @@ define_builtin!(
 define_builtin!(
     ENTRIES,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Dict(map)] => {
             let entries = map
                 .iter()
@@ -1945,7 +1964,7 @@ define_builtin!(
 define_builtin!(
     INSERT,
     ParamNum::Fixed(3),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         // Insert into array at index
         [RuntimeValue::Array(array), RuntimeValue::Number(index), value] => {
             let mut new_array = std::mem::take(array);
@@ -1992,43 +2011,53 @@ define_builtin!(
 define_builtin!(
     NEGATE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(-(*n))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
         _ => unreachable!(),
     }
 );
 
-define_builtin!(INTERN, ParamNum::Fixed(1), |_, _, mut args| match args.as_mut_slice() {
-    [RuntimeValue::String(s)] => {
-        Ok(RuntimeValue::String(Ident::new(s).as_str()))
+define_builtin!(
+    INTERN,
+    ParamNum::Fixed(1),
+    |_, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => {
+            Ok(RuntimeValue::String(Ident::new(s).as_str()))
+        }
+        [a] => {
+            Ok(RuntimeValue::String(Ident::new(&a.to_string()).as_str()))
+        }
+        _ => unreachable!(),
     }
-    [a] => {
-        Ok(RuntimeValue::String(Ident::new(&a.to_string()).as_str()))
-    }
-    _ => unreachable!(),
+);
+
+define_builtin!(NAN, ParamNum::None, |_, _, _, _| {
+    Ok(RuntimeValue::Number(number::NAN))
 });
 
-define_builtin!(NAN, ParamNum::None, |_, _, _| { Ok(RuntimeValue::Number(number::NAN)) });
-
-define_builtin!(IS_NAN, ParamNum::Fixed(1), |_, _, mut args| match args.as_mut_slice() {
-    [RuntimeValue::Number(n)] => {
-        Ok(RuntimeValue::Boolean(n.is_nan()))
+define_builtin!(
+    IS_NAN,
+    ParamNum::Fixed(1),
+    |_, _, mut args, _| match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => {
+            Ok(RuntimeValue::Boolean(n.is_nan()))
+        }
+        [_] => {
+            Ok(RuntimeValue::FALSE)
+        }
+        _ => unreachable!(),
     }
-    [_] => {
-        Ok(RuntimeValue::FALSE)
-    }
-    _ => unreachable!(),
-});
+);
 
-define_builtin!(INFINITE, ParamNum::None, |_, _, _| {
+define_builtin!(INFINITE, ParamNum::None, |_, _, _, _| {
     Ok(RuntimeValue::Number(number::INFINITE))
 });
 
 define_builtin!(
     COALESCE,
     ParamNum::Fixed(2),
-    |_, _, mut args| match args.as_mut_slice() {
+    |_, _, mut args, _| match args.as_mut_slice() {
         [a, b] => {
             if a.is_none() {
                 Ok(std::mem::take(b))
@@ -2040,7 +2069,7 @@ define_builtin!(
     }
 );
 
-define_builtin!(INPUT, ParamNum::None, |_, _, _| {
+define_builtin!(INPUT, ParamNum::None, |_, _, _, _| {
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
@@ -2050,7 +2079,7 @@ define_builtin!(INPUT, ParamNum::None, |_, _, _| {
     Ok(RuntimeValue::String(input))
 });
 
-define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _| {
+define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _, _| {
     Ok(RuntimeValue::Array(
         all_symbols()
             .into_iter()
@@ -2062,7 +2091,7 @@ define_builtin!(ALL_SYMBOLS, ParamNum::None, |_, _, _| {
 define_builtin!(
     TO_MARKDOWN,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(s)] =>
             Ok(RuntimeValue::Array(parse_markdown_input(s).map_err(|e| {
                 Error::Runtime(format!("Failed to parse markdown: {}", e))
@@ -2075,7 +2104,7 @@ define_builtin!(
 define_builtin!(
     _GET_MARKDOWN_POSITION,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, _)] => {
             node.position()
                 .map(|pos| {
@@ -2098,7 +2127,7 @@ define_builtin!(
 define_builtin!(
     READ_FILE,
     ParamNum::Fixed(1),
-    |ident, _, mut args| match args.as_mut_slice() {
+    |ident, _, mut args, _| match args.as_mut_slice() {
         [RuntimeValue::String(path)] => match std::fs::read_to_string(&path) {
             Ok(content) => Ok(RuntimeValue::String(content)),
             Err(e) => Err(Error::Runtime(format!("Failed to read file {}: {}", path, e))),
@@ -3520,17 +3549,22 @@ impl Error {
 }
 
 #[inline(always)]
-pub fn eval_builtin(runtime_value: &RuntimeValue, ident: &Ident, args: Args) -> Result<RuntimeValue, Error> {
+pub fn eval_builtin(
+    runtime_value: &RuntimeValue,
+    ident: &Ident,
+    args: Args,
+    env: &Shared<SharedCell<Env>>,
+) -> Result<RuntimeValue, Error> {
     get_builtin_functions(ident).map_or_else(
         || Err(Error::NotDefined(ident.to_string())),
         |f| {
             let args_len = args.len() as u8;
             if f.num_params.is_valid(args_len) {
-                (f.func)(ident, runtime_value, args)
+                (f.func)(ident, runtime_value, args, env)
             } else if f.num_params.is_missing_one_params(args_len) {
                 let mut new_args: Args = vec![runtime_value.clone()];
                 new_args.extend(args);
-                (f.func)(ident, runtime_value, new_args)
+                (f.func)(ident, runtime_value, new_args, env)
             } else {
                 Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
@@ -3981,7 +4015,15 @@ mod tests {
     #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Boolean(true)))]
     fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new(func_name);
-        assert_eq!(eval_builtin(&RuntimeValue::None, &ident, args), expected);
+        assert_eq!(
+            eval_builtin(
+                &RuntimeValue::None,
+                &ident,
+                args,
+                &Shared::new(SharedCell::new(Env::default()))
+            ),
+            expected
+        );
     }
 
     #[rstest]
@@ -3992,7 +4034,12 @@ mod tests {
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(#[case] func_name: &str, #[case] args: Args, #[case] expected_error: Error) {
         let ident = Ident::new(func_name);
-        let result = eval_builtin(&RuntimeValue::None, &ident, args);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            args,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected_error);
     }
@@ -4003,7 +4050,7 @@ mod tests {
         let first_arg = RuntimeValue::String("hello world".into());
         let args = vec![RuntimeValue::String("hello".into())];
 
-        let result = eval_builtin(&first_arg, &ident, args);
+        let result = eval_builtin(&first_arg, &ident, args, &Shared::new(SharedCell::new(Env::default())));
         assert_eq!(result, Ok(RuntimeValue::Boolean(true)));
     }
 
@@ -4212,7 +4259,12 @@ mod tests {
     #[test]
     fn test_eval_builtin_new_dict() {
         let ident = Ident::new("dict");
-        let result = eval_builtin(&RuntimeValue::None, &ident, vec![]);
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result.is_ok());
         let map_val = result.unwrap();
         match map_val {
@@ -4229,6 +4281,7 @@ mod tests {
                 RuntimeValue::String("key".into()),
                 RuntimeValue::String("value".into()),
             ])],
+            &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
             result,
@@ -4249,7 +4302,12 @@ mod tests {
             RuntimeValue::String("name".into()),
             RuntimeValue::String("Jules".into()),
         ];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, args1);
+        let result1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_set,
+            args1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result1.is_ok());
         let map_val1 = result1.unwrap();
         match &map_val1 {
@@ -4268,7 +4326,12 @@ mod tests {
             RuntimeValue::String("age".into()),
             RuntimeValue::Number(30.into()),
         ];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, args2);
+        let result2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_set,
+            args2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result2.is_ok());
         let map_val2 = result2.unwrap();
         match &map_val2 {
@@ -4288,7 +4351,12 @@ mod tests {
             RuntimeValue::String("name".into()),
             RuntimeValue::String("Vincent".into()),
         ];
-        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, args3);
+        let result3 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_set,
+            args3,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result3.is_ok());
         let map_val3 = result3.unwrap();
         match &map_val3 {
@@ -4311,7 +4379,12 @@ mod tests {
             RuntimeValue::String("nested".into()),
             nested_map.clone(),
         ];
-        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, args4);
+        let result4 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_set,
+            args4,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result4.is_ok());
         match result4.unwrap() {
             RuntimeValue::Dict(map) => {
@@ -4326,7 +4399,12 @@ mod tests {
             RuntimeValue::String("key".into()),
             RuntimeValue::String("value".into()),
         ];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, args_err1);
+        let result_err1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_set,
+            args_err1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -4344,7 +4422,12 @@ mod tests {
             RuntimeValue::Number(123.into()),
             RuntimeValue::String("value".into()),
         ];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, args_err2);
+        let result_err2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_set,
+            args_err2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -4367,18 +4450,33 @@ mod tests {
         let map_val: RuntimeValue = map_data.into();
 
         let args1 = vec![map_val.clone(), RuntimeValue::String("name".into())];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, args1);
+        let result1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            args1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
 
         let args2 = vec![map_val.clone(), RuntimeValue::String("location".into())];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, args2);
+        let result2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            args2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(result2, Ok(RuntimeValue::None));
 
         let args_err1 = vec![
             RuntimeValue::String("not_a_map".into()),
             RuntimeValue::String("key".into()),
         ];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, args_err1);
+        let result_err1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            args_err1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -4391,7 +4489,12 @@ mod tests {
         );
 
         let args_err2 = vec![map_val.clone(), RuntimeValue::Number(123.into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, args_err2);
+        let result_err2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            args_err2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -4406,7 +4509,12 @@ mod tests {
         let ident_keys = Ident::new("keys");
         let empty_map = RuntimeValue::new_dict();
         let args1 = vec![empty_map.clone()];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1);
+        let result1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_keys,
+            args1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
         let mut map_data = BTreeMap::default();
@@ -4414,7 +4522,12 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, args2);
+        let result2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_keys,
+            args2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(keys_array) => {
@@ -4432,7 +4545,12 @@ mod tests {
         }
 
         let args_err1 = vec![RuntimeValue::String("not_a_map".into())];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err1);
+        let result_err1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_keys,
+            args_err1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -4442,7 +4560,12 @@ mod tests {
         );
 
         let args_err2 = vec![map_val.clone(), RuntimeValue::String("extra".into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err2);
+        let result_err2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_keys,
+            args_err2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("keys".to_string(), 1, 2))
@@ -4454,7 +4577,12 @@ mod tests {
         let ident_values = Ident::new("values");
         let empty_map = RuntimeValue::new_dict();
         let args1 = vec![empty_map.clone()];
-        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1);
+        let result1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_values,
+            args1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(result1, Ok(RuntimeValue::Array(vec![])));
 
         let mut map_data = BTreeMap::default();
@@ -4462,7 +4590,12 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
-        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, args2);
+        let result2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_values,
+            args2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(values_array) => {
@@ -4474,7 +4607,12 @@ mod tests {
         }
 
         let args_err1 = vec![RuntimeValue::String("not_a_map".into())];
-        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, args_err1);
+        let result_err1 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_values,
+            args_err1,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -4484,7 +4622,12 @@ mod tests {
         );
 
         let args_err2 = vec![map_val.clone(), RuntimeValue::String("extra".into())];
-        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, args_err2);
+        let result_err2 = eval_builtin(
+            &RuntimeValue::None,
+            &ident_values,
+            args_err2,
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))
