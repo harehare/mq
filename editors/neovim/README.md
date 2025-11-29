@@ -1,4 +1,4 @@
-# mq.nvim
+<h1 align="center">mq.nvim</h1>
 
 Neovim plugin for [mq](https://mqlang.org/) - a jq-like tool for Markdown processing.
 
@@ -98,27 +98,18 @@ require("mq").setup({
 
 ## Commands
 
-| Command                | Description                                 |
-| ---------------------- | ------------------------------------------- |
-| `:MqInstall`           | Install mq LSP server via cargo             |
-| `:MqStartLSP`          | Start the mq LSP server                     |
-| `:MqStopLSP`           | Stop the mq LSP server                      |
-| `:MqRestartLSP`        | Restart the mq LSP server                   |
-| `:MqRunSelected`       | Run selected text as mq query (visual mode) |
-| `:MqExecuteQuery`      | Execute mq query on current file            |
-| `:MqExecuteFile`       | Execute mq file on current file             |
-| `:MqDebugFile`         | Debug current mq file (requires nvim-dap)   |
-| `:MqInstallDebugger`   | Install mq debugger (mq-dbg) via cargo      |
+| Command           | Description                                 |
+| ----------------- | ------------------------------------------- |
+| `:MqInstall`      | Install mq LSP server via cargo             |
+| `:MqStartLSP`     | Start the mq LSP server                     |
+| `:MqStopLSP`      | Stop the mq LSP server                      |
+| `:MqRestartLSP`   | Restart the mq LSP server                   |
+| `:MqRunSelected`  | Run selected text as mq query (visual mode) |
+| `:MqExecuteQuery` | Execute mq query on current file            |
+| `:MqExecuteFile`  | Execute mq file on current file             |
+| `:MqDebugFile`    | Debug current mq file (requires nvim-dap)   |
 
 ## Usage Examples
-
-### Create a new mq file
-
-```vim
-:MqNew
-```
-
-This creates a new buffer with mq filetype and helpful examples (if `show_examples` is enabled).
 
 ### Run selected text as query
 
@@ -264,22 +255,6 @@ Or use the command: `:MqInstallDebugger`
 4. Select an input file when prompted
 5. Use nvim-dap commands to control debugging
 
-### Recommended Key Mappings
-
-```lua
-local dap = require("dap")
-
--- Debugging controls
-vim.keymap.set("n", "<F5>", dap.continue, { desc = "Continue" })
-vim.keymap.set("n", "<F10>", dap.step_over, { desc = "Step Over" })
-vim.keymap.set("n", "<F11>", dap.step_into, { desc = "Step Into" })
-vim.keymap.set("n", "<F12>", dap.step_out, { desc = "Step Out" })
-vim.keymap.set("n", "<leader>b", dap.toggle_breakpoint, { desc = "Toggle Breakpoint" })
-vim.keymap.set("n", "<leader>B", function()
-  dap.set_breakpoint(vim.fn.input("Breakpoint condition: "))
-end, { desc = "Set Conditional Breakpoint" })
-```
-
 ### DAP UI (Optional)
 
 For a better debugging experience, install [nvim-dap-ui](https://github.com/rcarriga/nvim-dap-ui):
@@ -321,14 +296,8 @@ The debugger uses the Debug Adapter Protocol (DAP), the same protocol used by VS
 
 If you don't have mq installed, you can install it via cargo:
 
-**LSP Server:**
 ```vim
 :MqInstall
-```
-
-**Debugger:**
-```vim
-:MqInstallDebugger
 ```
 
 Or manually:
@@ -340,22 +309,6 @@ cargo install --git https://github.com/harehare/mq.git mq-run
 # Install debugger (optional)
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 ```
-
-## Troubleshooting
-
-### LSP server not starting
-
-1. Check if mq is installed: `which mq`
-2. Check LSP server status: `:LspInfo`
-3. View LSP logs: `:lua vim.cmd('e ' .. vim.lsp.get_log_path())`
-4. Manually start server: `:MqStartLSP`
-
-### mq command not found
-
-Either:
-- Add mq to your PATH
-- Configure the path in setup: `cmd = "/path/to/mq"`
-- Install via `:MqInstallServers`
 
 ## License
 
