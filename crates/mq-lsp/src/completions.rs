@@ -76,6 +76,9 @@ pub fn response(
                     hir_guard.find_symbols_in_scope(scope_id),
                     hir_guard.find_symbols_in_source(hir_guard.builtin.source_id),
                 ])
+                .into_iter()
+                .unique_by(|s| s.value.clone())
+                .collect::<Vec<_>>()
             };
 
             Some(CompletionResponse::Array(
