@@ -13,17 +13,31 @@ Neovim plugin for [mq](https://mqlang.org/) - a jq-like tool for Markdown proces
 ## Requirements
 
 - Neovim >= 0.8.0
-- [mq](https://github.com/harehare/mq) installed (LSP and command execution)
-- [nvim-dap](https://github.com/mfussenegger/nvim-dap) (optional, for debugging support)
+- [mq](https://github.com/harehare/mq) installed (for LSP server and command execution)
+  - Install using `:MqInstall` command or manually via cargo
+- Rust toolchain (required for `:MqInstall` command)
 
-### Optional (Recommended for Performance)
+### Optional Dependencies
 
-For faster file searching in `:MqExecuteFile` and `:MqRunSelected` commands:
-- [fd](https://github.com/sharkdp/fd) - Fastest option (recommended)
+**For Debugging:**
+- [nvim-dap](https://github.com/mfussenegger/nvim-dap) - Required for debugging support
+- [nvim-dap-ui](https://github.com/rcarriga/nvim-dap-ui) - Recommended for better debugging UI
+- [nvim-dap-virtual-text](https://github.com/theHamsta/nvim-dap-virtual-text) - Shows variable values inline
+- `mq-dbg` - Installed automatically via `:MqInstall` command
+
+**For Enhanced File Searching:**
+
+Improves performance and user experience for `:MqExecuteFile` and `:MqRunSelected` commands:
+- [fd](https://github.com/sharkdp/fd) - Fastest option (highly recommended)
 - [ripgrep](https://github.com/BurntSushi/ripgrep) - Fast alternative
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) - Enhanced file picker UI
 
-The plugin will automatically use these tools if available, falling back to native Neovim functions if not installed.
+The plugin automatically uses these tools if available, falling back to native Neovim functions otherwise.
+
+**For Code Completion:**
+- [nvim-cmp](https://github.com/hrsh7th/nvim-cmp) - Recommended for the best completion experience
+- [cmp-nvim-lsp](https://github.com/hrsh7th/cmp-nvim-lsp) - LSP source for nvim-cmp
+- [LuaSnip](https://github.com/L3MON4D3/LuaSnip) - For snippet support in function completions
 
 ## Installation
 
@@ -237,13 +251,23 @@ The mq.nvim plugin provides full integration with [nvim-dap](https://github.com/
 }
 ```
 
-2. Install mq-dbg (Debug Adapter Protocol server):
+2. Install mq and mq-dbg (Debug Adapter Protocol server):
 
-```bash
-cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
+The `:MqInstall` command automatically installs both `mq` and `mq-dbg`:
+
+```vim
+:MqInstall
 ```
 
-Or use the command: `:MqInstallDebugger`
+Or install manually via cargo:
+
+```bash
+# Install mq LSP server
+cargo install --git https://github.com/harehare/mq.git mq-run
+
+# Install debugger
+cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
+```
 
 3. The DAP adapter is automatically configured when you call `require("mq").setup()` if nvim-dap is installed.
 
@@ -294,21 +318,33 @@ The debugger uses the Debug Adapter Protocol (DAP), the same protocol used by VS
 
 ## Installing mq
 
-If you don't have mq installed, you can install it via cargo:
+If you don't have mq installed, you can install it using the `:MqInstall` command:
 
 ```vim
 :MqInstall
 ```
 
-Or manually:
+This command will install both:
+- `mq` - The main LSP server and command-line tool
+- `mq-dbg` - The Debug Adapter Protocol (DAP) server for debugging
+
+Alternatively, you can install manually via cargo:
 
 ```bash
-# Install LSP server
+# Install mq LSP server and CLI tool
 cargo install --git https://github.com/harehare/mq.git mq-run
 
-# Install debugger (optional)
+# Install debugger (optional, for DAP support)
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 ```
+
+Or using the installation script from the main repository:
+
+```bash
+curl -sSL https://mqlang.org/install.sh | bash
+```
+
+**Note:** The `:MqInstall` command requires Rust and cargo to be installed on your system.
 
 ## License
 

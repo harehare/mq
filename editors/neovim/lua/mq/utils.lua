@@ -37,17 +37,18 @@ function M.warn(msg)
 end
 
 -- Get selected text
+-- This function uses visual selection markers ('<, '>), which are preserved
+-- even after exiting visual mode, making it safe to use in commands
 function M.get_selected_text()
-  local mode = vim.fn.mode()
+  -- Get visual selection markers
+  local _, start_row, start_col, _ = unpack(vim.fn.getpos("'<"))
+  local _, end_row, end_col, _ = unpack(vim.fn.getpos("'>"))
 
-  if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+  -- Validate selection
+  if start_row == 0 or end_row == 0 then
     M.error("No text selected")
     return nil
   end
-
-  -- Get visual selection
-  local _, start_row, start_col, _ = table.unpack(vim.fn.getpos("'<"))
-  local _, end_row, end_col, _ = table.unpack(vim.fn.getpos("'>"))
 
   local lines = vim.api.nvim_buf_get_lines(0, start_row - 1, end_row, false)
 
