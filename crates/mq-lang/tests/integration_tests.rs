@@ -1618,6 +1618,32 @@ fn engine_with_opt() -> Engine {
             RuntimeValue::Number(3.into()),
             RuntimeValue::Number(4.into())
         ])].into()))]
+#[case::get_variable_simple("
+          let x = 42
+          | get_variable(\"x\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::set_variable_simple("
+          set_variable(\"x\", 99)
+          | get_variable(\"x\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(99.into())].into()))]
+#[case::set_variable_overwrite("
+          set_variable(\"x\", 1)
+          | set_variable(\"x\", 2)
+          | get_variable(\"x\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::set_and_get_multiple_variables("
+          set_variable(\"a\", \"foo\")
+          | set_variable(\"b\", \"bar\")
+          | get_variable(\"a\") + get_variable(\"b\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::String("foobar".to_string())].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,

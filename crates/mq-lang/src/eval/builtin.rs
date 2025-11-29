@@ -1,6 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
-use crate::eval::env::Env;
+use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
 use crate::number::{self, Number};
 use crate::selector::Selector;
@@ -2123,6 +2123,75 @@ define_builtin!(
     }
 );
 
+define_builtin!(
+    SET_VARIABLE,
+    ParamNum::Fixed(2),
+    |ident, value, mut args, env| match args.as_mut_slice() {
+        [RuntimeValue::Symbol(ident), v] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut().define(std::mem::take(ident), std::mem::take(v));
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write().unwrap().define(std::mem::take(ident), std::mem::take(v));
+            }
+
+            Ok(value.clone())
+        }
+        [RuntimeValue::String(ident), v] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut().define(Ident::new(ident), std::mem::take(v));
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write().unwrap().define(Ident::new(ident), std::mem::take(v));
+            }
+
+            Ok(value.clone())
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+);
+
+define_builtin!(
+    GET_VARIABLE,
+    ParamNum::Fixed(1),
+    |ident, _, mut args, env| match args.as_mut_slice() {
+        [RuntimeValue::Symbol(ident)] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut().resolve(std::mem::take(ident)).map_err(Into::into)
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write().unwrap().resolve(std::mem::take(ident)).map_err(Into::into)
+            }
+        }
+        [RuntimeValue::String(ident)] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut().resolve(Ident::new(ident)).map_err(Into::into)
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write().unwrap().resolve(Ident::new(ident)).map_err(Into::into)
+            }
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)],)),
+        _ => unreachable!(),
+    }
+);
+
 #[cfg(feature = "file-io")]
 define_builtin!(
     READ_FILE,
@@ -2181,6 +2250,7 @@ const HASH_GT: u64 = fnv1a_hash_64(constants::GT);
 const HASH_GTE: u64 = fnv1a_hash_64(constants::GTE);
 const HASH_GET_TITLE: u64 = fnv1a_hash_64("get_title");
 const HASH_GET_URL: u64 = fnv1a_hash_64("get_url");
+const HASH_GET_VARIABLE: u64 = fnv1a_hash_64("get_variable");
 const HASH_GSUB: u64 = fnv1a_hash_64("gsub");
 const HASH_HALT: u64 = fnv1a_hash_64("halt");
 const HASH_IMPLODE: u64 = fnv1a_hash_64("implode");
@@ -2220,6 +2290,7 @@ const HASH_SET_CHECK: u64 = fnv1a_hash_64("set_check");
 const HASH_SET_CODE_BLOCK_LANG: u64 = fnv1a_hash_64("set_code_block_lang");
 const HASH_SET_LIST_ORDERED: u64 = fnv1a_hash_64("set_list_ordered");
 const HASH_SET_REF: u64 = fnv1a_hash_64("set_ref");
+const HASH_SET_VARIABLE: u64 = fnv1a_hash_64("set_variable");
 const HASH_SLICE: u64 = fnv1a_hash_64(constants::SLICE);
 const HASH_SORT: u64 = fnv1a_hash_64("sort");
 const HASH_SORT_BY_IMPL: u64 = fnv1a_hash_64("_sort_by_impl");
@@ -2298,6 +2369,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_GTE => Some(&GTE),
         HASH_GET_TITLE => Some(&GET_TITLE),
         HASH_GET_URL => Some(&GET_URL),
+        HASH_GET_VARIABLE => Some(&GET_VARIABLE),
         HASH_GSUB => Some(&GSUB),
         HASH_HALT => Some(&HALT),
         HASH_IMPLODE => Some(&IMPLODE),
@@ -2337,6 +2409,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_SET_CODE_BLOCK_LANG => Some(&SET_CODE_BLOCK_LANG),
         HASH_SET_LIST_ORDERED => Some(&SET_LIST_ORDERED),
         HASH_SET_REF => Some(&SET_REF),
+        HASH_SET_VARIABLE => Some(&SET_VARIABLE),
         HASH_SLICE => Some(&SLICE),
         HASH_SORT => Some(&SORT),
         HASH_SORT_BY_IMPL => Some(&_SORT_BY_IMPL),
@@ -3485,6 +3558,21 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             params: &["markdown_string"],
         },
     );
+    map.insert(
+        SmolStr::new("set_variable"),
+        BuiltinFunctionDoc {
+            description: "Sets a symbol or variable in the current environment with the given value.",
+            params: &["symbol_or_string", "value"],
+        },
+    );
+    map.insert(
+        SmolStr::new("get_variable"),
+        BuiltinFunctionDoc {
+            description: "Retrieves the value of a symbol or variable from the current environment.",
+            params: &["symbol_or_string"],
+        },
+    );
+
     map
 });
 
@@ -3494,6 +3582,8 @@ pub enum Error {
     InvalidBase64String(#[from] base64::DecodeError),
     #[error("\"{0}\" is not defined")]
     NotDefined(FunctionName),
+    #[error("Invalid definition for \"{0}\"")]
+    InvalidDefinition(String),
     #[error("Unable to format date time, {0}")]
     InvalidDateTimeFormat(String),
     #[error("Invalid types for \"{0}\", got {1:?}")]
@@ -3510,6 +3600,14 @@ pub enum Error {
     UserDefined(String),
 }
 
+impl From<env::EnvError> for Error {
+    fn from(e: env::EnvError) -> Self {
+        match e {
+            env::EnvError::InvalidDefinition(name) => Error::InvalidDefinition(name),
+        }
+    }
+}
+
 impl Error {
     pub fn to_eval_error(&self, node: ast::Node, token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) -> EvalError {
         match self {
@@ -3522,6 +3620,9 @@ impl Error {
             }
             Error::NotDefined(name) => {
                 EvalError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
+            }
+            Error::InvalidDefinition(a) => {
+                EvalError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
             }
             Error::InvalidDateTimeFormat(msg) => {
                 EvalError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
