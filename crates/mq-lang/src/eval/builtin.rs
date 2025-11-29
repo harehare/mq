@@ -2127,28 +2127,28 @@ define_builtin!(
     SET_VARIABLE,
     ParamNum::Fixed(2),
     |ident, value, mut args, env| match args.as_mut_slice() {
-        [RuntimeValue::Symbol(ident), v] => {
+        [RuntimeValue::Symbol(var_ident), v] => {
             #[cfg(not(feature = "sync"))]
             {
-                env.borrow_mut().define(std::mem::take(ident), std::mem::take(v));
+                env.borrow_mut().define(std::mem::take(var_ident), std::mem::take(v));
             }
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().define(std::mem::take(ident), std::mem::take(v));
+                env.write().unwrap().define(std::mem::take(var_ident), std::mem::take(v));
             }
 
             Ok(value.clone())
         }
-        [RuntimeValue::String(ident), v] => {
+        [RuntimeValue::String(var_name), v] => {
             #[cfg(not(feature = "sync"))]
             {
-                env.borrow_mut().define(Ident::new(ident), std::mem::take(v));
+                env.borrow_mut().define(Ident::new(var_name), std::mem::take(v));
             }
 
             #[cfg(feature = "sync")]
             {
-                env.write().unwrap().define(Ident::new(ident), std::mem::take(v));
+                env.write().unwrap().define(Ident::new(var_name), std::mem::take(v));
             }
 
             Ok(value.clone())
