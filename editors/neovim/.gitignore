@@ -1,0 +1,5 @@
+# Neovim plugin
+*.swp
+*.swo
+*~
+.DS_Store
