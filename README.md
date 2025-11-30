@@ -115,6 +115,10 @@ $ docker run --rm ghcr.io/harehare/mq:0.5.3
 
 You can install the VSCode extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq).
 
+### Neovim
+
+You can install the Neovim plugin by following the instructions in the [mq.nvim README](https://github.com/harehare/mq/blob/main/editors/neovim/README.md).
+
 ### GitHub Actions
 
 You can use mq in your GitHub Actions workflows with the [Setup mq](https://github.com/marketplace/actions/setup-mq) action:
