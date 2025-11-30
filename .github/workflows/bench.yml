@@ -39,7 +39,7 @@ jobs:
         run: cargo install cargo-codspeed --locked
       - uses: extractions/setup-just@v3
       - name: Run benchmarks
-        uses: CodSpeedHQ/action@v3
+        uses: CodSpeedHQ/action@v4
         with:
           run: just bench
           token: ${{ secrets.CODSPEED_TOKEN }}
