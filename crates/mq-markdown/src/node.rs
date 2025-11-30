@@ -1378,18 +1378,6 @@ impl Node {
         matches!(self, Self::List(_))
     }
 
-    pub fn is_table_cell(&self) -> bool {
-        matches!(self, Self::TableCell(_))
-    }
-
-    pub fn is_table_header(&self) -> bool {
-        matches!(self, Self::TableHeader(_))
-    }
-
-    pub fn is_table_row(&self) -> bool {
-        matches!(self, Self::TableRow(_))
-    }
-
     pub fn is_emphasis(&self) -> bool {
         matches!(self, Self::Emphasis(_))
     }
@@ -4022,22 +4010,6 @@ mod tests {
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_list(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_list(), expected);
-    }
-
-    #[rstest]
-    #[case(Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: false, last_cell_of_in_table: false, values: vec![], position: None}), true)]
-    #[case(Node::TableCell(TableCell{column: 1, row: 2, last_cell_in_row: true, last_cell_of_in_table: true, values: vec!["content".to_string().into()], position: None}), true)]
-    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
-    fn test_is_table_cell(#[case] node: Node, #[case] expected: bool) {
-        assert_eq!(node.is_table_cell(), expected);
-    }
-
-    #[rstest]
-    #[case(Node::TableRow(TableRow{values: vec![], position: None}), true)]
-    #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, last_cell_in_row: true, last_cell_of_in_table: false, values: vec![], position: None})], position: None}), true)]
-    #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
-    fn test_is_table_row(#[case] node: Node, #[case] expected: bool) {
-        assert_eq!(node.is_table_row(), expected);
     }
 
     #[rstest]
