@@ -42,4 +42,5 @@ jobs:
         uses: CodSpeedHQ/action@v4
         with:
           run: just bench
+          mode: simulation
           token: ${{ secrets.CODSPEED_TOKEN }}

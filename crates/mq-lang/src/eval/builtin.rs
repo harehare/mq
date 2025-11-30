@@ -2644,6 +2644,14 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
     );
 
     map.insert(
+        SmolStr::new(".table"),
+        BuiltinSelectorDoc {
+            description: "Selects a table cell node with the specified row and column.",
+            params: &["row", "column"],
+        },
+    );
+
+    map.insert(
         SmolStr::new(".html"),
         BuiltinSelectorDoc {
             description: "Selects an HTML node.",
@@ -2677,6 +2685,14 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
 
     map.insert(
         SmolStr::new(".list"),
+        BuiltinSelectorDoc {
+            description: "Selects a list node with the specified index and checked state.",
+            params: &["indent", "checked"],
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".[]"),
         BuiltinSelectorDoc {
             description: "Selects a list node with the specified index and checked state.",
             params: &["indent", "checked"],
@@ -3712,7 +3728,7 @@ pub fn eval_selector(node: &mq_markdown::Node, selector: &Selector) -> bool {
             (None, Some(column1), mq_markdown::Node::TableCell(mq_markdown::TableCell { column: column2, .. })) => {
                 *column1 == column2
             }
-            (None, None, mq_markdown::Node::TableCell(_)) => true,
+            (None, None, mq_markdown::Node::TableCell(_)) | (None, None, mq_markdown::Node::TableHeader(_)) => true,
             _ => false,
         },
         Selector::Html => node.is_html(),
@@ -4223,6 +4239,26 @@ mod tests {
                                                last_cell_in_row: false, last_cell_of_in_table: false, position: None }),
         Selector::Table(Some(1), None),
         true
+    )]
+    #[case::table_header_with_no_row_col(
+        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Selector::Table(None, None),
+        true
+    )]
+    #[case::table_header_with_only_row(
+        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Selector::Table(Some(2), None),
+        false
+    )]
+    #[case::table_header_with_only_col(
+        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Selector::Table(None, Some(3)),
+        false
+    )]
+    #[case::table_header_with_row_col(
+        Node::TableHeader(mq_markdown::TableHeader { align: vec![], position: None }),
+        Selector::Table(Some(1), Some(1)),
+        false
     )]
     #[case::list_with_matching_index_checked(
         Node::List(mq_markdown::List { values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
