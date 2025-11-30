@@ -1382,6 +1382,10 @@ impl Node {
         matches!(self, Self::TableCell(_))
     }
 
+    pub fn is_table_header(&self) -> bool {
+        matches!(self, Self::TableHeader(_))
+    }
+
     pub fn is_table_row(&self) -> bool {
         matches!(self, Self::TableRow(_))
     }

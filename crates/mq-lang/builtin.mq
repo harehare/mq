@@ -162,6 +162,9 @@ def is_h_level(md, level):
     error("Invalid heading level: " + to_string(level))
 end
 
+# Checks if markdown is table header
+def is_table_header(md): to_md_name(md) == "table_header";
+
 # Checks if markdown is emphasis
 def is_em(md): to_md_name(md) == "emphasis";
 
