@@ -34,7 +34,7 @@ The conditions must evaluate to boolean values.
 
 ## While Expression
 
-The while loop repeatedly executes code while a condition becomes true:
+The while loop repeatedly executes code while a condition is true:
 
 ```ruby
 let x = 5 |
