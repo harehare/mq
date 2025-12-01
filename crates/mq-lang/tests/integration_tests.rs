@@ -30,7 +30,7 @@ fn engine_with_opt() -> Engine {
       Ok(vec![RuntimeValue::String("2025".to_string())].into()))]
 #[case::while_("
     let x = 5 |
-    while(x > 0):
+    while (x > 0):
       # test
       let x = x - 1 | x;
     ",
