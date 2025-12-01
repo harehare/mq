@@ -30,31 +30,12 @@ fn engine_with_opt() -> Engine {
       Ok(vec![RuntimeValue::String("2025".to_string())].into()))]
 #[case::while_("
     let x = 5 |
-    while(gt(x, 0)):
+    while(x > 0):
       # test
-      let x = sub(x, 1) | x;
+      let x = x - 1 | x;
     ",
       vec![RuntimeValue::Number(10.into())],
-      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(4.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(0.into())])].into()))]
-#[case::until("
-    until(gt(1)):
-      sub(1); | add(2) | pow(2) | div(3)
-    ",
-      vec![RuntimeValue::Number(10.into())],
-      Ok(vec![RuntimeValue::Number(3.into())].into()))]
-#[case::until("
-    until(gt(1)):
-      sub(1); | add(2) | pow(2) | div(3)
-    ",
-      vec![RuntimeValue::Number(10.into())],
-      Ok(vec![RuntimeValue::Number(3.into())].into()))]
-#[case::until("
-      let x = 5 |
-      until(gt(x, 0)):
-        let x = sub(x, 1) | x
-      ",
-        vec![RuntimeValue::Number(5.into())],
-        Ok(vec![RuntimeValue::Number(0.into())].into()))]
+      Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::foreach("
     foreach(x, array(1, 2, 3)):
       add(x, 1);
@@ -71,7 +52,7 @@ fn engine_with_opt() -> Engine {
         x;
     ",
       vec![RuntimeValue::Number(10.into())],
-      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())])].into()))]
+      Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::while_continue("
     let x = 0 |
     while(x < 4):
@@ -82,28 +63,6 @@ fn engine_with_opt() -> Engine {
         x;
     ",
       vec![RuntimeValue::Number(10.into())],
-      Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into())])].into()))]
-#[case::until_break("
-    let x = 0 |
-    until(x < 10):
-      let x = x + 1
-      | if(x == 3):
-        break
-      else:
-        x;
-    ",
-      vec![RuntimeValue::Number(5.into())],
-      Ok(vec![RuntimeValue::Number(2.into())].into()))]
-#[case::until_continue("
-    let x = 0 |
-    until(x < 4):
-      let x = x + 1
-      | if(x == 3):
-        continue
-      else:
-        x;
-    ",
-      vec![RuntimeValue::Number(5.into())],
       Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::foreach_break("
     foreach(x, array(1, 2, 3, 4, 5)):

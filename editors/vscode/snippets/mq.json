@@ -20,13 +20,6 @@
         ],
         "description": "Loop while condition is true"
     },
-    "until": {
-        "prefix": "until",
-        "body": [
-            "until (${1:condition}): ${0:body};"
-        ],
-        "description": "Loop until condition is true"
-    },
     "def": {
         "prefix": "def",
         "body": [

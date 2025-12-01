@@ -283,7 +283,7 @@ def skip_while(arr, f):
   else:
     do
       let i = 0
-      | until (i < len(arr) && f(get(arr, i))):
+      | while (i < len(arr) && f(get(arr, i))):
           let i = i + 1 | i;
     end
   | slice(arr, if (is_none(si)): 0 else: si, len(arr))
@@ -298,7 +298,7 @@ def take_while(arr, f):
     elif (is_empty(arr)):
       0
     else:
-      until (and(i < len(arr), f(get(arr, i)))):
+      while (and(i < len(arr), f(get(arr, i)))):
         let i = i + 1 | i;
   | if (is_none(ti)): []
     else:
@@ -314,7 +314,7 @@ def group_by(arr, f):
     elif (is_empty(arr)):
       dict()
     else:
-      until (not(is_none(get(arr, i)))):
+      while (not(is_none(get(arr, i)))):
         let v = get(arr, i)
         | let i = i + 1
         | let key = to_string(f(v))
@@ -357,7 +357,7 @@ def fold(arr, init, f):
     elif (is_empty(arr)):
       init
     else:
-      until (i != len(arr)):
+      while (i != len(arr)):
         let acc = f(acc, get(arr, i))
         | let i = i + 1
         | acc
@@ -373,7 +373,7 @@ def unique_by(arr, f):
       error("first argument must be an array")
     elif (is_empty(arr)): []
     else:
-      until (i != len(arr)):
+      while (i != len(arr)):
         let item = get(arr, i)
         | let key = to_string(f(item))
         | let already_seen = get(seen, key)
@@ -396,7 +396,7 @@ def sections(md_nodes, level):
   | let indices_with_end = indices + len(md_nodes)
   | let result = []
   | let i = 0
-  | until (i < len(indices)):
+  | while (i < len(indices)):
       let start_node = get(indices, i)
       | let end_node = get(indices_with_end, i + 1)
       | let section = slice(md_nodes, start_node, end_node)

@@ -38,7 +38,7 @@ let INFINITY = 9223372036854775807
     if (len(input) > 0 && input[0] == "#"):
       do
         let i = 1
-        | let result = until (i < len(input) && !_is_newline(input[i])):
+        | let result = while (i < len(input) && !_is_newline(input[i])):
                   let i = i + 1
                   | i
                 end
@@ -56,7 +56,7 @@ let INFINITY = 9223372036854775807
         | let i = 1
         | let key_chars = ""
         | let escaped = false
-        | let result = until (i < len(input) && (escaped || input[i] != quote_char)):
+        | let result = while (i < len(input) && (escaped || input[i] != quote_char)):
                   let result = if (escaped):
                     [key_chars + input[i], false, i + 1]
                   elif (input[i] == "\\"):
@@ -76,7 +76,7 @@ let INFINITY = 9223372036854775807
     else:
       do
         let i = 0
-        | let result = until (i < len(input) && _is_alpha_numeric(input[i])):
+        | let result = while (i < len(input) && _is_alpha_numeric(input[i])):
                   let i = i + 1
                   | i
                 end
@@ -90,7 +90,7 @@ let INFINITY = 9223372036854775807
     let keys = []
     | let remaining = input
     | let is_done = false
-    | let result = until (!is_done):
+    | let result = while (!is_done):
           let remaining = trim(remaining)
           | let key_result = _parse_key(remaining)
           | let remaining = trim(key_result[1])
@@ -105,7 +105,7 @@ let INFINITY = 9223372036854775807
 | def _detect_number_type(input):
     let i = 0
     | let has_dot = false
-    | let result = until (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "+" || input[i] == "-" || input[i] == "_")):
+    | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "+" || input[i] == "-" || input[i] == "_")):
           let has_dot = has_dot || input[i] == "."
           | let i = i + 1
           | [has_dot, i]
@@ -137,7 +137,7 @@ let INFINITY = 9223372036854775807
     def _parse_multiline_string(input, delimiter):
       let i = 3
       | let value_chars = ""
-      | let result = until (i + 2 < len(input) && input[i:i + 3] != delimiter):
+      | let result = while (i + 2 < len(input) && input[i:i + 3] != delimiter):
               let value_chars = value_chars + input[i]
               | let i = i + 1
               | [value_chars, i]
@@ -152,7 +152,7 @@ let INFINITY = 9223372036854775807
       | let i = 1
       | let value_chars = ""
       | let escaped = false
-      | let result = until (i < len(input) && (escaped || input[i] != quote_char)):
+      | let result = while (i < len(input) && (escaped || input[i] != quote_char)):
               let result = if (escaped):
                 [value_chars + input[i], false, i + 1]
               elif (input[i] == "\\"):
@@ -173,7 +173,7 @@ let INFINITY = 9223372036854775807
       let i = 0
       | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
       | let i = if (has_sign): 1 else: 0
-      | let result = until (i < len(input) && (_is_digit(input[i]) || input[i] == "_")):
+      | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "_")):
               let i = i + 1
               | i
             end
@@ -187,7 +187,7 @@ let INFINITY = 9223372036854775807
       let i = 0
       | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
       | let i = if (has_sign): 1 else: 0
-      | let result = until (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "_")):
+      | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "_")):
               let i = i + 1
               | i
             end
@@ -199,7 +199,7 @@ let INFINITY = 9223372036854775807
 
     def _parse_datetime(input):
       let i = 0
-      | let result = until (i < len(input) && _is_datetime_char(input[i])):
+      | let result = while (i < len(input) && _is_datetime_char(input[i])):
               let i = i + 1
               | i
             end
@@ -212,7 +212,7 @@ let INFINITY = 9223372036854775807
       let remaining = input[1:len(input)]
       | let _values = []
       | let remaining = trim(remaining)
-      | let result = until (len(remaining) > 0 && remaining[0] != "]"):
+      | let result = while (len(remaining) > 0 && remaining[0] != "]"):
               let value_result = _parse_value(remaining)
               | let value = value_result[0]
               | let remaining = trim(value_result[1])
@@ -233,7 +233,7 @@ let INFINITY = 9223372036854775807
       let remaining = input[1:len(input)]
       | let table = {}
       | let remaining = trim(remaining)
-      | let result = until (len(remaining) > 0 && remaining[0] != "}"):
+      | let result = while (len(remaining) > 0 && remaining[0] != "}"):
               let key_result = _parse_key(remaining)
               | let key = key_result[0]
               | let remaining = trim(key_result[1])
@@ -323,7 +323,7 @@ let INFINITY = 9223372036854775807
     | let current_section = []
     | let is_array_section = false
     | let remaining = input
-    | let result = until (len(remaining) > 0):
+    | let result = while (len(remaining) > 0):
           let remaining = trim(remaining)
           | let remaining = _skip_comment(remaining)
           | let result = if (len(remaining) == 0 || _is_newline(remaining[0])):
@@ -340,7 +340,7 @@ let INFINITY = 9223372036854775807
                       do
                         let values = {}
                         | let temp_remaining = remaining
-                        | let result = until (len(temp_remaining) > 0 && temp_remaining[0] != "["):
+                        | let result = while (len(temp_remaining) > 0 && temp_remaining[0] != "["):
                                                   let result = _parse_key_value_pair(temp_remaining)
                                                   | let key = first(result[0])
                                                   | let value = result[1]
@@ -409,7 +409,7 @@ def toml_stringify(data):
   let lines = []
   | let result = keys(data)
   | let i = 0
-  | let final_lines = until (i < len(result)):
+  | let final_lines = while (i < len(result)):
       let key = result[i]
       | let value = data[key]
       | let lines = _add_toml_lines(lines, key, value)

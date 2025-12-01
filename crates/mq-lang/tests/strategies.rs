@@ -129,16 +129,6 @@ pub fn arb_while_expr() -> impl Strategy<Value = String> {
         .prop_map(|(init, step)| format!("let x = {} | while(gt(x, 0)): let x = sub(x, {}) | x", init, step))
 }
 
-/// Strategy for generating until loop expressions.
-pub fn arb_until_expr() -> impl Strategy<Value = String> {
-    (0i32..10, 5i32..20, 1i32..5).prop_map(|(init, target, step)| {
-        format!(
-            "let x = {} | until (eq(x, {})): let x = add(x, {}) | x",
-            init, target, step
-        )
-    })
-}
-
 /// Strategy for generating foreach loop expressions.
 pub fn arb_foreach_expr() -> impl Strategy<Value = String> {
     (prop::collection::vec(1i32..20, 2..5), 1i32..10).prop_map(|(items, multiplier)| {
@@ -231,7 +221,7 @@ pub fn arb_any_expr() -> impl Strategy<Value = String> {
         arb_array_expr(),
         arb_if_expr(),
         arb_while_expr(),
-        arb_until_expr(),
+        arb_while_expr(),
         arb_foreach_expr(),
         arb_lambda_expr(),
         arb_try_catch_expr(),
