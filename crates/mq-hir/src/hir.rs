@@ -354,9 +354,6 @@ impl Hir {
             mq_lang::CstNodeKind::Selector => {
                 self.add_selector_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Until => {
-                self.add_until_expr(node, source_id, scope_id, parent);
-            }
             mq_lang::CstNodeKind::While => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
@@ -786,38 +783,6 @@ impl Hir {
 
             node.children_without_token().iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        }
-    }
-
-    fn add_until_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Until,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Until,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-            });
-            let loop_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Loop(symbol_id),
-                Some(scope_id),
-            ));
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
             });
         }
     }
