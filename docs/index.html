@@ -900,26 +900,27 @@ Another paragraph here.
 
 More content.`;
 
-        queryInput.value = defaultQuery;
-        inputMarkdown.value = defaultMarkdown;
+      queryInput.value = defaultQuery;
+      inputMarkdown.value = defaultMarkdown;
 
-        async function runQuery() {
-          const query = queryInput.value.trim();
-          const input = inputMarkdown.value.trim();
+      async function runQuery() {
+        const query = queryInput.value.trim();
+        const input = inputMarkdown.value.trim();
 
-          if (!query || !input) {
-            output.textContent =
-              "Please provide both query and input markdown.";
-            output.className = "demo-output demo-error";
-            return;
-          }
+        if (!query || !input) {
+          output.textContent = "Please provide both query and input markdown.";
+          output.className = "demo-output demo-error";
+          return;
+        }
 
-          output.textContent = "Running query...";
-          output.className = "demo-output demo-loading";
-          runButton.disabled = true;
+        output.textContent = "Running query...";
+        output.className = "demo-output demo-loading";
+        runButton.disabled = true;
 
-          try {
-            const response = await fetch("{{API_URL}}", {
+        try {
+          const response = await fetch(
+            "https://mq-harehare8929-xe2j4kx9.apn.leapcell.dev/api/query",
+            {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -928,43 +929,43 @@ More content.`;
                 query,
                 input,
               }),
-            });
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(
-                `HTTP ${response.status}: ${errorText || response.statusText}`
-              );
             }
+          );
 
-            const result = await response.json();
-            output.textContent = result.results?.join("\n") || "(empty result)";
-            output.className = "demo-output";
-          } catch (error) {
-            output.textContent = `Error: ${error.message}`;
-            output.className = "demo-output demo-error";
-          } finally {
-            runButton.disabled = false;
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+              `HTTP ${response.status}: ${errorText || response.statusText}`
+            );
           }
+
+          const result = await response.json();
+          output.textContent = result.results?.join("\n") || "(empty result)";
+          output.className = "demo-output";
+        } catch (error) {
+          output.textContent = `Error: ${error.message}`;
+          output.className = "demo-output demo-error";
+        } finally {
+          runButton.disabled = false;
         }
+      }
 
-        runButton.addEventListener("click", runQuery);
+      runButton.addEventListener("click", runQuery);
 
-        // Allow Ctrl+Enter / Cmd+Enter to run query
-        queryInput.addEventListener("keydown", function (e) {
-          if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-            e.preventDefault();
-            runQuery();
-          }
-        });
+      // Allow Ctrl+Enter / Cmd+Enter to run query
+      queryInput.addEventListener("keydown", function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          runQuery();
+        }
+      });
 
-        inputMarkdown.addEventListener("keydown", function (e) {
-          if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-            e.preventDefault();
-            runQuery();
-          }
-        });
-      })();
+      inputMarkdown.addEventListener("keydown", function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          runQuery();
+        }
+      });
     </script>
 
     <footer>
