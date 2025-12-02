@@ -60,6 +60,8 @@ jobs:
       - name: Copy install script
         run: cp ./scripts/install.sh ./docs
       - name: Replace env vars
+        env:
+          API_URL: ${{ secrets.API_URL }}
         run: ./scripts/replace-env.sh
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
