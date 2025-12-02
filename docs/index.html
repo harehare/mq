@@ -881,15 +881,14 @@
       </div>
     </section>
 
-    <script>
-      (function () {
-        const queryInput = document.getElementById("queryInput");
-        const inputMarkdown = document.getElementById("inputMarkdown");
-        const output = document.getElementById("output");
-        const runButton = document.getElementById("runButton");
+    <script type="module">
+      const queryInput = document.getElementById("queryInput");
+      const inputMarkdown = document.getElementById("inputMarkdown");
+      const output = document.getElementById("output");
+      const runButton = document.getElementById("runButton");
 
-        const defaultQuery = ".h1 | to_text()";
-        const defaultMarkdown = `# Example Title
+      const defaultQuery = ".h1 | to_text()";
+      const defaultMarkdown = `# Example Title
 
 This is a paragraph.
 
