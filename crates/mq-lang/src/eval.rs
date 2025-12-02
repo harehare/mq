@@ -139,22 +139,23 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        let env = Shared::clone(&self.env);
         let mut program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
             |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
                     ast::Expr::Def(ident, params, program) => {
                         define(
-                            &self.env,
+                            &env,
                             ident.name,
-                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&self.env)),
+                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&env)),
                         );
                     }
                     ast::Expr::Include(module_id) => {
-                        self.eval_include(module_id.to_owned(), &Shared::clone(&self.env))?;
+                        self.eval_include(module_id.to_owned(), &env)?;
                     }
                     ast::Expr::Import(module_path) => {
-                        self.eval_import(module_path.to_owned(), &Shared::clone(&self.env))?;
+                        self.eval_import(module_path.to_owned(), &env)?;
                     }
                     _ => nodes.push(Shared::clone(node)),
                 };
@@ -174,7 +175,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
-                        .eval_program(&program, runtime_value, Shared::clone(&self.env))
+                        .eval_program(&program, runtime_value, Shared::clone(&env))
                         .map_err(InnerError::from),
                 })
                 .collect();
@@ -182,7 +183,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             if nodes_program.is_empty() {
                 values
             } else {
-                self.eval_program(&nodes_program, values?.into(), Shared::clone(&self.env))
+                self.eval_program(&nodes_program, values?.into(), Shared::clone(&env))
                     .map(|value| {
                         if let RuntimeValue::Array(values) = value {
                             values
@@ -197,7 +198,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 .map(|runtime_value| match &runtime_value {
                     RuntimeValue::Markdown(node, _) => self.eval_markdown_node(&program, node),
                     _ => self
-                        .eval_program(&program, runtime_value, Shared::clone(&self.env))
+                        .eval_program(&program, runtime_value, Shared::clone(&env))
                         .map_err(InnerError::from),
                 })
                 .collect()
@@ -206,11 +207,12 @@ impl<T: ModuleResolver> Evaluator<T> {
 
     #[inline(always)]
     fn eval_markdown_node(&mut self, program: &Program, node: &mq_markdown::Node) -> Result<RuntimeValue, InnerError> {
+        let env = Shared::clone(&self.env);
         node.map_values(&mut |child_node| {
             let value = self.eval_program(
                 program,
                 RuntimeValue::Markdown(child_node.clone(), None),
-                Shared::clone(&self.env),
+                Shared::clone(&env),
             )?;
 
             Ok(match value {
@@ -240,7 +242,8 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     pub(crate) fn load_module(&mut self, module: module::Module) -> Result<(), EvalError> {
-        self.load_module_with_env(module, &Shared::clone(&self.env))
+        let env = Shared::clone(&self.env);
+        self.load_module_with_env(module, &env)
     }
 
     pub(crate) fn load_module_with_env(
@@ -250,11 +253,9 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> Result<(), EvalError> {
         for node in &module.modules {
             let _ = match &*node.expr {
-                ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(env))?,
-                ast::Expr::Module(ident, program) => {
-                    self.eval_module(&RuntimeValue::NONE, ident, program, &Shared::clone(env))?
-                }
-                ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), &Shared::clone(env))?,
+                ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, env)?,
+                ast::Expr::Module(ident, program) => self.eval_module(&RuntimeValue::NONE, ident, program, env)?,
+                ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env)?,
                 _ => {
                     return Err(EvalError::InternalError(
                         (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -275,7 +276,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         for node in &module.vars {
             if let ast::Expr::Let(ident, node) = &*node.expr {
-                let val = self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(env))?;
+                let val = self.eval_expr(&RuntimeValue::NONE, node, env)?;
                 define(env, ident.name, val);
             } else {
                 return Err(EvalError::InternalError(
@@ -398,7 +399,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         for node in program {
             match &*node.expr {
                 ast::Expr::Include(_) => {
-                    self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
+                    self.eval_expr(&RuntimeValue::NONE, node, &module_env)?;
                 }
                 ast::Expr::Def(ident, params, program) => {
                     define(
@@ -408,11 +409,11 @@ impl<T: ModuleResolver> Evaluator<T> {
                     );
                 }
                 ast::Expr::Let(ident, node) => {
-                    let val = self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(&module_env))?;
+                    let val = self.eval_expr(&RuntimeValue::NONE, node, &module_env)?;
                     define(&module_env, ident.name, val);
                 }
                 ast::Expr::Import(module_path) => {
-                    self.eval_import(module_path.to_owned(), &Shared::clone(&module_env))?;
+                    self.eval_import(module_path.to_owned(), &module_env)?;
                 }
                 ast::Expr::Module(ident, program) => {
                     let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
@@ -449,7 +450,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
                     let module_name_to_use = module.name.to_string();
 
-                    self.load_module_with_env(module, &Shared::clone(&module_env))?;
+                    self.load_module_with_env(module, &module_env)?;
 
                     // Register the module in the environment
                     let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
@@ -764,12 +765,12 @@ impl<T: ModuleResolver> Evaluator<T> {
         let values = self.eval_expr(runtime_value, values, env)?;
         let values = match values {
             RuntimeValue::Array(values) => {
-                let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                let loop_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
                 let mut results = Vec::with_capacity(values.len());
 
                 for value in values {
-                    define(&env, ident, value.clone());
-                    match self.eval_program(body, value, Shared::clone(&env)) {
+                    define(&loop_env, ident, value.clone());
+                    match self.eval_program(body, value, Shared::clone(&loop_env)) {
                         Ok(result) => results.push(result),
                         Err(EvalError::Break) => break,
                         Err(EvalError::Continue) => continue,
@@ -780,12 +781,13 @@ impl<T: ModuleResolver> Evaluator<T> {
                 results
             }
             RuntimeValue::String(s) => {
-                let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                let loop_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
                 let mut results = Vec::with_capacity(s.len());
 
                 for c in s.chars() {
-                    define(&env, ident, RuntimeValue::String(c.to_string()));
-                    match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
+                    let char_value = RuntimeValue::String(c.to_string());
+                    define(&loop_env, ident, char_value.clone());
+                    match self.eval_program(body, char_value, Shared::clone(&loop_env)) {
                         Ok(result) => results.push(result),
                         Err(EvalError::Break) => break,
                         Err(EvalError::Continue) => continue,
@@ -816,8 +818,8 @@ impl<T: ModuleResolver> Evaluator<T> {
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         let mut runtime_value = runtime_value.clone();
-        let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-        let mut cond_value = self.eval_expr(&runtime_value, cond, &env)?;
+        let loop_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+        let mut cond_value = self.eval_expr(&runtime_value, cond, &loop_env)?;
 
         if !cond_value.is_truthy() {
             return Ok(RuntimeValue::NONE);
@@ -825,10 +827,10 @@ impl<T: ModuleResolver> Evaluator<T> {
         let mut first = true;
 
         while cond_value.is_truthy() {
-            match self.eval_program(body, runtime_value.clone(), Shared::clone(&env)) {
+            match self.eval_program(body, runtime_value.clone(), Shared::clone(&loop_env)) {
                 Ok(mut new_runtime_value) => {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
-                    cond_value = self.eval_expr(&runtime_value, cond, &env)?;
+                    cond_value = self.eval_expr(&runtime_value, cond, &loop_env)?;
                 }
                 Err(EvalError::Break) if first => {
                     runtime_value = RuntimeValue::NONE;
@@ -858,8 +860,8 @@ impl<T: ModuleResolver> Evaluator<T> {
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
         let mut runtime_value = runtime_value.clone();
-        let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-        let mut cond_value = self.eval_expr(&runtime_value, cond, &env)?;
+        let loop_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+        let mut cond_value = self.eval_expr(&runtime_value, cond, &loop_env)?;
         let mut values = Vec::new();
 
         if !cond_value.is_truthy() {
@@ -867,10 +869,10 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
 
         while cond_value.is_truthy() {
-            match self.eval_program(body, std::mem::take(&mut runtime_value), Shared::clone(&env)) {
+            match self.eval_program(body, std::mem::take(&mut runtime_value), Shared::clone(&loop_env)) {
                 Ok(new_runtime_value) => {
                     runtime_value = new_runtime_value;
-                    cond_value = self.eval_expr(&runtime_value, cond, &env)?;
+                    cond_value = self.eval_expr(&runtime_value, cond, &loop_env)?;
                     values.push(runtime_value.clone());
                 }
                 Err(EvalError::Break) => break,
