@@ -60,6 +60,7 @@ pub mod cleanup;
 pub mod config;
 pub mod handlers;
 pub mod middleware;
+pub mod problem;
 pub mod rate_limiter;
 pub mod routes;
 pub mod server;

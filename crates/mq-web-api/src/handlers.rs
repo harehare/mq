@@ -7,7 +7,10 @@ use serde::Deserialize;
 use tracing::{debug, error, info};
 use utoipa::OpenApi;
 
-use crate::api::{ApiRequest, DiagnosticsApiResponse, InputFormat, QueryApiResponse};
+use crate::{
+    api::{ApiRequest, DiagnosticsApiResponse, InputFormat, QueryApiResponse},
+    problem::ProblemDetails,
+};
 
 #[derive(Clone)]
 pub struct AppState {}
@@ -55,7 +58,7 @@ pub struct ApiDoc;
 pub async fn get_query_api(
     Query(params): Query<QueryParams>,
     State(_state): State<AppState>,
-) -> Result<Json<QueryApiResponse>, StatusCode> {
+) -> Result<Json<QueryApiResponse>, ProblemDetails> {
     debug!("GET /query called with query: {}", params.query);
 
     let input_format = params
@@ -81,7 +84,9 @@ pub async fn get_query_api(
         }
         Err(e) => {
             error!("Failed to process query '{}': {}", params.query, e);
-            Err(StatusCode::BAD_REQUEST)
+            Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
+                .with_title("Invalid query")
+                .with_detail("error", &e.to_string()))
         }
     }
 }
@@ -98,7 +103,7 @@ pub async fn get_query_api(
 pub async fn post_query_api(
     State(_state): State<AppState>,
     Json(request): Json<ApiRequest>,
-) -> Result<Json<QueryApiResponse>, StatusCode> {
+) -> Result<Json<QueryApiResponse>, ProblemDetails> {
     debug!("POST /query called with query: {}", request.query);
     debug!("Processing request with input_format: {:?}", request.input_format);
 
@@ -113,7 +118,9 @@ pub async fn post_query_api(
         }
         Err(e) => {
             error!("Failed to process query '{}': {}", request.query, e);
-            Err(StatusCode::BAD_REQUEST)
+            Err(ProblemDetails::new(StatusCode::BAD_REQUEST)
+                .with_title("Invalid query")
+                .with_detail("error", &e.to_string()))
         }
     }
 }
