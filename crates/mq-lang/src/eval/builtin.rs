@@ -1149,6 +1149,10 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
             s1.push_str(s2);
             Ok(std::mem::take(s1).into())
         }
+        [RuntimeValue::String(s), RuntimeValue::Char(c)] | [RuntimeValue::Char(c), RuntimeValue::String(s)] => {
+            s.push(*c);
+            Ok(std::mem::take(s).into())
+        }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] | [RuntimeValue::Number(n), RuntimeValue::String(s)] => {
             s.push_str(n.to_string().as_str());
             Ok(std::mem::take(s).into())
@@ -2341,6 +2345,10 @@ const HASH_READ_FILE: u64 = fnv1a_hash_64("read_file");
 
 pub fn get_builtin_functions(name: &Ident) -> Option<&'static BuiltinFunction> {
     name.resolve_with(get_builtin_functions_by_str)
+}
+
+pub fn is_builtin_fn(name: Ident) -> bool {
+    name.resolve_with(get_builtin_functions_by_str).is_some()
 }
 
 pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFunction> {

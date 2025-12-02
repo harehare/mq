@@ -75,6 +75,11 @@ impl Variable {
                 value: value.to_string(),
                 type_field: "string".to_string(),
             },
+            RuntimeValue::Char(_) => Variable {
+                name: ident.to_string(),
+                value: value.to_string(),
+                type_field: "char".to_string(),
+            },
             RuntimeValue::Symbol(_) => Variable {
                 name: ident.to_string(),
                 value: value.to_string(),
@@ -153,7 +158,7 @@ impl Env {
                 }
                 None => {
                     // Use optimized string-based builtin lookup
-                    if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
+                    if builtin::is_builtin_fn(ident) {
                         Ok(RuntimeValue::NativeFunction(ident))
                     } else {
                         Err(EnvError::InvalidDefinition(ident.to_string()))

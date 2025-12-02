@@ -222,7 +222,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 | RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)
                 | RuntimeValue::Number(_)
-                | RuntimeValue::String(_) => value.to_string().into(),
+                | RuntimeValue::String(_)
+                | RuntimeValue::Char(_) => value.to_string().into(),
                 RuntimeValue::Symbol(i) => i.as_str().into(),
                 RuntimeValue::Markdown(node, _) => node,
             })
@@ -615,7 +616,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     ast::StringSegment::Text(s) => acc.push_str(s),
                     ast::StringSegment::Expr(expr_node) => {
                         let value = self.eval_expr(runtime_value, expr_node, env)?;
-                        acc.push_str(&value.to_string());
+                        value.append_to_string(&mut acc);
                     }
                     ast::StringSegment::Env(env_var) => {
                         acc.push_str(&std::env::var(env_var).map_err(|_| {
@@ -626,7 +627,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                         })?);
                     }
                     ast::StringSegment::Self_ => {
-                        acc.push_str(&runtime_value.to_string());
+                        runtime_value.append_to_string(&mut acc);
                     }
                 }
 
@@ -784,8 +785,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let mut results = Vec::with_capacity(s.len());
 
                 for c in s.chars() {
-                    define(&env, ident, RuntimeValue::String(c.to_string()));
-                    match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
+                    define(&env, ident, RuntimeValue::Char(c));
+                    match self.eval_program(body, RuntimeValue::Char(c), Shared::clone(&env)) {
                         Ok(result) => results.push(result),
                         Err(EvalError::Break) => break,
                         Err(EvalError::Continue) => continue,
@@ -965,21 +966,21 @@ impl<T: ModuleResolver> Evaluator<T> {
         &self,
         value: &RuntimeValue,
         pattern: &Pattern,
-    ) -> Result<Option<Vec<(Ident, RuntimeValue)>>, EvalError> {
+    ) -> Result<Option<smallvec::SmallVec<[(Ident, RuntimeValue); 4]>>, EvalError> {
         match pattern {
             Pattern::Wildcard => {
                 // Wildcard always matches, no bindings
-                Ok(Some(Vec::new()))
+                Ok(Some(smallvec::SmallVec::new()))
             }
             Pattern::Ident(ident) => {
                 // Identifier matches and binds the value
-                Ok(Some(vec![(ident.name, value.clone())]))
+                Ok(Some(smallvec::smallvec![(ident.name, value.clone())]))
             }
             Pattern::Literal(lit) => {
                 // Literal pattern: check equality
                 let pattern_value = self.eval_literal(lit);
                 if *value == pattern_value {
-                    Ok(Some(Vec::new()))
+                    Ok(Some(smallvec::SmallVec::new()))
                 } else {
                     Ok(None)
                 }
@@ -1000,7 +1001,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     _ => false,
                 };
 
-                if matches { Ok(Some(Vec::new())) } else { Ok(None) }
+                if matches { Ok(Some(smallvec::SmallVec::new())) } else { Ok(None) }
             }
             Pattern::Array(patterns) => {
                 // Array pattern: match array elements
@@ -1009,7 +1010,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                         return Ok(None);
                     }
 
-                    let mut all_bindings = Vec::new();
+                    let mut all_bindings = smallvec::SmallVec::new();
                     for (pattern, value) in patterns.iter().zip(values.iter()) {
                         if let Some(bindings) = self.match_pattern(value, pattern)? {
                             all_bindings.extend(bindings);
@@ -1029,7 +1030,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                         return Ok(None);
                     }
 
-                    let mut all_bindings = Vec::new();
+                    let mut all_bindings = smallvec::SmallVec::new();
 
                     // Match the prefix patterns
                     for (pattern, value) in patterns.iter().zip(values.iter()) {
@@ -1052,7 +1053,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             Pattern::Dict(field_patterns) => {
                 // Dict pattern: match dictionary fields
                 if let RuntimeValue::Dict(dict) = value {
-                    let mut all_bindings = Vec::new();
+                    let mut all_bindings = smallvec::SmallVec::new();
 
                     for (key, pattern) in field_patterns {
                         if let Some(field_value) = dict.get(&key.name) {
@@ -1089,27 +1090,12 @@ impl<T: ModuleResolver> Evaluator<T> {
         #[cfg(feature = "sync")]
         let resolved = Shared::clone(env).read().unwrap().resolve(ident);
 
-        if let Ok(fn_value) = resolved {
-            self.call_fn(&fn_value, node, ident, args, runtime_value, env)
-        } else {
-            self.eval_builtin(runtime_value, node, &ident, args, env)
+        match resolved {
+            Ok(fn_value) => self.call_fn(&fn_value, node, ident, args, runtime_value, env),
+            Err(e) => Err(e.to_eval_error(node.token_id, Shared::clone(&self.token_arena))),
         }
     }
 
-    #[inline(always)]
-    fn eval_builtin(
-        &mut self,
-        runtime_value: &RuntimeValue,
-        node: Shared<ast::Node>,
-        ident: &Ident,
-        args: &ast::Args,
-        env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
-        let args: Result<builtin::Args, EvalError> =
-            args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
-        builtin::eval_builtin(runtime_value, ident, args?, env)
-            .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))
-    }
 
     fn eval_call_dynamic(
         &mut self,
@@ -1212,7 +1198,10 @@ impl<T: ModuleResolver> Evaluator<T> {
 
             result
         } else if let RuntimeValue::NativeFunction(ident) = fn_value {
-            self.eval_builtin(runtime_value, node, ident, args, env)
+            let args: Result<builtin::Args, EvalError> =
+                args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
+            builtin::eval_builtin(runtime_value, ident, args?, env)
+                .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))
         } else {
             Err(EvalError::InvalidDefinition(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -4667,9 +4656,9 @@ mod tests {
             )),
         ],
         Ok(vec![RuntimeValue::Array(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::Char('a'),
+            RuntimeValue::Char('b'),
+            RuntimeValue::Char('c'),
         ])])
     )]
     #[case::to_array_string(vec![RuntimeValue::String("test".to_string())],
