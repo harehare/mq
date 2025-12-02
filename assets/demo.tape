@@ -33,11 +33,11 @@ Type `mq '.h3' demo.md`
 Enter
 Sleep 1.5s
 
-Type `mq '.code("rust")' demo.md`
+Type `mq 'select(.code.lang == "rust")' demo.md`
 Enter
 Sleep 1.5s
 
-Type `mq '.code("rust") | to_text()' demo.md`
+Type `mq 'select(.code.lang == "rust") | to_text()' demo.md`
 Enter
 Sleep 1.5s
 
