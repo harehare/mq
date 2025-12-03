@@ -250,11 +250,9 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> Result<(), EvalError> {
         for node in &module.modules {
             let _ = match &*node.expr {
-                ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(env))?,
-                ast::Expr::Module(ident, program) => {
-                    self.eval_module(&RuntimeValue::NONE, ident, program, &Shared::clone(env))?
-                }
-                ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), &Shared::clone(env))?,
+                ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, env)?,
+                ast::Expr::Module(ident, program) => self.eval_module(&RuntimeValue::NONE, ident, program, env)?,
+                ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env)?,
                 _ => {
                     return Err(EvalError::InternalError(
                         (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
@@ -275,7 +273,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         for node in &module.vars {
             if let ast::Expr::Let(ident, node) = &*node.expr {
-                let val = self.eval_expr(&RuntimeValue::NONE, node, &Shared::clone(env))?;
+                let val = self.eval_expr(&RuntimeValue::NONE, node, env)?;
                 define(env, ident.name, val);
             } else {
                 return Err(EvalError::InternalError(
