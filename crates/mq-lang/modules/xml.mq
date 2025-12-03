@@ -3,7 +3,7 @@
 def _parse_attributes(input):
   let input = trim(input)
   | let attributes = {}
-  | let result = until (!is_empty(input) && !starts_with(input, ">") && !starts_with(input, "/>")):
+  | let result = while (!is_empty(input) && !starts_with(input, ">") && !starts_with(input, "/>")):
       let name_match = regex_match(input, "([a-zA-Z_][a-zA-Z0-9_-]*)")
       | if (is_empty(name_match)):
           error("Invalid attribute name")
@@ -25,7 +25,7 @@ def _parse_attributes(input):
               let pos = 0
               | let start_pos = pos
               | let input_len = len(input)
-              | let pos = until (pos < input_len && input[pos] != quote_char):
+              | let pos = while (pos < input_len && input[pos] != quote_char):
                               let pos = pos + 1
                               | pos
                             end
@@ -50,7 +50,7 @@ def _find_closing_tag(input, tag_name):
   | let open_tag_start_len = len(open_tag_start)
   | let input_len = len(input)
   | let has_close_tag = false
-  | let result = until (pos < input_len && !has_close_tag):
+  | let result = while (pos < input_len && !has_close_tag):
       let next_char_pos = pos + open_tag_start_len
       | let result = if (pos + open_tag_start_len <= input_len && input[pos:pos + open_tag_start_len] == open_tag_start):
               if (pos + open_tag_start_len < input_len && (input[next_char_pos] == " " || input[next_char_pos] == ">" || input[next_char_pos] == "/")):
@@ -138,7 +138,7 @@ def _parse_xml_content(input):
   let input = trim(input)
   | let children = []
   | let text_parts = []
-  | let result = until (!is_empty(input)):
+  | let result = while (!is_empty(input)):
       let result = if (starts_with(input, "<")):
         _parse_child_element(input, children)
       else:
@@ -187,7 +187,7 @@ end
 def _parse_text_content(input, text_parts):
   let pos = 0
   | let start_pos = pos
-  | let pos = until (pos < len(input) && input[pos] != "<"):
+  | let pos = while (pos < len(input) && input[pos] != "<"):
       let pos = pos + 1
       | pos
     end

@@ -17,7 +17,7 @@ def _parse_json_value(input):
     | let pos = 1
     | let end_pos = None
     | let input_len = len(input)
-    | let pos = until (is_none(end_pos) && pos < input_len):
+    | let pos = while (is_none(end_pos) && pos < input_len):
           let char = input[pos]
           | let tokens = handle_string_char(char, escaped, pos)
           | let should_end = tokens[0]
@@ -72,7 +72,7 @@ def _parse_json_value(input):
     | if (starts_with(input, "]")):
         [elements, input[1:len(input)]]
       else:
-        until (!finish):
+        while (!finish):
           let tokens = _parse_json_value(input)
           | let value = tokens[0]
           | let rest = tokens[1]
@@ -121,7 +121,7 @@ def _parse_json_value(input):
     | let result = if (starts_with(input, "}")):
           [obj, input[1:len(input)]]
         else:
-          until (!starts_with(input, "}") && !is_empty(input)):
+          while (!starts_with(input, "}") && !is_empty(input)):
             let tokens = _parse_string(input)
             | let key = tokens[0]
             | let input = trim(tokens[1])

@@ -131,7 +131,7 @@ impl Optimizer {
                     Self::collect_used_identifiers_in_node(body_node, used_idents);
                 }
             }
-            ast::Expr::While(cond_node, program_nodes) | ast::Expr::Until(cond_node, program_nodes) => {
+            ast::Expr::While(cond_node, program_nodes) => {
                 Self::collect_used_identifiers_in_node(cond_node, used_idents);
                 for stmt in program_nodes {
                     Self::collect_used_identifiers_in_node(stmt, used_idents);
@@ -245,7 +245,7 @@ impl Optimizer {
                     }
                 }
             }
-            ast::Expr::While(cond_node, body) | ast::Expr::Until(cond_node, body) => {
+            ast::Expr::While(cond_node, body) => {
                 if Self::contains_function_call(func_name, cond_node) {
                     return true;
                 }
@@ -322,7 +322,7 @@ impl Optimizer {
                     }
                 }
             }
-            ast::Expr::While(cond_node, body_nodes) | ast::Expr::Until(cond_node, body_nodes) => {
+            ast::Expr::While(cond_node, body_nodes) => {
                 if Self::contains_function_call(func_name, cond_node) {
                     return true;
                 }
@@ -436,12 +436,6 @@ impl Optimizer {
                 let mut new_body = body.clone();
                 self.inline_functions(&mut new_body);
                 Shared::new(ast::Expr::While(new_cond, new_body))
-            }
-            ast::Expr::Until(cond, body) => {
-                let new_cond = self.inline_functions_in_node(cond.clone());
-                let mut new_body = body.clone();
-                self.inline_functions(&mut new_body);
-                Shared::new(ast::Expr::Until(new_cond, new_body))
             }
             ast::Expr::Foreach(ident, collection, body) => {
                 let new_collection = self.inline_functions_in_node(Shared::clone(collection));
@@ -2106,45 +2100,6 @@ mod tests {
         });
 
         assert!(Optimizer::contains_function_call(func_name, &while_body_node));
-    }
-
-    #[test]
-    fn test_contains_function_call_in_until_conditions() {
-        let func_name = Ident::new("test_func");
-
-        // Test function call in until condition
-        let until_node = Shared::new(Node {
-            token_id: 0.into(),
-            expr: Shared::new(AstExpr::Until(
-                Shared::new(Node {
-                    token_id: 1.into(),
-                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
-                }),
-                vec![Shared::new(Node {
-                    token_id: 2.into(),
-                    expr: Shared::new(AstExpr::Literal(Literal::Number(1.0.into()))),
-                })],
-            )),
-        });
-
-        assert!(Optimizer::contains_function_call(func_name, &until_node));
-
-        // Test function call in until body
-        let until_body_node = Shared::new(Node {
-            token_id: 0.into(),
-            expr: Shared::new(AstExpr::Until(
-                Shared::new(Node {
-                    token_id: 1.into(),
-                    expr: Shared::new(AstExpr::Literal(Literal::Bool(false))),
-                }),
-                vec![Shared::new(Node {
-                    token_id: 2.into(),
-                    expr: Shared::new(AstExpr::Call(IdentWithToken::new("test_func"), smallvec![])),
-                })],
-            )),
-        });
-
-        assert!(Optimizer::contains_function_call(func_name, &until_body_node));
     }
 
     #[test]

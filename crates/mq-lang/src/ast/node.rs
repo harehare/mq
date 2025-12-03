@@ -50,7 +50,6 @@ impl Node {
             | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
-            | Expr::Until(_, program)
             | Expr::Module(_, program)
             | Expr::Foreach(_, _, program) => {
                 let start = program
@@ -252,7 +251,6 @@ pub enum Expr {
     InterpolatedString(Vec<StringSegment>),
     Selector(Selector),
     While(Shared<Node>, Program),
-    Until(Shared<Node>, Program),
     Foreach(IdentWithToken, Shared<Node>, Program),
     If(Branches),
     Match(Shared<Node>, MatchArms),
@@ -491,30 +489,6 @@ mod tests {
             (2, Range { start: Position::new(82, 1), end: Position::new(82, 5) }),
         ],
         Range { start: Position::new(82, 1), end: Position::new(82, 5) }
-    )]
-    #[case(
-        Expr::Until(
-            Shared::new(Node {
-                token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("cond".to_string()))),
-            }),
-            vec![
-                Shared::new(Node {
-                    token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("until1".to_string()))),
-                }),
-                Shared::new(Node {
-                    token_id: ArenaId::new(2),
-                    expr: Shared::new(Expr::Literal(Literal::String("until2".to_string()))),
-                }),
-            ]
-        ),
-        vec![
-            (0, Range { start: Position::new(91, 1), end: Position::new(91, 5) }),
-            (1, Range { start: Position::new(92, 1), end: Position::new(92, 5) }),
-            (2, Range { start: Position::new(92, 1), end: Position::new(92, 5) }),
-        ],
-        Range { start: Position::new(92, 1), end: Position::new(92, 5) }
     )]
     #[case(
         Expr::Foreach(

@@ -52,7 +52,6 @@ pub enum SymbolKind {
     UnaryOp,
     Variable,
     While,
-    Until,
     Try,
     Catch,
     Import(SourceId),

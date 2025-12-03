@@ -74,7 +74,7 @@ end
 
 def _get_indent_level(line):
   let i = 0
-  | let count = until (i < len(line) && line[i] == " "):
+  | let count = while (i < len(line) && line[i] == " "):
       let i = i + 1
       | i
     end
@@ -135,7 +135,7 @@ def parse_yaml_content(input):
   def _parse_yaml_object(lines, start_index, target_indent):
     let obj = {}
     | let current_index = start_index
-    | until (current_index < len(lines)):
+    | while (current_index < len(lines)):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
         | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
@@ -164,7 +164,7 @@ def parse_yaml_content(input):
   def _parse_yaml_array(lines, start_index, target_indent):
     let arr = []
     | let current_index = start_index
-    | until (current_index < len(lines)):
+    | while (current_index < len(lines)):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
         | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):
@@ -194,7 +194,7 @@ def parse_yaml_content(input):
   def _parse_yaml_multi_lines(lines, start_index, target_indent):
     let multi_line = ""
     | let current_index = start_index
-    | until (current_index < len(lines)):
+    | while (current_index < len(lines)):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
         | let result = if (is_empty(trimmed_line) || starts_with(trimmed_line, "#")):

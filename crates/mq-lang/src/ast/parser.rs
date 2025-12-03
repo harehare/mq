@@ -202,7 +202,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Do => self.parse_expr_block(token),
             TokenKind::Fn => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
-            TokenKind::Until => self.parse_until(token),
             TokenKind::Foreach => self.parse_foreach(token),
             TokenKind::Module => self.parse_module(token),
             TokenKind::Try => self.parse_try(token),
@@ -334,7 +333,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::LBrace
                 | TokenKind::LBracket
                 | TokenKind::While
-                | TokenKind::Until
                 | TokenKind::Match
                 | TokenKind::Self_
                 | TokenKind::Selector(_)
@@ -372,7 +370,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::LBrace
                 | TokenKind::LBracket
                 | TokenKind::While
-                | TokenKind::Until
                 | TokenKind::Match
                 | TokenKind::Self_
                 | TokenKind::Env(_)
@@ -1025,33 +1022,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }))
             }
             None => Err(ParseError::UnexpectedToken((**while_token).clone())),
-        }
-    }
-
-    fn parse_until(&mut self, until_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
-        let token_id = self.token_arena.alloc(Shared::clone(until_token));
-        let args = self.parse_args()?;
-
-        if args.len() != 1 {
-            return Err(ParseError::UnexpectedToken((**until_token).clone()));
-        }
-
-        self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
-
-        match self.tokens.peek() {
-            Some(_) => {
-                let cond = args.first().unwrap();
-                let body_program = self.parse_program(false)?;
-
-                Ok(Shared::new(Node {
-                    token_id,
-                    expr: Shared::new(Expr::Until(
-                        Shared::clone(cond),
-                        body_program.iter().map(Shared::clone).collect(),
-                    )),
-                }))
-            }
-            None => Err(ParseError::UnexpectedToken((**until_token).clone())),
         }
     }
 
@@ -2613,48 +2583,6 @@ mod tests {
                 }),
             )),
         })]))]
-    #[case::until(
-        vec![
-            token(TokenKind::Until),
-            token(TokenKind::LParen),
-            token(TokenKind::BoolLiteral(false)),
-            token(TokenKind::RParen),
-            token(TokenKind::Colon),
-            token(TokenKind::StringLiteral("loop body".to_owned())),
-            token(TokenKind::SemiColon),
-        ],
-        Ok(vec![Shared::new(Node {
-            token_id: 0.into(),
-            expr: Shared::new(Expr::Until(
-                Shared::new(Node {
-                    token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Bool(false))),
-                }),
-                vec![Shared::new(Node {
-                    token_id: 3.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
-                })],
-            )),
-        })]))]
-    #[case::until_error(
-        vec![
-            token(TokenKind::Until),
-            token(TokenKind::LParen),
-            token(TokenKind::BoolLiteral(true)),
-            token(TokenKind::RParen),
-            token(TokenKind::Colon),
-            token(TokenKind::Eof),
-        ],
-        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
-    #[case::until_error(
-        vec![
-            token(TokenKind::Until),
-            token(TokenKind::LParen),
-            token(TokenKind::RParen),
-            token(TokenKind::Colon),
-            token(TokenKind::Eof),
-        ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Until, module_id: 1.into()})))]
     #[case::foreach(
         vec![
             token(TokenKind::Foreach),
