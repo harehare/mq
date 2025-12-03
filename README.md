@@ -74,13 +74,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.3
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.4
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.3
+cargo binstall mq-run@0.5.4
 ```
 
 ### Binaries
@@ -110,7 +110,7 @@ brew install harehare/tap/mq
 ### Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.3
+$ docker run --rm ghcr.io/harehare/mq:0.5.4
 ```
 
 ### Visual Studio Code Extension

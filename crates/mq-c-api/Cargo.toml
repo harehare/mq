@@ -10,7 +10,7 @@ name = "mq-c-api"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.3"
+version = "0.5.4"
 
 [dependencies]
 libc = "0.2"
