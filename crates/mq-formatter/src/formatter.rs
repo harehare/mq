@@ -106,7 +106,6 @@ impl Formatter {
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
-            | mq_lang::CstNodeKind::Until
             | mq_lang::CstNodeKind::Fn => self.format_expr(
                 &node,
                 indent_level_consider_new_line,
@@ -1313,14 +1312,6 @@ else: do
   | output();
 "
     )]
-    #[case::until_multiline(
-        "until(finished()):
-        continue_process();",
-        "until (finished()):
-  continue_process();
-"
-    )]
-    #[case::until_oneline("until(finished()): continue_process();", "until (finished()): continue_process();")]
     #[case::def(
         r##".h
 | let link = to_link(add("#", to_text(self)), to_text(self), "");
@@ -1589,22 +1580,6 @@ end
     else:
       test2
 end
-"#
-    )]
-    #[case::let_with_until_multiline(
-        r#"let x = until(condition()):
-process();"#,
-        r#"let x = until (condition()):
-  process();
-"#
-    )]
-    #[case::let_with_until_multiline2(
-        r#""test"
-| let x = until(condition()):
-process();"#,
-        r#""test"
-| let x = until (condition()):
-  process();
 "#
     )]
     #[case::let_with_while_multiline(

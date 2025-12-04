@@ -4,7 +4,6 @@ use std::{marker::PhantomData, ops::Index};
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-
 pub struct ArenaId<T> {
     id: u32,
     _phantom_data: PhantomData<T>,

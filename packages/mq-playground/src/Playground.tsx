@@ -483,8 +483,14 @@ export const Playground = () => {
         const savedActiveTabId = localStorage.getItem(ACTIVE_TAB_ID_KEY);
 
         // Restore active tab content if tabs were restored from localStorage
-        if (!window.location.hash && savedActiveTabId && initialTabs.length > 0) {
-          const activeTab = initialTabs.find((tab: Tab) => tab.id === savedActiveTabId);
+        if (
+          !window.location.hash &&
+          savedActiveTabId &&
+          initialTabs.length > 0
+        ) {
+          const activeTab = initialTabs.find(
+            (tab: Tab) => tab.id === savedActiveTabId
+          );
           if (activeTab) {
             try {
               // Verify the file still exists and load its current content
@@ -494,7 +500,9 @@ export const Playground = () => {
             } catch (error) {
               console.error("Failed to restore active tab:", error);
               // If active tab file doesn't exist, clear it
-              setTabs((prev) => prev.filter((tab) => tab.id !== savedActiveTabId));
+              setTabs((prev) =>
+                prev.filter((tab) => tab.id !== savedActiveTabId)
+              );
               setActiveTabId(null);
             }
           }
@@ -978,7 +986,9 @@ export const Playground = () => {
 
         // Update tab path if the file is open in a tab
         setTabs((prev) =>
-          prev.map((tab) => (tab.filePath === path ? { ...tab, filePath: newPath } : tab))
+          prev.map((tab) =>
+            tab.filePath === path ? { ...tab, filePath: newPath } : tab
+          )
         );
 
         // If this was the current file, reopen it with the new path
@@ -1016,7 +1026,9 @@ export const Playground = () => {
         const fileName = sourceParts[sourceParts.length - 1];
 
         // Construct the new path (handle root case where targetPath is empty)
-        const newPath = targetPath ? `${targetPath}/${fileName}` : `/${fileName}`;
+        const newPath = targetPath
+          ? `${targetPath}/${fileName}`
+          : `/${fileName}`;
 
         // Check if a file/folder with the same name already exists at the target
         const exists = await fileSystem.fileExists(newPath);
@@ -1294,22 +1306,6 @@ export const Playground = () => {
             },
           },
           {
-            label: "until",
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: "until (${1:condition}): ${0:body};",
-            insertTextRules:
-              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            detail: "Loop until condition is true",
-            documentation:
-              "Creates an until loop that continues execution until condition becomes true",
-            range: {
-              startLineNumber: position.lineNumber,
-              startColumn: wordRange.startColumn,
-              endLineNumber: position.lineNumber,
-              endColumn: wordRange.endColumn,
-            },
-          },
-          {
             label: "def",
             kind: monaco.languages.CompletionItemKind.Snippet,
             insertText: "def ${0}(${1:args}): ${2:body};",
@@ -1384,7 +1380,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|foreach|until|if|elif|else|end|self|None|nodes|break|continue|import|module)\b/,
+            /\b(let|def|do|match|while|foreach|if|elif|else|end|self|None|nodes|break|continue|import|module)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
