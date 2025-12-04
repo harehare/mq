@@ -43,6 +43,7 @@
 | `get` | Retrieves a value from a dict by its key. Returns None if the key is not found. | `obj`, `key` | get(obj, key) |
 | `get_title` | Returns the title of a markdown node. | `node` | get_title(node) |
 | `get_url` | Returns the url of a markdown node. | `node` | get_url(node) |
+| `get_variable` | Retrieves the value of a symbol or variable from the current environment. | `symbol_or_string` | get_variable(symbol_or_string) |
 | `group_by` |  Groups elements of an array by the result of applying a function to each element | `arr`, `f` | group_by(arr, f) |
 | `gsub` | Replaces all occurrences matching a regular expression pattern with the replacement string. | `from`, `pattern`, `to` | gsub(from, pattern, to) |
 | `gt` | Checks if the first value is greater than the second value. | `value1`, `value2` | gt(value1, value2) |
@@ -84,6 +85,7 @@
 | `is_none` |  Checks if input is None | `n` | is_none(n) |
 | `is_number` |  Checks if input is a number | `n` | is_number(n) |
 | `is_string` |  Checks if input is a string | `s` | is_string(s) |
+| `is_table_header` |  Checks if markdown is table header | `md` | is_table_header(md) |
 | `is_text` |  Checks if markdown is text | `text` | is_text(text) |
 | `is_toml` |  Checks if markdown is toml | `md` | is_toml(md) |
 | `is_yaml` |  Checks if markdown is yaml | `md` | is_yaml(md) |
@@ -128,6 +130,7 @@
 | `set_code_block_lang` | Sets the language of a markdown code block node. | `code_block`, `language` | set_code_block_lang(code_block, language) |
 | `set_list_ordered` | Sets the ordered property of a markdown list node. | `list`, `ordered` | set_list_ordered(list, ordered) |
 | `set_ref` | Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef). | `node`, `reference_id` | set_ref(node, reference_id) |
+| `set_variable` | Sets a symbol or variable in the current environment with the given value. | `symbol_or_string`, `value` | set_variable(symbol_or_string, value) |
 | `skip` |  Skips the first n elements of an array and returns the rest | `arr`, `n` | skip(arr, n) |
 | `skip_while` |  Skips elements from the beginning of an array while the provided function returns true | `arr`, `f` | skip_while(arr, f) |
 | `slice` | Extracts a substring from the given string. | `string`, `start`, `end` | slice(string, start, end) |
