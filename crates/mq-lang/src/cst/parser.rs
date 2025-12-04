@@ -457,11 +457,11 @@ impl<'a> Parser<'a> {
             token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
-            children: Vec::new(),
+            children: Vec::with_capacity(16),
         };
 
         // Check for attribute access: ident.attr -> attr(ident, "attr")
-        if let Some(attr_node) = self.try_parse_attribute_access(&mut node, &mut children) {
+        if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
             return Ok(attr_node);
         }
 
@@ -481,6 +481,8 @@ impl<'a> Parser<'a> {
                 // Check for bracket access after function call (e.g., foo()[0])
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     self.parse_bracket_access(node)
+                } else if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
+                    Ok(attr_node)
                 } else {
                     Ok(Shared::new(node))
                 }
@@ -490,11 +492,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_attribute_access(
-        &mut self,
-        node: &mut Node,
-        children: &mut Vec<Shared<Node>>,
-    ) -> Option<Shared<Node>> {
+    fn try_parse_attribute_access(&mut self, node: &mut Node) -> Option<Shared<Node>> {
         if let Some(peek_token) = self.tokens.peek()
             && matches!(&peek_token.kind, TokenKind::Selector(s) if s.len() > 1)
         {
@@ -513,9 +511,8 @@ impl<'a> Parser<'a> {
             };
 
             // Add the original node as the first argument
-            children.push(Shared::new(attr_node));
+            node.children.push(Shared::new(attr_node));
 
-            node.children = std::mem::take(children);
             Some(Shared::new(std::mem::take(node)))
         } else {
             None
@@ -1275,18 +1272,17 @@ impl<'a> Parser<'a> {
     fn parse_self(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(16);
 
         let mut node = Node {
             kind: NodeKind::Self_,
             token: Some(Shared::clone(token.unwrap())),
             leading_trivia,
             trailing_trivia,
-            children: Vec::new(),
+            children: Vec::with_capacity(16),
         };
 
         // Check for attribute access: ..attr -> attr(., "attr")
-        if let Some(attr_node) = self.try_parse_attribute_access(&mut node, &mut children) {
+        if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
             return Ok(attr_node);
         }
 
@@ -6530,6 +6526,56 @@ mod tests {
         (
             vec![],
             ErrorReporter::with_error(vec![ParseError::UnexpectedEOFDetected, ParseError::UnknownSelector(selector::UnknownSelector(token(TokenKind::Selector(".notfound".into()))))], 100)
+        )
+    )]
+    #[case::call_with_selector_attribute(
+        vec![
+            Shared::new(token(TokenKind::Ident("foo".into()))),
+            Shared::new(token(TokenKind::LParen)),
+            Shared::new(token(TokenKind::Ident("bar".into()))),
+            Shared::new(token(TokenKind::RParen)),
+            Shared::new(token(TokenKind::Selector(".level".into()))),
+        ],
+        (
+            vec![
+                Shared::new(Node {
+                    kind: NodeKind::Call,
+                    token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    children: vec![
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::LParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Ident,
+                            token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::RParen))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                        Shared::new(Node {
+                            kind: NodeKind::Selector,
+                            token: Some(Shared::new(token(TokenKind::Selector(".level".into())))),
+                            leading_trivia: Vec::new(),
+                            trailing_trivia: Vec::new(),
+                            children: Vec::new(),
+                        }),
+                    ],
+                }),
+            ],
+            ErrorReporter::default()
         )
     )]
     fn test_parse(#[case] input: Vec<Shared<Token>>, #[case] expected: (Vec<Shared<Node>>, ErrorReporter)) {
