@@ -1,3 +1,4 @@
+
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
@@ -9,10 +10,10 @@ license = "MIT"
 name = "mq-formatter"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.4"
+version = "0.5.5"
 
 [dependencies]
-mq-lang = {path = "../mq-lang", version = "0.5.4", features = ["cst"]}
+mq-lang = {path = "../mq-lang", version = "0.5.5", features = ["cst"]}
 rustc-hash = "2.1.1"
 
 [dev-dependencies]

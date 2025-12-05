@@ -1,3 +1,4 @@
+
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
@@ -9,7 +10,7 @@ license = "MIT"
 name = "mq-crawler"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.4"
+version = "0.5.5"
 
 [dependencies]
 clap = {version = "4.5", features = ["derive"]}
@@ -18,8 +19,8 @@ dashmap = "6.1.0"
 fantoccini = "0.22.0"
 futures = "0.3"
 miette = {version = "7.6.0", features = ["fancy"]}
-mq-lang = {path = "../mq-lang", version = "0.5.4"}
-mq-markdown = {path = "../mq-markdown", version = "0.5.4"}
+mq-lang = {path = "../mq-lang", version = "0.5.5"}
+mq-markdown = {path = "../mq-markdown", version = "0.5.5"}
 reqwest = {version = "0.12", features = ["json", "rustls-tls"]}
 robots_txt = "0.7"
 scraper = "0.24"
