@@ -13,7 +13,7 @@ version = "0.5.4"
 
 [dependencies]
 itertools = "0.14.0"
-mq-lang = {path = "../mq-lang", version = "0.5.3", features = ["cst"]}
+mq-lang = {path = "../mq-lang", version = "0.5.4", features = ["cst"]}
 rustc-hash = "2.1.1"
 slotmap = "1.0.7"
 smol_str = "0.3.4"
