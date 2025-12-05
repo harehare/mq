@@ -13,8 +13,8 @@ def split(md_nodes, level):
       | while (i < len(indices)):
           let start_node = indices[i]
           | let end_node = indices_with_end[i + 1]
-          | let section = md_nodes[start_node:end_node]
-          | let result = result + [{type: :section, header: first(section), children: section}]
+          | let children = md_nodes[start_node + 1:end_node]
+          | let result = result + [{type: :section, header: md_nodes[start_node], children: children}]
           | let i = i + 1
           | result
         end
@@ -68,10 +68,7 @@ end
 # Returns the content of a section (all nodes except the header).
 def content(section):
   if (_is_section(section)):
-    do
-      let children = section[:children]
-      | slice(children, 1, len(children))
-    end
+    section[:children]
   else:
     []
 end
@@ -80,8 +77,7 @@ end
 def all_nodes(section):
   if (_is_section(section)):
     do
-      let children = section[:children]
-      | children
+      section[:header] + section[:children]
     end
   else:
     []
@@ -159,7 +155,7 @@ def flatten(sections):
       let result = []
       | foreach (section, sections):
           if (_is_section(section)):
-            do let result = result + section[:children]
+            do let result = result + section[:header] + section[:children]
               | result
             end
           else:

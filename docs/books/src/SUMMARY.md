@@ -38,6 +38,7 @@
     - [CSV functions](reference/csv_functions.md)
     - [Fuzzy functions](reference/fuzzy_functions.md)
     - [JSON functions](reference/json_functions.md)
+    - [Section functions](reference/section_functions.md)
     - [TOML functions](reference/toml_functions.md)
     - [YAML functions](reference/yaml_functions.md)
     - [XML functions](reference/xml_functions.md)
