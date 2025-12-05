@@ -768,7 +768,7 @@ impl Formatter {
 
         // 5. Body
         if let Some(body) = children.get(idx) {
-            self.format_node(mq_lang::Shared::clone(body), 0);
+            self.format_node(mq_lang::Shared::clone(body), indent_level + 1);
         }
     }
 
@@ -820,7 +820,7 @@ impl Formatter {
             }
 
             for child in &node.children {
-                self.format_node(mq_lang::Shared::clone(child), 0);
+                self.format_node(mq_lang::Shared::clone(child), indent_level);
             }
         }
     }
@@ -1872,6 +1872,14 @@ end
     #[case::comment_preserves_indent_after_newline_dict(
         "{\n  \"a\": 1,\n    # comment for b\n  \"b\": 2\n}",
         "{\n  \"a\": 1,\n  # comment for b\n  \"b\": 2\n}\n"
+    )]
+    #[case::match_preserves_indent_after_newline(
+        "let v = \nmatch (x):\n|    1: \"one\"\n|    2: \"two\"\n  end",
+        "let v =\n  match (x):\n    | 1: \"one\"\n    | 2: \"two\"\n  end\n"
+    )]
+    #[case::match_with_do_block(
+        "let result = match (x):\n| 1: do\n    foo() |\n    bar()\n  end\n| 2: \"two\"\nend",
+        "let result = match (x):\n  | 1: do\n      foo() |\n      bar()\n    end\n  | 2: \"two\"\nend\n"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
