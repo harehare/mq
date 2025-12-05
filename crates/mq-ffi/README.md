@@ -1,4 +1,4 @@
-# mq-c-api
+# mq-ffi
 
 C-compatible API for the [mq](https://mqlang.org/) Markdown processing library, enabling seamless integration of mq's querying capabilities into C and C++ applications.
 
@@ -8,13 +8,13 @@ C-compatible API for the [mq](https://mqlang.org/) Markdown processing library, 
 
 ```bash
 git clone https://github.com/harehare/mq
-cd mq/crates/mq-c-api
+cd mq/crates/mq-ffi
 cargo build --release
 ```
 
 The compiled library will be available at:
-- **Static library**: `target/release/libmq_c_api.a`
-- **Dynamic library**: `target/release/libmq_c_api.so` (Linux) or `.dylib` (macOS) or `.dll` (Windows)
+- **Static library**: `target/release/libmq_ffi.a`
+- **Dynamic library**: `target/release/libmq_ffi.so` (Linux) or `.dylib` (macOS) or `.dll` (Windows)
 
 ## Usage
 
@@ -214,37 +214,6 @@ mq_destroy(ctx);
 | `"text"`     | Plain text           | Treated as single paragraph      |
 
 **Note**: Format strings are case-insensitive (`"markdown"`, `"MARKDOWN"`, and `"Markdown"` are equivalent).
-
-### Direct Compilation
-
-```bash
-# Linux
-gcc -o example main.c -L./target/release -lmq_c_api -lpthread -ldl -lm
-
-# macOS
-clang -o example main.c -L./target/release -lmq_c_api
-
-# Windows (MSVC)
-cl.exe main.c /link mq_c_api.lib
-```
-
-## Thread Safety
-
-The C API is **not thread-safe**. Each thread should have its own `mq_context_t`:
-
-```c
-// ❌ BAD: Sharing context between threads
-mq_context_t *shared_ctx = mq_create();
-// ... use from multiple threads ...
-
-// ✅ GOOD: Each thread has its own context
-void* thread_func(void* arg) {
-    mq_context_t *ctx = mq_create();
-    // ... use ctx ...
-    mq_destroy(ctx);
-    return NULL;
-}
-```
 
 ## Support
 

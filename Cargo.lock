@@ -2589,16 +2589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mq-c-api"
-version = "0.5.5"
-dependencies = [
- "cbindgen",
- "libc",
- "mq-lang",
- "mq-markdown",
-]
-
-[[package]]
 name = "mq-crawler"
 version = "0.5.5"
 dependencies = [
@@ -2638,6 +2628,16 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "mq-ffi"
+version = "0.5.5"
+dependencies = [
+ "cbindgen",
+ "libc",
+ "mq-lang",
+ "mq-markdown",
 ]
 
 [[package]]
@@ -4772,9 +4772,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.23.7"
+version = "0.23.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
+checksum = "5a9b7ac41d92f2d2803f233e297127bac397df7b337e0460a1cc39d6c006dee4"
 dependencies = [
  "indexmap 2.12.1",
  "toml_datetime",
