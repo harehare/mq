@@ -617,7 +617,7 @@ impl Cli {
         .map(|(name, _)| format!(r#"include "{}""#, name))
         .join(" | ");
 
-        let aggregate = self.input.aggregate.then_some("nodes");
+        let aggregate = self.input.aggregate.then_some(r#"nodes | import "section""#);
 
         let query = match (includes.is_empty(), query.is_empty()) {
             (true, false) => query,
