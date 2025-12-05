@@ -13,7 +13,6 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.4"
 
 [dependencies]
-arboard = {version = "3.6.1", default-features = false, optional = true}
 colored = "3.0.0"
 dirs = "6.0.0"
 itertools = "0.14.0"
@@ -26,7 +25,7 @@ rustyline = {version = "17.0.2", default-features = false, features = ["custom-b
 strum = {version = "0.27.2", features = ["derive"]}
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-arboard = {version = "3.6.1", default-features = false}
+arboard = {version = "3.6.1", default-features = false, optional = true}
 
 [dev-dependencies]
 rstest = "0.26.1"
