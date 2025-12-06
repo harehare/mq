@@ -838,12 +838,11 @@ impl Cli {
             OutputFormat::None => {}
         }
 
-        if !self.output.unbuffered {
-            if let Err(e) = handle.flush() {
-                if e.kind() != std::io::ErrorKind::BrokenPipe {
-                    return Err(miette!(e));
-                }
-            }
+        if !self.output.unbuffered
+            && let Err(e) = handle.flush()
+            && e.kind() != std::io::ErrorKind::BrokenPipe
+        {
+            return Err(miette!(e));
         }
 
         Ok(())
