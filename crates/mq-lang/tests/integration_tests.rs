@@ -1603,6 +1603,11 @@ fn engine_with_opt() -> Engine {
           ",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::String("foobar".to_string())].into()))]
+#[case::to_mdx_single_text(
+            r#""<Component />" | to_mdx() | first() | to_string()"#,
+            vec![RuntimeValue::None],
+            Ok(vec![RuntimeValue::String("<Component />".to_string())].into())
+          )]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,

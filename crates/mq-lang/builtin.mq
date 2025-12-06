@@ -48,7 +48,7 @@ end
 
 # Checks if string, array or dict is empty
 def is_empty(s):
-  if (or(is_string(s), is_array(s), is_dict(s))):
+  if (is_string(s) || is_array(s) || is_dict(s)):
     len(s) == 0
   elif (is_none(s)):
     true
@@ -57,7 +57,7 @@ def is_empty(s):
 end
 
 # Tests if string matches a pattern
-def test(s, pattern): regex_match(s, pattern) | is_empty() | not();
+def test(s, pattern): regex_match(s, pattern) | !is_empty();
 
 # Returns value if condition is true, None otherwise
 def select(v, f): if (f): v;
@@ -79,49 +79,54 @@ def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 
 # Applies a given function to each element of the provided array and returns a new array with the results.
 def map(v, f):
-  let map_dict = fn(v, f):
-      let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
-
-  | if (is_dict(v)):
-      map_dict(v, f)
-    else:
-      foreach (x, v): f(x);
+  if (is_dict(v)):
+    do
+      let map_dict = fn(v, f): let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
+      | map_dict(v, f)
+    end
+  elif (is_none(v)):
+    None
+  else:
+    foreach (x, v): f(x);
 end
 
 # Applies a function to each element and flattens the result into a single array
 def flat_map(v, f):
-  let flat_map_dict = fn(v, f):
-      let mapped = do foreach (x, entries(v)): f(x); | flatten(mapped) | dict(mapped);
+  if (is_dict(v)):
+    do
+      let flat_map_dict = fn(v, f): let mapped = do foreach (x, entries(v)): f(x); | flatten(mapped) | dict(mapped);;
+      | flat_map_dict(v, f)
     end
-
-  | if (is_dict(v)):
-      flat_map_dict(v, f)
-    else:
-      foreach (x, v): f(x); | flatten()
+  elif (is_none(v)):
+    None
+  else:
+    foreach (x, v): f(x); | flatten()
 end
 
 # Filters the elements of an array based on a provided callback function.
 def filter(v, f):
-  let filter_dict = fn(v, f):
-      let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
-
-  | let _filter = fn(v, f):
-      foreach (x, v): select(x, f(x)); | compact();
-
-  | if (is_dict(v)):
-      filter_dict(v, f)
-    else:
-      _filter(v, f)
+  if (is_dict(v)):
+    do
+      let filter_dict = fn(v, f): let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
+      | filter_dict(v, f)
+    end
+  elif (is_none(v)):
+    None
+  else:
+    do
+      let _filter = fn(v, f): foreach (x, v): select(x, f(x)); | compact();
+      | _filter(v, f)
+    end
 end
 
 # Returns the first element of an array
-def first(arr): get(arr, 0);
+def first(arr): arr[0];
 
 # Returns the last element of an array
-def last(arr): get(arr, len(arr) - 1);
+def last(arr): arr[len(arr) - 1];
 
 # Returns the second element of an array
-def second(arr): if (len(arr) > 1): get(arr, 1);
+def second(arr): if (len(arr) > 1): arr[1];
 
 # Checks if markdown is h1 heading
 def is_h1(md): to_md_name(md) == "h1";
@@ -205,12 +210,12 @@ def is_mdx_text_expression(mdx): to_md_name(mdx) == "mdx_text_expression";
 def is_mdx_js_esm(mdx): to_md_name(mdx) == "mdx_js_esm";
 
 # Checks if markdown is MDX
-def is_mdx(mdx): or(
-  is_mdx_flow_expression(mdx),
-  is_mdx_jsx_flow_element(mdx),
-  is_mdx_jsx_text_element(mdx),
-  is_mdx_text_expression(mdx),
-  is_mdx_js_esm(mdx))
+def is_mdx(mdx):
+  is_mdx_flow_expression(mdx) ||
+  is_mdx_jsx_flow_element(mdx) ||
+  is_mdx_jsx_text_element(mdx) ||
+  is_mdx_text_expression(mdx) ||
+  is_mdx_js_esm(mdx)
 end
 
 # Returns an array of length n filled with the given value.
@@ -224,8 +229,7 @@ def fill(value, n):
 end
 
 # Prints the debug information of the given value.
-def debug(msg):
-  let s = to_string(msg) | stderr(s"DEBUG: ${s}");
+def debug(msg): stderr(s"DEBUG: ${to_string(msg)}");
 
 # Sorts an array using a key function that extracts a comparable value for each element.
 def sort_by(arr, f):
