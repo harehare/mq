@@ -1,0 +1,31 @@
+def crate_version():
+  if (and(ne("[workspace.package]"), starts_with("["))):
+    s"${self}"
+  elif (starts_with("version = ")):
+    s"version = \"${version}\""
+  else: self
+end
+
+def npm_version():
+  if (starts_with(trim(), "\"version\": ")):
+    s"  \"version\": \"${version}\","
+  else: self
+end
+
+def py_version():
+  if (and(ne("[project]"), starts_with("["))):
+    s"${self}"
+  elif (starts_with("version = ")):
+    s"version = \"${version}\""
+  else: self
+end
+
+def crates_version():
+  replace("path = \"../mq-lang\", version = \"0.5.5\"", s"path = \"../mq-lang\", version = \"${version}\"")
+  | replace("path = \"../mq-hir\", version = \"0.5.5\"", s"path = \"../mq-hir\", version = \"${version}\"")
+  | replace("path = \"../mq-formatter\", version = \"0.5.5\"", s"path = \"../mq-formatter\", version = \"${version}\"")
+  | replace("path = \"../mq-markdown\", version = \"0.5.5\"", s"path = \"../mq-markdown\", version = \"${version}\"")
+  | replace("path = \"../mq-lsp\", version = \"0.5.5\"", s"path = \"../mq-lsp\", version = \"${version}\"")
+  | replace("path = \"../mq-repl\", version = \"0.5.5\"", s"path = \"../mq-repl\", version = \"${version}\"")
+  | replace("path = \"../mq-dap\", version = \"0.5.5\"", s"path = \"../mq-dap\", version = \"${version}\"")
+end
