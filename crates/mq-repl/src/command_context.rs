@@ -130,7 +130,7 @@ impl CommandContext {
                     clipboard.set_text(text).into_diagnostic()?;
                     Ok(CommandOutput::None)
                 }
-                #[cfg(not(feature = "clipboard"))]
+                #[cfg(any(not(feature = "clipboard"), target_os = "android"))]
                 {
                     Err(miette!("Clipboard functionality is not available on this platform"))
                 }
