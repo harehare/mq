@@ -778,6 +778,15 @@ impl Cli {
             })
     }
 
+    #[inline(always)]
+    fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()> {
+        match handle.write_all(data) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+            Err(e) => Err(miette!(e)),
+        }
+    }
+
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
@@ -816,29 +825,24 @@ impl Cli {
         });
 
         match self.output.output_format {
-            OutputFormat::Html => handle
-                .write_all(markdown.to_html().as_bytes())
-                .map_err(|e| miette!(e))?,
+            OutputFormat::Html => Self::write_ignore_pipe(&mut handle, markdown.to_html().as_bytes())?,
             OutputFormat::Text => {
-                handle
-                    .write_all(markdown.to_text().as_bytes())
-                    .map_err(|e| miette!(e))?;
+                Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
             }
             OutputFormat::Markdown => {
-                handle
-                    .write_all(markdown.to_string().as_bytes())
-                    .map_err(|e| miette!(e))?;
+                Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
             }
             OutputFormat::Json => {
-                handle
-                    .write_all(markdown.to_json()?.as_bytes())
-                    .map_err(|e| miette!(e))?;
+                Self::write_ignore_pipe(&mut handle, markdown.to_json()?.as_bytes())?;
             }
             OutputFormat::None => {}
         }
 
-        if !self.output.unbuffered {
-            handle.flush().expect("Error flushing");
+        if !self.output.unbuffered
+            && let Err(e) = handle.flush()
+            && e.kind() != std::io::ErrorKind::BrokenPipe
+        {
+            return Err(miette!(e));
         }
 
         Ok(())

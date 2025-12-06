@@ -521,7 +521,7 @@ impl RuntimeValues {
                         }
                     }
                 } else {
-                    unreachable!()
+                    updated_value
                 }
             })
             .collect::<Vec<_>>()
