@@ -4,6 +4,7 @@ import "csv"
 | import "yaml"
 | import "xml"
 | import "fuzzy"
+| import "section"
 | include "test"
 
 | let csv_input = "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n"
@@ -160,6 +161,65 @@ import "csv"
     | assert_eq(len(result4), 0)
   end
 
+| let section_md = "# Introduction\nThis is the introduction section.\n\n## Advanced Topics\nThis section covers advanced topics.\n\n# Conclusion\nThis is the conclusion section.\n"
+| let test_sections = to_markdown(section_md)
+
+| def test_section_split():
+    let sections = do test_sections | section::split(1);
+    | assert_eq(len(sections), 2)
+  end
+
+| def test_section_title_contains():
+    let sections = do test_sections | section::split(1);
+    | let filtered = section::title_contains(sections, "Introduction")
+    | assert_eq(len(filtered), 1)
+  end
+
+| def test_section_title_match():
+    let sections = do test_sections | section::split(1);
+    | let filtered = section::title_match(sections, "^I.*")
+    | assert_eq(len(filtered), 1)
+  end
+
+| def test_section_title():
+    let sections = do test_sections | section::split(1);
+    | let first_section = first(sections)
+    | let title_text = section::title(first_section)
+    | assert(contains(title_text, "Introduction"))
+  end
+
+| def test_section_content():
+    let sections = do test_sections | section::split(1);
+    | let first_section = first(sections)
+    | let content_nodes = section::content(first_section)
+    | assert(len(content_nodes) > 0)
+  end
+
+| def test_section_level():
+    let sections = do test_sections | section::split(1);
+    | let first_section = first(sections)
+    | let lvl = section::level(first_section)
+    | assert_eq(lvl, 1)
+  end
+
+| def test_section_nth():
+    let sections = do test_sections | section::split(1);
+    | let second = section::nth(sections, 1)
+    | assert(not(is_none(second)))
+  end
+
+| def test_section_titles():
+    let sections = do test_sections | section::split(1);
+    | let all_titles = section::titles(sections)
+    | assert_eq(len(all_titles), 2)
+  end
+
+| def test_section_flatten():
+    let sections = do test_sections | section::split(1);
+    | let flattened = section::flatten(sections)
+    | assert(is_array(flattened))
+  end
+
 |
 
 run_tests([
@@ -188,5 +248,15 @@ run_tests([
   test_case("Jaro-Winkler Distance", test_jaro_winkler),
   test_case("Fuzzy Best Match", test_fuzzy_best_match),
   test_case("Fuzzy Filter", test_fuzzy_filter),
-  test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein)
+  test_case("Fuzzy Match Levenshtein", test_fuzzy_match_levenshtein),
+  # section
+  test_case("Section Split", test_section_split),
+  test_case("Section Title Contains", test_section_title_contains),
+  test_case("Section Title Match", test_section_title_match),
+  test_case("Section Title", test_section_title),
+  test_case("Section Content", test_section_content),
+  test_case("Section Level", test_section_level),
+  test_case("Section Nth", test_section_nth),
+  test_case("Section Titles", test_section_titles),
+  test_case("Section Flatten", test_section_flatten)
 ])

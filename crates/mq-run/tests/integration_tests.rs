@@ -184,6 +184,11 @@ In {year}, the snowfall was above average.
     "# title\n",
     None
 )]
+#[case::test_aggregate(
+    vec!["--unbuffered", "-A", "section::split(2) | section::nth(0) | section::title()"],
+    "# title\n\n## subtitle\n",
+    Some("subtitle\n")
+)]
 fn test_cli_commands(
     #[case] args: Vec<&str>,
     #[case] input: &str,

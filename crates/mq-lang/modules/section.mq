@@ -1,0 +1,168 @@
+def _is_section(section): is_dict(section) && section[:type] == :section;
+
+# Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
+def split(md_nodes, level):
+  if (is_empty(md_nodes)):
+    []
+  else:
+    do
+      let indices = do foreach (i, range(len(md_nodes) - 1)): if (is_h_level(md_nodes[i], level)): i; | compact();
+      | let indices_with_end = indices + len(md_nodes)
+      | let result = []
+      | let i = 0
+      | while (i < len(indices)):
+          let start_node = indices[i]
+          | let end_node = indices_with_end[i + 1]
+          | let children = md_nodes[start_node + 1:end_node]
+          | let result = result + [{type: :section, header: md_nodes[start_node], children: children}]
+          | let i = i + 1
+          | result
+        end
+    end
+end
+
+# Filters the given list of sections, returning only those whose title contains the specified text.
+def title_contains(sections, text):
+  if (is_empty(sections)):
+    []
+  else:
+    do
+      let section_contains = fn(section):
+              if (_is_section(section)):
+                do
+                  section[:header] | to_text() | contains(text)
+                end
+              else:
+                false
+            end
+      | filter(sections, section_contains)
+    end
+end
+
+# Filters sections by a pattern match in the title text.
+def title_match(sections, pattern):
+  if (is_empty(sections)):
+    []
+  else:
+    do
+      let section_filter = fn(section):
+              if (_is_section(section)):
+                do
+                  section[:header] | to_text() | regex_match(pattern) | !is_empty()
+                end
+              else:
+                false
+            end
+      | filter(sections, section_filter)
+    end
+end
+
+# Returns the title text of a section (header text without the # symbols).
+def title(section):
+  if (_is_section(section)):
+    do section[:header] | to_text();
+  else:
+    ""
+end
+
+# Returns the content of a section (all nodes except the header).
+def content(section):
+  if (_is_section(section)):
+    section[:children]
+  else:
+    []
+end
+
+# Returns all nodes of a section, including both the header and content.
+def all_nodes(section):
+  if (_is_section(section)):
+    do
+      section[:header] + section[:children]
+    end
+  else:
+    []
+end
+
+# Returns the header level (1-6) of a section.
+def level(section):
+  if (_is_section(section)):
+    do
+      let header = section[:header]
+      | if (is_h_level(header, 1)): 1
+        elif (is_h_level(header, 2)): 2
+        elif (is_h_level(header, 3)): 3
+        elif (is_h_level(header, 4)): 4
+        elif (is_h_level(header, 5)): 5
+        elif (is_h_level(header, 6)): 6
+        else: 0
+    end
+  else:
+    0
+end
+
+# Returns the nth section from an array of sections (0-indexed).
+def nth(sections, n):
+  if (is_empty(sections) || n < 0 || n >= len(sections)):
+    None
+  else:
+    get(sections, n)
+end
+
+# Extracts titles from all sections.
+def titles(sections):
+  if (is_empty(sections)):
+    []
+  else:
+    map(sections, title)
+end
+
+# Generates a table of contents from sections.
+def toc(sections):
+  if (is_empty(sections)):
+    []
+  else:
+    do
+      let create_toc_entry = fn(section):
+              if (_is_section(section)):
+                do
+                  let lvl = level(section)
+                  | let indent = join(map(range(lvl - 1), fn(_): "  ";), "")
+                  | let title_text = title(section)
+                  | indent + "- " + title_text
+                end
+              else:
+                ""
+            end
+      | map(sections, create_toc_entry)
+    end
+end
+
+# Checks if a section has any content beyond the header.
+def has_content(section):
+  if (_is_section(section)):
+    len(content(section)) > 0
+  else:
+    false
+end
+
+# Flattens sections back to markdown nodes for output.
+# This converts section objects back to their original markdown node arrays.
+def flatten(sections):
+  if (is_empty(sections)):
+    []
+  else:
+    do
+      let result = []
+      | foreach (section, sections):
+          if (_is_section(section)):
+            do let result = result + section[:header] + section[:children]
+              | result
+            end
+          else:
+            do
+              let result = result + [section]
+              | result
+            end
+        end
+    end
+end
