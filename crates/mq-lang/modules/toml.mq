@@ -376,9 +376,14 @@ end
 
 def _add_toml_lines(lines, key, value):
   if (is_dict(value)):
-    lines + ["[" + key + "]"] + map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);)
+    do
+      let body_lines = map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);)
+      | let last_line = last(body_lines)
+      | let last_line = if (last_line): last_line + "\n" else: None
+      | lines + ["[" + key + "]"] + body_lines[0:len(body_lines) - 1] + last_line
+    end
   elif (is_array(value)):
-    lines + ["[[" + key + "]]"] + map(value, fn(v): _toml_stringify_value(v) + ", ";)
+    lines + ["[[" + key + "]]"] + if (len(value) == 0): _toml_stringify_value(first(value)) else: map(value, fn(v): _toml_stringify_value(v) + ", ";)
   else: lines + [key + " = " + _toml_stringify_value(value)]
 end
 
