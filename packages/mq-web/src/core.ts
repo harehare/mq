@@ -109,9 +109,9 @@ export async function definedValues(
  * Converts HTML input to Markdown
  */
 export async function htmlToMarkdown(
-  code: string,
+  html: string,
   options?: ConversionOptions
 ): Promise<string> {
   const wasm = await initWasm();
-  return await wasm.htmlToMarkdown(code, options);
+  return await wasm.htmlToMarkdown(html, options);
 }
