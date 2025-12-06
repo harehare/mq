@@ -67,6 +67,17 @@ include "test"
     | assert_eq(result3, false)
   end
 
+| def test_is_mdx():
+    let result1 = do "import Component from './Component'\n\n# Hello\n\n<Component />" | to_mdx() | get(2) | is_mdx();
+    | assert_eq(result1, true)
+
+    | let result2 = do "# Hello\n\nThis is markdown." | to_mdx() | first() | is_mdx();
+    | assert_eq(result2, false)
+
+    | let result3 = is_mdx("plain string")
+    | assert_eq(result3, false)
+  end
+
 # String manipulation tests
 | def test_contains():
     let result1 = contains("hello world", "world")
@@ -165,6 +176,9 @@ include "test"
 
     | let result2 = map({"a": 1, "b": 2}, fn(x): [x[0], x[1] * 2];)
     | assert_eq(result2, {"a": 2, "b": 4})
+
+    | let result3 = map(None, fn(x): [x[0], x[1] * 2];)
+    | assert_eq(result3, None)
   end
 
 | def test_flat_map():
@@ -173,6 +187,9 @@ include "test"
 
     | let result2 = flat_map([[1, 2], [3, 4]], fn(x): x;)
     | assert_eq(result2, [1, 2, 3, 4])
+
+    | let result3 = flat_map(None, fn(x): [x[0], x[1] * 2];)
+    | assert_eq(result3, None)
   end
 
 | def test_filter():
@@ -181,6 +198,9 @@ include "test"
 
     | let result2 = filter({"a": 1, "b": 2, "c": 3}, fn(x): x[1] > 1;)
     | assert_eq(result2, {"b": 2, "c": 3})
+
+    | let result3 = filter(None, fn(x): [x[0], x[1] * 2];)
+    | assert_eq(result3, None)
   end
 
 | def test_first():
@@ -392,6 +412,22 @@ include "test"
     | assert_eq(result3, [[1, 3, 5], [2, 4, 6]])
   end
 
+| def test_regex_test():
+  let result1 = test("aaa", "[a-z]+")
+  | assert_eq(result1, true)
+
+  | let result2 = test("aaa", "[0-9]+")
+  | assert_eq(result2, false)
+end
+
+| def test_regex_match():
+  let result1 = regex_match("aaa", "[a-z]+")
+  | assert_eq(result1, ["aaa"])
+
+  | let result2 = regex_match("aaa", "[0-9]+")
+  | assert_eq(result2, [])
+end
+
 run_tests([
   # Type checking
   test_case("is_array", test_is_array),
@@ -400,6 +436,7 @@ run_tests([
   test_case("is_string", test_is_string),
   test_case("is_none", test_is_none),
   test_case("is_dict", test_is_dict),
+  test_case("is_mdx", test_is_mdx),
 
   # String manipulation
   test_case("contains", test_contains),
@@ -438,5 +475,8 @@ run_tests([
   test_case("fold", test_fold),
   test_case("unique_by", test_unique_by),
   test_case("identity", test_identity),
-  test_case("transpose", test_transpose)
+  test_case("transpose", test_transpose),
+
+  test_case("regex_test", test_regex_test),
+  test_case("regex_match", test_regex_match)
 ])
