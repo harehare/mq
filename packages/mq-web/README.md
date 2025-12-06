@@ -19,7 +19,7 @@ npm install mq-web
 ## Quick Start
 
 ```typescript
-import { run, format } from "mq-web";
+import { run, format, htmlToMarkdown } from "mq-web";
 
 // Transform markdown list style
 const markdown = `- First item
@@ -37,6 +37,15 @@ console.log(result);
 const formatted = await format("map(to_text)|select(gt(5))");
 console.log(formatted);
 // Output: map(to_text) | select(gt(5))
+
+// Convert HTML to Markdown
+const html = "<h1>Hello World</h1><p>This is a paragraph.</p>";
+const md = await htmlToMarkdown(html);
+console.log(md);
+// Output:
+// # Hello World
+//
+// This is a paragraph.
 ```
 
 ## API Reference
@@ -76,6 +85,15 @@ Get defined values (functions, selectors, variables) from mq code.
 - `code`: string - The mq code to analyze
 
 Returns: `Promise<ReadonlyArray<DefinedValue>>` - Array of defined values
+
+#### `htmlToMarkdown(html, options?)`
+
+Convert HTML to markdown format.
+
+- `html`: string - The HTML content to convert
+- `options`: Partial<ConversionOptions> - Conversion options
+
+Returns: `Promise<string>` - The converted markdown content
 
 ## Examples
 
@@ -117,6 +135,35 @@ const filtered = await run('.[] | select(test(to_text(), "^A"))', markdown);
 // Transform list items
 const uppercase = await run(".[] | upcase()", markdown);
 // Output: - APPLE\n- BANANA\n- CHERRY
+```
+
+### HTML to Markdown Conversion
+
+```typescript
+import { htmlToMarkdown } from "mq-web";
+
+const html = `
+<article>
+  <h1>Welcome to mq</h1>
+  <p>A <strong>powerful</strong> tool for <em>Markdown</em> processing.</p>
+  <ul>
+    <li>Easy to use</li>
+    <li>Fast performance</li>
+    <li>Web-compatible</li>
+  </ul>
+</article>
+`;
+
+const markdown = await htmlToMarkdown(html);
+console.log(markdown);
+// Output:
+// # Welcome to mq
+//
+// A **powerful** tool for _Markdown_ processing.
+//
+// - Easy to use
+// - Fast performance
+// - Web-compatible
 ```
 
 ### Error Handling

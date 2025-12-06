@@ -174,6 +174,25 @@ impl FromStr for UrlSurroundStyle {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[wasm_bindgen()]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionOptions {
+    pub extract_scripts_as_code_blocks: bool,
+    pub generate_front_matter: bool,
+    pub use_title_as_h1: bool,
+}
+
+impl From<ConversionOptions> for mq_markdown::ConversionOptions {
+    fn from(options: ConversionOptions) -> Self {
+        Self {
+            extract_scripts_as_code_blocks: options.extract_scripts_as_code_blocks,
+            generate_front_matter: options.generate_front_matter,
+            use_title_as_h1: options.use_title_as_h1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WasmModuleResolver {
     /// Cache of preloaded module contents, keyed by module name
@@ -396,6 +415,12 @@ pub async fn format(code: &str) -> Result<String, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("{:?}", &e)))
 }
 
+#[wasm_bindgen(js_name=htmlToMarkdown)]
+pub async fn html_to_markdown(html_input: &str, options: Option<ConversionOptions>) -> Result<String, JsValue> {
+    mq_markdown::convert_html_to_markdown(html_input, options.map(Into::into).unwrap_or_default())
+        .map_err(|e| JsValue::from_str(&format!("Failed to convert HTML to Markdown: {}", e)))
+}
+
 #[wasm_bindgen(js_name=diagnostics, skip_typescript)]
 pub async fn diagnostics(code: &str) -> JsValue {
     let (_, errors) = mq_lang::parse_recovery(code);
@@ -583,7 +608,7 @@ mod tests {
         let code = r#"
             def foo(x): x | upcase();
             def bar(y): y | downcase();
-            let $var = 42;
+            | let $var = 42;
         "#;
 
         let result = defined_values(code, None).await.unwrap();
@@ -602,11 +627,11 @@ mod tests {
             module mymodule:
                 def module_func(x): x | upcase();
                 def another_func(y): y | downcase();
-                let $module_var = 100;
+                | let $module_var = 100;
             end
 
             def top_level_func(z): z;
-            let $top_level_var = 42;
+            | let $top_level_var = 42;
         "#;
 
         let result = defined_values(code, Some("mymodule".to_string())).await.unwrap();
@@ -825,5 +850,18 @@ mod tests {
         assert_eq!(output.join(""), "Hello, World!");
 
         // Note: File cleanup is skipped as OPFS persistent storage is isolated per origin
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_html_to_markdown() {
+        let html = r#"<h1>Hello World</h1><p>This is a <strong>test</strong>.</p>"#;
+        let options = ConversionOptions::default();
+
+        let result = html_to_markdown(html, Some(options)).await;
+        assert!(result.is_ok());
+        let markdown = result.unwrap();
+        assert!(markdown.contains("# Hello World"));
+        assert!(markdown.contains("**test**"));
     }
 }

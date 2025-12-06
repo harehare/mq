@@ -1,4 +1,9 @@
-import init, { Options, Diagnostic, DefinedValue } from "./mq_wasm";
+import init, {
+  Options,
+  Diagnostic,
+  DefinedValue,
+  ConversionOptions,
+} from "./mq_wasm";
 
 // Type definitions for WASM module
 interface WasmModule {
@@ -10,6 +15,10 @@ interface WasmModule {
     code: string,
     module?: string
   ) => Promise<readonly DefinedValue[]>;
+  htmlToMarkdown(
+    html_input: string,
+    options?: ConversionOptions
+  ): Promise<string>;
 }
 
 let wasmModule: WasmModule | null = null;
@@ -30,6 +39,7 @@ async function initWasm(): Promise<WasmModule> {
         format: wasmImport.format,
         diagnostics: wasmImport.diagnostics,
         definedValues: wasmImport.definedValues,
+        htmlToMarkdown: wasmImport.htmlToMarkdown,
       };
     } catch (error) {
       throw new Error(`Failed to initialize mq WebAssembly module: ${error}`);
@@ -93,4 +103,15 @@ export async function definedValues(
 ): Promise<ReadonlyArray<DefinedValue>> {
   const wasm = await initWasm();
   return await wasm.definedValues(code, module);
+}
+
+/**
+ * Converts HTML input to Markdown
+ */
+export async function htmlToMarkdown(
+  code: string,
+  options?: ConversionOptions
+): Promise<string> {
+  const wasm = await initWasm();
+  return await wasm.htmlToMarkdown(code, options);
 }
