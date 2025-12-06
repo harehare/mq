@@ -1,6 +1,6 @@
 use std::{fmt, fs};
 
-#[cfg(feature = "clipboard")]
+#[cfg(all(feature = "clipboard", not(target_os = "android")))]
 use arboard::Clipboard;
 use miette::{IntoDiagnostic, miette};
 use strum::IntoEnumIterator;
@@ -117,7 +117,7 @@ impl CommandContext {
     pub fn execute(&mut self, to_run: &str) -> miette::Result<CommandOutput> {
         match to_run.to_string().into() {
             Command::Copy => {
-                #[cfg(feature = "clipboard")]
+                #[cfg(all(feature = "clipboard", not(target_os = "android")))]
                 {
                     let text = self
                         .input
