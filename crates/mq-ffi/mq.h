@@ -1,3 +1,11 @@
+#ifndef MQ_H
+#define MQ_H
+
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+
 typedef void mq_context_t;
 
 typedef struct mq_result_t {
@@ -114,3 +122,5 @@ void mq_free_result(struct mq_result_t result);
 char *mq_html_to_markdown(const char *html_input_c,
                           struct MqConversionOptions options,
                           char **error_msg);
+
+#endif  /* MQ_H */
