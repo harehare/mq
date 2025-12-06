@@ -175,7 +175,7 @@ impl FromStr for UrlSurroundStyle {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[wasm_bindgen()]
+#[wasm_bindgen]
 #[serde(rename_all = "camelCase")]
 pub struct ConversionOptions {
     pub extract_scripts_as_code_blocks: bool,
