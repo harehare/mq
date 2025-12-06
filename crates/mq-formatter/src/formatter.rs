@@ -1608,8 +1608,8 @@ process();"#,
     #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1\n")]
     #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline(
-        "let x = 1\n# multiline comment\nlet y = 2",
-        "let x = 1\n# multiline comment\nlet y = 2\n"
+        "let x = 1\n# multiline comment\n| let y = 2",
+        "let x = 1\n# multiline comment\n| let y = 2\n"
     )]
     #[case::comment_after_expr_multiline(
         "if(test):\n  test # comment\nelse:\n  test2 # comment2",
@@ -1833,8 +1833,8 @@ end
     )]
     #[case::comment_inline_with_indent("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline_with_indent(
-        "let x = 1\n  # multiline comment\nlet y = 2",
-        "let x = 1\n# multiline comment\nlet y = 2\n"
+        "let x = 1\n  # multiline comment\n| let y = 2",
+        "let x = 1\n# multiline comment\n| let y = 2\n"
     )]
     #[case::comment_after_expr_multiline_with_indent(
         "if(test):\n  test # comment\nelse:\n    test2 # comment2",
@@ -1858,8 +1858,8 @@ end
 "#
     )]
     #[case::comment_preserves_indent_after_newline(
-        "let x = 1\n    # indented comment after newline\nlet y = 2",
-        "let x = 1\n# indented comment after newline\nlet y = 2\n"
+        "let x = 1\n    # indented comment after newline\n| let y = 2",
+        "let x = 1\n# indented comment after newline\n| let y = 2\n"
     )]
     #[case::comment_preserves_indent_after_newline_deep(
         "if(test):\n  test\n    # deeper indented comment\nelse:\n  test2",
