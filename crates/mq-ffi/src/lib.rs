@@ -59,6 +59,7 @@
 use libc::c_void;
 use mq_lang::DefaultEngine;
 use mq_lang::{Engine, RuntimeValue};
+use mq_markdown::{ConversionOptions, convert_html_to_markdown};
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -71,6 +72,28 @@ pub struct MqResult {
     pub values: *mut *mut c_char,
     pub values_len: usize,
     pub error_msg: *mut c_char,
+}
+
+/// C-compatible conversion options for HTML to Markdown conversion.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MqConversionOptions {
+    /// Extract script tags as code blocks
+    pub extract_scripts_as_code_blocks: bool,
+    /// Generate front matter from HTML head metadata
+    pub generate_front_matter: bool,
+    /// Use HTML title tag as H1 heading
+    pub use_title_as_h1: bool,
+}
+
+impl From<MqConversionOptions> for ConversionOptions {
+    fn from(options: MqConversionOptions) -> Self {
+        ConversionOptions {
+            extract_scripts_as_code_blocks: options.extract_scripts_as_code_blocks,
+            generate_front_matter: options.generate_front_matter,
+            use_title_as_h1: options.use_title_as_h1,
+        }
+    }
 }
 
 // Helper function to convert Rust string to C string
@@ -280,6 +303,94 @@ pub extern "C" fn mq_free_result(result: MqResult) {
                 }
             }
             // The Vec itself is dropped here, freeing the memory it owned for the pointers.
+        }
+    }
+}
+
+/// Converts HTML to Markdown with the given conversion options.
+/// Returns a C string containing the markdown output, or NULL on error.
+/// The caller is responsible for freeing the result using `mq_free_string`.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure:
+/// - `html_input_c` must be a valid pointer to a null-terminated C string
+/// - `error_msg` must be a valid pointer to a location where an error message pointer can be stored
+/// - The string pointer must remain valid for the duration of this function call
+/// - The returned C string must be freed using `mq_free_string` to avoid memory leaks
+/// - If an error occurs, the function returns NULL and sets `*error_msg` to an error message
+///
+/// # Example
+///
+/// ```c
+/// char* error_msg = NULL;
+/// MqConversionOptions options = {
+///     .extract_scripts_as_code_blocks = false,
+///     .generate_front_matter = true,
+///     .use_title_as_h1 = true
+/// };
+///
+/// char* markdown = mq_html_to_markdown(
+///     "<html><head><title>Hello</title></head><body><p>World</p></body></html>",
+///     options,
+///     &error_msg
+/// );
+///
+/// if (markdown == NULL) {
+///     printf("Error: %s\n", error_msg);
+///     mq_free_string(error_msg);
+/// } else {
+///     printf("%s\n", markdown);
+///     mq_free_string(markdown);
+/// }
+/// ```
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_html_to_markdown(
+    html_input_c: *const c_char,
+    options: MqConversionOptions,
+    error_msg: *mut *mut c_char,
+) -> *mut c_char {
+    // Initialize error_msg to NULL
+    if !error_msg.is_null() {
+        unsafe {
+            *error_msg = ptr::null_mut();
+        }
+    }
+
+    // Validate input pointer
+    if html_input_c.is_null() {
+        if !error_msg.is_null() {
+            unsafe {
+                *error_msg = to_c_string("HTML input pointer is null".to_string());
+            }
+        }
+        return ptr::null_mut();
+    }
+
+    // Convert C string to Rust string
+    let html_input_str = match unsafe { c_str_to_rust_str_slice(html_input_c) } {
+        Ok(s) => s,
+        Err(_) => {
+            if !error_msg.is_null() {
+                unsafe {
+                    *error_msg = to_c_string("Invalid UTF-8 sequence in HTML input".to_string());
+                }
+            }
+            return ptr::null_mut();
+        }
+    };
+
+    // Convert options and call the conversion function
+    let rust_options: ConversionOptions = options.into();
+    match convert_html_to_markdown(html_input_str, rust_options) {
+        Ok(markdown) => to_c_string(markdown),
+        Err(e) => {
+            if !error_msg.is_null() {
+                unsafe {
+                    *error_msg = to_c_string(format!("HTML to Markdown conversion error: {}", e));
+                }
+            }
+            ptr::null_mut()
         }
     }
 }
@@ -632,5 +743,144 @@ mod tests {
         let invalid_string = "test\0with\0nulls".to_string();
         let c_ptr = to_c_string(invalid_string);
         assert!(c_ptr.is_null());
+    }
+
+    #[test]
+    fn test_html_to_markdown_simple() {
+        let html = make_c_string("<p>Hello, World!</p>");
+        let options = MqConversionOptions::default();
+        let mut error_msg: *mut c_char = ptr::null_mut();
+
+        let result = unsafe { mq_html_to_markdown(html, options, &mut error_msg) };
+
+        assert!(error_msg.is_null());
+        assert!(!result.is_null());
+
+        let markdown_str = unsafe { c_string_to_rust_string(result) };
+        assert_eq!(markdown_str.trim(), "Hello, World!");
+
+        unsafe {
+            mq_free_string(result);
+            mq_free_string(html as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_html_to_markdown_with_options() {
+        let html = make_c_string("<html><head><title>Test Page</title></head><body><p>Content</p></body></html>");
+        let options = MqConversionOptions {
+            extract_scripts_as_code_blocks: false,
+            generate_front_matter: true,
+            use_title_as_h1: true,
+        };
+        let mut error_msg: *mut c_char = ptr::null_mut();
+
+        let result = unsafe { mq_html_to_markdown(html, options, &mut error_msg) };
+
+        assert!(error_msg.is_null());
+        assert!(!result.is_null());
+
+        let markdown_str = unsafe { c_string_to_rust_string(result) };
+        assert!(markdown_str.contains("Test Page"));
+        assert!(markdown_str.contains("Content"));
+
+        unsafe {
+            mq_free_string(result);
+            mq_free_string(html as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_html_to_markdown_null_input() {
+        let options = MqConversionOptions::default();
+        let mut error_msg: *mut c_char = ptr::null_mut();
+
+        let result = unsafe { mq_html_to_markdown(ptr::null(), options, &mut error_msg) };
+
+        assert!(result.is_null());
+        assert!(!error_msg.is_null());
+
+        let error_str = unsafe { c_string_to_rust_string(error_msg) };
+        assert_eq!(error_str, "HTML input pointer is null");
+
+        unsafe {
+            mq_free_string(error_msg);
+        }
+    }
+
+    #[test]
+    fn test_html_to_markdown_empty_input() {
+        let html = make_c_string("");
+        let options = MqConversionOptions::default();
+        let mut error_msg: *mut c_char = ptr::null_mut();
+
+        let result = unsafe { mq_html_to_markdown(html, options, &mut error_msg) };
+
+        assert!(error_msg.is_null());
+        assert!(!result.is_null());
+
+        let markdown_str = unsafe { c_string_to_rust_string(result) };
+        assert_eq!(markdown_str, "");
+
+        unsafe {
+            mq_free_string(result);
+            mq_free_string(html as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_html_to_markdown_complex_html() {
+        let html = make_c_string(
+            r#"<html>
+                <body>
+                    <h1>Title</h1>
+                    <p>Paragraph 1</p>
+                    <ul>
+                        <li>Item 1</li>
+                        <li>Item 2</li>
+                    </ul>
+                </body>
+            </html>"#,
+        );
+        let options = MqConversionOptions::default();
+        let mut error_msg: *mut c_char = ptr::null_mut();
+
+        let result = unsafe { mq_html_to_markdown(html, options, &mut error_msg) };
+
+        assert!(error_msg.is_null());
+        assert!(!result.is_null());
+
+        let markdown_str = unsafe { c_string_to_rust_string(result) };
+        assert!(markdown_str.contains("# Title"));
+        assert!(markdown_str.contains("Paragraph 1"));
+        assert!(markdown_str.contains("Item 1"));
+        assert!(markdown_str.contains("Item 2"));
+
+        unsafe {
+            mq_free_string(result);
+            mq_free_string(html as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_conversion_options_default() {
+        let options = MqConversionOptions::default();
+        assert!(!options.extract_scripts_as_code_blocks);
+        assert!(!options.generate_front_matter);
+        assert!(!options.use_title_as_h1);
+    }
+
+    #[test]
+    fn test_conversion_options_into() {
+        let mq_options = MqConversionOptions {
+            extract_scripts_as_code_blocks: true,
+            generate_front_matter: true,
+            use_title_as_h1: true,
+        };
+
+        let rust_options: ConversionOptions = mq_options.into();
+        assert!(rust_options.extract_scripts_as_code_blocks);
+        assert!(rust_options.generate_front_matter);
+        assert!(rust_options.use_title_as_h1);
     }
 }
