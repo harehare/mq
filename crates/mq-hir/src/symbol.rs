@@ -114,7 +114,11 @@ impl Symbol {
     pub fn is_deprecated(&self) -> bool {
         self.doc
             .iter()
-            .any(|(_, text)| text.to_lowercase().contains("deprecated"))
+            .any(|(_, text)| {
+                text.contains("deprecated") ||
+                text.contains("Deprecated") ||
+                text.contains("DEPRECATED")
+            })
     }
 }
 
