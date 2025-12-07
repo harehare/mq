@@ -88,8 +88,6 @@ cargo binstall mq-run@0.5.5
 You can download pre-built binaries from the [GitHub releases page](https://github.com/harehare/mq/releases):
 
 ```sh
-# macOS (Intel)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.5/mq-x86_64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # macOS (Apple Silicon)
 curl -L https://github.com/harehare/mq/releases/download/v0.5.5/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
