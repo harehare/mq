@@ -455,15 +455,20 @@ impl Cli {
                             value: Some(value),
                             doc,
                             ..
-                        } if !symbol.is_internal_function() => Some(mq_lang::RuntimeValue::String(
-                            [
-                                format!("`{}`", value),
-                                doc.iter().map(|(_, d)| d.to_string()).join("\n"),
-                                params.iter().map(|p| format!("`{}`", p)).join(", "),
-                                format!("{}({})", value, params.join(", ")),
-                            ]
-                            .join("\t"),
-                        )),
+                        } if !symbol.is_internal_function() => {
+                            let name = if symbol.is_deprecated() {
+                                format!("~~`{}`~~", value)
+                            } else {
+                                format!("`{}`", value)
+                            };
+                            let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
+                            let args = params.iter().map(|p| format!("`{}`", p)).join(", ");
+                            let example = format!("{}({})", value, params.join(", "));
+
+                            Some(mq_lang::RuntimeValue::String(
+                                [name, description, args, example].join("\t"),
+                            ))
+                        }
                         _ => None,
                     })
                     .collect::<VecDeque<_>>();
