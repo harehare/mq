@@ -1,16 +1,16 @@
 {
   "name": "mq-web",
   "description": "A jq-like command-line tool for Markdown processing",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "author": "harehare",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/harehare/mq/issues"
   },
   "devDependencies": {
-    "oxlint": "^1.0.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "oxlint": "^1.31.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
   },
   "files": [
     "dist"

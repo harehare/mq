@@ -455,15 +455,20 @@ impl Cli {
                             value: Some(value),
                             doc,
                             ..
-                        } if !symbol.is_internal_function() => Some(mq_lang::RuntimeValue::String(
-                            [
-                                format!("`{}`", value),
-                                doc.iter().map(|(_, d)| d.to_string()).join("\n"),
-                                params.iter().map(|p| format!("`{}`", p)).join(", "),
-                                format!("{}({})", value, params.join(", ")),
-                            ]
-                            .join("\t"),
-                        )),
+                        } if !symbol.is_internal_function() => {
+                            let name = if symbol.is_deprecated() {
+                                format!("~~`{}`~~", value)
+                            } else {
+                                format!("`{}`", value)
+                            };
+                            let description = doc.iter().map(|(_, d)| d.to_string()).join("\n");
+                            let args = params.iter().map(|p| format!("`{}`", p)).join(", ");
+                            let example = format!("{}({})", value, params.join(", "));
+
+                            Some(mq_lang::RuntimeValue::String(
+                                [name, description, args, example].join("\t"),
+                            ))
+                        }
                         _ => None,
                     })
                     .collect::<VecDeque<_>>();
@@ -617,7 +622,7 @@ impl Cli {
         .map(|(name, _)| format!(r#"include "{}""#, name))
         .join(" | ");
 
-        let aggregate = self.input.aggregate.then_some("nodes");
+        let aggregate = self.input.aggregate.then_some(r#"nodes | import "section""#);
 
         let query = match (includes.is_empty(), query.is_empty()) {
             (true, false) => query,
@@ -778,6 +783,15 @@ impl Cli {
             })
     }
 
+    #[inline(always)]
+    fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()> {
+        match handle.write_all(data) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+            Err(e) => Err(miette!(e)),
+        }
+    }
+
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
         let stdout = io::stdout();
         let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
@@ -816,29 +830,24 @@ impl Cli {
         });
 
         match self.output.output_format {
-            OutputFormat::Html => handle
-                .write_all(markdown.to_html().as_bytes())
-                .map_err(|e| miette!(e))?,
+            OutputFormat::Html => Self::write_ignore_pipe(&mut handle, markdown.to_html().as_bytes())?,
             OutputFormat::Text => {
-                handle
-                    .write_all(markdown.to_text().as_bytes())
-                    .map_err(|e| miette!(e))?;
+                Self::write_ignore_pipe(&mut handle, markdown.to_text().as_bytes())?;
             }
             OutputFormat::Markdown => {
-                handle
-                    .write_all(markdown.to_string().as_bytes())
-                    .map_err(|e| miette!(e))?;
+                Self::write_ignore_pipe(&mut handle, markdown.to_string().as_bytes())?;
             }
             OutputFormat::Json => {
-                handle
-                    .write_all(markdown.to_json()?.as_bytes())
-                    .map_err(|e| miette!(e))?;
+                Self::write_ignore_pipe(&mut handle, markdown.to_json()?.as_bytes())?;
             }
             OutputFormat::None => {}
         }
 
-        if !self.output.unbuffered {
-            handle.flush().expect("Error flushing");
+        if !self.output.unbuffered
+            && let Err(e) = handle.flush()
+            && e.kind() != std::io::ErrorKind::BrokenPipe
+        {
+            return Err(miette!(e));
         }
 
         Ok(())

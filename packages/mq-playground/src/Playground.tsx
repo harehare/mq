@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import * as mq from "mq-web";
-import { languages } from "monaco-editor";
+import { languages, editor, IPosition } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -1181,9 +1181,9 @@ export const Playground = () => {
       },
     });
 
-    monaco.editor.onDidCreateEditor((editor) => {
-      editor.onDidChangeModelContent(async () => {
-        const model = editor.getModel();
+    monaco.editor.onDidCreateEditor((editorInstance: editor.ICodeEditor) => {
+      editorInstance.onDidChangeModelContent(async () => {
+        const model = editorInstance.getModel();
         if (model) {
           const modelLanguage = model.getLanguageId();
 
@@ -1210,7 +1210,7 @@ export const Playground = () => {
 
     monaco.languages.registerCompletionItemProvider("mq", {
       triggerCharacters: [" ", "|", ":"],
-      provideCompletionItems: async (model, position) => {
+      provideCompletionItems: async (model: editor.ITextModel, position: IPosition) => {
         const wordRange = model.getWordUntilPosition(position);
 
         let moduleName: string | undefined = undefined;

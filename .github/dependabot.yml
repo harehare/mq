@@ -7,7 +7,13 @@ updates:
       time: "20:00"
     open-pull-requests-limit: 10
   - package-ecosystem: "npm"
-    directory: "/playground"
+    directory: "/packages/mq-playground"
+    schedule:
+      interval: "daily"
+      time: "20:00"
+    open-pull-requests-limit: 10
+  - package-ecosystem: "npm"
+    directory: "/packages/mq-web"
     schedule:
       interval: "daily"
       time: "20:00"

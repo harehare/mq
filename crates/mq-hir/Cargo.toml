@@ -1,3 +1,4 @@
+
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
@@ -9,13 +10,13 @@ license = "MIT"
 name = "mq-hir"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.4"
+version = "0.5.5"
 
 [dependencies]
 itertools = "0.14.0"
-mq-lang = {path = "../mq-lang", version = "0.5.3", features = ["cst"]}
+mq-lang = {path = "../mq-lang", version = "0.5.5", features = ["cst"]}
 rustc-hash = "2.1.1"
-slotmap = "1.0.7"
+slotmap = "1.1.0"
 smol_str = "0.3.4"
 strsim = "0.11.1"
 thiserror = "2.0.17"

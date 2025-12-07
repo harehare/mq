@@ -768,7 +768,7 @@ impl Formatter {
 
         // 5. Body
         if let Some(body) = children.get(idx) {
-            self.format_node(mq_lang::Shared::clone(body), 0);
+            self.format_node(mq_lang::Shared::clone(body), indent_level + 1);
         }
     }
 
@@ -820,7 +820,7 @@ impl Formatter {
             }
 
             for child in &node.children {
-                self.format_node(mq_lang::Shared::clone(child), 0);
+                self.format_node(mq_lang::Shared::clone(child), indent_level);
             }
         }
     }
@@ -1608,8 +1608,8 @@ process();"#,
     #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1\n")]
     #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline(
-        "let x = 1\n# multiline comment\nlet y = 2",
-        "let x = 1\n# multiline comment\nlet y = 2\n"
+        "let x = 1\n# multiline comment\n| let y = 2",
+        "let x = 1\n# multiline comment\n| let y = 2\n"
     )]
     #[case::comment_after_expr_multiline(
         "if(test):\n  test # comment\nelse:\n  test2 # comment2",
@@ -1833,8 +1833,8 @@ end
     )]
     #[case::comment_inline_with_indent("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline_with_indent(
-        "let x = 1\n  # multiline comment\nlet y = 2",
-        "let x = 1\n# multiline comment\nlet y = 2\n"
+        "let x = 1\n  # multiline comment\n| let y = 2",
+        "let x = 1\n# multiline comment\n| let y = 2\n"
     )]
     #[case::comment_after_expr_multiline_with_indent(
         "if(test):\n  test # comment\nelse:\n    test2 # comment2",
@@ -1858,8 +1858,8 @@ end
 "#
     )]
     #[case::comment_preserves_indent_after_newline(
-        "let x = 1\n    # indented comment after newline\nlet y = 2",
-        "let x = 1\n# indented comment after newline\nlet y = 2\n"
+        "let x = 1\n    # indented comment after newline\n| let y = 2",
+        "let x = 1\n# indented comment after newline\n| let y = 2\n"
     )]
     #[case::comment_preserves_indent_after_newline_deep(
         "if(test):\n  test\n    # deeper indented comment\nelse:\n  test2",
@@ -1872,6 +1872,14 @@ end
     #[case::comment_preserves_indent_after_newline_dict(
         "{\n  \"a\": 1,\n    # comment for b\n  \"b\": 2\n}",
         "{\n  \"a\": 1,\n  # comment for b\n  \"b\": 2\n}\n"
+    )]
+    #[case::match_preserves_indent_after_newline(
+        "let v = \nmatch (x):\n|    1: \"one\"\n|    2: \"two\"\n  end",
+        "let v =\n  match (x):\n    | 1: \"one\"\n    | 2: \"two\"\n  end\n"
+    )]
+    #[case::match_with_do_block(
+        "let result = match (x):\n| 1: do\n    foo() |\n    bar()\n  end\n| 2: \"two\"\nend",
+        "let result = match (x):\n  | 1: do\n      foo() |\n      bar()\n    end\n  | 2: \"two\"\nend\n"
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);

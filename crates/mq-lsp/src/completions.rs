@@ -85,48 +85,60 @@ pub fn response(
                 symbols
                     .iter()
                     .filter_map(|symbol| match &symbol.kind {
-                        mq_hir::SymbolKind::Function(params) => Some(CompletionItem {
-                            label: symbol.value.clone().unwrap_or_default().to_string(),
-                            kind: Some(CompletionItemKind::FUNCTION),
-                            detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            insert_text: Some(format!(
-                                "{}({})",
-                                symbol.value.clone().unwrap_or_default(),
-                                params
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(i, name)| format!("${{{}:{}}}", i + 1, name))
-                                    .join(", ")
-                            )),
-                            insert_text_format: Some(InsertTextFormat::SNIPPET),
-                            documentation: Some(Documentation::MarkupContent(MarkupContent {
-                                kind: MarkupKind::Markdown,
-                                value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            })),
-                            ..Default::default()
-                        }),
-                        mq_hir::SymbolKind::Parameter | mq_hir::SymbolKind::Variable => Some(CompletionItem {
-                            label: symbol.value.clone().unwrap_or_default().to_string(),
-                            kind: Some(CompletionItemKind::VARIABLE),
-                            detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            documentation: Some(Documentation::MarkupContent(MarkupContent {
-                                kind: MarkupKind::Markdown,
-                                value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            })),
-                            ..Default::default()
-                        }),
-                        mq_hir::SymbolKind::Selector => Some(CompletionItem {
-                            label: symbol.value.clone().unwrap_or_default().to_string(),
-                            kind: Some(CompletionItemKind::METHOD),
-                            detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            insert_text: Some(symbol.value.clone().unwrap_or_default().into()),
-                            insert_text_format: Some(InsertTextFormat::SNIPPET),
-                            documentation: Some(Documentation::MarkupContent(MarkupContent {
-                                kind: MarkupKind::Markdown,
-                                value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
-                            })),
-                            ..Default::default()
-                        }),
+                        mq_hir::SymbolKind::Function(params) => {
+                            let deprecated = symbol.is_deprecated();
+                            Some(CompletionItem {
+                                label: symbol.value.clone().unwrap_or_default().to_string(),
+                                kind: Some(CompletionItemKind::FUNCTION),
+                                detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                                insert_text: Some(format!(
+                                    "{}({})",
+                                    symbol.value.clone().unwrap_or_default(),
+                                    params
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, name)| format!("${{{}:{}}}", i + 1, name))
+                                        .join(", ")
+                                )),
+                                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                                    kind: MarkupKind::Markdown,
+                                    value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                                })),
+                                deprecated: Some(deprecated),
+                                ..Default::default()
+                            })
+                        }
+                        mq_hir::SymbolKind::Parameter | mq_hir::SymbolKind::Variable => {
+                            let deprecated = symbol.is_deprecated();
+                            Some(CompletionItem {
+                                label: symbol.value.clone().unwrap_or_default().to_string(),
+                                kind: Some(CompletionItemKind::VARIABLE),
+                                detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                                    kind: MarkupKind::Markdown,
+                                    value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                                })),
+                                deprecated: Some(deprecated),
+                                ..Default::default()
+                            })
+                        }
+                        mq_hir::SymbolKind::Selector => {
+                            let deprecated = symbol.is_deprecated();
+                            Some(CompletionItem {
+                                label: symbol.value.clone().unwrap_or_default().to_string(),
+                                kind: Some(CompletionItemKind::METHOD),
+                                detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                                insert_text: Some(symbol.value.clone().unwrap_or_default().into()),
+                                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                                    kind: MarkupKind::Markdown,
+                                    value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                                })),
+                                deprecated: Some(deprecated),
+                                ..Default::default()
+                            })
+                        }
                         _ => None,
                     })
                     .collect::<Vec<_>>(),
@@ -253,6 +265,33 @@ mod tests {
                 items.iter().any(|item| item.label == "helper"),
                 "Should include 'helper' function from utils module"
             );
+        }
+    }
+
+    #[test]
+    fn test_completion_with_deprecated_function() {
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let url = Url::parse("file:///test.mql").unwrap();
+
+        // Create a function with deprecated marker in doc
+        let code = r#"# deprecated: This function is no longer supported
+def old_func(x): x + 1;"#;
+        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+
+        source_map.insert(url.to_string(), source_id);
+
+        let result = response(Arc::new(RwLock::new(hir)), url, Position::new(1, 0), &source_map);
+
+        assert!(result.is_some());
+
+        if let Some(CompletionResponse::Array(items)) = result {
+            let old_func_item = items.iter().find(|item| item.label == "old_func");
+            assert!(old_func_item.is_some(), "Should include 'old_func'");
+
+            if let Some(item) = old_func_item {
+                assert_eq!(item.deprecated, Some(true), "old_func should be marked as deprecated");
+            }
         }
     }
 }

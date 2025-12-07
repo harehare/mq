@@ -108,6 +108,14 @@ impl Symbol {
             false
         }
     }
+
+    /// Check if documentation contains deprecated marker
+    #[inline(always)]
+    pub fn is_deprecated(&self) -> bool {
+        self.doc
+            .iter()
+            .any(|(_, text)| text.contains("deprecated") || text.contains("Deprecated") || text.contains("DEPRECATED"))
+    }
 }
 
 impl fmt::Display for Symbol {

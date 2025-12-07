@@ -369,6 +369,8 @@ fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
                         value('\r', char('r')),
                         value('\n', char('n')),
                         value('\t', char('t')),
+                        value('{', char('{')),
+                        value('}', char('}')),
                         hex_escape,
                         unicode,
                     )),
@@ -1102,6 +1104,24 @@ mod tests {
             }
         ])
     )]
+    #[case::interpolated_string_with_escaped_braces("s\"test\\{escaped\\}\"",
+            Options{include_spaces: false, ignore_errors: false},
+            Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 19} },
+                          kind: TokenKind::InterpolatedString(vec![
+                            StringSegment::Text("test{escaped}".to_string(), Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 18} })
+                          ]), module_id: 1.into()},
+                   Token{range: Range { start: Position {line: 1, column: 19}, end: Position {line: 1, column: 19} }, kind: TokenKind::Eof, module_id: 1.into()}]
+                ))]
+    #[case::interpolated_string_mixed_escape_and_expr("s\"\\{${var}\\}\"",
+            Options{include_spaces: false, ignore_errors: false},
+            Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 14} },
+                          kind: TokenKind::InterpolatedString(vec![
+                            StringSegment::Text("{".to_string(), Range { start: Position {line: 1, column: 3}, end: Position {line: 1, column: 5} }),
+                            StringSegment::Expr("var".to_string().into(), Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 11} }),
+                            StringSegment::Text("}".to_string(), Range { start: Position {line: 1, column: 11}, end: Position {line: 1, column: 13} })
+                          ]), module_id: 1.into()},
+                   Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 14} }, kind: TokenKind::Eof, module_id: 1.into()}]
+                ))]
 
     fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, LexerError>) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
