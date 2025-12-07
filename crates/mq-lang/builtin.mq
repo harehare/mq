@@ -391,6 +391,7 @@ end
 # Returns the input value unchanged.
 def identity(x): x;
 
+# deprecated: Use the section module instead of the sections function.
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
 def sections(md_nodes, level):
   let indices = foreach (i, range(sub(len(md_nodes), 1))):

@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
-use tower_lsp_server::lsp_types::{DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind};
+use tower_lsp_server::lsp_types::{DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind, SymbolTag};
 use url::Url;
 
 #[allow(deprecated)]
@@ -31,11 +31,16 @@ pub fn response(
                         if name.is_empty() {
                             None
                         } else {
+                            let is_deprecated = symbol.is_deprecated();
                             Some(DocumentSymbol {
                                 name: name.to_string(),
                                 detail: None,
                                 kind,
-                                tags: None,
+                                tags: if is_deprecated {
+                                    Some(vec![SymbolTag::DEPRECATED])
+                                } else {
+                                    None
+                                },
                                 range: Range {
                                     start: Position {
                                         line: text_range.start.line - 1,
@@ -57,7 +62,7 @@ pub fn response(
                                     },
                                 },
                                 children: None,
-                                deprecated: None,
+                                deprecated: Some(is_deprecated),
                             })
                         }
                     })
@@ -104,6 +109,42 @@ mod tests {
             let var = symbols.iter().find(|s| s.name == "var1");
             assert!(var.is_some());
             assert_eq!(var.unwrap().kind, SymbolKind::FIELD);
+        } else {
+            panic!("Expected Nested response");
+        }
+    }
+
+    #[test]
+    fn test_response_with_deprecated_symbol() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+
+        // Create a function with deprecated marker in doc
+        let code = r#"# deprecated: This function is no longer supported
+def old_func(): 1;
+def new_func(): 2;"#;
+        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let mut source_map = BiMap::new();
+        source_map.insert(url.to_string(), source_id);
+
+        let res = response(Arc::new(RwLock::new(hir)), url.clone(), &source_map);
+        assert!(res.is_some());
+
+        if let DocumentSymbolResponse::Nested(symbols) = res.unwrap() {
+            assert_eq!(symbols.len(), 2);
+
+            // old_func should be deprecated
+            let old_func = symbols.iter().find(|s| s.name == "old_func");
+            assert!(old_func.is_some());
+            let old_func = old_func.unwrap();
+            assert!(old_func.tags.is_some());
+            assert_eq!(old_func.tags.as_ref().unwrap(), &vec![SymbolTag::DEPRECATED]);
+
+            // new_func should not be deprecated
+            let new_func = symbols.iter().find(|s| s.name == "new_func");
+            assert!(new_func.is_some());
+            let new_func = new_func.unwrap();
+            assert!(new_func.tags.is_none());
         } else {
             panic!("Expected Nested response");
         }
