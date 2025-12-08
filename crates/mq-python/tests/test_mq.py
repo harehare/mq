@@ -70,3 +70,10 @@ def test_invalid_query():
         mq.run(".invalid_selector!!!", "# Heading", None)
 
     assert "Error evaluating query" in str(exc_info.value)
+
+
+def test_html_to_markdown():
+    html_content = "<h1>Hello World</h1><p>This is a <strong>test</strong>.</p>"
+    expected_markdown = "# Hello World\n\nThis is a **test**."
+    markdown = mq.html_to_markdown(html_content)
+    assert markdown.strip() == expected_markdown
