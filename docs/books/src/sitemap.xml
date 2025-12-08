@@ -6,9 +6,6 @@
     <loc>https://mqlang.org/playground</loc><priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/tools</loc><priority>1.0</priority>
-  </url>
-  <url>
     <loc>https://mqlang.org/book/</loc>
     <priority>1.0</priority>
   </url>
