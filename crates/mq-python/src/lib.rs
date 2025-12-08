@@ -213,7 +213,7 @@ fn html_to_markdown(content: &str, options: Option<ConversionOptions>) -> PyResu
             None => mq_markdown::ConversionOptions::default(),
         },
     )
-    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e)))
+    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error converting HTML to Markdown: {}", e)))
 }
 
 #[pymodule]
