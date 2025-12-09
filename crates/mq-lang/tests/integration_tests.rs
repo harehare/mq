@@ -1608,6 +1608,34 @@ fn engine_with_opt() -> Engine {
             vec![RuntimeValue::None],
             Ok(vec![RuntimeValue::String("<Component />".to_string())].into())
           )]
+#[case::var_basic("
+    var x = 10 | x
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::var_and_assign("
+    var x = 10 | x = 20 | x
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(20.into())].into()))]
+#[case::var_multiple_assigns("
+    var count = 0 | count = count + 1 | count = count + 2 | count
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::var_with_string("
+    var name = \"Alice\" | name = \"Bob\" | name
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("Bob".to_string())].into()))]
+#[case::var_in_loop("
+    var sum = 0 |
+    foreach (i, array(1, 2, 3, 4, 5)):
+        sum = sum + i
+        | sum;
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(10.into()), RuntimeValue::Number(15.into())])].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,

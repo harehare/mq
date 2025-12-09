@@ -126,7 +126,9 @@ impl Formatter {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
-            mq_lang::CstNodeKind::Let => self.format_let(&node, indent_level_consider_new_line, indent_level),
+            mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
+                self.format_let(&node, indent_level_consider_new_line, indent_level)
+            }
             mq_lang::CstNodeKind::Literal => self.append_literal(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Env => self.append_env(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Nodes

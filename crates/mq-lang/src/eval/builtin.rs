@@ -1143,6 +1143,36 @@ define_builtin!(LTE, ParamNum::Fixed(2), |_, _, args, _| match args.as_slice() {
     _ => unreachable!(),
 });
 
+define_builtin!(
+    ASSIGN,
+    ParamNum::Fixed(2),
+    |ident, current_value, mut args, env| match args.as_mut_slice() {
+        [RuntimeValue::Symbol(ident), value] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut()
+                    .assign(*ident, std::mem::take(value))
+                    .map_err(Error::from)?;
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write()
+                    .unwrap()
+                    .assign(*ident, std::mem::take(value))
+                    .map_err(Error::from)?;
+            }
+
+            Ok(current_value.clone())
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!(),
+    }
+);
+
 define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
     match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
@@ -2242,6 +2272,7 @@ const fn fnv1a_hash_64(s: &str) -> u64 {
 const HASH_ABS: u64 = fnv1a_hash_64("abs");
 const HASH_ADD: u64 = fnv1a_hash_64("add");
 const HASH_AND: u64 = fnv1a_hash_64(constants::AND);
+const HASH_ASSIGN: u64 = fnv1a_hash_64(constants::ASSIGN);
 const HASH_ALL_SYMBOLS: u64 = fnv1a_hash_64("all_symbols");
 const HASH_ARRAY: u64 = fnv1a_hash_64(constants::ARRAY);
 const HASH_ATTR: u64 = fnv1a_hash_64(constants::ATTR);
@@ -2362,6 +2393,7 @@ pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFu
         HASH_ABS => Some(&ABS),
         HASH_ADD => Some(&ADD),
         HASH_AND => Some(&AND),
+        HASH_ASSIGN => Some(&ASSIGN),
         HASH_ALL_SYMBOLS => Some(&ALL_SYMBOLS),
         HASH_ARRAY => Some(&ARRAY),
         HASH_ATTR => Some(&ATTR),
@@ -3647,6 +3679,8 @@ impl From<env::EnvError> for Error {
     fn from(e: env::EnvError) -> Self {
         match e {
             env::EnvError::InvalidDefinition(name) => Error::InvalidDefinition(name),
+            env::EnvError::AssignToImmutable(name) => Error::InvalidDefinition(name),
+            env::EnvError::UndefinedVariable(name) => Error::InvalidDefinition(name),
         }
     }
 }

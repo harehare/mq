@@ -104,13 +104,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(always)]
     fn binary_op_precedence(kind: &TokenKind) -> u8 {
         match kind {
-            TokenKind::Or => 1,
-            TokenKind::And => 2,
-            TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
-            TokenKind::Plus | TokenKind::Minus => 4,
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
-            TokenKind::RangeOp => 6,
-            TokenKind::Coalesce => 6,
+            TokenKind::Equal => 1,
+            TokenKind::Or => 2,
+            TokenKind::And => 3,
+            TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 4,
+            TokenKind::Plus | TokenKind::Minus => 5,
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 6,
+            TokenKind::RangeOp | TokenKind::Coalesce => 7,
             _ => 0,
         }
     }
@@ -118,6 +118,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(always)]
     fn binary_op_function_name(kind: &TokenKind) -> &'static str {
         match kind {
+            TokenKind::Equal => constants::ASSIGN,
             TokenKind::And => constants::AND,
             TokenKind::Asterisk => constants::MUL,
             TokenKind::Coalesce => constants::COALESCE,
@@ -152,6 +153,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             let operator_token = parser.tokens.next().unwrap();
             let operator_token_id = parser.token_arena.alloc(Shared::clone(operator_token));
+
             let rhs_token = match parser.tokens.next() {
                 Some(t) => t,
                 None => return Err(ParseError::UnexpectedEOFDetected(parser.module_id)),
@@ -186,18 +188,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 )),
             });
         }
+
         Ok(lhs)
     }
 
     fn parse_equality_expr(&mut self, initial_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
         let lhs = self.parse_primary_expr(initial_token)?;
-        Self::parse_binary_op(self, 1, lhs)
+        Self::parse_binary_op(self, 0, lhs) // Start from precedence 0 to include assignment
     }
 
     fn parse_primary_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
         match &token.kind {
             TokenKind::Selector(_) => self.parse_selector(token),
             TokenKind::Let => self.parse_expr_let(token),
+            TokenKind::Var => self.parse_expr_var(token),
             TokenKind::Def => self.parse_expr_def(token),
             TokenKind::Do => self.parse_expr_block(token),
             TokenKind::Fn => self.parse_fn(token),
@@ -595,6 +599,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_kind,
             TokenKind::And
                 | TokenKind::Asterisk
+                | TokenKind::Equal
                 | TokenKind::EqEq
                 | TokenKind::Coalesce
                 | TokenKind::Gte
@@ -628,6 +633,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | Some(TokenKind::Elif)
                 | Some(TokenKind::Else)
                 | Some(TokenKind::EqEq)
+                | Some(TokenKind::Equal)
                 | Some(TokenKind::Gte)
                 | Some(TokenKind::Gt)
                 | Some(TokenKind::Lte)
@@ -1407,7 +1413,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
-        if expr_token.kind == TokenKind::Let {
+        if matches!(expr_token.kind, TokenKind::Let | TokenKind::Var) {
             return Err(ParseError::UnexpectedToken((**expr_token).clone()));
         }
 
@@ -1425,6 +1431,51 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(Shared::new(Node {
             token_id: let_token_id,
             expr: Shared::new(Expr::Let(
+                IdentWithToken::new_with_token(ident, ident_token.map(Shared::clone)),
+                ast,
+            )),
+        }))
+    }
+
+    fn parse_expr_var(&mut self, var_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+        let ident_token = self.tokens.next();
+        let ident = match &ident_token {
+            Some(token) => match &***token {
+                Token {
+                    range: _,
+                    kind: TokenKind::Ident(ident),
+                    module_id: _,
+                } => Ok(ident),
+                token => Err(ParseError::UnexpectedToken((*token).clone())),
+            },
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        }?;
+
+        let var_token_id = self.token_arena.alloc(Shared::clone(var_token));
+        self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
+        let expr_token = match self.tokens.next() {
+            Some(token) => Ok(token),
+            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+        }?;
+
+        if matches!(expr_token.kind, TokenKind::Let | TokenKind::Var) {
+            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+        }
+
+        let ast = self.parse_expr(expr_token)?;
+
+        if let Some(token) = self.tokens.peek()
+            && !matches!(
+                token.kind,
+                TokenKind::Pipe | TokenKind::Eof | TokenKind::SemiColon | TokenKind::End
+            )
+        {
+            return Err(ParseError::UnexpectedToken((***token).clone()));
+        }
+
+        Ok(Shared::new(Node {
+            token_id: var_token_id,
+            expr: Shared::new(Expr::Var(
                 IdentWithToken::new_with_token(ident, ident_token.map(Shared::clone)),
                 ast,
             )),
@@ -2270,6 +2321,96 @@ mod tests {
                             expr: Shared::new(
                                 Expr::Ident(IdentWithToken::new_with_token("some_var", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var")))))))),
                         }),
+                    )),
+                })
+            ]))]
+    #[case::var_1(
+            vec![
+                token(TokenKind::Var),
+                token(TokenKind::Ident(SmolStr::new("x"))),
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(42.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 0.into(),
+                    expr: Shared::new(Expr::Var(
+                        IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::var_2(
+            vec![
+                token(TokenKind::Var),
+                token(TokenKind::Ident(SmolStr::new("count"))),
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(0.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 0.into(),
+                    expr: Shared::new(Expr::Var(
+                        IdentWithToken::new_with_token("count", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("count")))))),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                        }),
+                    )),
+                })
+            ]))]
+    #[case::assign_1(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("x"))),
+                token(TokenKind::Equal),
+                token(TokenKind::NumberLiteral(100.into())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token("assign", Some(Shared::new(token(TokenKind::Equal)))),
+                        smallvec![
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                            }),
+                            Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Literal(Literal::Number(100.into()))),
+                            }),
+                        ],
+                    )),
+                })
+            ]))]
+    #[case::assign_2(
+            vec![
+                token(TokenKind::Ident(SmolStr::new("name"))),
+                token(TokenKind::Equal),
+                token(TokenKind::StringLiteral("Alice".to_owned())),
+                token(TokenKind::Eof)
+            ],
+            Ok(vec![
+                Shared::new(Node {
+                    token_id: 1.into(),
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token("assign", Some(Shared::new(token(TokenKind::Equal)))),
+                        smallvec![
+                            Shared::new(Node {
+                                token_id: 0.into(),
+                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))))),
+                            }),
+                            Shared::new(Node {
+                                token_id: 2.into(),
+                                expr: Shared::new(Expr::Literal(Literal::String("Alice".to_owned()))),
+                            }),
+                        ],
                     )),
                 })
             ]))]

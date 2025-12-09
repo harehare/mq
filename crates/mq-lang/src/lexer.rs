@@ -254,6 +254,7 @@ define_token_parser!(or, "||", TokenKind::Or);
 define_token_parser!(not, "!", TokenKind::Not);
 define_token_parser!(question, "?", TokenKind::Question);
 define_token_parser!(coalesce, "??", TokenKind::Coalesce);
+define_keyword_parser!(var, "var", TokenKind::Var);
 
 fn punctuations(input: Span) -> IResult<Span, Token> {
     alt((
@@ -289,7 +290,7 @@ fn unary_op(input: Span) -> IResult<Span, Token> {
 
 fn control_keywords(input: Span) -> IResult<Span, Token> {
     alt((
-        def, do_, let_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_,
+        def, do_, let_, match_, while_, if_, elif, else_, end, foreach, fn_, break_, continue_, try_, catch_, var,
     ))
     .parse(input)
 }

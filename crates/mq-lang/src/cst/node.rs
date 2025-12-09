@@ -99,6 +99,7 @@ pub enum NodeKind {
     Include,
     InterpolatedString,
     Let,
+    Var,
     Literal,
     Match,
     MatchArm,

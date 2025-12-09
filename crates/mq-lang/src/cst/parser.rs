@@ -342,6 +342,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_ident(leading_trivia),
             TokenKind::Self_ => self.parse_self(leading_trivia),
             TokenKind::Let => self.parse_let(leading_trivia, in_loop),
+            TokenKind::Var => self.parse_let(leading_trivia, in_loop), // var is parsed the same as let
             TokenKind::Selector(_) => self.parse_selector(leading_trivia),
             TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
                 self.parse_node(NodeKind::Literal, leading_trivia)
@@ -1260,8 +1261,14 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
+        // Determine NodeKind based on token type
+        let node_kind = match &token.as_ref().unwrap().kind {
+            TokenKind::Var => NodeKind::Var,
+            _ => NodeKind::Let,
+        };
+
         let mut node = Node {
-            kind: NodeKind::Let,
+            kind: node_kind,
             token: Some(Shared::clone(token.unwrap())),
             leading_trivia,
             trailing_trivia,
@@ -1915,6 +1922,7 @@ impl<'a> Parser<'a> {
                 | TokenKind::While
                 | TokenKind::Foreach
                 | TokenKind::Let
+                | TokenKind::Var
                 | TokenKind::Def
                 | TokenKind::Ident(_)
                 | TokenKind::Pipe

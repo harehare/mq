@@ -110,6 +110,7 @@ pub enum TokenKind {
     Whitespace(usize),
     While,
     LParen,
+    Var,
 }
 
 impl Token {
@@ -197,6 +198,7 @@ impl Display for TokenKind {
             TokenKind::Whitespace(n) => write!(f, "{}", " ".repeat(*n)),
             TokenKind::LBrace => write!(f, "{{"),
             TokenKind::Question => write!(f, "?"),
+            TokenKind::Var => write!(f, "var"),
         }
     }
 }
