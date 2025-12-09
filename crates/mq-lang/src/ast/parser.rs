@@ -104,13 +104,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(always)]
     fn binary_op_precedence(kind: &TokenKind) -> u8 {
         match kind {
-            TokenKind::Equal => 1,
-            TokenKind::Or => 2,
-            TokenKind::And => 3,
-            TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 4,
-            TokenKind::Plus | TokenKind::Minus => 5,
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 6,
-            TokenKind::RangeOp | TokenKind::Coalesce => 7,
+            TokenKind::Equal => 0,
+            TokenKind::Or => 1,
+            TokenKind::And => 2,
+            TokenKind::EqEq | TokenKind::NeEq | TokenKind::Gt | TokenKind::Gte | TokenKind::Lt | TokenKind::Lte => 3,
+            TokenKind::Plus | TokenKind::Minus => 4,
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => 5,
+            TokenKind::RangeOp | TokenKind::Coalesce => 6,
             _ => 0,
         }
     }
