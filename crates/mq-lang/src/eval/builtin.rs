@@ -3673,14 +3673,18 @@ pub enum Error {
     ZeroDivision,
     #[error("{0}")]
     UserDefined(String),
+    #[error("Cannot assign to immutable variable \"{0}\"")]
+    AssignToImmutable(String),
+    #[error("Undefined variable \"{0}\"")]
+    UndefinedVariable(String),
 }
 
 impl From<env::EnvError> for Error {
     fn from(e: env::EnvError) -> Self {
         match e {
             env::EnvError::InvalidDefinition(name) => Error::InvalidDefinition(name),
-            env::EnvError::AssignToImmutable(name) => Error::InvalidDefinition(name),
-            env::EnvError::UndefinedVariable(name) => Error::InvalidDefinition(name),
+            env::EnvError::AssignToImmutable(name) => Error::AssignToImmutable(name),
+            env::EnvError::UndefinedVariable(name) => Error::UndefinedVariable(name),
         }
     }
 }
@@ -3722,6 +3726,12 @@ impl Error {
                 EvalError::RuntimeError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
             }
             Error::ZeroDivision => EvalError::ZeroDivision((*get_token(token_arena, node.token_id)).clone()),
+            Error::AssignToImmutable(name) => {
+                EvalError::AssignToImmutable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+            }
+            Error::UndefinedVariable(name) => {
+                EvalError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+            }
         }
     }
 }

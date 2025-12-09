@@ -346,7 +346,7 @@ impl Hir {
                 self.add_interpolated_string(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
-                self.add_let_or_var_expr(node, source_id, scope_id, parent);
+                self.add_var_decl(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Literal => {
                 self.add_literal_expr(node, source_id, scope_id, parent);
@@ -787,7 +787,7 @@ impl Hir {
         }
     }
 
-    fn add_let_or_var_expr(
+    fn add_var_decl(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,

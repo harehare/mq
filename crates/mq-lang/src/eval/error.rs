@@ -49,4 +49,8 @@ pub enum EvalError {
     Continue,
     #[error("Not found env `{1}`")]
     EnvNotFound(Token, SmolStr),
+    #[error("Cannot assign to immutable variable \"{0}\"")]
+    AssignToImmutable(Token, String),
+    #[error("Undefined variable \"{0}\"")]
+    UndefinedVariable(Token, String),
 }

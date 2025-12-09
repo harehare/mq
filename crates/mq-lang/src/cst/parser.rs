@@ -341,8 +341,7 @@ impl<'a> Parser<'a> {
             TokenKind::Match => self.parse_match(leading_trivia),
             TokenKind::Ident(_) => self.parse_ident(leading_trivia),
             TokenKind::Self_ => self.parse_self(leading_trivia),
-            TokenKind::Let => self.parse_let(leading_trivia, in_loop),
-            TokenKind::Var => self.parse_let(leading_trivia, in_loop), // var is parsed the same as let
+            TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia, in_loop),
             TokenKind::Selector(_) => self.parse_selector(leading_trivia),
             TokenKind::StringLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
                 self.parse_node(NodeKind::Literal, leading_trivia)
@@ -1256,7 +1255,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_let(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_var_decl(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.tokens.next();
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
