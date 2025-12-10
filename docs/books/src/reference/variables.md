@@ -8,9 +8,9 @@ The `let` binds an immutable value to an identifier for later use:
 # Binds 42 to x
 let x = 42
 # Uses x in an expression
-let y = x + 1
+| let y = x + 1
 # Binds `add` function to z
-let z = do let z = fn(x): x + 1; | z(1);
+| let z = do let z = fn(x): x + 1; | z(1);
 ```
 
 Once a variable is declared with `let`, its value cannot be changed.
@@ -31,11 +31,11 @@ Variables declared with `var` can be modified using the assignment operator (`=`
 
 ```js
 var total = 100
-total = total - 25
+| total = total - 25
 # total is now 75
 
 var message = "Hello"
-message = message + " World"
+| message = message + " World"
 # message is now "Hello World"
 ```
 
