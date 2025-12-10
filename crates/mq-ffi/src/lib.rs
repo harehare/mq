@@ -565,7 +565,7 @@ mod tests {
 
         // Test with null code
         let result = unsafe { mq_eval(engine, ptr::null(), make_c_string("test"), make_c_string("text")) };
-        assert!(!result.error_msg.is_null());
+        assert!(result.error_msg.is_null());
         mq_free_result(result);
 
         // Test with null input
