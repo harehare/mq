@@ -345,8 +345,8 @@ impl Hir {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.add_interpolated_string(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Let => {
-                self.add_let_expr(node, source_id, scope_id, parent);
+            mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
+                self.add_var_decl(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Literal => {
                 self.add_literal_expr(node, source_id, scope_id, parent);
@@ -787,18 +787,14 @@ impl Hir {
         }
     }
 
-    fn add_let_expr(
+    fn add_var_decl(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Let,
-            ..
-        } = &**node
-        {
+        if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
             self.symbols.insert(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,

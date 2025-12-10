@@ -81,7 +81,7 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::Let(_, node) => node.range(Shared::clone(&arena)),
+            Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
                     let start = first.1.range(Shared::clone(&arena));
@@ -246,6 +246,8 @@ pub enum Expr {
     Def(IdentWithToken, Params, Program),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
+    Var(IdentWithToken, Shared<Node>),
+    Assign(IdentWithToken, Shared<Node>),
     Literal(Literal),
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),

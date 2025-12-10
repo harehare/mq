@@ -10,7 +10,7 @@ syn keyword mqTodo contained TODO FIXME XXX NOTE
 syn match mqKeywordControl "\<\(def\|do\|if\|elif\|else\|end\|while\|foreach\|fn\|break\|continue\|match\)\>"
 syn match mqKeywordInclude "\<\(include\|module\|import\)\>"
 syn match mqKeywordSpecial "\<\(self\|nodes\)\>"
-syn match mqKeywordLet "\<let\>" nextgroup=mqVariableDef skipwhite
+syn match mqKeywordLetVar "\<\(let\|var\)\>" nextgroup=mqVariableDef skipwhite
 
 " Boolean and constants (use \< and \> for word boundaries)
 syn match mqBoolean "\<\(true\|false\)\>"
@@ -86,7 +86,7 @@ hi def link mqTodo Todo
 hi def link mqKeywordControl Keyword
 hi def link mqKeywordInclude Include
 hi def link mqKeywordSpecial Special
-hi def link mqKeywordLet Keyword
+hi def link mqKeywordLetVar Keyword
 
 hi def link mqBoolean Boolean
 hi def link mqConstant Constant

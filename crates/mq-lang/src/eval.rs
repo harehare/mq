@@ -49,7 +49,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            max_call_stack_depth: 48,
+            max_call_stack_depth: 40,
         }
     }
 }
@@ -715,6 +715,40 @@ impl<T: ModuleResolver> Evaluator<T> {
                 define(env, ident.name, val);
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Var(ident, node) => {
+                let val = self.eval_expr(runtime_value, node, env)?;
+                define_mutable(env, ident.name, val);
+                Ok(runtime_value.clone())
+            }
+            ast::Expr::Assign(ident, node) => {
+                let val = self.eval_expr(runtime_value, node, env)?;
+                #[cfg(not(feature = "sync"))]
+                {
+                    env.borrow_mut().assign(ident.name, val).map_err(|e| {
+                        e.to_eval_error_with_token(
+                            ident
+                                .token
+                                .as_ref()
+                                .map(|t| (**t).clone())
+                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                        )
+                    })?;
+                }
+
+                #[cfg(feature = "sync")]
+                {
+                    env.write().unwrap().assign(ident.name, val).map_err(|e| {
+                        e.to_eval_error_with_token(
+                            ident
+                                .token
+                                .as_ref()
+                                .map(|t| (**t).clone())
+                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                        )
+                    })?;
+                }
+                Ok(runtime_value.clone())
+            }
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
             ast::Expr::Foreach(ident, values, body) => {
@@ -748,7 +782,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
     fn eval_foreach(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -804,7 +837,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(RuntimeValue::Array(values))
     }
 
-    #[inline(always)]
     fn eval_while(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -883,7 +915,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(RuntimeValue::NONE)
     }
 
-    #[inline(always)]
     fn eval_match(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1060,7 +1091,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1195,6 +1225,18 @@ fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeVal
     #[cfg(feature = "sync")]
     {
         env.write().unwrap().define(ident, runtime_value);
+    }
+}
+
+#[inline(always)]
+fn define_mutable(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeValue) {
+    #[cfg(not(feature = "sync"))]
+    {
+        env.borrow_mut().define_mutable(ident, runtime_value);
+    }
+    #[cfg(feature = "sync")]
+    {
+        env.write().unwrap().define_mutable(ident, runtime_value);
     }
 }
 

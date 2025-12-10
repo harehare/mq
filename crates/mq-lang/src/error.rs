@@ -53,6 +53,7 @@ impl Error {
                 ParseError::ExpectedClosingParen(token) => Some(token),
                 ParseError::ExpectedClosingBrace(token) => Some(token),
                 ParseError::ExpectedClosingBracket(token) => Some(token),
+                ParseError::InvalidAssignmentTarget(token) => Some(token),
                 ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
             },
             InnerError::Eval(err) => match err {
@@ -68,6 +69,8 @@ impl Error {
                 EvalError::InternalError(token) => Some(token),
                 EvalError::RuntimeError(token, _) => Some(token),
                 EvalError::ZeroDivision(token) => Some(token),
+                EvalError::AssignToImmutable(token, _) => Some(token),
+                EvalError::UndefinedVariable(token, _) => Some(token),
                 EvalError::Break => None,
                 EvalError::Continue => None,
                 EvalError::RecursionError(_) => None,
@@ -88,6 +91,7 @@ impl Error {
                     ParseError::ExpectedClosingParen(token) => Some(token),
                     ParseError::ExpectedClosingBrace(token) => Some(token),
                     ParseError::ExpectedClosingBracket(token) => Some(token),
+                    ParseError::InvalidAssignmentTarget(token) => Some(token),
                     ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
                 },
                 ModuleError::InvalidModule => None,
@@ -233,6 +237,12 @@ impl Diagnostic for Error {
             InnerError::Eval(EvalError::InvalidDefinition(_, _)) => Some(Cow::Borrowed(
                 "Invalid definition. Please check your function or variable declaration.",
             )),
+            InnerError::Eval(EvalError::AssignToImmutable(_, name)) => Some(Cow::Owned(format!(
+                "Cannot assign to immutable variable '{name}'. Consider declaring it as mutable."
+            ))),
+            InnerError::Eval(EvalError::UndefinedVariable(_, name)) => Some(Cow::Owned(format!(
+                "Variable '{name}' is undefined. Did you forget to declare it?"
+            ))),
             InnerError::Eval(EvalError::InvalidTypes { .. }) => {
                 Some(Cow::Borrowed("Type mismatch. Check the types of your operands."))
             }

@@ -75,6 +75,7 @@ pub struct Node {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum NodeKind {
     Array,
+    Assign,
     BinaryOp(BinaryOp),
     Block,
     Break,
@@ -99,6 +100,7 @@ pub enum NodeKind {
     Include,
     InterpolatedString,
     Let,
+    Var,
     Literal,
     Match,
     MatchArm,
@@ -118,6 +120,7 @@ pub enum NodeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     And,
+    Assign,
     Coalesce,
     Division,
     Equal,

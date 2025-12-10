@@ -27,7 +27,7 @@
     - [Environment variables](reference/env.md)
     - [Fn Expression](reference/fn.md)
     - [Modules and imports](reference/modules_and_imports.md)
-    - [Let Expression](reference/let.md)
+    - [Variable Declarations](reference/variables.md)
     - [Self](reference/self.md)
     - [String Interpolation](reference/string_interpolation.md)
     - [Nodes](reference/nodes.md)

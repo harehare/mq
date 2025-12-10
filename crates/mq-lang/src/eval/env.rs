@@ -4,8 +4,8 @@ use super::builtin;
 use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
-use crate::{Ident, SharedCell, TokenArena, get_token};
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use crate::{Ident, SharedCell, Token, TokenArena, get_token};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::fmt::Debug;
 
 #[cfg(not(feature = "sync"))]
@@ -16,8 +16,12 @@ type Weak<T> = std::sync::Weak<T>;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum EnvError {
-    #[error("Invalid definition for \"{0}\"")]
+    #[error("")]
     InvalidDefinition(String),
+    #[error("")]
+    AssignToImmutable(String),
+    #[error("")]
+    UndefinedVariable(String),
 }
 
 impl EnvError {
@@ -26,6 +30,20 @@ impl EnvError {
             EnvError::InvalidDefinition(def) => {
                 EvalError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
             }
+            EnvError::AssignToImmutable(var) => {
+                EvalError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
+            }
+            EnvError::UndefinedVariable(var) => {
+                EvalError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), var.to_string())
+            }
+        }
+    }
+
+    pub fn to_eval_error_with_token(&self, token: Token) -> EvalError {
+        match self {
+            EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(token, def.to_string()),
+            EnvError::AssignToImmutable(var) => EvalError::AssignToImmutable(token, var.to_string()),
+            EnvError::UndefinedVariable(var) => EvalError::UndefinedVariable(token, var.to_string()),
         }
     }
 }
@@ -33,12 +51,14 @@ impl EnvError {
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     context: FxHashMap<Ident, RuntimeValue>,
+    mutable_vars: FxHashSet<Ident>,
     parent: Option<Weak<SharedCell<Env>>>,
 }
 
 impl PartialEq for Env {
     fn eq(&self, other: &Self) -> bool {
         self.context == other.context
+            && self.mutable_vars == other.mutable_vars
             && self.parent.as_ref().map(|p| p.as_ptr()) == other.parent.as_ref().map(|p| p.as_ptr())
     }
 }
@@ -125,6 +145,7 @@ impl Env {
     pub fn with_parent(parent: Weak<SharedCell<Env>>) -> Self {
         Self {
             context: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
+            mutable_vars: FxHashSet::default(),
             parent: Some(parent),
         }
     }
@@ -161,6 +182,58 @@ impl Env {
                 }
             },
         }
+    }
+
+    /// Defines a mutable variable in the current environment
+    #[inline(always)]
+    pub fn define_mutable(&mut self, ident: Ident, runtime_value: RuntimeValue) {
+        self.context.insert(ident, runtime_value);
+        self.mutable_vars.insert(ident);
+    }
+
+    /// Assigns a value to an existing mutable variable
+    pub fn assign(&mut self, ident: Ident, runtime_value: RuntimeValue) -> Result<(), EnvError> {
+        // Check if variable exists in current scope
+        if self.context.contains_key(&ident) {
+            if self.mutable_vars.contains(&ident) {
+                self.context.insert(ident, runtime_value);
+                return Ok(());
+            } else {
+                return Err(EnvError::AssignToImmutable(ident.to_string()));
+            }
+        }
+
+        // Try to assign in parent scope
+        match self.parent.as_ref().and_then(|parent| parent.upgrade()) {
+            Some(ref parent_env) => {
+                #[cfg(not(feature = "sync"))]
+                parent_env.borrow_mut().assign(ident, runtime_value)?;
+                #[cfg(feature = "sync")]
+                parent_env.write().unwrap().assign(ident, runtime_value)?;
+                Ok(())
+            }
+            None => Err(EnvError::UndefinedVariable(ident.to_string())),
+        }
+    }
+
+    /// Checks if a variable is mutable
+    pub fn is_mutable(&self, ident: Ident) -> bool {
+        if self.mutable_vars.contains(&ident) {
+            return true;
+        }
+
+        // Check parent scope
+        self.parent
+            .as_ref()
+            .and_then(|parent| parent.upgrade())
+            .map(|parent_env| {
+                #[cfg(not(feature = "sync"))]
+                let result = parent_env.borrow().is_mutable(ident);
+                #[cfg(feature = "sync")]
+                let result = parent_env.read().unwrap().is_mutable(ident);
+                result
+            })
+            .unwrap_or(false)
     }
 
     #[cfg(feature = "debugger")]

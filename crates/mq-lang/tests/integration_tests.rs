@@ -1608,6 +1608,34 @@ fn engine_with_opt() -> Engine {
             vec![RuntimeValue::None],
             Ok(vec![RuntimeValue::String("<Component />".to_string())].into())
           )]
+#[case::var_basic("
+    var x = 10 | x
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::var_and_assign("
+    var x = 10 | x = 20 | x
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(20.into())].into()))]
+#[case::var_multiple_assigns("
+    var count = 0 | count = count + 1 | count = count + 2 | count
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::var_with_string("
+    var name = \"Alice\" | name = \"Bob\" | name
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("Bob".to_string())].into()))]
+#[case::var_in_loop("
+    var sum = 0 |
+    foreach (i, array(1, 2, 3, 4, 5)):
+        sum = sum + i
+        | sum;
+    ",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(10.into()), RuntimeValue::Number(15.into())])].into()))]
 fn test_eval(
     mut engine_no_opt: Engine,
     #[case] program: &str,
@@ -1804,6 +1832,7 @@ fn test_eval_with_opt(
 #[case::dict_set_wrong_key_type("let m = new_dict() | set(m, false, \"value\")", vec![RuntimeValue::Number(0.into())],)]
 #[case::dict_get_wrong_arg_count("let m = new_dict() | get(m)", vec![RuntimeValue::Number(0.into())],)]
 #[case::dict_set_wrong_arg_count("let m = new_dict() | set(m, \"key\")", vec![RuntimeValue::Number(0.into())],)]
+#[case::assign_to_immutable("let x = 10 | x = 20", vec![RuntimeValue::Number(0.into())],)]
 fn test_eval_error(mut engine_no_opt: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine_no_opt.eval(program, input.into_iter()).is_err());
 }
