@@ -1090,7 +1090,6 @@ impl<T: ModuleResolver> Evaluator<T> {
     ) -> Result<RuntimeValue, EvalError> {
         let args: Result<builtin::Args, EvalError> =
             args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
-
         builtin::eval_builtin(runtime_value, ident, args?, env)
             .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))
     }
