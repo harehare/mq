@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use itertools::Itertools;
-use tower_lsp_server::lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
+use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
 use url::Url;
 
 pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<Hover> {
@@ -61,7 +61,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
-    use tower_lsp_server::lsp_types;
+    use tower_lsp_server::ls_types;
 
     use super::*;
 
@@ -141,8 +141,8 @@ mod tests {
         assert!(hover.is_some());
         let hover = hover.unwrap();
 
-        if let lsp_types::HoverContents::Markup(content) = hover.contents {
-            assert_eq!(content.kind, lsp_types::MarkupKind::Markdown);
+        if let ls_types::HoverContents::Markup(content) = hover.contents {
+            assert_eq!(content.kind, ls_types::MarkupKind::Markdown);
             // Check that the hover contains the function signature and description
             assert!(content.value.contains("len(value)"));
             assert!(
@@ -173,8 +173,8 @@ def old_func(x): x + 1;"#;
         assert!(hover.is_some());
         let hover = hover.unwrap();
 
-        if let lsp_types::HoverContents::Markup(content) = hover.contents {
-            assert_eq!(content.kind, lsp_types::MarkupKind::Markdown);
+        if let ls_types::HoverContents::Markup(content) = hover.contents {
+            assert_eq!(content.kind, ls_types::MarkupKind::Markdown);
             // Check that the hover contains deprecated warning
             assert!(content.value.contains("DEPRECATED"), "Should contain DEPRECATED marker");
             assert!(

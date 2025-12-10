@@ -4,7 +4,7 @@ use std::{
 };
 
 use bimap::BiMap;
-use tower_lsp_server::lsp_types::{self, Location, Position, Range};
+use tower_lsp_server::ls_types::{self, Location, Position, Range};
 use url::Url;
 
 pub fn response(
@@ -28,7 +28,7 @@ pub fn response(
                     symbol.source.text_range.and_then(|text_range| {
                         symbol.source.source_id.and_then(|id| {
                             source_map.get_by_right(&id).map(|url| Location {
-                                uri: lsp_types::Uri::from_str(url).unwrap(),
+                                uri: ls_types::Uri::from_str(url).unwrap(),
                                 range: Range {
                                     start: Position {
                                         line: text_range.start.line - 1,

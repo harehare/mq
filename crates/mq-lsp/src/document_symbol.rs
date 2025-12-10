@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
-use tower_lsp_server::lsp_types::{DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind, SymbolTag};
+use tower_lsp_server::ls_types::{DocumentSymbol, DocumentSymbolResponse, Position, Range, SymbolKind, SymbolTag};
 use url::Url;
 
 #[allow(deprecated)]
