@@ -1832,6 +1832,7 @@ fn test_eval_with_opt(
 #[case::dict_set_wrong_key_type("let m = new_dict() | set(m, false, \"value\")", vec![RuntimeValue::Number(0.into())],)]
 #[case::dict_get_wrong_arg_count("let m = new_dict() | get(m)", vec![RuntimeValue::Number(0.into())],)]
 #[case::dict_set_wrong_arg_count("let m = new_dict() | set(m, \"key\")", vec![RuntimeValue::Number(0.into())],)]
+#[case::assign_to_immutable("let x = 10 | x = 20", vec![RuntimeValue::Number(0.into())],)]
 fn test_eval_error(mut engine_no_opt: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine_no_opt.eval(program, input.into_iter()).is_err());
 }
