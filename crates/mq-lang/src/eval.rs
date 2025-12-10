@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "debugger")]
 use crate::DebuggerHandler;
+#[cfg(feature = "debugger")]
 use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
@@ -719,6 +720,24 @@ impl<T: ModuleResolver> Evaluator<T> {
                 define_mutable(env, ident.name, val);
                 Ok(runtime_value.clone())
             }
+            ast::Expr::Assign(ident, node) => {
+                let val = self.eval_expr(runtime_value, node, env)?;
+                #[cfg(not(feature = "sync"))]
+                {
+                    env.borrow_mut()
+                        .assign(ident.name, val)
+                        .map_err(|e| e.to_eval_error(node.token_id, Shared::clone(&self.token_arena)))?;
+                }
+
+                #[cfg(feature = "sync")]
+                {
+                    env.write()
+                        .unwrap()
+                        .assign(ident.name, val)
+                        .map_err(|e| e.to_eval_error(node.token_id, Shared::clone(&self.token_arena)))?;
+                }
+                Ok(runtime_value.clone())
+            }
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
             ast::Expr::Foreach(ident, values, body) => {
@@ -1069,31 +1088,8 @@ impl<T: ModuleResolver> Evaluator<T> {
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<RuntimeValue, EvalError> {
-        let args: Result<builtin::Args, EvalError> = if *ident == Ident::new(constants::ASSIGN) {
-            if let Some(ident) = args.first()
-                && let ast::Expr::Ident(var_ident) = &*ident.expr
-            {
-                let value_node = args.get(1).ok_or_else(|| {
-                    EvalError::InvalidNumberOfArguments(
-                        (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                        constants::ASSIGN.to_string(),
-                        2,
-                        args.len() as u8,
-                    )
-                })?;
-
-                let value = self.eval_expr(runtime_value, value_node, env)?;
-
-                Ok(vec![var_ident.name.into(), value])
-            } else {
-                Err(EvalError::InvalidDefinition(
-                    (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                    constants::ASSIGN.to_string(),
-                ))
-            }
-        } else {
-            args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect()
-        };
+        let args: Result<builtin::Args, EvalError> =
+            args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
 
         builtin::eval_builtin(runtime_value, ident, args?, env)
             .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))

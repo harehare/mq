@@ -53,6 +53,7 @@ impl Error {
                 ParseError::ExpectedClosingParen(token) => Some(token),
                 ParseError::ExpectedClosingBrace(token) => Some(token),
                 ParseError::ExpectedClosingBracket(token) => Some(token),
+                ParseError::InvalidAssignmentTarget(token) => Some(token),
                 ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
             },
             InnerError::Eval(err) => match err {
@@ -90,6 +91,7 @@ impl Error {
                     ParseError::ExpectedClosingParen(token) => Some(token),
                     ParseError::ExpectedClosingBrace(token) => Some(token),
                     ParseError::ExpectedClosingBracket(token) => Some(token),
+                    ParseError::InvalidAssignmentTarget(token) => Some(token),
                     ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
                 },
                 ModuleError::InvalidModule => None,

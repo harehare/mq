@@ -75,6 +75,7 @@ pub struct Node {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum NodeKind {
     Array,
+    Assign,
     BinaryOp(BinaryOp),
     Block,
     Break,

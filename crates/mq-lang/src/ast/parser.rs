@@ -177,16 +177,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
             }
 
-            lhs = Shared::new(Node {
-                token_id: operator_token_id,
-                expr: Shared::new(Expr::Call(
-                    IdentWithToken::new_with_token(
-                        Self::binary_op_function_name(kind),
-                        Some(Shared::clone(operator_token)),
-                    ),
-                    smallvec![lhs, rhs],
-                )),
-            });
+            lhs = match kind {
+                TokenKind::Equal => match &*lhs.expr {
+                    Expr::Ident(ident) => Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Shared::new(Expr::Assign(ident.clone(), rhs)),
+                    }),
+                    _ => {
+                        return Err(ParseError::InvalidAssignmentTarget(
+                            (*parser.token_arena[lhs.token_id]).clone(),
+                        ));
+                    }
+                },
+                _ => Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::Call(
+                        IdentWithToken::new_with_token(
+                            Self::binary_op_function_name(kind),
+                            Some(Shared::clone(operator_token)),
+                        ),
+                        smallvec![lhs, rhs],
+                    )),
+                }),
+            };
         }
 
         Ok(lhs)
@@ -2374,18 +2387,12 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token("assign", Some(Shared::new(token(TokenKind::Equal)))),
-                        smallvec![
-                            Shared::new(Node {
-                                token_id: 0.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
-                            }),
-                            Shared::new(Node {
-                                token_id: 2.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(100.into()))),
-                            }),
-                        ],
+                    expr: Shared::new(Expr::Assign(
+                        IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::Number(100.into()))),
+                        }),
                     )),
                 })
             ]))]
@@ -2399,18 +2406,12 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token("assign", Some(Shared::new(token(TokenKind::Equal)))),
-                        smallvec![
-                            Shared::new(Node {
-                                token_id: 0.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))))),
-                            }),
-                            Shared::new(Node {
-                                token_id: 2.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("Alice".to_owned()))),
-                            }),
-                        ],
+                    expr: Shared::new(Expr::Assign(
+                        IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
+                        Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("Alice".to_owned()))),
+                        }),
                     )),
                 })
             ]))]
