@@ -120,6 +120,7 @@ pub enum NodeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     And,
+    Assign,
     Coalesce,
     Division,
     Equal,
