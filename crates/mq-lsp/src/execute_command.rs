@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use tower_lsp_server::jsonrpc;
-use tower_lsp_server::lsp_types::ExecuteCommandParams;
+use tower_lsp_server::ls_types::ExecuteCommandParams;
 
 pub fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<serde_json::Value>> {
     if params.arguments.is_empty() {
@@ -114,7 +114,7 @@ fn execute(code: &str, input: &str, input_format: Option<&str>) -> jsonrpc::Resu
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
-    use tower_lsp_server::lsp_types::ExecuteCommandParams;
+    use tower_lsp_server::ls_types::ExecuteCommandParams;
 
     use super::*;
 
