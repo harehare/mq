@@ -3621,29 +3621,29 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
 
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
-    #[error("Invalid base64 string")]
+    #[error("")]
     InvalidBase64String(#[from] base64::DecodeError),
-    #[error("\"{0}\" is not defined")]
+    #[error("")]
     NotDefined(FunctionName),
-    #[error("Invalid definition for \"{0}\"")]
+    #[error("")]
     InvalidDefinition(String),
-    #[error("Unable to format date time, {0}")]
+    #[error("")]
     InvalidDateTimeFormat(String),
-    #[error("Invalid types for \"{0}\", got {1:?}")]
+    #[error("")]
     InvalidTypes(FunctionName, ErrorArgs),
-    #[error("Invalid number of arguments in \"{0}\", expected {1}, got {2}")]
+    #[error("")]
     InvalidNumberOfArguments(FunctionName, u8, u8),
-    #[error("Invalid regular expression \"{0}\"")]
+    #[error("")]
     InvalidRegularExpression(String),
-    #[error("Runtime error: {0}")]
+    #[error("")]
     Runtime(String),
-    #[error("Divided by 0")]
+    #[error("")]
     ZeroDivision,
-    #[error("{0}")]
+    #[error("")]
     UserDefined(String),
-    #[error("Cannot assign to immutable variable \"{0}\"")]
+    #[error("")]
     AssignToImmutable(String),
-    #[error("Undefined variable \"{0}\"")]
+    #[error("")]
     UndefinedVariable(String),
 }
 

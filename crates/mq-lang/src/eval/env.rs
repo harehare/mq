@@ -4,7 +4,7 @@ use super::builtin;
 use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
-use crate::{Ident, SharedCell, TokenArena, get_token};
+use crate::{Ident, SharedCell, Token, TokenArena, get_token};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::fmt::Debug;
 
@@ -16,11 +16,11 @@ type Weak<T> = std::sync::Weak<T>;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum EnvError {
-    #[error("Invalid definition for \"{0}\"")]
+    #[error("")]
     InvalidDefinition(String),
-    #[error("Cannot assign to immutable variable \"{0}\"")]
+    #[error("")]
     AssignToImmutable(String),
-    #[error("Undefined variable \"{0}\"")]
+    #[error("")]
     UndefinedVariable(String),
 }
 
@@ -30,14 +30,20 @@ impl EnvError {
             EnvError::InvalidDefinition(def) => {
                 EvalError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
             }
-            EnvError::AssignToImmutable(var) => EvalError::InvalidDefinition(
-                (*get_token(token_arena, token_id)).clone(),
-                format!("Cannot assign to immutable variable \"{}\"", var),
-            ),
-            EnvError::UndefinedVariable(var) => EvalError::InvalidDefinition(
-                (*get_token(token_arena, token_id)).clone(),
-                format!("Undefined variable \"{}\"", var),
-            ),
+            EnvError::AssignToImmutable(var) => {
+                EvalError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
+            }
+            EnvError::UndefinedVariable(var) => {
+                EvalError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), var.to_string())
+            }
+        }
+    }
+
+    pub fn to_eval_error_with_token(&self, token: Token) -> EvalError {
+        match self {
+            EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(token, def.to_string()),
+            EnvError::AssignToImmutable(var) => EvalError::AssignToImmutable(token, var.to_string()),
+            EnvError::UndefinedVariable(var) => EvalError::UndefinedVariable(token, var.to_string()),
         }
     }
 }

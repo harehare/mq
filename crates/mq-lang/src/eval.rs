@@ -724,17 +724,28 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let val = self.eval_expr(runtime_value, node, env)?;
                 #[cfg(not(feature = "sync"))]
                 {
-                    env.borrow_mut()
-                        .assign(ident.name, val)
-                        .map_err(|e| e.to_eval_error(node.token_id, Shared::clone(&self.token_arena)))?;
+                    env.borrow_mut().assign(ident.name, val).map_err(|e| {
+                        e.to_eval_error_with_token(
+                            ident
+                                .token
+                                .as_ref()
+                                .map(|t| (**t).clone())
+                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                        )
+                    })?;
                 }
 
                 #[cfg(feature = "sync")]
                 {
-                    env.write()
-                        .unwrap()
-                        .assign(ident.name, val)
-                        .map_err(|e| e.to_eval_error(node.token_id, Shared::clone(&self.token_arena)))?;
+                    env.write().unwrap().assign(ident.name, val).map_err(|e| {
+                        e.to_eval_error_with_token(
+                            ident
+                                .token
+                                .as_ref()
+                                .map(|t| (**t).clone())
+                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                        )
+                    })?;
                 }
                 Ok(runtime_value.clone())
             }
