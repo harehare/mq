@@ -180,7 +180,7 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "24.x",
+    "@types/node": "25.x",
     "@types/vscode": "^1.107.0",
     "@types/which": "^3.0.4",
     "@typescript-eslint/eslint-plugin": "^8.49.0",
