@@ -187,6 +187,10 @@ impl<T: ModuleResolver> Engine<T> {
         input: I,
         level: OptimizationLevel,
     ) -> MqResult {
+        if code.is_empty() {
+            return Ok(vec![].into());
+        }
+
         let mut program = parse(code, Shared::clone(&self.token_arena))?;
         Optimizer::with_level(level).optimize(&mut program);
 

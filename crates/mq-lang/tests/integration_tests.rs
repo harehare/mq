@@ -1816,8 +1816,7 @@ fn test_eval_with_opt(
 }
 
 #[rstest]
-#[case::empty("", vec![RuntimeValue::Number(0.into())])]
-#[case::error("f()def f(): 1", vec![RuntimeValue::Number(0.into())])]
+#[case::invalid_function_syntax("f()def f(): 1", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(): 1 | func1(); | func1()", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(x): 1; | func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::func_invalid_definition("def f(x): 1; | f2(1, 2)", vec![RuntimeValue::Number(0.into())])]
