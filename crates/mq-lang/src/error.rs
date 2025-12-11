@@ -180,6 +180,21 @@ impl Diagnostic for Error {
             InnerError::Parse(ParseError::InsufficientTokens(_)) => Some(Cow::Borrowed(
                 "Not enough tokens to complete parsing. Check for missing arguments or delimiters.",
             )),
+            InnerError::Parse(ParseError::UnknownSelector(_)) => Some(Cow::Borrowed(
+                "Unknown selector used. Verify that the selector is valid.",
+            )),
+            InnerError::Parse(ParseError::ExpectedClosingParen(_)) => Some(Cow::Borrowed(
+                "Expected a closing parenthesis ')'. Check your parentheses for balance.",
+            )),
+            InnerError::Parse(ParseError::ExpectedClosingBrace(_)) => Some(Cow::Borrowed(
+                "Expected a closing brace '}'. Check your braces for balance.",
+            )),
+            InnerError::Parse(ParseError::ExpectedClosingBracket(_)) => Some(Cow::Borrowed(
+                "Expected a closing bracket ']'. Check your brackets for balance.",
+            )),
+            InnerError::Parse(ParseError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
+                "Invalid assignment target. Ensure you're assigning to a valid variable or property.",
+            )),
             InnerError::Eval(EvalError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -220,9 +235,21 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("A runtime error occurred during evaluation."))
             }
             InnerError::Eval(EvalError::ZeroDivision(_)) => Some(Cow::Borrowed("Division by zero is not allowed.")),
+            InnerError::Eval(EvalError::RecursionError(_)) => Some(Cow::Borrowed("Maximum recursion depth exceeded.")),
+            InnerError::Eval(EvalError::ModuleLoadError(_)) => {
+                Some(Cow::Borrowed("Failed to load module. Check module paths and names."))
+            }
+            InnerError::Eval(EvalError::Break) => None,
+            InnerError::Eval(EvalError::Continue) => None,
+            InnerError::Eval(EvalError::EnvNotFound(..)) => {
+                Some(Cow::Borrowed("Environment variable not found during evaluation."))
+            }
             InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
             ))),
+            InnerError::Module(ModuleError::AlreadyLoaded(name)) => {
+                Some(Cow::Owned(format!("Module '{name}' is already loaded.")))
+            }
             InnerError::Module(ModuleError::IOError(_)) => Some(Cow::Borrowed(
                 "An I/O error occurred while loading a module. Check file permissions and paths.",
             )),
@@ -244,8 +271,22 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
                 Some(Cow::Borrowed("Parse error in module: insufficient tokens."))
             }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(_))) => {
+                Some(Cow::Borrowed("Parse error in module: expected closing bracket ']'."))
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(_))) => {
+                Some(Cow::Borrowed("Parse error in module: expected closing brace '}'."))
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingParen(_))) => Some(Cow::Borrowed(
+                "Parse error in module: expected closing parenthesis ')'.",
+            )),
+            InnerError::Module(ModuleError::ParseError(ParseError::InvalidAssignmentTarget(_))) => {
+                Some(Cow::Borrowed("Parse error in module: invalid assignment target."))
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::UnknownSelector(_))) => {
+                Some(Cow::Borrowed("Parse error in module: unknown selector used."))
+            }
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
-            _ => None,
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)
