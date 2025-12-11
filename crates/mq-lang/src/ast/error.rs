@@ -24,3 +24,20 @@ pub enum ParseError {
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
 }
+
+impl ParseError {
+    #[cold]
+    pub fn token(&self) -> Option<&Token> {
+        match self {
+            ParseError::EnvNotFound(token, _) => Some(token),
+            ParseError::UnexpectedToken(token) => Some(token),
+            ParseError::UnexpectedEOFDetected(_) => None,
+            ParseError::InsufficientTokens(token) => Some(token),
+            ParseError::ExpectedClosingParen(token) => Some(token),
+            ParseError::ExpectedClosingBrace(token) => Some(token),
+            ParseError::ExpectedClosingBracket(token) => Some(token),
+            ParseError::InvalidAssignmentTarget(token) => Some(token),
+            ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
+        }
+    }
+}

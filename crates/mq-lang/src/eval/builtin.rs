@@ -3658,6 +3658,7 @@ impl From<env::EnvError> for Error {
 }
 
 impl Error {
+    #[cold]
     pub fn to_eval_error(&self, node: ast::Node, token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) -> EvalError {
         match self {
             Error::UserDefined(message) => EvalError::UserDefined {
