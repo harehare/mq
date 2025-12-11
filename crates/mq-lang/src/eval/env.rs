@@ -23,7 +23,6 @@ pub enum EnvError {
 impl Error for EnvError {}
 
 impl fmt::Display for EnvError {
-    #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
@@ -45,6 +44,7 @@ impl EnvError {
         }
     }
 
+    #[cold]
     pub fn to_eval_error_with_token(&self, token: Token) -> EvalError {
         match self {
             EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(token, def.to_string()),
