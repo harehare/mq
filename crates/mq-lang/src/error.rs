@@ -2,12 +2,11 @@ use miette::{Diagnostic, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    Module, ModuleLoader, ModuleResolver,
+    Module, ModuleLoader, ModuleResolver, Token,
     ast::error::ParseError,
     eval::error::EvalError,
     lexer::error::LexerError,
     module::{self, error::ModuleError},
-    selector,
 };
 
 #[allow(clippy::useless_conversion)]
@@ -23,6 +22,18 @@ pub enum InnerError {
     Module(#[from] ModuleError),
 }
 
+impl InnerError {
+    #[cold]
+    pub fn token(&self) -> Option<&Token> {
+        match self {
+            InnerError::Lexer(err) => err.token(),
+            InnerError::Parse(err) => err.token(),
+            InnerError::Eval(err) => err.token(),
+            InnerError::Module(err) => err.token(),
+        }
+    }
+}
+
 /// Represents a high-level error with diagnostic information for the user.
 #[derive(PartialEq, Debug, thiserror::Error)]
 #[error("{cause}")]
@@ -36,67 +47,14 @@ pub struct Error {
 }
 
 impl Error {
+    #[cold]
     pub fn from_error(
         top_level_source_code: impl Into<String>,
         cause: InnerError,
         module_loader: ModuleLoader<impl ModuleResolver>,
     ) -> Self {
         let source_code = top_level_source_code.into();
-        let token = match &cause {
-            InnerError::Lexer(LexerError::UnexpectedToken(token)) => Some(token),
-            InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => None,
-            InnerError::Parse(err) => match err {
-                ParseError::EnvNotFound(token, _) => Some(token),
-                ParseError::UnexpectedToken(token) => Some(token),
-                ParseError::UnexpectedEOFDetected(_) => None,
-                ParseError::InsufficientTokens(token) => Some(token),
-                ParseError::ExpectedClosingParen(token) => Some(token),
-                ParseError::ExpectedClosingBrace(token) => Some(token),
-                ParseError::ExpectedClosingBracket(token) => Some(token),
-                ParseError::InvalidAssignmentTarget(token) => Some(token),
-                ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
-            },
-            InnerError::Eval(err) => match err {
-                EvalError::UserDefined { token, .. } => Some(token),
-                EvalError::InvalidBase64String(token, _) => Some(token),
-                EvalError::NotDefined(token, _) => Some(token),
-                EvalError::DateTimeFormatError(token, _) => Some(token),
-                EvalError::IndexOutOfBounds(token, _) => Some(token),
-                EvalError::InvalidDefinition(token, _) => Some(token),
-                EvalError::InvalidTypes { token, .. } => Some(token),
-                EvalError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
-                EvalError::InvalidRegularExpression(token, _) => Some(token),
-                EvalError::InternalError(token) => Some(token),
-                EvalError::RuntimeError(token, _) => Some(token),
-                EvalError::ZeroDivision(token) => Some(token),
-                EvalError::AssignToImmutable(token, _) => Some(token),
-                EvalError::UndefinedVariable(token, _) => Some(token),
-                EvalError::Break => None,
-                EvalError::Continue => None,
-                EvalError::RecursionError(_) => None,
-                EvalError::ModuleLoadError(_) => None,
-                EvalError::EnvNotFound(_, _) => None,
-            },
-            InnerError::Module(err) => match err {
-                ModuleError::AlreadyLoaded(_) => None,
-                ModuleError::NotFound(_) => None,
-                ModuleError::IOError(_) => None,
-                ModuleError::LexerError(LexerError::UnexpectedToken(token)) => Some(token),
-                ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_)) => None,
-                ModuleError::ParseError(err) => match err {
-                    ParseError::EnvNotFound(token, _) => Some(token),
-                    ParseError::UnexpectedToken(token) => Some(token),
-                    ParseError::UnexpectedEOFDetected(_) => None,
-                    ParseError::InsufficientTokens(token) => Some(token),
-                    ParseError::ExpectedClosingParen(token) => Some(token),
-                    ParseError::ExpectedClosingBrace(token) => Some(token),
-                    ParseError::ExpectedClosingBracket(token) => Some(token),
-                    ParseError::InvalidAssignmentTarget(token) => Some(token),
-                    ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
-                },
-                ModuleError::InvalidModule => None,
-            },
-        };
+        let token = cause.token();
 
         match token {
             Some(token) => {
@@ -173,11 +131,13 @@ impl Error {
     }
 }
 
+#[inline(always)]
 fn type_name<T>(_: &T) -> &'static str {
     std::any::type_name::<T>()
 }
 
 impl Diagnostic for Error {
+    #[cold]
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         Some(Box::new(
             match &self.cause {
@@ -190,6 +150,7 @@ impl Diagnostic for Error {
         ) as Box<dyn std::fmt::Display>)
     }
 
+    #[cold]
     fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         match &self.cause {
             InnerError::Eval(EvalError::InvalidDefinition(_, _)) | InnerError::Eval(EvalError::InvalidTypes { .. }) => {
@@ -199,6 +160,7 @@ impl Diagnostic for Error {
         }
     }
 
+    #[cold]
     fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         let msg: Option<Cow<'static, str>> = match &self.cause {
             InnerError::Lexer(LexerError::UnexpectedToken(_)) => {
@@ -290,6 +252,7 @@ impl Diagnostic for Error {
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)
     }
 
+    #[cold]
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         Some(Box::new(std::iter::once(miette::LabeledSpan::new_with_span(
             Some(format!("{}", self.cause)),
@@ -297,6 +260,7 @@ impl Diagnostic for Error {
         ))))
     }
 
+    #[cold]
     fn source_code(&self) -> Option<&dyn miette::SourceCode> {
         Some(&self.source_code)
     }

@@ -1,12 +1,11 @@
-use thiserror::Error;
-
 use super::builtin;
 use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
 use crate::{Ident, SharedCell, Token, TokenArena, get_token};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use std::fmt::Debug;
+use std::error::Error;
+use std::fmt::{self, Debug};
 
 #[cfg(not(feature = "sync"))]
 type Weak<T> = std::rc::Weak<T>;
@@ -14,17 +13,24 @@ type Weak<T> = std::rc::Weak<T>;
 #[cfg(feature = "sync")]
 type Weak<T> = std::sync::Weak<T>;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum EnvError {
-    #[error("")]
     InvalidDefinition(String),
-    #[error("")]
     AssignToImmutable(String),
-    #[error("")]
     UndefinedVariable(String),
 }
 
+impl Error for EnvError {}
+
+impl fmt::Display for EnvError {
+    #[inline(always)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl EnvError {
+    #[cold]
     pub fn to_eval_error(&self, token_id: TokenId, token_arena: TokenArena) -> EvalError {
         match self {
             EnvError::InvalidDefinition(def) => {
