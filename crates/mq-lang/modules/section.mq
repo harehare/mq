@@ -147,22 +147,14 @@ end
 
 # Flattens sections back to markdown nodes for output.
 # This converts section objects back to their original markdown node arrays.
-def flatten(sections):
+def collect(sections):
   if (is_empty(sections)):
     []
   else:
-    do
-      let result = []
-      | foreach (section, sections):
-          if (_is_section(section)):
-            do let result = result + section[:header] + section[:children]
-              | result
-            end
-          else:
-            do
-              let result = result + [section]
-              | result
-            end
-        end
-    end
+    flat_map(sections, fn(section):
+      if (_is_section(section)):
+        [section[:header]] + section[:children]
+      else:
+        section
+    end)
 end
