@@ -26,7 +26,6 @@ mq-formatter = { path = "crates/mq-formatter", version = "0.5.5" }
 mq-lsp = { path = "crates/mq-lsp", version = "0.5.5" }
 mq-repl = { path = "crates/mq-repl", version = "0.5.5" }
 mq-dap = { path = "crates/mq-dap", version = "0.5.5" }
-mq-crawler = { path = "crates/mq-crawler", version = "0.5.5" }
 
 # External dependencies
 arbitrary = { version = "1.4.2", features = ["derive"] }
