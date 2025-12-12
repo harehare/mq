@@ -14,23 +14,23 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.5"
 
 [dependencies]
-async-trait = "0.1.83"
-axum = "0.8.7"
-deadpool-libsql = "0.1.0"
-libsql = "0.9.29"
-miette = {version = "7.6.0"}
-mq-lang = {path = "../mq-lang", version = "0.5.5", features = ["cst"]}
-mq-markdown = {path = "../mq-markdown", version = "0.5.5"}
-serde = {version = "1.0", features = ["derive"]}
-serde_json = "1.0"
-thiserror = "2.0.17"
-tokio = {version = "1.48.0", features = ["full"]}
-tower = "0.5.2"
-tower-http = {version = "0.6.8", features = ["cors", "trace"]}
-tracing = "0.1.43"
-tracing-subscriber = {version = "0.3.22", features = ["env-filter", "json"]}
-url = "2.5.7"
-utoipa = {version = "5.4", features = ["preserve_order"]}
+async-trait = { workspace = true }
+axum = { workspace = true }
+deadpool-libsql = { workspace = true }
+libsql = { workspace = true }
+miette = { workspace = true }
+mq-lang = { workspace = true, features = ["cst"] }
+mq-markdown = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+url = { workspace = true }
+utoipa = { workspace = true, features = ["preserve_order"] }
 
 [[bin]]
 name = "mq-web-api"

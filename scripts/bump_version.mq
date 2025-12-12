@@ -21,11 +21,11 @@ def py_version():
 end
 
 def crates_version():
-  replace(s"path = \"../mq-lang\", version = \"${prev_version}\"", s"path = \"../mq-lang\", version = \"${version}\"")
-  | replace(s"path = \"../mq-hir\", version = \"${prev_version}\"", s"path = \"../mq-hir\", version = \"${version}\"")
-  | replace(s"path = \"../mq-formatter\", version = \"${prev_version}\"", s"path = \"../mq-formatter\", version = \"${version}\"")
-  | replace(s"path = \"../mq-markdown\", version = \"${prev_version}\"", s"path = \"../mq-markdown\", version = \"${version}\"")
-  | replace(s"path = \"../mq-lsp\", version = \"${prev_version}\"", s"path = \"../mq-lsp\", version = \"${version}\"")
-  | replace(s"path = \"../mq-repl\", version = \"${prev_version}\"", s"path = \"../mq-repl\", version = \"${version}\"")
-  | replace(s"path = \"../mq-dap\", version = \"${prev_version}\"", s"path = \"../mq-dap\", version = \"${version}\"")
+  replace(s"path = \"crates/mq-lang\", version = \"${prev_version}\"", s"path = \"crates/mq-lang\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-hir\", version = \"${prev_version}\"", s"path = \"crates/mq-hir\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-formatter\", version = \"${prev_version}\"", s"path = \"crates/mq-formatter\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-markdown\", version = \"${prev_version}\"", s"path = \"crates/mq-markdown\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-lsp\", version = \"${prev_version}\"", s"path = \"crates/mq-lsp\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-repl\", version = \"${prev_version}\"", s"path = \"crates/mq-repl\", version = \"${version}\"")
+  | replace(s"path = \"crates/mq-dap\", version = \"${prev_version}\"", s"path = \"crates/mq-dap\", version = \"${version}\"")
 end
