@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tokio::signal;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -25,6 +26,28 @@ pub fn init_tracing(config: &Config) {
                 .with(fmt::layer())
                 .init();
         }
+    }
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 }
 
@@ -67,7 +90,12 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     );
     cleanup_service.start();
 
-    axum::serve(listener, app).await.expect("Failed to start server");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("Failed to start server");
+
+    info!("Shutting down mq-web-api server");
 
     Ok(())
 }
