@@ -8,7 +8,6 @@ export INSTALL_DOC="../docs/books/src/start/install.md"
 tmpfile=$(mktemp)
 mq -I text --args version $MQ_VERSION --args prev_version $MQ_PREV_VERSION 'import "bump_version" | bump_version::crates_version()' ../Cargo.toml > "$tmpfile" && mv "$tmpfile" ../Cargo.toml
 
-
 # Update Cargo.toml files
 for crate in ../crates/*; do
     if [ -f "$crate/Cargo.toml" ]; then
