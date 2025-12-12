@@ -1186,7 +1186,7 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
             a.extend_from_slice(a2);
             Ok(RuntimeValue::Array(a))
         }
-        [RuntimeValue::Array(a1), a2] | [a2, RuntimeValue::Array(a1)] => {
+        [RuntimeValue::Array(a1), a2] => {
             let total_size = a1.len().saturating_add(1);
             if total_size > MAX_RANGE_SIZE {
                 return Err(Error::Runtime(format!(
@@ -1194,10 +1194,26 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
                     total_size, MAX_RANGE_SIZE
                 )));
             }
+
             let mut a = std::mem::take(a1);
             a.reserve(1);
             a.push(std::mem::take(a2));
             Ok(RuntimeValue::Array(a))
+        }
+        [v, RuntimeValue::Array(a)] => {
+            let total_size = a.len().saturating_add(1);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+
+            let mut arr = Vec::with_capacity(total_size);
+            arr.push(std::mem::take(v));
+            arr.extend(std::mem::take(a));
+
+            Ok(RuntimeValue::Array(arr))
         }
         [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(std::mem::take(a)),
         [a, b] => Err(Error::InvalidTypes(
