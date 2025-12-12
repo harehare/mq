@@ -31,4 +31,6 @@ pub const RANGE: &str = "range";
 pub const BREAKPOINT: &str = "breakpoint";
 pub const COALESCE: &str = "coalesce";
 
+pub const ASSIGN: &str = "assign";
+
 pub const PATTERN_MATCH_WILDCARD: &str = "_";

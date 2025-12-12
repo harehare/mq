@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use bimap::BiMap;
 use itertools::Itertools;
-use tower_lsp_server::lsp_types::{
+use tower_lsp_server::ls_types::{
     CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
     Position,
 };

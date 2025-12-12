@@ -1210,7 +1210,10 @@ export const Playground = () => {
 
     monaco.languages.registerCompletionItemProvider("mq", {
       triggerCharacters: [" ", "|", ":"],
-      provideCompletionItems: async (model: editor.ITextModel, position: IPosition) => {
+      provideCompletionItems: async (
+        model: editor.ITextModel,
+        position: IPosition
+      ) => {
         const wordRange = model.getWordUntilPosition(position);
 
         let moduleName: string | undefined = undefined;
@@ -1380,7 +1383,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|foreach|if|elif|else|end|self|None|nodes|break|continue|import|module)\b/,
+            /\b(let|def|do|match|while|foreach|if|elif|else|end|self|None|nodes|break|continue|import|module|var)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],

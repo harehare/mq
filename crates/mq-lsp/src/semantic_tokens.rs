@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use itertools::Itertools;
-use tower_lsp_server::lsp_types::{self, SemanticToken, SemanticTokenModifier, SemanticTokenType};
+use tower_lsp_server::ls_types::{self, SemanticToken, SemanticTokenModifier, SemanticTokenType};
 use url::Url;
 
 pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
@@ -24,7 +24,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             let line = range.start.line - 1_u32;
             let start = (range.start.column - 2) as u32;
             let length = ((range.end.column - 1) - (range.start.column - 2)) as u32;
-            let token_type = token_type(lsp_types::SemanticTokenType::COMMENT);
+            let token_type = token_type(ls_types::SemanticTokenType::COMMENT);
 
             if line.checked_sub(pre_line).is_none() {
                 continue;
@@ -36,12 +36,12 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             pre_line = line;
             pre_start = start;
 
-            semantic_tokens.push(lsp_types::SemanticToken {
+            semantic_tokens.push(ls_types::SemanticToken {
                 delta_line,
                 delta_start,
                 length,
                 token_type,
-                token_modifiers_bitset: token_modifier(lsp_types::SemanticTokenModifier::DOCUMENTATION),
+                token_modifiers_bitset: token_modifier(ls_types::SemanticTokenModifier::DOCUMENTATION),
             });
         }
 
@@ -54,15 +54,15 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 symbol.value.as_ref().map(|name| name.len()).unwrap_or_default() as u32
             };
             let token_type = match symbol.kind {
-                mq_hir::SymbolKind::Argument => token_type(lsp_types::SemanticTokenType::PARAMETER),
+                mq_hir::SymbolKind::Argument => token_type(ls_types::SemanticTokenType::PARAMETER),
                 mq_hir::SymbolKind::BinaryOp | mq_hir::SymbolKind::UnaryOp => {
-                    token_type(lsp_types::SemanticTokenType::OPERATOR)
+                    token_type(ls_types::SemanticTokenType::OPERATOR)
                 }
                 mq_hir::SymbolKind::Dict | mq_hir::SymbolKind::Boolean | mq_hir::SymbolKind::Array => {
-                    token_type(lsp_types::SemanticTokenType::TYPE)
+                    token_type(ls_types::SemanticTokenType::TYPE)
                 }
                 mq_hir::SymbolKind::Call | mq_hir::SymbolKind::CallDynamic | mq_hir::SymbolKind::QualifiedAccess => {
-                    token_type(lsp_types::SemanticTokenType::METHOD)
+                    token_type(ls_types::SemanticTokenType::METHOD)
                 }
 
                 mq_hir::SymbolKind::Else
@@ -78,19 +78,19 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
                 | mq_hir::SymbolKind::Match
                 | mq_hir::SymbolKind::Import(_)
                 | mq_hir::SymbolKind::Module(_)
-                | mq_hir::SymbolKind::While => token_type(lsp_types::SemanticTokenType::KEYWORD),
-                mq_hir::SymbolKind::Function(_) => token_type(lsp_types::SemanticTokenType::FUNCTION),
-                mq_hir::SymbolKind::Number => token_type(lsp_types::SemanticTokenType::NUMBER),
-                mq_hir::SymbolKind::Parameter => token_type(lsp_types::SemanticTokenType::PARAMETER),
-                mq_hir::SymbolKind::Ref => token_type(lsp_types::SemanticTokenType::VARIABLE),
-                mq_hir::SymbolKind::Selector => token_type(lsp_types::SemanticTokenType::METHOD),
-                mq_hir::SymbolKind::String => token_type(lsp_types::SemanticTokenType::STRING),
+                | mq_hir::SymbolKind::While => token_type(ls_types::SemanticTokenType::KEYWORD),
+                mq_hir::SymbolKind::Function(_) => token_type(ls_types::SemanticTokenType::FUNCTION),
+                mq_hir::SymbolKind::Number => token_type(ls_types::SemanticTokenType::NUMBER),
+                mq_hir::SymbolKind::Parameter => token_type(ls_types::SemanticTokenType::PARAMETER),
+                mq_hir::SymbolKind::Ref => token_type(ls_types::SemanticTokenType::VARIABLE),
+                mq_hir::SymbolKind::Selector => token_type(ls_types::SemanticTokenType::METHOD),
+                mq_hir::SymbolKind::String => token_type(ls_types::SemanticTokenType::STRING),
                 mq_hir::SymbolKind::Variable
                 | mq_hir::SymbolKind::Symbol
                 | mq_hir::SymbolKind::MatchArm
                 | mq_hir::SymbolKind::Pattern
                 | mq_hir::SymbolKind::PatternVariable
-                | mq_hir::SymbolKind::Ident => token_type(lsp_types::SemanticTokenType::VARIABLE),
+                | mq_hir::SymbolKind::Ident => token_type(ls_types::SemanticTokenType::VARIABLE),
             };
 
             let delta_line = line - pre_line;
@@ -99,13 +99,13 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
             pre_line = line;
             pre_start = start;
 
-            semantic_tokens.push(lsp_types::SemanticToken {
+            semantic_tokens.push(ls_types::SemanticToken {
                 delta_line,
                 delta_start,
                 length,
                 token_type,
                 token_modifiers_bitset: if hir.read().unwrap().is_builtin_symbol(&symbol) {
-                    token_modifier(lsp_types::SemanticTokenModifier::DEFAULT_LIBRARY)
+                    token_modifier(ls_types::SemanticTokenModifier::DEFAULT_LIBRARY)
                 } else {
                     0
                 },
@@ -117,16 +117,16 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticToken> {
 }
 
 #[inline(always)]
-fn token_type(token_type: lsp_types::SemanticTokenType) -> u32 {
+fn token_type(token_type: ls_types::SemanticTokenType) -> u32 {
     TOKEN_TYPE.iter().position(|t| t == &token_type).unwrap() as u32
 }
 
 #[inline(always)]
-fn token_modifier(token_modifier: lsp_types::SemanticTokenModifier) -> u32 {
+fn token_modifier(token_modifier: ls_types::SemanticTokenModifier) -> u32 {
     TOKEN_MODIFIER.iter().position(|t| t == &token_modifier).unwrap() as u32
 }
 
-pub const TOKEN_TYPE: &[lsp_types::SemanticTokenType] = &[
+pub const TOKEN_TYPE: &[ls_types::SemanticTokenType] = &[
     SemanticTokenType::COMMENT,
     SemanticTokenType::FUNCTION,
     SemanticTokenType::KEYWORD,
@@ -141,7 +141,7 @@ pub const TOKEN_TYPE: &[lsp_types::SemanticTokenType] = &[
     SemanticTokenType::VARIABLE,
 ];
 
-pub const TOKEN_MODIFIER: &[lsp_types::SemanticTokenModifier] = &[
+pub const TOKEN_MODIFIER: &[ls_types::SemanticTokenModifier] = &[
     SemanticTokenModifier::DEFINITION,
     SemanticTokenModifier::DEFAULT_LIBRARY,
     SemanticTokenModifier::DOCUMENTATION,

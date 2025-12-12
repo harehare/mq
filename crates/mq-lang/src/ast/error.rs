@@ -19,6 +19,25 @@ pub enum ParseError {
     ExpectedClosingBrace(Token),
     #[error("Expected a closing bracket `]` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     ExpectedClosingBracket(Token),
+    #[error("Invalid assignment target: expected an identifier but got `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    InvalidAssignmentTarget(Token),
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
+}
+
+impl ParseError {
+    #[cold]
+    pub fn token(&self) -> Option<&Token> {
+        match self {
+            ParseError::EnvNotFound(token, _) => Some(token),
+            ParseError::UnexpectedToken(token) => Some(token),
+            ParseError::UnexpectedEOFDetected(_) => None,
+            ParseError::InsufficientTokens(token) => Some(token),
+            ParseError::ExpectedClosingParen(token) => Some(token),
+            ParseError::ExpectedClosingBrace(token) => Some(token),
+            ParseError::ExpectedClosingBracket(token) => Some(token),
+            ParseError::InvalidAssignmentTarget(token) => Some(token),
+            ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
+        }
+    }
 }

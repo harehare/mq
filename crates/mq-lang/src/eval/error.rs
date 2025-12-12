@@ -49,4 +49,35 @@ pub enum EvalError {
     Continue,
     #[error("Not found env `{1}`")]
     EnvNotFound(Token, SmolStr),
+    #[error("Cannot assign to immutable variable \"{1}\"")]
+    AssignToImmutable(Token, String),
+    #[error("Undefined variable \"{1}\"")]
+    UndefinedVariable(Token, String),
+}
+
+impl EvalError {
+    #[cold]
+    pub fn token(&self) -> Option<&Token> {
+        match self {
+            EvalError::UserDefined { token, .. } => Some(token),
+            EvalError::InvalidBase64String(token, _) => Some(token),
+            EvalError::NotDefined(token, _) => Some(token),
+            EvalError::DateTimeFormatError(token, _) => Some(token),
+            EvalError::IndexOutOfBounds(token, _) => Some(token),
+            EvalError::InvalidDefinition(token, _) => Some(token),
+            EvalError::RecursionError(_) => None,
+            EvalError::InvalidTypes { token, .. } => Some(token),
+            EvalError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
+            EvalError::InvalidRegularExpression(token, _) => Some(token),
+            EvalError::InternalError(token) => Some(token),
+            EvalError::ModuleLoadError(err) => err.token(),
+            EvalError::RuntimeError(token, _) => Some(token),
+            EvalError::ZeroDivision(token) => Some(token),
+            EvalError::Break => None,
+            EvalError::Continue => None,
+            EvalError::EnvNotFound(token, _) => Some(token),
+            EvalError::AssignToImmutable(token, _) => Some(token),
+            EvalError::UndefinedVariable(token, _) => Some(token),
+        }
+    }
 }

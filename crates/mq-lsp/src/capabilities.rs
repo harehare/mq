@@ -1,4 +1,4 @@
-use tower_lsp_server::lsp_types::{
+use tower_lsp_server::ls_types::{
     CompletionOptions, ExecuteCommandOptions, HoverProviderCapability, OneOf, SemanticTokensFullOptions,
     SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
     TextDocumentSyncCapability, TextDocumentSyncKind,

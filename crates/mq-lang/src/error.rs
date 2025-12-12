@@ -2,12 +2,11 @@ use miette::{Diagnostic, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    Module, ModuleLoader, ModuleResolver,
+    Module, ModuleLoader, ModuleResolver, Token,
     ast::error::ParseError,
     eval::error::EvalError,
     lexer::error::LexerError,
     module::{self, error::ModuleError},
-    selector,
 };
 
 #[allow(clippy::useless_conversion)]
@@ -23,6 +22,18 @@ pub enum InnerError {
     Module(#[from] ModuleError),
 }
 
+impl InnerError {
+    #[cold]
+    pub fn token(&self) -> Option<&Token> {
+        match self {
+            InnerError::Lexer(err) => err.token(),
+            InnerError::Parse(err) => err.token(),
+            InnerError::Eval(err) => err.token(),
+            InnerError::Module(err) => err.token(),
+        }
+    }
+}
+
 /// Represents a high-level error with diagnostic information for the user.
 #[derive(PartialEq, Debug, thiserror::Error)]
 #[error("{cause}")]
@@ -36,63 +47,14 @@ pub struct Error {
 }
 
 impl Error {
+    #[cold]
     pub fn from_error(
         top_level_source_code: impl Into<String>,
         cause: InnerError,
         module_loader: ModuleLoader<impl ModuleResolver>,
     ) -> Self {
         let source_code = top_level_source_code.into();
-        let token = match &cause {
-            InnerError::Lexer(LexerError::UnexpectedToken(token)) => Some(token),
-            InnerError::Lexer(LexerError::UnexpectedEOFDetected(_)) => None,
-            InnerError::Parse(err) => match err {
-                ParseError::EnvNotFound(token, _) => Some(token),
-                ParseError::UnexpectedToken(token) => Some(token),
-                ParseError::UnexpectedEOFDetected(_) => None,
-                ParseError::InsufficientTokens(token) => Some(token),
-                ParseError::ExpectedClosingParen(token) => Some(token),
-                ParseError::ExpectedClosingBrace(token) => Some(token),
-                ParseError::ExpectedClosingBracket(token) => Some(token),
-                ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
-            },
-            InnerError::Eval(err) => match err {
-                EvalError::UserDefined { token, .. } => Some(token),
-                EvalError::InvalidBase64String(token, _) => Some(token),
-                EvalError::NotDefined(token, _) => Some(token),
-                EvalError::DateTimeFormatError(token, _) => Some(token),
-                EvalError::IndexOutOfBounds(token, _) => Some(token),
-                EvalError::InvalidDefinition(token, _) => Some(token),
-                EvalError::InvalidTypes { token, .. } => Some(token),
-                EvalError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
-                EvalError::InvalidRegularExpression(token, _) => Some(token),
-                EvalError::InternalError(token) => Some(token),
-                EvalError::RuntimeError(token, _) => Some(token),
-                EvalError::ZeroDivision(token) => Some(token),
-                EvalError::Break => None,
-                EvalError::Continue => None,
-                EvalError::RecursionError(_) => None,
-                EvalError::ModuleLoadError(_) => None,
-                EvalError::EnvNotFound(_, _) => None,
-            },
-            InnerError::Module(err) => match err {
-                ModuleError::AlreadyLoaded(_) => None,
-                ModuleError::NotFound(_) => None,
-                ModuleError::IOError(_) => None,
-                ModuleError::LexerError(LexerError::UnexpectedToken(token)) => Some(token),
-                ModuleError::LexerError(LexerError::UnexpectedEOFDetected(_)) => None,
-                ModuleError::ParseError(err) => match err {
-                    ParseError::EnvNotFound(token, _) => Some(token),
-                    ParseError::UnexpectedToken(token) => Some(token),
-                    ParseError::UnexpectedEOFDetected(_) => None,
-                    ParseError::InsufficientTokens(token) => Some(token),
-                    ParseError::ExpectedClosingParen(token) => Some(token),
-                    ParseError::ExpectedClosingBrace(token) => Some(token),
-                    ParseError::ExpectedClosingBracket(token) => Some(token),
-                    ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
-                },
-                ModuleError::InvalidModule => None,
-            },
-        };
+        let token = cause.token();
 
         match token {
             Some(token) => {
@@ -174,6 +136,7 @@ fn type_name<T>(_: &T) -> &'static str {
 }
 
 impl Diagnostic for Error {
+    #[cold]
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         Some(Box::new(
             match &self.cause {
@@ -186,6 +149,7 @@ impl Diagnostic for Error {
         ) as Box<dyn std::fmt::Display>)
     }
 
+    #[cold]
     fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         match &self.cause {
             InnerError::Eval(EvalError::InvalidDefinition(_, _)) | InnerError::Eval(EvalError::InvalidTypes { .. }) => {
@@ -195,6 +159,7 @@ impl Diagnostic for Error {
         }
     }
 
+    #[cold]
     fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         let msg: Option<Cow<'static, str>> = match &self.cause {
             InnerError::Lexer(LexerError::UnexpectedToken(_)) => {
@@ -215,6 +180,21 @@ impl Diagnostic for Error {
             InnerError::Parse(ParseError::InsufficientTokens(_)) => Some(Cow::Borrowed(
                 "Not enough tokens to complete parsing. Check for missing arguments or delimiters.",
             )),
+            InnerError::Parse(ParseError::UnknownSelector(_)) => Some(Cow::Borrowed(
+                "Unknown selector used. Verify that the selector is valid.",
+            )),
+            InnerError::Parse(ParseError::ExpectedClosingParen(_)) => Some(Cow::Borrowed(
+                "Expected a closing parenthesis ')'. Check your parentheses for balance.",
+            )),
+            InnerError::Parse(ParseError::ExpectedClosingBrace(_)) => Some(Cow::Borrowed(
+                "Expected a closing brace '}'. Check your braces for balance.",
+            )),
+            InnerError::Parse(ParseError::ExpectedClosingBracket(_)) => Some(Cow::Borrowed(
+                "Expected a closing bracket ']'. Check your brackets for balance.",
+            )),
+            InnerError::Parse(ParseError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
+                "Invalid assignment target. Ensure you're assigning to a valid variable or property.",
+            )),
             InnerError::Eval(EvalError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -233,6 +213,12 @@ impl Diagnostic for Error {
             InnerError::Eval(EvalError::InvalidDefinition(_, _)) => Some(Cow::Borrowed(
                 "Invalid definition. Please check your function or variable declaration.",
             )),
+            InnerError::Eval(EvalError::AssignToImmutable(_, name)) => Some(Cow::Owned(format!(
+                "Cannot assign to immutable variable '{name}'. Consider declaring it as mutable."
+            ))),
+            InnerError::Eval(EvalError::UndefinedVariable(_, name)) => Some(Cow::Owned(format!(
+                "Variable '{name}' is undefined. Did you forget to declare it?"
+            ))),
             InnerError::Eval(EvalError::InvalidTypes { .. }) => {
                 Some(Cow::Borrowed("Type mismatch. Check the types of your operands."))
             }
@@ -249,9 +235,21 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("A runtime error occurred during evaluation."))
             }
             InnerError::Eval(EvalError::ZeroDivision(_)) => Some(Cow::Borrowed("Division by zero is not allowed.")),
+            InnerError::Eval(EvalError::RecursionError(_)) => Some(Cow::Borrowed("Maximum recursion depth exceeded.")),
+            InnerError::Eval(EvalError::ModuleLoadError(_)) => {
+                Some(Cow::Borrowed("Failed to load module. Check module paths and names."))
+            }
+            InnerError::Eval(EvalError::Break) => None,
+            InnerError::Eval(EvalError::Continue) => None,
+            InnerError::Eval(EvalError::EnvNotFound(..)) => {
+                Some(Cow::Borrowed("Environment variable not found during evaluation."))
+            }
             InnerError::Module(ModuleError::NotFound(name)) => Some(Cow::Owned(format!(
                 "Module '{name}' not found. Check the module name or path."
             ))),
+            InnerError::Module(ModuleError::AlreadyLoaded(name)) => {
+                Some(Cow::Owned(format!("Module '{name}' is already loaded.")))
+            }
             InnerError::Module(ModuleError::IOError(_)) => Some(Cow::Borrowed(
                 "An I/O error occurred while loading a module. Check file permissions and paths.",
             )),
@@ -273,13 +271,28 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::ParseError(ParseError::InsufficientTokens(_))) => {
                 Some(Cow::Borrowed("Parse error in module: insufficient tokens."))
             }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBracket(_))) => {
+                Some(Cow::Borrowed("Parse error in module: expected closing bracket ']'."))
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingBrace(_))) => {
+                Some(Cow::Borrowed("Parse error in module: expected closing brace '}'."))
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::ExpectedClosingParen(_))) => Some(Cow::Borrowed(
+                "Parse error in module: expected closing parenthesis ')'.",
+            )),
+            InnerError::Module(ModuleError::ParseError(ParseError::InvalidAssignmentTarget(_))) => {
+                Some(Cow::Borrowed("Parse error in module: invalid assignment target."))
+            }
+            InnerError::Module(ModuleError::ParseError(ParseError::UnknownSelector(_))) => {
+                Some(Cow::Borrowed("Parse error in module: unknown selector used."))
+            }
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
-            _ => None,
         };
 
         msg.map(|m| Box::new(m) as Box<dyn std::fmt::Display>)
     }
 
+    #[cold]
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         Some(Box::new(std::iter::once(miette::LabeledSpan::new_with_span(
             Some(format!("{}", self.cause)),
@@ -287,6 +300,7 @@ impl Diagnostic for Error {
         ))))
     }
 
+    #[cold]
     fn source_code(&self) -> Option<&dyn miette::SourceCode> {
         Some(&self.source_code)
     }

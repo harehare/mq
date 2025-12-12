@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use tower_lsp_server::lsp_types::{self, GotoDefinitionResponse, Location, Position, Range};
+use tower_lsp_server::ls_types::{self, GotoDefinitionResponse, Location, Position, Range};
 use url::Url;
 
 pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<GotoDefinitionResponse> {
@@ -17,7 +17,7 @@ pub fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> 
         ) {
             symbol.source.text_range.map(|text_range| {
                 GotoDefinitionResponse::Scalar(Location {
-                    uri: lsp_types::Uri::from_str(url.as_ref()).unwrap(),
+                    uri: ls_types::Uri::from_str(url.as_ref()).unwrap(),
                     range: Range {
                         start: Position {
                             line: text_range.start.line - 1,

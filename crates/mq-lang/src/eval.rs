@@ -49,7 +49,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            max_call_stack_depth: 48,
+            max_call_stack_depth: 40,
         }
     }
 }
@@ -682,7 +682,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
 
         match &*node.expr {
-            ast::Expr::Block(program) => self.eval_program(program, runtime_value.clone(), Shared::clone(env)),
             ast::Expr::Selector(ident) => Ok(Self::eval_selector_expr(runtime_value, ident)),
             ast::Expr::Call(ident, args) => {
                 #[cfg(feature = "debugger")]
@@ -693,13 +692,18 @@ impl<T: ModuleResolver> Evaluator<T> {
 
                 self.eval_fn(runtime_value, Shared::clone(node), ident.name, args, env)
             }
-            ast::Expr::CallDynamic(callable, args) => self.eval_call_dynamic(runtime_value, callable, args, env),
-            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
-            ast::Expr::Break => Err(EvalError::Break),
-            ast::Expr::Continue => Err(EvalError::Continue),
-            ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
             ast::Expr::Ident(ident) => self.eval_ident(ident.name, node.token_id, env),
             ast::Expr::Literal(literal) => Ok(self.eval_literal(literal)),
+            ast::Expr::Self_ | ast::Expr::Nodes => Ok(runtime_value.clone()),
+            ast::Expr::QualifiedAccess(module_name, access_target) => {
+                self.eval_qualified_access(runtime_value, module_name, access_target, node.token_id, env)
+            }
+            ast::Expr::Block(program) => {
+                let block_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
+                self.eval_program(program, runtime_value.clone(), block_env)
+            }
+            ast::Expr::CallDynamic(callable, args) => self.eval_call_dynamic(runtime_value, callable, args, env),
+            ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
             ast::Expr::Def(ident, params, program) => {
                 let function = RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(env));
                 define(env, ident.name, function.clone());
@@ -713,6 +717,40 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Let(ident, node) => {
                 let val = self.eval_expr(runtime_value, node, env)?;
                 define(env, ident.name, val);
+                Ok(runtime_value.clone())
+            }
+            ast::Expr::Var(ident, node) => {
+                let val = self.eval_expr(runtime_value, node, env)?;
+                define_mutable(env, ident.name, val);
+                Ok(runtime_value.clone())
+            }
+            ast::Expr::Assign(ident, node) => {
+                let val = self.eval_expr(runtime_value, node, env)?;
+                #[cfg(not(feature = "sync"))]
+                {
+                    env.borrow_mut().assign(ident.name, val).map_err(|e| {
+                        e.to_eval_error_with_token(
+                            ident
+                                .token
+                                .as_ref()
+                                .map(|t| (**t).clone())
+                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                        )
+                    })?;
+                }
+
+                #[cfg(feature = "sync")]
+                {
+                    env.write().unwrap().assign(ident.name, val).map_err(|e| {
+                        e.to_eval_error_with_token(
+                            ident
+                                .token
+                                .as_ref()
+                                .map(|t| (**t).clone())
+                                .unwrap_or((*get_token(Shared::clone(&self.token_arena), node.token_id)).clone()),
+                        )
+                    })?;
+                }
                 Ok(runtime_value.clone())
             }
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
@@ -729,10 +767,10 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
             ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env),
             ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program, env),
-            ast::Expr::QualifiedAccess(module_name, access_target) => {
-                self.eval_qualified_access(runtime_value, module_name, access_target, node.token_id, env)
-            }
+
             ast::Expr::Match(value_node, arms) => self.eval_match(runtime_value, value_node, arms, env),
+            ast::Expr::Break => Err(EvalError::Break),
+            ast::Expr::Continue => Err(EvalError::Continue),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
         }
     }
@@ -748,7 +786,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
     fn eval_foreach(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -804,7 +841,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(RuntimeValue::Array(values))
     }
 
-    #[inline(always)]
     fn eval_while(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -883,7 +919,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(RuntimeValue::NONE)
     }
 
-    #[inline(always)]
     fn eval_match(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1060,7 +1095,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
-    #[inline(always)]
     fn eval_builtin(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1195,6 +1229,18 @@ fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeVal
     #[cfg(feature = "sync")]
     {
         env.write().unwrap().define(ident, runtime_value);
+    }
+}
+
+#[inline(always)]
+fn define_mutable(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeValue) {
+    #[cfg(not(feature = "sync"))]
+    {
+        env.borrow_mut().define_mutable(ident, runtime_value);
+    }
+    #[cfg(feature = "sync")]
+    {
+        env.write().unwrap().define_mutable(ident, runtime_value);
     }
 }
 

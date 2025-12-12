@@ -13,23 +13,23 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.5"
 
 [dependencies]
-clap = {version = "4.5", features = ["derive"]}
-crossbeam = "0.8.4"
-dashmap = "6.1.0"
-fantoccini = "0.22.0"
-futures = "0.3"
-miette = {version = "7.6.0", features = ["fancy"]}
-mq-lang = {path = "../mq-lang", version = "0.5.5"}
-mq-markdown = {path = "../mq-markdown", version = "0.5.5"}
-reqwest = {version = "0.12", features = ["json", "rustls-tls"]}
-robots_txt = "0.7"
-scraper = "0.24"
-serde = {version = "1.0", features = ["derive"]}
-serde_json = "1.0"
-tokio = {version = "1", features = ["full"]}
-tracing = "0.1"
-tracing-subscriber = {version = "0.3", features = ["env-filter"]}
-url = "2.5.7"
+clap = { workspace = true, features = ["derive"] }
+crossbeam = { workspace = true }
+dashmap = { workspace = true }
+fantoccini = { workspace = true }
+futures = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
+mq-lang = { workspace = true }
+mq-markdown = { workspace = true }
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+robots_txt = { workspace = true }
+scraper = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url = { workspace = true }
 
 [[bin]]
 doc = false
@@ -37,5 +37,5 @@ name = "mqcr"
 path = "src/main.rs"
 
 [dev-dependencies]
-httpmock = "0.8.2"
-rstest = "0.26.1"
+httpmock = { workspace = true }
+rstest = { workspace = true }

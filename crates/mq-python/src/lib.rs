@@ -156,6 +156,25 @@ impl Options {
     }
 }
 
+#[pyclass(eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+struct ConversionOptions {
+    #[pyo3(get, set)]
+    extract_scripts_as_code_blocks: bool,
+    #[pyo3(get, set)]
+    generate_front_matter: bool,
+    #[pyo3(get, set)]
+    use_title_as_h1: bool,
+}
+
+#[pymethods]
+impl ConversionOptions {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (code, content, options=None))]
 fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult> {
@@ -180,6 +199,23 @@ fn run(code: &str, content: &str, options: Option<Options>) -> PyResult<MQResult
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error evaluating query: {}", e)))
 }
 
+#[pyfunction]
+#[pyo3(signature = (content, options=None))]
+fn html_to_markdown(content: &str, options: Option<ConversionOptions>) -> PyResult<String> {
+    mq_markdown::convert_html_to_markdown(
+        content,
+        match options {
+            Some(opts) => mq_markdown::ConversionOptions {
+                extract_scripts_as_code_blocks: opts.extract_scripts_as_code_blocks,
+                generate_front_matter: opts.generate_front_matter,
+                use_title_as_h1: opts.use_title_as_h1,
+            },
+            None => mq_markdown::ConversionOptions::default(),
+        },
+    )
+    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Error converting HTML to Markdown: {}", e)))
+}
+
 #[pymodule]
 fn mq(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<InputFormat>()?;
@@ -189,6 +225,8 @@ fn mq(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Options>()?;
     m.add_class::<MQResult>()?;
     m.add_class::<MQValue>()?;
+    m.add_class::<ConversionOptions>()?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
+    m.add_function(wrap_pyfunction!(html_to_markdown, m)?)?;
     Ok(())
 }

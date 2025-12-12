@@ -11,3 +11,13 @@ pub enum LexerError {
     #[error("Unexpected EOF detected")]
     UnexpectedEOFDetected(ModuleId),
 }
+
+impl LexerError {
+    #[cold]
+    pub fn token(&self) -> Option<&Token> {
+        match self {
+            LexerError::UnexpectedToken(token) => Some(token),
+            LexerError::UnexpectedEOFDetected(_) => None,
+        }
+    }
+}
