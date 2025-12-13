@@ -1,4 +1,3 @@
-
 [package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
@@ -10,8 +9,7 @@ license = "MIT"
 name = "mq-dap"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.5"
-
+version = "0.5.6"
 [dependencies]
 crossbeam-channel = { workspace = true }
 dap = { workspace = true }
@@ -23,6 +21,5 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-
 [dev-dependencies]
 tempfile = { workspace = true }
