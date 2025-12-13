@@ -1,0 +1,438 @@
+//! Tests for builtin function type checking using rstest parametered tests
+
+use mq_hir::Hir;
+use mq_typechecker::{TypeChecker, TypeError};
+use rstest::rstest;
+
+/// Helper function to create HIR from code
+fn create_hir(code: &str) -> Hir {
+    let mut hir = Hir::default();
+    // Enable builtins to test builtin function types
+    hir.builtin.disabled = false;
+    hir.add_builtin(); // Add builtin functions to HIR
+    hir.add_code(None, code);
+    hir
+}
+
+/// Helper function to run type checker
+fn check_types(code: &str) -> Vec<TypeError> {
+    let hir = create_hir(code);
+    let mut checker = TypeChecker::new();
+    checker.check(&hir)
+}
+
+// ============================================================================
+// MATHEMATICAL FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::abs("abs(42)", true)]
+#[case::abs_negative("abs(-10)", true)]
+#[case::ceil("ceil(3.14)", true)]
+#[case::floor("floor(3.14)", true)]
+#[case::round("round(3.14)", true)]
+#[case::trunc("trunc(3.14)", true)]
+#[case::abs_string("abs(\"hello\")", false)] // Should fail: wrong type
+fn test_unary_math_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::add_numbers("1 + 2", true)]
+#[case::add_strings("\"hello\" + \"world\"", true)]
+#[case::add_mixed("1 + \"world\"", false)] // Should fail: type mismatch
+#[case::sub("10 - 5", true)]
+#[case::mul("3 * 4", true)]
+#[case::div("10 / 2", true)]
+#[case::mod_op("10 % 3", true)]
+#[case::pow("2 ^ 8", true)]
+fn test_arithmetic_operators(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::lt("5 < 10", true)]
+#[case::gt("10 > 5", true)]
+#[case::lte("5 <= 10", true)]
+#[case::gte("10 >= 5", true)]
+#[case::lt_string("\"a\" < \"b\"", false)] // Should fail: wrong type
+fn test_comparison_operators(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::eq_numbers("1 == 1", true)]
+#[case::eq_strings("\"a\" == \"b\"", true)]
+#[case::ne_numbers("1 != 2", true)]
+#[case::ne_strings("\"a\" != \"b\"", true)]
+fn test_equality_operators(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::min_numbers("min(1, 2)", true)]
+#[case::max_numbers("max(1, 2)", true)]
+#[case::min_strings("min(\"a\", \"b\")", true)]
+#[case::max_strings("max(\"a\", \"b\")", true)]
+fn test_min_max(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::and_op("true && false", true)]
+#[case::or_op("true || false", true)]
+#[case::not_op("!true", true)]
+#[case::bang_op("!false", true)]
+#[case::and_number("1 && 2", false)] // Should fail: wrong type
+fn test_logical_operators(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::nan("nan()", true)]
+#[case::infinite("infinite()", true)]
+#[case::is_nan("is_nan(1.0)", true)]
+fn test_special_number_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// STRING FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::downcase("downcase(\"HELLO\")", true)]
+#[case::upcase("upcase(\"hello\")", true)]
+#[case::trim("trim(\"  hello  \")", true)]
+#[case::downcase_number("downcase(42)", false)] // Should fail: wrong type
+fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::starts_with("starts_with(\"hello\", \"he\")", true)]
+#[case::ends_with("ends_with(\"hello\", \"lo\")", true)]
+#[case::index("index(\"hello\", \"ll\")", true)]
+#[case::rindex("rindex(\"hello\", \"l\")", true)]
+fn test_string_search_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::replace("replace(\"hello\", \"l\", \"r\")", true)]
+#[case::gsub("gsub(\"hello\", \"l\", \"r\")", true)]
+#[case::split("split(\"a,b,c\", \",\")", true)]
+#[case::join("join([\"a\", \"b\"], \",\")", true)]
+fn test_string_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::explode("explode(\"hello\")", true)]
+#[case::implode("implode([104, 101, 108, 108, 111])", true)]
+#[case::utf8bytelen("utf8bytelen(\"hello\")", true)]
+fn test_string_codepoint_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::regex_match("regex_match(\"hello123\", \"[0-9]+\")", true)]
+#[case::base64("base64(\"hello\")", true)]
+#[case::base64d("base64d(\"aGVsbG8=\")", true)]
+#[case::url_encode("url_encode(\"hello world\")", true)]
+fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// ARRAY FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::flatten("flatten([[1, 2], [3, 4]])", true)]
+#[case::reverse("reverse([1, 2, 3])", true)]
+#[case::sort("sort([3, 1, 2])", true)]
+#[case::uniq("uniq([1, 2, 2, 3])", true)]
+#[case::compact("compact([1, none, 2])", true)]
+fn test_array_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::len_array("len([1, 2, 3])", true)]
+#[case::len_string("len(\"hello\")", true)]
+#[case::slice("slice([1, 2, 3, 4], 1, 3)", true)]
+#[case::insert("insert([1, 3], 1, 2)", true)]
+fn test_array_access_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::range_two_args("range(1, 5)", true)]
+#[case::range_three_args("range(1, 10, 2)", true)]
+#[case::repeat("repeat(\"x\", 3)", true)]
+fn test_array_creation_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// DICTIONARY FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::keys("keys({\"a\": 1, \"b\": 2})", true)]
+#[case::values("values({\"a\": 1, \"b\": 2})", true)]
+#[case::entries("entries({\"a\": 1, \"b\": 2})", true)]
+fn test_dict_query_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+#[rstest]
+#[case::get("get({\"a\": 1}, \"a\")", true)]
+#[case::set("set({\"a\": 1}, \"b\", 2)", true)]
+#[case::del("del({\"a\": 1, \"b\": 2}, \"a\")", true)]
+#[case::update("update({\"a\": 1}, {\"b\": 2})", true)]
+fn test_dict_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// TYPE CONVERSION FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::to_number("to_number(\"42\")", true)]
+#[case::to_string("to_string(42)", true)]
+#[case::to_array("to_array(42)", true)]
+#[case::type_of("type(42)", true)]
+fn test_type_conversion_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// DATE/TIME FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::now("now()", true)]
+#[case::from_date("from_date(\"2024-01-01\")", true)]
+#[case::to_date("to_date(1704067200000, \"%Y-%m-%d\")", true)]
+fn test_datetime_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// I/O AND UTILITY FUNCTIONS
+// ============================================================================
+
+#[rstest]
+#[case::print("print(42)", true)]
+#[case::stderr("stderr(\"error\")", true)]
+#[case::input("input()", true)]
+fn test_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// COMPLEX EXPRESSIONS WITH BUILTINS
+// ============================================================================
+
+#[rstest]
+#[case::chained_string_ops("upcase(trim(\"  hello  \"))", true)]
+#[case::math_expression("abs(min(-5, -10) + max(3, 7))", true)]
+#[case::array_pipeline("len(reverse(sort([3, 1, 2])))", true)]
+#[case::mixed_operations("to_string(len(split(\"a,b,c\", \",\")))", true)]
+fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// TYPE ERROR CASES
+// ============================================================================
+
+#[rstest]
+#[case::abs_wrong_type("abs(\"not a number\")", false)]
+#[case::add_mixed_types("1 + \"string\"", false)]
+#[case::comparison_wrong_type("\"a\" < \"b\"", false)]
+#[case::logical_wrong_type("1 && 2", false)]
+#[case::downcase_wrong_type("downcase(42)", false)]
+#[case::len_wrong_arity("len()", false)] // Missing argument
+fn test_builtin_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
+
+// ============================================================================
+// PIPE TYPE PROPAGATION
+// ============================================================================
+
+#[rstest]
+#[case::string_to_upcase("\"hello\" | upcase", true)]
+#[case::string_to_trim("\"  hello  \" | trim", true)]
+#[case::number_to_abs("-42 | abs", true)]
+#[case::string_to_len("\"hello\" | len", true)]
+#[case::chained_pipes("\"  hello  \" | trim | upcase", true)]
+#[case::number_to_upcase("42 | upcase", false)] // Number piped to string function
+fn test_pipe_type_propagation(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "Code: {}\nResult: {:?}",
+        code,
+        result
+    );
+}
