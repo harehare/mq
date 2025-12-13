@@ -39,8 +39,7 @@ fn get_children(hir: &Hir, parent_id: SymbolId) -> Vec<SymbolId> {
 
 /// Helper function to get the range of a symbol
 fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang::Range> {
-    hir.symbol(symbol_id)
-        .and_then(|symbol| symbol.source.text_range.clone())
+    hir.symbol(symbol_id).and_then(|symbol| symbol.source.text_range)
 }
 
 /// Generates type constraints from HIR
@@ -50,6 +49,11 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> Result<()>
     // Pass 1: Assign types to literals, variables, and simple constructs
     // This ensures base types are established first
     for (symbol_id, symbol) in hir.symbols() {
+        // Skip builtin symbols to avoid type checking builtin function implementations
+        if hir.is_builtin_symbol(symbol) {
+            continue;
+        }
+
         match symbol.kind {
             SymbolKind::Number
             | SymbolKind::String
@@ -68,6 +72,11 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> Result<()>
     // Pass 2: Process all other symbols (operators, calls, etc.)
     // These can now reference the concrete types from pass 1
     for (symbol_id, symbol) in hir.symbols() {
+        // Skip builtin symbols
+        if hir.is_builtin_symbol(symbol) {
+            continue;
+        }
+
         // Skip if already processed in pass 1
         if ctx.get_symbol_type(symbol_id).is_some() {
             continue;
@@ -130,6 +139,32 @@ fn generate_symbol_constraints(
         // References should unify with their definition
         SymbolKind::Ref => {
             if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
+                // Check if the reference is to a builtin function
+                if let Some(symbol) = hir.symbol(def_id)
+                    && let Some(name) = &symbol.value
+                {
+                    // Check if this is a builtin function
+                    let has_builtin = ctx.get_builtin_overloads(name.as_str()).is_some();
+                    if has_builtin {
+                        let overload_count = ctx.get_builtin_overloads(name.as_str()).map(|o| o.len()).unwrap_or(0);
+
+                        // For builtin functions with overloads, we need to handle them specially
+                        // For now, we'll create a fresh type variable that will be resolved
+                        // during call resolution
+                        let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
+
+                        // If there's only one overload, use it directly
+                        if overload_count == 1 {
+                            let builtin_ty = ctx.get_builtin_overloads(name.as_str()).unwrap()[0].clone();
+                            let range = get_symbol_range(hir, symbol_id);
+                            ctx.add_constraint(Constraint::Equal(ref_ty, builtin_ty, range));
+                        }
+                        // For multiple overloads, the type will be resolved at the call site
+                        return Ok(());
+                    }
+                }
+
+                // Normal reference resolution
                 let ref_ty = ctx.get_or_create_symbol_type(symbol_id);
                 let def_ty = ctx.get_or_create_symbol_type(def_id);
                 let range = get_symbol_range(hir, symbol_id);
@@ -154,12 +189,8 @@ fn generate_symbol_constraints(
                             // resolved_ty is the matched function type: (T1, T2) -> T3
                             if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                 if param_tys.len() == 2 {
-                                    ctx.add_constraint(Constraint::Equal(left_ty, param_tys[0].clone(), range.clone()));
-                                    ctx.add_constraint(Constraint::Equal(
-                                        right_ty,
-                                        param_tys[1].clone(),
-                                        range.clone(),
-                                    ));
+                                    ctx.add_constraint(Constraint::Equal(left_ty, param_tys[0].clone(), range));
+                                    ctx.add_constraint(Constraint::Equal(right_ty, param_tys[1].clone(), range));
                                     ctx.set_symbol_type(symbol_id, *ret_ty);
                                 } else {
                                     // Fallback: just create a fresh type variable
@@ -237,29 +268,43 @@ fn generate_symbol_constraints(
 
         // Function calls
         SymbolKind::Call => {
-            let children = get_children(hir, symbol_id);
-            if !children.is_empty() {
-                // First child is the function being called
-                let func_ty = ctx.get_or_create_symbol_type(children[0]);
+            // Get the function name from the Call symbol itself
+            if let Some(call_symbol) = hir.symbol(symbol_id) {
+                if let Some(func_name) = &call_symbol.value {
+                    // All children are arguments
+                    let children = get_children(hir, symbol_id);
+                    let arg_tys: Vec<Type> = children
+                        .iter()
+                        .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
+                        .collect();
 
-                // Rest are arguments
-                let arg_tys: Vec<Type> = children[1..]
-                    .iter()
-                    .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
-                    .collect();
+                    // Try to resolve as a builtin function first
+                    if let Some(resolved_ty) = ctx.resolve_overload(func_name.as_str(), &arg_tys) {
+                        // resolved_ty is the matched function type
+                        if let Type::Function(param_tys, ret_ty) = resolved_ty {
+                            let range = get_symbol_range(hir, symbol_id);
 
-                // Create result type
-                let ret_ty = Type::Var(ctx.fresh_var());
+                            // Add constraints for each argument
+                            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                                ctx.add_constraint(Constraint::Equal(arg_ty.clone(), param_ty.clone(), range));
+                            }
 
-                // Function should have type (arg_tys) -> ret_ty
-                let expected_func_ty = Type::function(arg_tys, ret_ty.clone());
+                            // Set the call result type
+                            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+                        }
+                    } else {
+                        // Not a builtin function - handle as a user-defined function
+                        // Create result type
+                        let ret_ty = Type::Var(ctx.fresh_var());
 
-                // Unify function type
-                let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(func_ty, expected_func_ty, range));
-
-                // Call result has type ret_ty
-                ctx.set_symbol_type(symbol_id, ret_ty);
+                        // For now, just assign a fresh type variable
+                        // TODO: Look up user-defined function and unify with its type
+                        ctx.set_symbol_type(symbol_id, ret_ty);
+                    }
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
             } else {
                 let ty_var = ctx.fresh_var();
                 ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -286,7 +331,7 @@ fn generate_symbol_constraints(
                 let elem_ty = elem_tys[0].clone();
                 let range = get_symbol_range(hir, symbol_id);
                 for ty in &elem_tys[1..] {
-                    ctx.add_constraint(Constraint::Equal(elem_ty.clone(), ty.clone(), range.clone()));
+                    ctx.add_constraint(Constraint::Equal(elem_ty.clone(), ty.clone(), range));
                 }
 
                 let array_ty = Type::array(elem_ty);
@@ -312,7 +357,7 @@ fn generate_symbol_constraints(
 
                 // First child is the condition
                 let cond_ty = ctx.get_or_create_symbol_type(children[0]);
-                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range.clone()));
+                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range));
 
                 // Subsequent children are then-branch and else-branches
                 // All branches should have the same type
@@ -323,7 +368,7 @@ fn generate_symbol_constraints(
                     // Unify all branch types
                     for &child_id in &children[2..] {
                         let child_ty = ctx.get_or_create_symbol_type(child_id);
-                        ctx.add_constraint(Constraint::Equal(branch_ty.clone(), child_ty, range.clone()));
+                        ctx.add_constraint(Constraint::Equal(branch_ty.clone(), child_ty, range));
                     }
                 } else {
                     let ty_var = ctx.fresh_var();
@@ -341,9 +386,7 @@ fn generate_symbol_constraints(
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
 
-        SymbolKind::While | SymbolKind::Until => {
-            // Loop condition must be bool
-            // Loop body type doesn't matter much
+        SymbolKind::While => {
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }

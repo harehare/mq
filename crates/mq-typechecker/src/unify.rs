@@ -85,7 +85,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
 
         // Dictionaries
         (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
-            unify(ctx, k1, k2, range.clone())?;
+            unify(ctx, k1, k2, range)?;
             unify(ctx, v1, v2, range)
         }
 
@@ -101,7 +101,7 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
 
             // Unify parameter types
             for (p1, p2) in params1.iter().zip(params2.iter()) {
-                unify(ctx, p1, p2, range.clone())?;
+                unify(ctx, p1, p2, range)?;
             }
 
             // Unify return types

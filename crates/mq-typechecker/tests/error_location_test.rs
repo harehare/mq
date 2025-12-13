@@ -59,7 +59,6 @@ fn test_error_location_if_branch_mismatch() {
             42
         else:
             "string"
-        ;
     "#;
 
     let result = check_types(code);
