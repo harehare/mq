@@ -91,7 +91,9 @@ end
 
 # Returns the header level (1-6) of a section.
 def level(section):
-  if (_is_section(section)):
+  if (!is_dict(section)):
+    error("Expected a dictionary, but got a different type.")
+  elif (_is_section(section)):
     do
       let header = section[:header]
       | if (is_h_level(header, 1)): 1
@@ -145,7 +147,9 @@ end
 
 # Checks if a section has any content beyond the header.
 def has_content(section):
-  if (_is_section(section)):
+  if (!is_dict(section)):
+    error("Expected a dictionary, but got a different type.")
+  elif (_is_section(section)):
     len(content(section)) > 0
   else:
     false
