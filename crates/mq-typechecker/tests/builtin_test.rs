@@ -84,11 +84,11 @@ fn test_min_max(#[case] code: &str, #[case] should_succeed: bool) {
 }
 
 #[rstest]
-#[case::and_op("true and false", true)]
-#[case::or_op("true or false", true)]
-#[case::not_op("not true", true)]
+#[case::and_op("true && false", true)]
+#[case::or_op("true || false", true)]
+#[case::not_op("!true", true)]
 #[case::bang_op("!false", true)]
-#[case::and_number("1 and 2", false)] // Should fail: wrong type
+#[case::and_number("1 && 2", false)] // Should fail: wrong type
 fn test_logical_operators(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types(code);
     assert_eq!(result.is_ok(), should_succeed, "Code: {}\nResult: {:?}", code, result);
@@ -275,7 +275,7 @@ fn test_complex_builtin_expressions(#[case] code: &str, #[case] should_succeed: 
 #[case::abs_wrong_type("abs(\"not a number\")", false)]
 #[case::add_mixed_types("1 + \"string\"", false)]
 #[case::comparison_wrong_type("\"a\" < \"b\"", false)]
-#[case::logical_wrong_type("1 and 2", false)]
+#[case::logical_wrong_type("1 && 2", false)]
 #[case::downcase_wrong_type("downcase(42)", false)]
 #[case::len_wrong_arity("len()", false)] // Missing argument
 fn test_builtin_type_errors(#[case] code: &str, #[case] should_succeed: bool) {

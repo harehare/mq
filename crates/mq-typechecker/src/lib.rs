@@ -21,6 +21,9 @@
 //!   Span: SourceSpan { offset: 42, length: 6 }
 //! ```
 
+// Suppress false-positive warnings for fields used in thiserror/miette macros
+#![allow(unused_assignments)]
+
 pub mod constraint;
 pub mod infer;
 pub mod types;
@@ -37,9 +40,11 @@ pub type Result<T> = std::result::Result<T, TypeError>;
 
 /// Type checking errors
 #[derive(Debug, Error, Diagnostic)]
+#[allow(unused_assignments)]
 pub enum TypeError {
     #[error("Type mismatch: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::type_mismatch))]
+    #[allow(dead_code)]
     Mismatch {
         expected: String,
         found: String,
@@ -49,6 +54,7 @@ pub enum TypeError {
 
     #[error("Cannot unify types: {left} and {right}")]
     #[diagnostic(code(typechecker::unification_error))]
+    #[allow(dead_code)]
     UnificationError {
         left: String,
         right: String,
@@ -58,6 +64,7 @@ pub enum TypeError {
 
     #[error("Occurs check failed: type variable {var} occurs in {ty}")]
     #[diagnostic(code(typechecker::occurs_check))]
+    #[allow(dead_code)]
     OccursCheck {
         var: String,
         ty: String,
@@ -67,6 +74,7 @@ pub enum TypeError {
 
     #[error("Undefined symbol: {name}")]
     #[diagnostic(code(typechecker::undefined_symbol))]
+    #[allow(dead_code)]
     UndefinedSymbol {
         name: String,
         #[label("undefined symbol")]
@@ -75,6 +83,7 @@ pub enum TypeError {
 
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
+    #[allow(dead_code)]
     WrongArity {
         expected: usize,
         found: usize,

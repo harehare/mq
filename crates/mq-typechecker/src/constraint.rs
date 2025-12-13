@@ -183,8 +183,12 @@ fn generate_symbol_constraints(
                         let right_ty = ctx.get_or_create_symbol_type(children[1]);
                         let range = get_symbol_range(hir, symbol_id);
 
+                        // Resolve types to get their concrete values if already determined
+                        let resolved_left = ctx.resolve_type(&left_ty);
+                        let resolved_right = ctx.resolve_type(&right_ty);
+
                         // Try to resolve the best matching overload
-                        let arg_types = vec![left_ty.clone(), right_ty.clone()];
+                        let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
                         if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
                             // resolved_ty is the matched function type: (T1, T2) -> T3
                             if let Type::Function(param_tys, ret_ty) = resolved_ty {
@@ -205,7 +209,7 @@ fn generate_symbol_constraints(
                         } else {
                             // No matching overload found - return error
                             return Err(crate::TypeError::UnificationError {
-                                left: format!("{} with arguments ({}, {})", op_name, left_ty, right_ty),
+                                left: format!("{} with arguments ({}, {})", op_name, resolved_left, resolved_right),
                                 right: "no matching overload".to_string(),
                                 span: None,
                             });
@@ -232,8 +236,11 @@ fn generate_symbol_constraints(
                         let operand_ty = ctx.get_or_create_symbol_type(children[0]);
                         let range = get_symbol_range(hir, symbol_id);
 
+                        // Resolve type to get its concrete value if already determined
+                        let resolved_operand = ctx.resolve_type(&operand_ty);
+
                         // Try to resolve the best matching overload
-                        let arg_types = vec![operand_ty.clone()];
+                        let arg_types = vec![resolved_operand.clone()];
                         if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
                             if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                 if param_tys.len() == 1 {
@@ -250,7 +257,7 @@ fn generate_symbol_constraints(
                         } else {
                             // No matching overload found - return error
                             return Err(crate::TypeError::UnificationError {
-                                left: format!("{} with argument ({})", op_name, operand_ty),
+                                left: format!("{} with argument ({})", op_name, resolved_operand),
                                 right: "no matching overload".to_string(),
                                 span: None,
                             });
@@ -278,8 +285,14 @@ fn generate_symbol_constraints(
                         .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
                         .collect();
 
+                    // Resolve argument types to get their concrete values if already determined
+                    let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
+
+                    // Check if this is a builtin function
+                    let is_builtin = ctx.get_builtin_overloads(func_name.as_str()).is_some();
+
                     // Try to resolve as a builtin function first
-                    if let Some(resolved_ty) = ctx.resolve_overload(func_name.as_str(), &arg_tys) {
+                    if let Some(resolved_ty) = ctx.resolve_overload(func_name.as_str(), &resolved_arg_tys) {
                         // resolved_ty is the matched function type
                         if let Type::Function(param_tys, ret_ty) = resolved_ty {
                             let range = get_symbol_range(hir, symbol_id);
@@ -292,6 +305,21 @@ fn generate_symbol_constraints(
                             // Set the call result type
                             ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
                         }
+                    } else if is_builtin {
+                        // Builtin function exists but no matching overload - return error
+                        return Err(crate::TypeError::UnificationError {
+                            left: format!(
+                                "{} with arguments ({})",
+                                func_name,
+                                resolved_arg_tys
+                                    .iter()
+                                    .map(|t| t.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                            right: "no matching overload".to_string(),
+                            span: None,
+                        });
                     } else {
                         // Not a builtin function - handle as a user-defined function
                         // Create result type
