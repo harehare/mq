@@ -53,14 +53,7 @@ fn register_binary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, r
 }
 
 /// Registers a ternary builtin: `(p1, p2, p3) -> ret`.
-fn register_ternary(
-    ctx: &mut InferenceContext,
-    name: &str,
-    p1: Type,
-    p2: Type,
-    p3: Type,
-    ret: Type,
-) {
+fn register_ternary(ctx: &mut InferenceContext, name: &str, p1: Type, p2: Type, p3: Type, ret: Type) {
     ctx.register_builtin(name, Type::function(vec![p1, p2, p3], ret));
 }
 
@@ -162,12 +155,7 @@ fn register_math(ctx: &mut InferenceContext) {
 /// String functions: downcase, upcase, trim, starts_with, ends_with, etc.
 fn register_string(ctx: &mut InferenceContext) {
     // Case conversion: string -> string
-    register_many(
-        ctx,
-        &["downcase", "upcase", "trim"],
-        vec![Type::String],
-        Type::String,
-    );
+    register_many(ctx, &["downcase", "upcase", "trim"], vec![Type::String], Type::String);
 
     // String search: (string, string) -> bool/number
     register_binary(ctx, "starts_with", Type::String, Type::String, Type::Bool);
@@ -176,36 +164,10 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "rindex", Type::String, Type::String, Type::Number);
 
     // String manipulation
-    register_ternary(
-        ctx,
-        "replace",
-        Type::String,
-        Type::String,
-        Type::String,
-        Type::String,
-    );
-    register_ternary(
-        ctx,
-        "gsub",
-        Type::String,
-        Type::String,
-        Type::String,
-        Type::String,
-    );
-    register_binary(
-        ctx,
-        "split",
-        Type::String,
-        Type::String,
-        Type::array(Type::String),
-    );
-    register_binary(
-        ctx,
-        "join",
-        Type::array(Type::String),
-        Type::String,
-        Type::String,
-    );
+    register_ternary(ctx, "replace", Type::String, Type::String, Type::String, Type::String);
+    register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
+    register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
+    register_binary(ctx, "join", Type::array(Type::String), Type::String, Type::String);
 
     // Character/codepoint conversion
     register_unary(ctx, "explode", Type::String, Type::array(Type::Number));
@@ -248,12 +210,7 @@ fn register_array(ctx: &mut InferenceContext) {
     // Polymorphic array -> array functions
     for name in ["reverse", "sort", "uniq", "compact"] {
         let a = ctx.fresh_var();
-        register_unary(
-            ctx,
-            name,
-            Type::array(Type::Var(a)),
-            Type::array(Type::Var(a)),
-        );
+        register_unary(ctx, name, Type::array(Type::Var(a)), Type::array(Type::Var(a)));
     }
 
     // flatten: [[a]] -> [a]
@@ -309,13 +266,7 @@ fn register_array(ctx: &mut InferenceContext) {
 
     // repeat: (a, number) -> [a]
     let a = ctx.fresh_var();
-    register_binary(
-        ctx,
-        "repeat",
-        Type::Var(a),
-        Type::Number,
-        Type::array(Type::Var(a)),
-    );
+    register_binary(ctx, "repeat", Type::Var(a), Type::Number, Type::array(Type::Var(a)));
 }
 
 /// Dictionary functions: keys, values, entries, get, set, del, update, dict
@@ -473,13 +424,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // (markdown, number) -> markdown
     register_binary(ctx, "to_h", Type::Markdown, Type::Number, Type::Markdown);
-    register_binary(
-        ctx,
-        "to_md_list",
-        Type::Markdown,
-        Type::Number,
-        Type::Markdown,
-    );
+    register_binary(ctx, "to_md_list", Type::Markdown, Type::Number, Type::Markdown);
 
     // (markdown, string) -> markdown/string
     register_binary(ctx, "to_code", Type::Markdown, Type::String, Type::Markdown);
@@ -496,14 +441,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
     );
 
     // (string, string, string) -> markdown
-    register_ternary(
-        ctx,
-        "to_link",
-        Type::String,
-        Type::String,
-        Type::String,
-        Type::Markdown,
-    );
+    register_ternary(ctx, "to_link", Type::String, Type::String, Type::String, Type::Markdown);
     register_ternary(
         ctx,
         "to_image",
@@ -535,29 +473,11 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // (markdown, bool) -> markdown
     register_binary(ctx, "set_check", Type::Markdown, Type::Bool, Type::Markdown);
-    register_binary(
-        ctx,
-        "set_list_ordered",
-        Type::Markdown,
-        Type::Bool,
-        Type::Markdown,
-    );
+    register_binary(ctx, "set_list_ordered", Type::Markdown, Type::Bool, Type::Markdown);
 
     // (markdown, string) -> markdown
-    register_binary(
-        ctx,
-        "set_code_block_lang",
-        Type::Markdown,
-        Type::String,
-        Type::Markdown,
-    );
-    register_binary(
-        ctx,
-        "set_ref",
-        Type::Markdown,
-        Type::String,
-        Type::Markdown,
-    );
+    register_binary(ctx, "set_code_block_lang", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(ctx, "set_ref", Type::Markdown, Type::String, Type::Markdown);
 }
 
 /// Variable/symbol management functions

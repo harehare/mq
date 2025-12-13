@@ -295,8 +295,12 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         let right_ty = ctx.get_or_create_symbol_type(children[1]);
                         let range = get_symbol_range(hir, symbol_id);
 
+                        // Resolve types to get their concrete values if already determined
+                        let resolved_left = ctx.resolve_type(&left_ty);
+                        let resolved_right = ctx.resolve_type(&right_ty);
+
                         // Try to resolve the best matching overload
-                        let arg_types = vec![left_ty.clone(), right_ty.clone()];
+                        let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
                         if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
                             // resolved_ty is the matched function type: (T1, T2) -> T3
                             if let Type::Function(param_tys, ret_ty) = resolved_ty {
@@ -346,8 +350,11 @@ fn generate_symbol_constraints(hir: &Hir, symbol_id: SymbolId, kind: SymbolKind,
                         let operand_ty = ctx.get_or_create_symbol_type(children[0]);
                         let range = get_symbol_range(hir, symbol_id);
 
+                        // Resolve type to get its concrete value if already determined
+                        let resolved_operand = ctx.resolve_type(&operand_ty);
+
                         // Try to resolve the best matching overload
-                        let arg_types = vec![operand_ty.clone()];
+                        let arg_types = vec![resolved_operand.clone()];
                         if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
                             if let Type::Function(param_tys, ret_ty) = resolved_ty {
                                 if param_tys.len() == 1 {
