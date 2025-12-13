@@ -14,7 +14,7 @@ fn create_hir(code: &str) -> Hir {
     hir
 }
 
-fn check_types(code: &str) -> Result<(), TypeError> {
+fn check_types(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
     checker.check(&hir)
@@ -24,9 +24,9 @@ fn check_types(code: &str) -> Result<(), TypeError> {
 fn test_error_location_array_type_mismatch() {
     // Array with mixed types should produce an error with location info
     let code = r#"[1, 2, "string"]"#;
-    let result = check_types(code);
+    let errors = check_types(code);
 
-    if let Err(e) = result {
+    if let Some(e) = errors.first() {
         // The error should have a span (even if approximate)
         println!("Error with location: {:?}", e);
         println!("Error display: {}", e);
@@ -35,10 +35,6 @@ fn test_error_location_array_type_mismatch() {
         match e {
             TypeError::Mismatch { expected, found, span } => {
                 println!("Expected: {}, Found: {}, Span: {:?}", expected, found, span);
-                // The span should be Some (not None)
-                // Note: With our current implementation, span will be Some
-                // because we're using the array's range
-                // assert!(span.is_some(), "Error should have location information");
             }
             _ => {
                 // Other error types are also acceptable
@@ -59,19 +55,17 @@ fn test_error_location_if_branch_mismatch() {
             42
         else:
             "string"
-        ;
     "#;
 
-    let result = check_types(code);
+    let errors = check_types(code);
 
-    if let Err(e) = result {
+    if let Some(e) = errors.first() {
         println!("Error with location: {:?}", e);
         println!("Error display: {}", e);
 
         match e {
             TypeError::Mismatch { expected, found, span } => {
                 println!("Expected: {}, Found: {}, Span: {:?}", expected, found, span);
-                // With builtins disabled, this might not trigger
             }
             _ => {
                 println!("Got error type: {:?}", e);
@@ -86,9 +80,9 @@ fn test_error_location_if_branch_mismatch() {
 fn test_error_message_readability() {
     // Test that error messages are human-readable
     let code = r#"[1, 2, 3, "four"]"#;
-    let result = check_types(code);
+    let errors = check_types(code);
 
-    if let Err(e) = result {
+    if let Some(e) = errors.first() {
         let error_msg = format!("{}", e);
         println!("Error message: {}", error_msg);
 
@@ -105,30 +99,30 @@ fn test_error_message_readability() {
 
 #[test]
 fn test_multiple_errors_show_locations() {
-    // Code with multiple type errors
+    // Code with multiple type errors - now we can collect ALL errors
     let code = r#"
         [1, "two"];
         [true, 42]
     "#;
 
-    let result = check_types(code);
+    let errors = check_types(code);
 
-    if let Err(e) = result {
-        println!("First error encountered: {:?}", e);
-        println!("Error display: {}", e);
+    if !errors.is_empty() {
+        println!("Found {} errors:", errors.len());
+        for (i, e) in errors.iter().enumerate() {
+            println!("Error {}: {:?}", i + 1, e);
+            println!("Error {} display: {}", i + 1, e);
 
-        // At least the first error should be reported with location
-        match e {
-            TypeError::Mismatch { span, .. }
-            | TypeError::UnificationError { span, .. }
-            | TypeError::OccursCheck { span, .. }
-            | TypeError::UndefinedSymbol { span, .. }
-            | TypeError::WrongArity { span, .. } => {
-                println!("Error span: {:?}", span);
-                // Verify that span information exists
-                // (may be approximate with our current implementation)
+            match e {
+                TypeError::Mismatch { span, .. }
+                | TypeError::UnificationError { span, .. }
+                | TypeError::OccursCheck { span, .. }
+                | TypeError::UndefinedSymbol { span, .. }
+                | TypeError::WrongArity { span, .. } => {
+                    println!("Error {} span: {:?}", i + 1, span);
+                }
+                _ => {}
             }
-            _ => {}
         }
     } else {
         println!("Note: Multiple type errors not yet being detected");
@@ -144,24 +138,14 @@ let y = "hello";
 x + y
     "#;
 
-    let result = check_types(code);
+    let errors = check_types(code);
 
     println!("\n=== Example Error Location Output ===");
-    match result {
-        Ok(_) => {
-            println!("No error detected (type checking for binary operators may not be complete)");
-        }
-        Err(e) => {
+    if errors.is_empty() {
+        println!("No error detected (type checking for binary operators may not be complete)");
+    } else {
+        for e in &errors {
             println!("Error: {}", e);
-
-            // With miette's diagnostic trait, this would show:
-            // Error: Type mismatch: expected number, found string
-            //   --> line 4, column 1
-            //    |
-            //  4 | x + y
-            //    | ^^^^^ type mismatch here
-            //
-            // For now, we just verify the error exists
             println!("Error details: {:?}", e);
         }
     }

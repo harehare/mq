@@ -1,9 +1,9 @@
 //! Unification algorithm for type inference.
 
+use crate::TypeError;
 use crate::constraint::Constraint;
 use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
-use crate::{Result, TypeError};
 use std::collections::HashSet;
 
 /// Converts a Range to a simplified miette::SourceSpan for error reporting.
@@ -24,25 +24,23 @@ fn range_to_span(range: &mq_lang::Range) -> miette::SourceSpan {
 }
 
 /// Solves type constraints through unification
-pub fn solve_constraints(ctx: &mut InferenceContext) -> Result<()> {
+pub fn solve_constraints(ctx: &mut InferenceContext) {
     let constraints = ctx.take_constraints();
 
     for constraint in constraints {
         match constraint {
             Constraint::Equal(t1, t2, range) => {
-                unify(ctx, &t1, &t2, range)?;
+                unify(ctx, &t1, &t2, range);
             }
             Constraint::Instance(_t, _var, _range) => {
                 // TODO: Handle type scheme instantiation
             }
         }
     }
-
-    Ok(())
 }
 
 /// Unifies two types
-pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_lang::Range>) -> Result<()> {
+pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_lang::Range>) {
     match (t1, t2) {
         // Same concrete types unify trivially
         (Type::Int, Type::Int)
@@ -52,15 +50,16 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
         | (Type::Bool, Type::Bool)
         | (Type::Symbol, Type::Symbol)
         | (Type::None, Type::None)
-        | (Type::Markdown, Type::Markdown) => Ok(()),
+        | (Type::Markdown, Type::Markdown) => {}
 
         // Type variables
-        (Type::Var(v1), Type::Var(v2)) if v1 == v2 => Ok(()),
+        (Type::Var(v1), Type::Var(v2)) if v1 == v2 => {}
 
         (Type::Var(var), ty) | (ty, Type::Var(var)) => {
             // Check if the variable is already resolved
             if let Some(resolved) = ctx.get_type_var(*var) {
-                return unify(ctx, &resolved, ty, range);
+                unify(ctx, &resolved, ty, range);
+                return;
             }
 
             // Occurs check: ensure var doesn't occur in ty
@@ -68,16 +67,16 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
                 // Resolve types for better error messages
                 let var_ty = ctx.resolve_type(&Type::Var(*var));
                 let resolved_ty = ctx.resolve_type(ty);
-                return Err(TypeError::OccursCheck {
+                ctx.add_error(TypeError::OccursCheck {
                     var: var_ty.to_string(),
                     ty: resolved_ty.to_string(),
                     span: range.as_ref().map(range_to_span),
                 });
+                return;
             }
 
             // Bind the type variable
             ctx.bind_type_var(*var, ty.clone());
-            Ok(())
         }
 
         // Arrays
@@ -85,27 +84,28 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
 
         // Dictionaries
         (Type::Dict(k1, v1), Type::Dict(k2, v2)) => {
-            unify(ctx, k1, k2, range.clone())?;
-            unify(ctx, v1, v2, range)
+            unify(ctx, k1, k2, range);
+            unify(ctx, v1, v2, range);
         }
 
         // Functions
         (Type::Function(params1, ret1), Type::Function(params2, ret2)) => {
             if params1.len() != params2.len() {
-                return Err(TypeError::WrongArity {
+                ctx.add_error(TypeError::WrongArity {
                     expected: params1.len(),
                     found: params2.len(),
                     span: range.as_ref().map(range_to_span),
                 });
+                return;
             }
 
             // Unify parameter types
             for (p1, p2) in params1.iter().zip(params2.iter()) {
-                unify(ctx, p1, p2, range.clone())?;
+                unify(ctx, p1, p2, range);
             }
 
             // Unify return types
-            unify(ctx, ret1, ret2, range)
+            unify(ctx, ret1, ret2, range);
         }
 
         // Mismatch
@@ -113,11 +113,11 @@ pub fn unify(ctx: &mut InferenceContext, t1: &Type, t2: &Type, range: Option<mq_
             // Resolve types for better error messages
             let resolved_t1 = ctx.resolve_type(t1);
             let resolved_t2 = ctx.resolve_type(t2);
-            Err(TypeError::Mismatch {
+            ctx.add_error(TypeError::Mismatch {
                 expected: resolved_t1.to_string(),
                 found: resolved_t2.to_string(),
                 span: range.as_ref().map(range_to_span),
-            })
+            });
         }
     }
 }
@@ -194,8 +194,11 @@ mod tests {
     #[test]
     fn test_unify_concrete_types() {
         let mut ctx = InferenceContext::new();
-        assert!(unify(&mut ctx, &Type::Number, &Type::Number, None).is_ok());
-        assert!(unify(&mut ctx, &Type::String, &Type::Number, None).is_err());
+        unify(&mut ctx, &Type::Number, &Type::Number, None);
+        assert!(ctx.take_errors().is_empty());
+
+        unify(&mut ctx, &Type::String, &Type::Number, None);
+        assert!(!ctx.take_errors().is_empty());
     }
 
     #[test]
@@ -207,10 +210,12 @@ mod tests {
         let var2 = var_ctx.fresh();
 
         // Unify var1 with Number
-        assert!(unify(&mut ctx, &Type::Var(var1), &Type::Number, None).is_ok());
+        unify(&mut ctx, &Type::Var(var1), &Type::Number, None);
+        assert!(ctx.take_errors().is_empty());
 
         // Unify var2 with var1 (should transitively become Number)
-        assert!(unify(&mut ctx, &Type::Var(var2), &Type::Var(var1), None).is_ok());
+        unify(&mut ctx, &Type::Var(var2), &Type::Var(var1), None);
+        assert!(ctx.take_errors().is_empty());
     }
 
     #[test]
@@ -218,10 +223,12 @@ mod tests {
         let mut ctx = InferenceContext::new();
         let arr1 = Type::array(Type::Number);
         let arr2 = Type::array(Type::Number);
-        assert!(unify(&mut ctx, &arr1, &arr2, None).is_ok());
+        unify(&mut ctx, &arr1, &arr2, None);
+        assert!(ctx.take_errors().is_empty());
 
         let arr3 = Type::array(Type::String);
-        assert!(unify(&mut ctx, &arr1, &arr3, None).is_err());
+        unify(&mut ctx, &arr1, &arr3, None);
+        assert!(!ctx.take_errors().is_empty());
     }
 
     #[test]

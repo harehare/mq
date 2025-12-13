@@ -1,5 +1,6 @@
 //! Type inference context and engine.
 
+use crate::TypeError;
 use crate::constraint::Constraint;
 use crate::types::{Type, TypeScheme, TypeVarContext, TypeVarId};
 use mq_hir::SymbolId;
@@ -18,6 +19,10 @@ pub struct InferenceContext {
     substitutions: FxHashMap<TypeVarId, Type>,
     /// Builtin function/operator type signatures (can have multiple overloads)
     builtins: FxHashMap<SmolStr, Vec<Type>>,
+    /// Collected type errors (for multi-error reporting)
+    errors: Vec<TypeError>,
+    /// Piped input types for symbols in a pipe chain
+    piped_inputs: FxHashMap<SymbolId, Type>,
 }
 
 impl InferenceContext {
@@ -29,6 +34,8 @@ impl InferenceContext {
             constraints: Vec::new(),
             substitutions: FxHashMap::default(),
             builtins: FxHashMap::default(),
+            errors: Vec::new(),
+            piped_inputs: FxHashMap::default(),
         }
     }
 
@@ -40,6 +47,26 @@ impl InferenceContext {
     /// Gets all overloaded types for a builtin function or operator
     pub fn get_builtin_overloads(&self, name: &str) -> Option<&[Type]> {
         self.builtins.get(name).map(|v| v.as_slice())
+    }
+
+    /// Adds a type error to the error collection
+    pub fn add_error(&mut self, error: TypeError) {
+        self.errors.push(error);
+    }
+
+    /// Takes all collected errors (consumes them)
+    pub fn take_errors(&mut self) -> Vec<TypeError> {
+        std::mem::take(&mut self.errors)
+    }
+
+    /// Sets the piped input type for a symbol
+    pub fn set_piped_input(&mut self, symbol: SymbolId, ty: Type) {
+        self.piped_inputs.insert(symbol, ty);
+    }
+
+    /// Gets the piped input type for a symbol
+    pub fn get_piped_input(&self, symbol: SymbolId) -> Option<&Type> {
+        self.piped_inputs.get(&symbol)
     }
 
     /// Resolves the best matching overload for a function call.
@@ -165,9 +192,13 @@ impl InferenceContext {
 
         for (symbol, ty) in &self.symbol_types {
             let resolved = self.resolve_type(ty);
-            // For now, create monomorphic type schemes
-            // TODO: Implement generalization for polymorphic types
-            result.insert(*symbol, TypeScheme::mono(resolved));
+            // Generalize function types: free type variables become quantified
+            let scheme = if matches!(resolved, Type::Function(_, _)) {
+                TypeScheme::generalize(resolved, &[])
+            } else {
+                TypeScheme::mono(resolved)
+            };
+            result.insert(*symbol, scheme);
         }
 
         result
