@@ -13,7 +13,7 @@ fn create_hir(code: &str) -> Hir {
 }
 
 /// Helper function to run type checker
-fn check_types(code: &str) -> Result<(), TypeError> {
+fn check_types(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
     checker.check(&hir)
@@ -26,37 +26,37 @@ fn check_types(code: &str) -> Result<(), TypeError> {
 #[test]
 fn test_literal_types() {
     // Numbers
-    assert!(check_types("42").is_ok());
-    assert!(check_types("3.14").is_ok());
+    assert!(check_types("42").is_empty());
+    assert!(check_types("3.14").is_empty());
 
     // Strings
-    assert!(check_types(r#""hello""#).is_ok());
+    assert!(check_types(r#""hello""#).is_empty());
 
     // Booleans
-    assert!(check_types("true").is_ok());
-    assert!(check_types("false").is_ok());
+    assert!(check_types("true").is_empty());
+    assert!(check_types("false").is_empty());
 
     // None
-    assert!(check_types("none").is_ok());
+    assert!(check_types("none").is_empty());
 }
 
 #[test]
 fn test_variable_definitions() {
-    assert!(check_types("let x = 42;").is_ok());
-    assert!(check_types(r#"let name = "Alice";"#).is_ok());
-    assert!(check_types("let flag = true;").is_ok());
+    assert!(check_types("let x = 42;").is_empty());
+    assert!(check_types(r#"let name = "Alice";"#).is_empty());
+    assert!(check_types("let flag = true;").is_empty());
 }
 
 #[test]
 fn test_simple_functions() {
     // Identity function
-    assert!(check_types("def identity(x): x;").is_ok());
+    assert!(check_types("def identity(x): x;").is_empty());
 
     // Constant function
-    assert!(check_types("def const(x, y): x;").is_ok());
+    assert!(check_types("def const(x, y): x;").is_empty());
 
     // Simple arithmetic (assuming builtins exist)
-    assert!(check_types("def add(x, y): x + y;").is_ok());
+    assert!(check_types("def add(x, y): x + y;").is_empty());
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn test_function_calls() {
         identity(42)
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 
     assert!(
@@ -78,33 +78,33 @@ fn test_function_calls() {
         add(1, 2)
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
 #[test]
 fn test_arrays() {
     // Empty array
-    assert!(check_types("[]").is_ok());
+    assert!(check_types("[]").is_empty());
 
     // Homogeneous arrays
-    assert!(check_types("[1, 2, 3]").is_ok());
-    assert!(check_types(r#"["a", "b", "c"]"#).is_ok());
+    assert!(check_types("[1, 2, 3]").is_empty());
+    assert!(check_types(r#"["a", "b", "c"]"#).is_empty());
 
     // Nested arrays
-    assert!(check_types("[[1, 2], [3, 4]]").is_ok());
+    assert!(check_types("[[1, 2], [3, 4]]").is_empty());
 }
 
 #[test]
 fn test_dictionaries() {
     // Empty dict
-    assert!(check_types("{}").is_ok());
+    assert!(check_types("{}").is_empty());
 
     // Simple dict
-    assert!(check_types(r#"{"key": "value"}"#).is_ok());
+    assert!(check_types(r#"{"key": "value"}"#).is_empty());
 
     // Numeric values
-    assert!(check_types(r#"{"a": 1, "b": 2}"#).is_ok());
+    assert!(check_types(r#"{"a": 1, "b": 2}"#).is_empty());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn test_conditionals() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 
     assert!(
@@ -133,7 +133,7 @@ fn test_conditionals() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -148,7 +148,7 @@ fn test_loops() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 
     assert!(
@@ -160,7 +160,7 @@ fn test_loops() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -176,7 +176,7 @@ fn test_pattern_matching() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -193,7 +193,7 @@ fn test_nested_functions() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -207,7 +207,7 @@ fn test_variable_references() {
         y
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -221,7 +221,7 @@ fn test_function_as_value() {
         g
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -290,7 +290,7 @@ fn test_higher_order_functions() {
         map(double, [1, 2, 3])
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -310,7 +310,7 @@ fn test_closure_capture() {
         add5(10)
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -325,7 +325,7 @@ fn test_multiple_lets() {
         a + b + c
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -346,7 +346,7 @@ fn test_nested_conditionals() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -363,7 +363,7 @@ fn test_complex_patterns() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -376,7 +376,7 @@ fn test_dict_operations() {
         dict
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -392,7 +392,7 @@ fn test_try_catch() {
         ;
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -402,12 +402,12 @@ fn test_try_catch() {
 
 #[test]
 fn test_empty_program() {
-    assert!(check_types("").is_ok());
+    assert!(check_types("").is_empty());
 }
 
 #[test]
 fn test_only_whitespace() {
-    assert!(check_types("   \n  \t  ").is_ok());
+    assert!(check_types("   \n  \t  ").is_empty());
 }
 
 #[test]
@@ -421,18 +421,18 @@ fn test_multiple_statements() {
         x + y + z
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
 #[test]
 fn test_deeply_nested_arrays() {
-    assert!(check_types("[[[[1]]]]").is_ok());
+    assert!(check_types("[[[[1]]]]").is_empty());
 }
 
 #[test]
 fn test_deeply_nested_dicts() {
-    assert!(check_types(r#"{"a": {"b": {"c": 1}}}"#).is_ok());
+    assert!(check_types(r#"{"a": {"b": {"c": 1}}}"#).is_empty());
 }
 
 #[test]
@@ -444,7 +444,7 @@ fn test_lambda_functions() {
         f(5)
     "#
         )
-        .is_ok()
+        .is_empty()
     );
 }
 
@@ -464,7 +464,7 @@ fn test_inferred_types_basic() {
     let hir = create_hir("let x = 42;");
     let mut checker = TypeChecker::new();
 
-    assert!(checker.check(&hir).is_ok());
+    assert!(checker.check(&hir).is_empty());
 
     // Verify that we have type information
     assert!(!checker.symbol_types().is_empty());
@@ -475,7 +475,7 @@ fn test_inferred_types_function() {
     let hir = create_hir("def identity(x): x;");
     let mut checker = TypeChecker::new();
 
-    assert!(checker.check(&hir).is_ok());
+    assert!(checker.check(&hir).is_empty());
 
     // The function should have a type
     let types = checker.symbol_types();
@@ -498,7 +498,7 @@ fn test_type_unification() {
     );
     let mut checker = TypeChecker::new();
 
-    assert!(checker.check(&hir).is_ok());
+    assert!(checker.check(&hir).is_empty());
 
     // All variables should have compatible types
     println!("Unified types:");

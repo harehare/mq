@@ -14,7 +14,7 @@ fn create_hir(code: &str) -> Hir {
     hir
 }
 
-fn check_types(code: &str) -> Result<(), TypeError> {
+fn check_types(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
     checker.check(&hir)
@@ -30,7 +30,7 @@ fn test_todo_binary_op_type_mismatch() {
     // Reason: No type signatures for binary operators
     let result = check_types(r#"1 + "string""#);
     println!("Binary op type mismatch: {:?}", result);
-    assert!(result.is_err(), "Expected type error for number + string"); // Uncomment when implemented
+    assert!(!result.is_empty(), "Expected type error for number + string");
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn test_todo_if_else_type_mismatch() {
     );
     println!("If/else type mismatch: {:?}", result);
     assert!(
-        result.is_err(),
+        !result.is_empty(),
         "Expected type error for if/else branches with different types"
     );
 }
@@ -62,7 +62,7 @@ fn test_todo_array_element_type_mismatch() {
     // Reason: No constraints between array elements
     let result = check_types(r#"[1, "string", true]"#);
     println!("Array element type mismatch: {:?}", result);
-    assert!(result.is_err(), "Expected type error for array with mixed types");
+    assert!(!result.is_empty(), "Expected type error for array with mixed types");
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn test_todo_dict_value_type_mismatch() {
     // Reason: No constraints between dict values
     let result = check_types(r#"{"a": 1, "b": "string"}"#);
     println!("Dict value type mismatch: {:?}", result);
-    // assert!(result.is_err()); // Uncomment when implemented
+    // assert!(result.is_empty()); // Uncomment when implemented
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn test_todo_function_arg_type_mismatch() {
     "#,
     );
     println!("Function arg type mismatch: {:?}", result);
-    // assert!(result.is_err()); // Uncomment when implemented
+    // assert!(result.is_empty()); // Uncomment when implemented
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn test_todo_function_arity_mismatch() {
     "#,
     );
     println!("Function arity mismatch: {:?}", result);
-    // assert!(result.is_err()); // Uncomment when implemented
+    // assert!(result.is_empty()); // Uncomment when implemented
 }
 
 // ============================================================================
@@ -109,30 +109,30 @@ fn test_todo_function_arity_mismatch() {
 #[test]
 fn test_success_simple_literal() {
     let result = check_types("42");
-    if let Err(ref e) = result {
+    for e in &result {
         eprintln!("Error: {}", e);
     }
-    assert!(result.is_ok());
+    assert!(result.is_empty());
 }
 
 #[test]
 fn test_success_simple_variable() {
-    assert!(check_types("let x = 42; x").is_ok());
+    assert!(check_types("let x = 42; x").is_empty());
 }
 
 #[test]
 fn test_success_simple_function() {
-    assert!(check_types("def id(x): x;").is_ok());
+    assert!(check_types("def id(x): x;").is_empty());
 }
 
 #[test]
 fn test_success_homogeneous_array() {
-    assert!(check_types("[1, 2, 3]").is_ok());
+    assert!(check_types("[1, 2, 3]").is_empty());
 }
 
 #[test]
 fn test_success_homogeneous_dict() {
-    assert!(check_types(r#"{"a": 1, "b": 2}"#).is_ok());
+    assert!(check_types(r#"{"a": 1, "b": 2}"#).is_empty());
 }
 
 // ============================================================================
@@ -150,7 +150,7 @@ fn test_inspect_inferred_types() {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
 
-    assert!(checker.check(&hir).is_ok());
+    assert!(checker.check(&hir).is_empty());
 
     println!("\n=== Inferred Types ===");
     for (symbol_id, type_scheme) in checker.symbol_types() {
@@ -172,7 +172,7 @@ fn test_inspect_type_variables() {
     let hir = create_hir(code);
     let mut checker = TypeChecker::new();
 
-    assert!(checker.check(&hir).is_ok());
+    assert!(checker.check(&hir).is_empty());
 
     println!("\n=== Type Variables ===");
     for (symbol_id, type_scheme) in checker.symbol_types() {
