@@ -12,14 +12,14 @@ repository = "https://github.com/harehare/mq"
 version = "0.5.2"
 
 [dependencies]
-itertools.workspace = true
-miette.workspace = true
-mq-hir.workspace = true
-mq-lang = {workspace = true, features = ["cst"]}
-rustc-hash.workspace = true
+itertools = "0.14.0"
+miette = {version = "7.6.0"}
+mq-hir = {path = "../mq-hir", version = "0.5.2"}
+mq-lang = {path = "../mq-lang", version = "0.5.2", features = ["cst"]}
+rustc-hash = "2.1.1"
 slotmap = "1.0.7"
-smol_str.workspace = true
-thiserror.workspace = true
+smol_str = "0.1.1"
+thiserror = "1.0.40"
 
 [dev-dependencies]
-rstest.workspace = true
+rstest = "0.17.0"
