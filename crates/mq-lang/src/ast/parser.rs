@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
+use crate::error::syntax::SyntaxError;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
@@ -10,7 +11,6 @@ use smol_str::SmolStr;
 use std::iter::Peekable;
 
 use super::constants;
-use super::error::ParseError;
 use super::node::{AccessTarget, Args, Branches, Expr, Literal, Node};
 use super::{Program, TokenId};
 
@@ -38,22 +38,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Program, ParseError> {
+    pub fn parse(&mut self) -> Result<Program, SyntaxError> {
         self.parse_program(true)
     }
 
-    fn parse_program(&mut self, root: bool) -> Result<Program, ParseError> {
+    fn parse_program(&mut self, root: bool) -> Result<Program, SyntaxError> {
         let mut asts = Vec::with_capacity(1_000);
 
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::Pipe | TokenKind::SemiColon | TokenKind::End => {
-                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((***token).clone()));
                 }
                 _ => {}
             },
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         while let Some(token) = self.tokens.next() {
@@ -68,7 +68,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         if let TokenKind::Eof = &token.kind {
                             break;
                         } else {
-                            return Err(ParseError::UnexpectedToken((***token).clone()));
+                            return Err(SyntaxError::UnexpectedToken((***token).clone()));
                         }
                     }
                     // For non-root programs (e.g. function bodies), a semicolon/end explicitly ends the program.
@@ -79,7 +79,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     asts.push(ast);
                 }
                 TokenKind::Nodes => {
-                    return Err(ParseError::UnexpectedToken((**token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => unreachable!(),
                 _ => {
@@ -90,14 +90,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         if asts.is_empty() {
-            return Err(ParseError::UnexpectedEOFDetected(self.module_id));
+            return Err(SyntaxError::UnexpectedEOFDetected(self.module_id));
         }
 
         Ok(asts)
     }
 
     #[inline(always)]
-    fn parse_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         self.parse_equality_expr(token)
     }
 
@@ -138,7 +138,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_binary_op(parser: &mut Parser, min_prec: u8, mut lhs: Shared<Node>) -> Result<Shared<Node>, ParseError> {
+    fn parse_binary_op(parser: &mut Parser, min_prec: u8, mut lhs: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         while let Some(peeked_token_rc) = parser.tokens.peek() {
             let kind = &peeked_token_rc.kind;
             if !Self::is_binary_op(kind) {
@@ -156,7 +156,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             let rhs_token = match parser.tokens.next() {
                 Some(t) => t,
-                None => return Err(ParseError::UnexpectedEOFDetected(parser.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(parser.module_id)),
             };
             let mut rhs = parser.parse_primary_expr(rhs_token)?;
 
@@ -184,7 +184,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         expr: Shared::new(Expr::Assign(ident.clone(), rhs)),
                     }),
                     _ => {
-                        return Err(ParseError::InvalidAssignmentTarget(
+                        return Err(SyntaxError::InvalidAssignmentTarget(
                             (*parser.token_arena[lhs.token_id]).clone(),
                         ));
                     }
@@ -205,12 +205,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(lhs)
     }
 
-    fn parse_equality_expr(&mut self, initial_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_equality_expr(&mut self, initial_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let lhs = self.parse_primary_expr(initial_token)?;
         Self::parse_binary_op(self, 0, lhs) // Start from precedence 0 to include assignment
     }
 
-    fn parse_primary_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_primary_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Selector(_) => self.parse_selector(token),
             TokenKind::Let => self.parse_expr_let(token),
@@ -242,19 +242,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Env(_) => self.parse_env(token),
             TokenKind::None => self.parse_literal(token),
             TokenKind::Colon => self.parse_symbol(token),
-            TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-            _ => Err(ParseError::UnexpectedToken((**token).clone())),
+            TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
         }
     }
 
-    fn parse_module(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_module(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Module => match self.tokens.peek() {
                 Some(_) => {
                     let ident_token = self
                         .tokens
                         .next()
-                        .ok_or(ParseError::UnexpectedEOFDetected(self.module_id))?;
+                        .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
 
                     self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
 
@@ -265,7 +265,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         match &*node.expr {
                             Expr::Let(_, _) | Expr::Def(_, _, _) | Expr::Module(_, _) | Expr::Import(_) => {}
                             _ => {
-                                return Err(ParseError::UnexpectedToken((*self.token_arena[node.token_id]).clone()));
+                                return Err(SyntaxError::UnexpectedToken((*self.token_arena[node.token_id]).clone()));
                             }
                         }
                     }
@@ -277,7 +277,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                 match &ident_token.kind {
                                     TokenKind::Ident(name) => name,
                                     _ => {
-                                        return Err(ParseError::UnexpectedToken((**ident_token).clone()));
+                                        return Err(SyntaxError::UnexpectedToken((**ident_token).clone()));
                                     }
                                 },
                                 Some(Shared::clone(ident_token)),
@@ -286,18 +286,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         )),
                     }))
                 }
-                None => Err(ParseError::UnexpectedToken((**token).clone())),
+                None => Err(SyntaxError::UnexpectedToken((**token).clone())),
             },
-            _ => Err(ParseError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
         }
     }
 
-    fn parse_symbol(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_symbol(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Colon => {
                 let next_token = match self.tokens.next() {
                     Some(t) => t,
-                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                    None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 };
                 match &next_token.kind {
                     TokenKind::Ident(name) => Ok(Shared::new(Node {
@@ -308,18 +308,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         token_id: self.token_arena.alloc(Shared::clone(token)),
                         expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(s)))),
                     })),
-                    _ => Err(ParseError::UnexpectedToken((**next_token).clone())),
+                    _ => Err(SyntaxError::UnexpectedToken((**next_token).clone())),
                 }
             }
-            _ => Err(ParseError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
         }
     }
 
-    fn parse_paren(&mut self, lparen_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_paren(&mut self, lparen_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(lparen_token));
         let expr_token = match self.tokens.next() {
             Some(t) => t,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         let expr_node = self.parse_expr(expr_token)?;
@@ -332,12 +332,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_not(&mut self, not_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_not(&mut self, not_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(not_token));
 
         let expr_token = match self.tokens.next() {
             Some(t) => t,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         if !matches!(
@@ -356,7 +356,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Env(_)
                 | TokenKind::Ident(_)
         ) {
-            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
         }
 
         let expr_node = self.parse_primary_expr(expr_token)?;
@@ -371,12 +371,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_negate(&mut self, minus_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_negate(&mut self, minus_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(minus_token));
 
         let expr_token = match self.tokens.next() {
             Some(t) => t,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         if !matches!(
@@ -392,7 +392,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Env(_)
                 | TokenKind::Ident(_)
         ) {
-            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
         }
 
         let expr_node = self.parse_primary_expr(expr_token)?;
@@ -405,7 +405,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_dict(&mut self, lbrace_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_dict(&mut self, lbrace_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(lbrace_token));
         let mut pairs = SmallVec::new();
 
@@ -415,14 +415,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     self.tokens.next();
                     break;
                 }
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 _ => {}
             }
 
             // Parse key
             let key_token = match self.tokens.next() {
                 Some(t) => t,
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             };
 
             let key_node = match &key_token.kind {
@@ -435,21 +435,21 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     expr: Shared::new(Expr::Literal(Literal::String(s.clone()))),
                 }),
                 _ => {
-                    return Err(ParseError::UnexpectedToken((**key_token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((**key_token).clone()));
                 }
             };
 
             // Expect Colon
             match self.tokens.next() {
                 Some(token) if token.kind == TokenKind::Colon => {}
-                Some(token) => return Err(ParseError::UnexpectedToken((**token).clone())),
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                Some(token) => return Err(SyntaxError::UnexpectedToken((**token).clone())),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             }
 
             // Parse value
             let value_token = match self.tokens.next() {
                 Some(t) => t,
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             };
             let value_node = self.parse_expr(value_token)?;
 
@@ -478,9 +478,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     break;
                 }
                 Some(token) => {
-                    return Err(ParseError::ExpectedClosingBrace((***token).clone()));
+                    return Err(SyntaxError::ExpectedClosingBrace((***token).clone()));
                 }
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             }
         }
 
@@ -493,16 +493,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_env(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_env(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Env(s) => Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(token)),
                 expr: std::env::var(s)
-                    .map_err(|_| ParseError::EnvNotFound((**token).clone(), SmolStr::new(s)))
+                    .map_err(|_| SyntaxError::EnvNotFound((**token).clone(), SmolStr::new(s)))
                     .map(|s| Shared::new(Expr::Literal(Literal::String(s.to_owned()))))?,
             })),
-            TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-            _ => Err(ParseError::UnexpectedToken((**token).clone())),
+            TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
         }
     }
 
@@ -510,20 +510,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         &mut self,
         base_node: Shared<Node>,
         token_id: TokenId,
-    ) -> Result<Shared<Node>, ParseError> {
+    ) -> Result<Shared<Node>, SyntaxError> {
         let selector_token = match self.tokens.peek() {
             Some(t) => Shared::clone(t),
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         if let TokenKind::Selector(selector) = &selector_token.kind
             && selector.len() > 1
         {
             if !Selector::try_from(&*selector_token)
-                .map_err(ParseError::UnknownSelector)?
+                .map_err(SyntaxError::UnknownSelector)?
                 .is_attribute_selector()
             {
-                return Err(ParseError::UnexpectedToken((*selector_token).clone()));
+                return Err(SyntaxError::UnexpectedToken((*selector_token).clone()));
             }
 
             let attribute_name = &selector[1..]; // Skip the leading '.'
@@ -547,7 +547,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_self(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_self(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(token));
         let self_node = Shared::new(Node {
             token_id,
@@ -561,21 +561,21 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_break(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_break(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         Ok(Shared::new(Node {
             token_id: self.token_arena.alloc(Shared::clone(token)),
             expr: Shared::new(Expr::Break),
         }))
     }
 
-    fn parse_continue(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_continue(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         Ok(Shared::new(Node {
             token_id: self.token_arena.alloc(Shared::clone(token)),
             expr: Shared::new(Expr::Continue),
         }))
     }
 
-    fn parse_array(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_array(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(token));
         let mut elements: SmallVec<[Shared<Node>; 4]> = SmallVec::new();
 
@@ -599,7 +599,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_all_nodes(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_all_nodes(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         Ok(Shared::new(Node {
             token_id: self.token_arena.alloc(Shared::clone(token)),
             expr: Shared::new(Expr::Nodes),
@@ -669,7 +669,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         )
     }
 
-    fn parse_literal(&mut self, literal_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_literal(&mut self, literal_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let literal_node = match &literal_token.kind {
             TokenKind::BoolLiteral(b) => Ok(Shared::new(Node {
                 token_id: self.token_arena.alloc(Shared::clone(literal_token)),
@@ -687,8 +687,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id: self.token_arena.alloc(Shared::clone(literal_token)),
                 expr: Shared::new(Expr::Literal(Literal::None)),
             })),
-            TokenKind::Eof => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
-            _ => Err(ParseError::UnexpectedToken((**literal_token).clone())),
+            TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+            _ => Err(SyntaxError::UnexpectedToken((**literal_token).clone())),
         }?;
 
         let token = self.tokens.peek();
@@ -696,11 +696,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if Self::is_next_token_allowed(token.as_ref().map(|t| &t.kind)) {
             Ok(literal_node)
         } else {
-            Err(ParseError::UnexpectedToken((***token.unwrap()).clone()))
+            Err(SyntaxError::UnexpectedToken((***token.unwrap()).clone()))
         }
     }
 
-    fn parse_ident(&mut self, ident: &str, ident_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_ident(&mut self, ident: &str, ident_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::Selector(selector)) if selector.len() > 1 => {
                 let token_id = self.token_arena.alloc(Shared::clone(ident_token));
@@ -726,11 +726,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let next_token = self
                         .tokens
                         .next()
-                        .ok_or(ParseError::UnexpectedEOFDetected(self.module_id))?;
+                        .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
 
                     let next_ident = match &next_token.kind {
                         TokenKind::Ident(name) => name.clone(),
-                        _ => return Err(ParseError::UnexpectedToken((**next_token).clone())),
+                        _ => return Err(SyntaxError::UnexpectedToken((**next_token).clone())),
                     };
 
                     // Check if this is the last segment (followed by '(' or not '::')
@@ -773,7 +773,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
 
                 // This should not be reached, but handle it gracefully
-                Err(ParseError::UnexpectedToken((**ident_token).clone()))
+                Err(SyntaxError::UnexpectedToken((**ident_token).clone()))
             }
             Some(TokenKind::LParen) => {
                 let args = self.parse_args()?;
@@ -810,7 +810,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
                     Ok(call_node)
                 } else {
-                    Err(ParseError::UnexpectedToken((***self.tokens.peek().unwrap()).clone()))
+                    Err(SyntaxError::UnexpectedToken((***self.tokens.peek().unwrap()).clone()))
                 }
             }
             Some(TokenKind::LBracket) => {
@@ -831,7 +831,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     Some(Shared::clone(ident_token)),
                 ))),
             })),
-            _ => Err(ParseError::UnexpectedToken((**ident_token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken((**ident_token).clone())),
         }
     }
 
@@ -840,13 +840,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         &mut self,
         target_node: Shared<Node>,
         original_token: &Shared<Token>,
-    ) -> Result<Shared<Node>, ParseError> {
+    ) -> Result<Shared<Node>, SyntaxError> {
         let _ = self.tokens.next(); // consume '['
 
         // Parse the first expression
         let first_token = match self.tokens.next() {
             Some(t) => t,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         let first_node = self.parse_expr(first_token)?;
@@ -885,10 +885,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let _ = self.tokens.next(); // consume ']'
                         }
                         Some(token) => {
-                            return Err(ParseError::ExpectedClosingBracket((***token).clone()));
+                            return Err(SyntaxError::ExpectedClosingBracket((***token).clone()));
                         }
                         None => {
-                            return Err(ParseError::ExpectedClosingBracket(Token {
+                            return Err(SyntaxError::ExpectedClosingBracket(Token {
                                 range: original_token.range,
                                 kind: TokenKind::Eof,
                                 module_id: self.module_id,
@@ -904,7 +904,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         )),
                     })
                 }
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             }
         } else {
             // Expect closing bracket
@@ -913,10 +913,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let _ = self.tokens.next(); // consume ']'
                 }
                 Some(token) => {
-                    return Err(ParseError::ExpectedClosingBracket((***token).clone()));
+                    return Err(SyntaxError::ExpectedClosingBracket((***token).clone()));
                 }
                 None => {
-                    return Err(ParseError::ExpectedClosingBracket(Token {
+                    return Err(SyntaxError::ExpectedClosingBracket(Token {
                         range: original_token.range,
                         kind: TokenKind::Eof,
                         module_id: self.module_id,
@@ -952,7 +952,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_expr_def(&mut self, def_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_def(&mut self, def_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
             Some(token) => match &***token {
@@ -961,15 +961,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     kind: TokenKind::Ident(ident),
                     module_id: _,
                 } => Ok(ident),
-                token => Err(ParseError::UnexpectedToken((*token).clone())),
+                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
             },
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
         let def_token_id = self.token_arena.alloc(Shared::clone(def_token));
         let args = self.parse_args()?;
 
         if !args.is_empty() && !args.iter().all(|a| matches!(&*a.expr, Expr::Ident(_))) {
-            return Err(ParseError::UnexpectedToken((*self.token_arena[def_token_id]).clone()));
+            return Err(SyntaxError::UnexpectedToken((*self.token_arena[def_token_id]).clone()));
         }
 
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
@@ -986,7 +986,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_expr_block(&mut self, do_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_block(&mut self, do_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let do_token_id = self.token_arena.alloc(Shared::clone(do_token));
         let program = self.parse_program(false)?;
 
@@ -999,12 +999,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_fn(&mut self, fn_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_fn(&mut self, fn_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.token_arena.alloc(Shared::clone(fn_token));
         let args = self.parse_args()?;
 
         if !args.is_empty() && !args.iter().all(|a| matches!(&*a.expr, Expr::Ident(_))) {
-            return Err(ParseError::UnexpectedToken((*self.token_arena[fn_token_id]).clone()));
+            return Err(SyntaxError::UnexpectedToken((*self.token_arena[fn_token_id]).clone()));
         }
 
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
@@ -1017,12 +1017,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_while(&mut self, while_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_while(&mut self, while_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(while_token));
         let args = self.parse_args()?;
 
         if args.len() != 1 {
-            return Err(ParseError::UnexpectedToken((**while_token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**while_token).clone()));
         }
 
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
@@ -1040,11 +1040,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     )),
                 }))
             }
-            None => Err(ParseError::UnexpectedToken((**while_token).clone())),
+            None => Err(SyntaxError::UnexpectedToken((**while_token).clone())),
         }
     }
 
-    fn parse_try(&mut self, try_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_try(&mut self, try_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(try_token));
 
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
@@ -1052,7 +1052,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         // Parse try expression
         let try_expr = match self.tokens.next() {
             Some(token) => self.parse_expr(token)?,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         if !self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Catch)) {
@@ -1075,7 +1075,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         // Parse catch expression
         let catch_expr = match self.tokens.next() {
             Some(token) => self.parse_expr(token)?,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         Ok(Shared::new(Node {
@@ -1084,11 +1084,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_foreach(&mut self, foreach_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_foreach(&mut self, foreach_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let args = self.parse_args()?;
 
         if args.len() != 2 {
-            return Err(ParseError::UnexpectedToken((**foreach_token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**foreach_token).clone()));
         }
 
         let first_arg = &*args.first().unwrap().expr;
@@ -1115,16 +1115,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     )),
                 }))
             }
-            _ => Err(ParseError::UnexpectedToken((**foreach_token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken((**foreach_token).clone())),
         }
     }
 
-    fn parse_expr_if(&mut self, if_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_if(&mut self, if_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(if_token));
         let args = self.parse_args()?;
 
         if args.len() != 1 {
-            return Err(ParseError::UnexpectedToken((*self.token_arena[token_id]).clone()));
+            return Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone()));
         }
         let cond = args.first().unwrap();
         let token_id = self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
@@ -1151,13 +1151,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_expr_match(&mut self, match_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_match(&mut self, match_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(match_token));
 
         // Parse the value expression: match (value):
         let args = self.parse_args()?;
         if args.len() != 1 {
-            return Err(ParseError::UnexpectedToken((*self.token_arena[token_id]).clone()));
+            return Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone()));
         }
         let value = Shared::clone(args.first().unwrap());
 
@@ -1186,7 +1186,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     self.tokens.next(); // consume 'if'
                     let guard_args = self.parse_args()?;
                     if guard_args.len() != 1 {
-                        return Err(ParseError::UnexpectedToken((*if_token).clone()));
+                        return Err(SyntaxError::UnexpectedToken((*if_token).clone()));
                     }
                     Some(Shared::clone(guard_args.first().unwrap()))
                 } else {
@@ -1218,10 +1218,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+    fn parse_pattern(&mut self) -> Result<Pattern, SyntaxError> {
         let token = match self.tokens.next() {
             Some(t) => t,
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         match &token.kind {
@@ -1231,11 +1231,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Colon => {
                 let type_token = match self.tokens.next() {
                     Some(t) => t,
-                    None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                    None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 };
                 match &type_token.kind {
                     TokenKind::Ident(type_name) => Ok(Pattern::Type(Ident::new(type_name))),
-                    _ => Err(ParseError::UnexpectedToken((**type_token).clone())),
+                    _ => Err(SyntaxError::UnexpectedToken((**type_token).clone())),
                 }
             }
             // Literal patterns
@@ -1249,11 +1249,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::LBrace => self.parse_dict_pattern(),
             // Identifier pattern (binding)
             TokenKind::Ident(name) => Ok(Pattern::Ident(IdentWithToken::new(name))),
-            _ => Err(ParseError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
         }
     }
 
-    fn parse_array_pattern(&mut self) -> Result<super::node::Pattern, ParseError> {
+    fn parse_array_pattern(&mut self) -> Result<super::node::Pattern, SyntaxError> {
         let mut patterns = Vec::new();
         let mut has_rest = false;
         let mut rest_binding: Option<IdentWithToken> = None;
@@ -1274,14 +1274,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             rest_binding = Some(IdentWithToken::new(name));
                             has_rest = true;
                         } else {
-                            return Err(ParseError::UnexpectedToken((**ident_token).clone()));
+                            return Err(SyntaxError::UnexpectedToken((**ident_token).clone()));
                         }
                     }
                     // Expect closing bracket after rest
                     if let Some(token) = self.tokens.next()
                         && !matches!(token.kind, TokenKind::RBracket)
                     {
-                        return Err(ParseError::UnexpectedToken((**token).clone()));
+                        return Err(SyntaxError::UnexpectedToken((**token).clone()));
                     }
                     break;
                 }
@@ -1298,7 +1298,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Will be consumed in next iteration
                     continue;
                 } else {
-                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((***token).clone()));
                 }
             }
         }
@@ -1310,7 +1310,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_dict_pattern(&mut self) -> Result<super::node::Pattern, ParseError> {
+    fn parse_dict_pattern(&mut self) -> Result<super::node::Pattern, SyntaxError> {
         let mut fields = Vec::new();
 
         loop {
@@ -1325,12 +1325,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             // Parse key (must be identifier)
             let key_token = match self.tokens.next() {
                 Some(t) => t,
-                None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             };
 
             let key = match &key_token.kind {
                 TokenKind::Ident(name) => IdentWithToken::new(name),
-                _ => return Err(ParseError::UnexpectedToken((**key_token).clone())),
+                _ => return Err(SyntaxError::UnexpectedToken((**key_token).clone())),
             };
 
             // Check if there's a colon (key: pattern) or just key shorthand
@@ -1356,7 +1356,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Will be consumed in next iteration
                     continue;
                 } else {
-                    return Err(ParseError::UnexpectedToken((***token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((***token).clone()));
                 }
             }
         }
@@ -1365,16 +1365,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     #[inline(always)]
-    fn parse_next_expr(&mut self, token_id: TokenId) -> Result<Shared<Node>, ParseError> {
+    fn parse_next_expr(&mut self, token_id: TokenId) -> Result<Shared<Node>, SyntaxError> {
         let expr_token = match self.tokens.next() {
             Some(token) => Ok(token),
-            None => Err(ParseError::UnexpectedToken((*self.token_arena[token_id]).clone())),
+            None => Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone())),
         }?;
 
         self.parse_expr(expr_token)
     }
 
-    fn parse_elif(&mut self) -> Result<Vec<IfExpr>, ParseError> {
+    fn parse_elif(&mut self) -> Result<Vec<IfExpr>, SyntaxError> {
         let mut nodes = Vec::with_capacity(8);
 
         while let Some(token) = self.tokens.peek() {
@@ -1386,14 +1386,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let args = self.parse_args()?;
 
             if args.len() != 1 {
-                return Err(ParseError::UnexpectedToken((*self.token_arena[token_id]).clone()));
+                return Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone()));
             }
 
             let token_id = self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
 
             let expr_token = match self.tokens.next() {
                 Some(token) => Ok(token),
-                None => Err(ParseError::UnexpectedToken((*self.token_arena[token_id]).clone())),
+                None => Err(SyntaxError::UnexpectedToken((*self.token_arena[token_id]).clone())),
             }?;
 
             let cond = args.first().unwrap();
@@ -1405,7 +1405,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(nodes)
     }
 
-    fn parse_expr_let(&mut self, let_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_let(&mut self, let_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
             Some(token) => match &***token {
@@ -1414,20 +1414,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     kind: TokenKind::Ident(ident),
                     module_id: _,
                 } => Ok(ident),
-                token => Err(ParseError::UnexpectedToken((*token).clone())),
+                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
             },
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         let let_token_id = self.token_arena.alloc(Shared::clone(let_token));
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
         let expr_token = match self.tokens.next() {
             Some(token) => Ok(token),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         if matches!(expr_token.kind, TokenKind::Let | TokenKind::Var) {
-            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
         }
 
         let ast = self.parse_expr(expr_token)?;
@@ -1438,7 +1438,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Pipe | TokenKind::Eof | TokenKind::SemiColon | TokenKind::End
             )
         {
-            return Err(ParseError::UnexpectedToken((***token).clone()));
+            return Err(SyntaxError::UnexpectedToken((***token).clone()));
         }
 
         Ok(Shared::new(Node {
@@ -1450,7 +1450,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn parse_expr_var(&mut self, var_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_var(&mut self, var_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
             Some(token) => match &***token {
@@ -1459,20 +1459,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     kind: TokenKind::Ident(ident),
                     module_id: _,
                 } => Ok(ident),
-                token => Err(ParseError::UnexpectedToken((*token).clone())),
+                token => Err(SyntaxError::UnexpectedToken((*token).clone())),
             },
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         let var_token_id = self.token_arena.alloc(Shared::clone(var_token));
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
         let expr_token = match self.tokens.next() {
             Some(token) => Ok(token),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         if matches!(expr_token.kind, TokenKind::Let | TokenKind::Var) {
-            return Err(ParseError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
         }
 
         let ast = self.parse_expr(expr_token)?;
@@ -1483,7 +1483,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Pipe | TokenKind::Eof | TokenKind::SemiColon | TokenKind::End
             )
         {
-            return Err(ParseError::UnexpectedToken((***token).clone()));
+            return Err(SyntaxError::UnexpectedToken((***token).clone()));
         }
 
         Ok(Shared::new(Node {
@@ -1496,7 +1496,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     #[inline(always)]
-    fn parse_include(&mut self, include_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_include(&mut self, include_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::StringLiteral(module) => {
@@ -1506,18 +1506,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         expr: Shared::new(Expr::Include(Literal::String(module.to_owned()))),
                     }))
                 }
-                _ => Err(ParseError::InsufficientTokens((***token).clone())),
+                _ => Err(SyntaxError::InsufficientTokens((***token).clone())),
             },
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }
     }
 
     #[inline(always)]
-    fn parse_import(&mut self, import_token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_import(&mut self, import_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.token_arena.alloc(Shared::clone(import_token));
         let token = match self.tokens.next() {
             Some(token) => Ok(Shared::clone(token)),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         match &token.kind {
@@ -1528,11 +1528,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     expr: Shared::new(Expr::Import(Literal::String(module_name))),
                 }))
             }
-            _ => Err(ParseError::InsufficientTokens((*token).clone())),
+            _ => Err(SyntaxError::InsufficientTokens((*token).clone())),
         }
     }
 
-    fn parse_interpolated_string(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_interpolated_string(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::InterpolatedString(segments) = &token.kind {
             let mut parsed_segments = Vec::new();
 
@@ -1555,7 +1555,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             // Parse as a full expression
                             let lexer = Lexer::new(crate::lexer::Options::default());
                             let tokens = lexer.tokenize(expr_str, token.module_id).map_err(|_| {
-                                ParseError::UnexpectedToken(Token {
+                                SyntaxError::UnexpectedToken(Token {
                                     range: *range,
                                     kind: TokenKind::InterpolatedString(vec![]),
                                     module_id: token.module_id,
@@ -1565,7 +1565,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let shared_tokens: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
                             let mut parser = Parser::new(shared_tokens.iter(), self.token_arena, token.module_id);
                             let expr_node = parser.parse_expr_from_tokens().map_err(|_| {
-                                ParseError::UnexpectedToken(Token {
+                                SyntaxError::UnexpectedToken(Token {
                                     range: *range,
                                     kind: TokenKind::InterpolatedString(vec![]),
                                     module_id: token.module_id,
@@ -1583,20 +1583,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 expr: Shared::new(Expr::InterpolatedString(parsed_segments)),
             }))
         } else {
-            Err(ParseError::UnexpectedToken((**token).clone()))
+            Err(SyntaxError::UnexpectedToken((**token).clone()))
         }
     }
 
     #[inline(always)]
-    fn parse_expr_from_tokens(&mut self) -> Result<Shared<Node>, ParseError> {
+    fn parse_expr_from_tokens(&mut self) -> Result<Shared<Node>, SyntaxError> {
         if let Some(token) = self.tokens.next() {
             self.parse_expr(token)
         } else {
-            Err(ParseError::UnexpectedEOFDetected(self.module_id))
+            Err(SyntaxError::UnexpectedEOFDetected(self.module_id))
         }
     }
 
-    fn parse_args(&mut self) -> Result<Args, ParseError> {
+    fn parse_args(&mut self) -> Result<Args, SyntaxError> {
         match self.tokens.peek() {
             Some(token) => match &***token {
                 Token {
@@ -1606,9 +1606,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 } => {
                     self.tokens.next();
                 }
-                token => return Err(ParseError::UnexpectedToken((*token).clone())),
+                token => return Err(SyntaxError::UnexpectedToken((*token).clone())),
             },
-            None => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         let mut args: Args = SmallVec::new();
@@ -1626,7 +1626,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         kind: TokenKind::Comma,
                         module_id: _,
                     }) => {
-                        return Err(ParseError::UnexpectedToken((**token).clone()));
+                        return Err(SyntaxError::UnexpectedToken((**token).clone()));
                     }
                     _ => break,
                 },
@@ -1641,7 +1641,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         module_id: _,
                     }) => break,
                     Some(_) | None => {
-                        return Err(ParseError::ExpectedClosingParen((**token).clone()));
+                        return Err(SyntaxError::ExpectedClosingParen((**token).clone()));
                     }
                 },
                 Token {
@@ -1652,7 +1652,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     Some(_) => {
                         let token = match self.tokens.peek() {
                             Some(token) => Ok(Shared::clone(token)),
-                            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                         }?;
                         match &*token {
                             Token {
@@ -1660,18 +1660,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                 kind: TokenKind::Comma,
                                 module_id: _,
                             } => {
-                                return Err(ParseError::UnexpectedToken((*token).clone()));
+                                return Err(SyntaxError::UnexpectedToken((*token).clone()));
                             }
                             _ => continue,
                         }
                     }
-                    None => return Err(ParseError::UnexpectedToken((**token).clone())),
+                    None => return Err(SyntaxError::UnexpectedToken((**token).clone())),
                 },
                 Token {
                     range: _,
                     kind: TokenKind::SemiColon,
                     module_id: _,
-                } => return Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+                } => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 _ => {
                     // Arguments that are complex expressions (idents, selectors, if, fn)
                     args.push(self.parse_arg_expr(token)?);
@@ -1683,7 +1683,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             if let Some(token) = self.tokens.peek()
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
             {
-                return Err(ParseError::ExpectedClosingParen((***token).clone()));
+                return Err(SyntaxError::ExpectedClosingParen((***token).clone()));
             }
         }
 
@@ -1693,7 +1693,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     // Helper to parse an argument that is expected to be a general expression.
     // This typically involves a recursive call to `parse_expr`.
     #[inline(always)]
-    fn parse_arg_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_arg_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         self.parse_expr(token)
     }
 
@@ -1702,17 +1702,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         &mut self,
         token: &Shared<Token>,
         attr_token: Shared<Token>,
-    ) -> Result<Shared<Node>, ParseError> {
+    ) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::Selector(attr_selector) = &attr_token.kind {
             let attribute = &attr_selector[1..]; // Skip the dot
             // Parse the base selector recursively
             let base_node = self.parse_selector_direct(token)?;
 
             if !Selector::try_from(&*attr_token)
-                .map_err(ParseError::UnknownSelector)?
+                .map_err(SyntaxError::UnknownSelector)?
                 .is_attribute_selector()
             {
-                return Err(ParseError::UnexpectedToken((*attr_token).clone()));
+                return Err(SyntaxError::UnexpectedToken((*attr_token).clone()));
             }
 
             // Create the attribute string literal
@@ -1730,12 +1730,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 )),
             }))
         } else {
-            Err(ParseError::UnexpectedToken((**token).clone()))
+            Err(SyntaxError::UnexpectedToken((**token).clone()))
         }
     }
 
     /// Parse a selector without checking for attributes (to avoid infinite recursion)
-    fn parse_selector_direct(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_selector_direct(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::Selector(selector) = &token.kind {
             if selector == "." {
                 if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LBracket)) {
@@ -1747,7 +1747,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }))
                 }
             } else {
-                let selector = Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
+                let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
 
                 Ok(Shared::new(Node {
                     token_id: self.token_arena.alloc(Shared::clone(token)),
@@ -1755,11 +1755,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }))
             }
         } else {
-            Err(ParseError::InsufficientTokens((**token).clone()))
+            Err(SyntaxError::InsufficientTokens((**token).clone()))
         }
     }
 
-    fn parse_selector(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_selector(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::Selector(_) = &token.kind {
             if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
                 && let Some(attr_token) = self.tokens.next()
@@ -1769,22 +1769,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             self.parse_selector_direct(token)
         } else {
-            Err(ParseError::InsufficientTokens((**token).clone()))
+            Err(SyntaxError::InsufficientTokens((**token).clone()))
         }
     }
 
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
     // Example: .[0][1] or .[0]
-    fn parse_selector_table_args(&mut self, token: Shared<Token>) -> Result<Shared<Node>, ParseError> {
+    fn parse_selector_table_args(&mut self, token: Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
         let token1 = match self.tokens.peek() {
             Some(token) => Ok(Shared::clone(token)),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         let ArrayIndex(i1) = self.parse_int_array_arg(&token1)?;
         let token2 = match self.tokens.peek() {
             Some(token) => Ok(Shared::clone(token)),
-            None => Err(ParseError::UnexpectedEOFDetected(self.module_id)),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
         if let Token {
@@ -1808,12 +1808,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_int_array_arg(&mut self, token: &Shared<Token>) -> Result<ArrayIndex, ParseError> {
+    fn parse_int_array_arg(&mut self, token: &Shared<Token>) -> Result<ArrayIndex, SyntaxError> {
         self.next_token(|token_kind| matches!(token_kind, TokenKind::LBracket))?;
 
         let token = match self.tokens.peek() {
             Some(token) => Ok(Shared::clone(token)),
-            None => return Err(ParseError::InsufficientTokens((**token).clone())),
+            None => return Err(SyntaxError::InsufficientTokens((**token).clone())),
         }?;
 
         if let Token {
@@ -1834,12 +1834,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             self.tokens.next();
             Ok(ArrayIndex(None))
         } else {
-            Err(ParseError::UnexpectedToken((*token).clone()))
+            Err(SyntaxError::UnexpectedToken((*token).clone()))
         }
     }
 
     #[inline(always)]
-    fn next_token(&mut self, expected_kinds: fn(&TokenKind) -> bool) -> Result<TokenId, ParseError> {
+    fn next_token(&mut self, expected_kinds: fn(&TokenKind) -> bool) -> Result<TokenId, SyntaxError> {
         match self.tokens.peek() {
             // Token found and matches one of the expected kinds.
             Some(token) if expected_kinds(&token.kind) => {
@@ -1847,7 +1847,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 Ok(self.token_arena.alloc(Shared::clone(token)))
             } // Consume and return.
             // Token found but does not match expected kinds.
-            Some(token) => Err(ParseError::UnexpectedToken(Token {
+            Some(token) => Err(SyntaxError::UnexpectedToken(Token {
                 range: token.range,
                 kind: token.kind.clone(),
                 module_id: token.module_id,
@@ -1856,7 +1856,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None =>
             // If EOF is not expected here, it's an error.
             {
-                Err(ParseError::UnexpectedEOFDetected(self.module_id))
+                Err(SyntaxError::UnexpectedEOFDetected(self.module_id))
             }
         }
     }
@@ -2048,7 +2048,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Ident(SmolStr::new("and"))),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
     #[case::ident5(
         vec![
             token(TokenKind::Ident(SmolStr::new("and"))),
@@ -2059,13 +2059,13 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Def),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Def))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Def))))]
     #[case::ident6(
         vec![
             token(TokenKind::Ident(SmolStr::new("and"))),
             token(TokenKind::Def),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("and"))))))]
     #[case::ident_attribute_access(
         vec![
             token(TokenKind::Ident(SmolStr::new("c"))),
@@ -2097,7 +2097,7 @@ mod tests {
             token(TokenKind::Selector(SmolStr::new("inline_code"))),
             token(TokenKind::Eof)
         ],
-        Err(ParseError::UnknownSelector(selector::UnknownSelector::new(token(TokenKind::Selector(SmolStr::new("inline_code")))))))]
+        Err(SyntaxError::UnknownSelector(selector::UnknownSelector::new(token(TokenKind::Selector(SmolStr::new("inline_code")))))))]
     #[case::def1(
         vec![
             token(TokenKind::Def),
@@ -2152,7 +2152,7 @@ mod tests {
             token(TokenKind::Comma),
             token(TokenKind::RParen),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Comma, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Comma, module_id: 1.into()})))]
     #[case::def3(
         vec![
             token(TokenKind::Def),
@@ -2162,7 +2162,7 @@ mod tests {
             token(TokenKind::Comma),
             token(TokenKind::RParen),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
     #[case::def4(
         vec![
             token(TokenKind::Def),
@@ -2172,7 +2172,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Colon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
     #[case::def5(
         vec![
             token(TokenKind::Def),
@@ -2183,7 +2183,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::Pipe),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
     #[case::def6(
         vec![
             token(TokenKind::Def),
@@ -2194,7 +2194,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::SemiColon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
     #[case::def7(
         vec![
             token(TokenKind::Def),
@@ -2204,7 +2204,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Colon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Def, module_id: 1.into()})))]
     #[case::def7(
         vec![
             token(TokenKind::Def),
@@ -2213,7 +2213,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Colon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::LParen, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::LParen, module_id: 1.into()})))]
     #[case::let_1(
             vec![
                 token(TokenKind::Let),
@@ -2422,7 +2422,7 @@ mod tests {
                 token(TokenKind::Ident(SmolStr::new("y"))),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("y"))))))]
+            Err(SyntaxError::UnexpectedToken(token(TokenKind::Ident(SmolStr::new("y"))))))]
     #[case::if_1(
             vec![
                 token(TokenKind::If),
@@ -2601,7 +2601,7 @@ mod tests {
                 token(TokenKind::Colon),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedEOFDetected(0.into())))]
+            Err(SyntaxError::UnexpectedEOFDetected(0.into())))]
     #[case::if_error(
             vec![
                 token(TokenKind::If),
@@ -2619,7 +2619,7 @@ mod tests {
                 token(TokenKind::Colon),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::If, module_id: 1.into()})))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::If, module_id: 1.into()})))]
     #[case::elif_error(
             vec![
                 token(TokenKind::If),
@@ -2637,7 +2637,7 @@ mod tests {
                 token(TokenKind::Colon),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Elif, module_id: 1.into()})))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Elif, module_id: 1.into()})))]
     #[case::h_selector(
         vec![
             token(TokenKind::Selector(SmolStr::new(".h"))),
@@ -2692,7 +2692,7 @@ mod tests {
             token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
     #[case::while_error(
         vec![
             token(TokenKind::While),
@@ -2701,7 +2701,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::Colon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::While, module_id: 1.into()})))]
     #[case::try_catch(
         vec![
             token(TokenKind::Try),
@@ -2783,7 +2783,7 @@ mod tests {
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
-        Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Foreach, module_id: 1.into()})))]
+        Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::Foreach, module_id: 1.into()})))]
     #[case::self_(
         vec![token(TokenKind::Self_), token(TokenKind::Eof)],
         Ok(vec![Shared::new(Node {
@@ -2835,7 +2835,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::Eof),
         ],
-        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+        Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::while_error(
         vec![
             token(TokenKind::While),
@@ -2845,7 +2845,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::Eof),
         ],
-        Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+        Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::using_reserved_keyword_let(
             vec![
                 token(TokenKind::Let),
@@ -2854,7 +2854,7 @@ mod tests {
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::If, module_id: 1.into()})))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::If, module_id: 1.into()})))]
     #[case::using_reserved_keyword_while(
             vec![
                 token(TokenKind::Let),
@@ -2863,7 +2863,7 @@ mod tests {
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::While, module_id: 1.into()})))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::While, module_id: 1.into()})))]
     #[case::using_reserved_keyword_def(
             vec![
                 token(TokenKind::Let),
@@ -2872,7 +2872,7 @@ mod tests {
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Def, module_id: 1.into()})))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Def, module_id: 1.into()})))]
     #[case::using_reserved_keyword_include(
             vec![
                 token(TokenKind::Let),
@@ -2881,7 +2881,7 @@ mod tests {
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Include, module_id: 1.into()})))]
+            Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind: TokenKind::Include, module_id: 1.into()})))]
     #[case::nodes(
         vec![
             token(TokenKind::Nodes),
@@ -2903,7 +2903,7 @@ mod tests {
             token(TokenKind::Nodes),
             token(TokenKind::SemiColon)
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Nodes))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Nodes))))]
     #[case::nodes_then_selector(
         vec![
             token(TokenKind::Nodes),
@@ -3070,7 +3070,7 @@ mod tests {
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Fn))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Fn))))]
     #[case::fn_without_colon(
         vec![
             token(TokenKind::Fn),
@@ -3079,7 +3079,7 @@ mod tests {
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::StringLiteral("result".to_owned())))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::StringLiteral("result".to_owned())))))]
     #[case::fn_without_body(
         vec![
             token(TokenKind::Fn),
@@ -3088,7 +3088,7 @@ mod tests {
             token(TokenKind::Colon),
             token(TokenKind::SemiColon),
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::SemiColon))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::SemiColon))))]
     #[case::fn_nested_in_call(
         vec![
             token(TokenKind::Ident(SmolStr::new("apply"))),
@@ -3280,7 +3280,7 @@ mod tests {
                         token(TokenKind::StringLiteral("value".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::array_invalid_token(
                     vec![
                         token(TokenKind::LBracket),
@@ -3288,7 +3288,7 @@ mod tests {
                         token(TokenKind::RBracket),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedToken(token(TokenKind::Pipe))))]
+                    Err(SyntaxError::UnexpectedToken(token(TokenKind::Pipe))))]
     #[case::array_nested_unclosed(
                     vec![
                         token(TokenKind::LBracket),
@@ -3297,7 +3297,7 @@ mod tests {
                         token(TokenKind::RBracket),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::array_with_ident(
                     vec![
                         token(TokenKind::LBracket),
@@ -3517,7 +3517,7 @@ mod tests {
                         token(TokenKind::EqEq),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::equality_in_if_condition(
                     vec![
                         token(TokenKind::If),
@@ -3751,7 +3751,7 @@ mod tests {
                         token(TokenKind::NeEq),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::not_equality_in_if_condition(
                     vec![
                         token(TokenKind::If),
@@ -3849,7 +3849,7 @@ mod tests {
                         token(TokenKind::Plus),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::lt_simple(
                     vec![
                         token(TokenKind::NumberLiteral(1.into())),
@@ -4099,7 +4099,7 @@ mod tests {
                             token(TokenKind::NumberLiteral(1.into())),
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::ExpectedClosingBrace(token(TokenKind::Eof))))]
+                        Err(SyntaxError::ExpectedClosingBrace(token(TokenKind::Eof))))]
     #[case::dict_missing_colon(
                         vec![
                             token(TokenKind::LBrace),
@@ -4108,7 +4108,7 @@ mod tests {
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
+                        Err(SyntaxError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
     #[case::dict_invalid_key(
                         vec![
                             token(TokenKind::LBrace),
@@ -4118,7 +4118,7 @@ mod tests {
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
+                        Err(SyntaxError::UnexpectedToken(token(TokenKind::NumberLiteral(1.into())))))]
     #[case::attr_h_value(
         vec![
             token(TokenKind::Selector(".h".into())),
@@ -4323,7 +4323,7 @@ mod tests {
                 token(TokenKind::Percent),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::mul_simple(
             vec![
                 token(TokenKind::NumberLiteral(3.into())),
@@ -4380,7 +4380,7 @@ mod tests {
                 token(TokenKind::Asterisk),
                 token(TokenKind::Eof)
             ],
-            Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+            Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::multiple_binary_operators(
             vec![
                 token(TokenKind::NumberLiteral(1.into())),
@@ -4632,7 +4632,7 @@ mod tests {
                     token(TokenKind::RangeOp),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::args_missing_rparen(
                 vec![
                     token(TokenKind::Ident(SmolStr::new("foo"))),
@@ -4641,7 +4641,7 @@ mod tests {
                     // Missing RParen
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::ExpectedClosingParen(token(TokenKind::Eof)))
+                Err(SyntaxError::ExpectedClosingParen(token(TokenKind::Eof)))
             )]
     #[case::args_unexpected_token(
                 vec![
@@ -4652,7 +4652,7 @@ mod tests {
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::ExpectedClosingParen(token(TokenKind::Colon)))
+                Err(SyntaxError::ExpectedClosingParen(token(TokenKind::Colon)))
             )]
     #[case::args_leading_comma(
                 vec![
@@ -4663,7 +4663,7 @@ mod tests {
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::UnexpectedToken(token(TokenKind::Comma)))
+                Err(SyntaxError::UnexpectedToken(token(TokenKind::Comma)))
             )]
     #[case::args_double_comma(
                 vec![
@@ -4676,7 +4676,7 @@ mod tests {
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::UnexpectedToken(token(TokenKind::Comma)))
+                Err(SyntaxError::UnexpectedToken(token(TokenKind::Comma)))
             )]
     #[case::binary_operator_chaining(
                 vec![
@@ -4830,7 +4830,7 @@ mod tests {
                     token(TokenKind::NumberLiteral(5.into())),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::ExpectedClosingBracket(token(TokenKind::Eof))))]
+                Err(SyntaxError::ExpectedClosingBracket(token(TokenKind::Eof))))]
     #[case::slice_access_with_numbers(
                 vec![
                     token(TokenKind::Ident(SmolStr::new("arr"))),
@@ -4900,7 +4900,7 @@ mod tests {
                     token(TokenKind::Not),
                     token(TokenKind::Eof)
                 ],
-                Err(ParseError::UnexpectedToken(token(TokenKind::Eof))))]
+                Err(SyntaxError::UnexpectedToken(token(TokenKind::Eof))))]
     #[case::break_(
                     vec![
                         token(TokenKind::Break),
@@ -5334,7 +5334,7 @@ mod tests {
                     token(TokenKind::Question),
                     token(TokenKind::Eof),
                 ],
-                Err(ParseError::UnexpectedToken(token(TokenKind::Ident("foo".into())))))]
+                Err(SyntaxError::UnexpectedToken(token(TokenKind::Ident("foo".into())))))]
     #[case::coalesce_simple(
                     vec![
                         token(TokenKind::StringLiteral("foo".to_owned())),
@@ -5416,7 +5416,7 @@ mod tests {
                         token(TokenKind::Coalesce),
                         token(TokenKind::Eof)
                     ],
-                    Err(ParseError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+                    Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
     #[case::negate_simple(
         vec![
             token(TokenKind::Minus),
@@ -5462,7 +5462,7 @@ mod tests {
             token(TokenKind::Minus),
             token(TokenKind::Eof)
         ],
-        Err(ParseError::UnexpectedToken(token(TokenKind::Eof))))]
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Eof))))]
     #[case::import_simple(
             vec![
             token(TokenKind::Import),
@@ -5725,7 +5725,7 @@ mod tests {
                             token(TokenKind::Let), // Using "let" as a value (should error)
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::UnexpectedToken(Token {
+                        Err(SyntaxError::UnexpectedToken(Token {
                             range: Range::default(),
                             kind: TokenKind::Let,
                             module_id: 1.into(),
@@ -5739,7 +5739,7 @@ mod tests {
                             token(TokenKind::Ident(SmolStr::new("vvv"))),
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::UnexpectedToken(Token {
+                        Err(SyntaxError::UnexpectedToken(Token {
                             range: Range::default(),
                             kind: TokenKind::Let,
                             module_id: 1.into(),
@@ -5753,13 +5753,13 @@ mod tests {
                             token(TokenKind::Let), // Using "let" as a value (should error)
                             token(TokenKind::Eof)
                         ],
-                        Err(ParseError::UnexpectedToken(Token {
+                        Err(SyntaxError::UnexpectedToken(Token {
                             range: Range::default(),
                             kind: TokenKind::Let,
                             module_id: 1.into(),
                         }))
                     )]
-    fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
+    fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
         let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
@@ -5987,7 +5987,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(ParseError::EnvNotFound(_, var)) if var == "MQ_NONEXISTENT_VAR"
+            Err(SyntaxError::EnvNotFound(_, var)) if var == "MQ_NONEXISTENT_VAR"
         ));
     }
 
@@ -6487,7 +6487,7 @@ mod tests {
                 ))
             })
         ]))]
-    fn test_parse_match(#[case] input: Vec<Token>, #[case] expected: Result<Program, ParseError>) {
+    fn test_parse_match(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
         let mut arena = Arena::new(10);
         let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
         let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();

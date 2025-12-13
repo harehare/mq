@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::{Token, module::ModuleId, selector};
 
 #[derive(Error, Debug, PartialEq)]
-pub enum ParseError {
+pub enum SyntaxError {
     #[error("Not found env `{1}`")]
     EnvNotFound(Token, SmolStr),
     #[error("Unexpected token `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
@@ -25,19 +25,19 @@ pub enum ParseError {
     UnknownSelector(selector::UnknownSelector),
 }
 
-impl ParseError {
+impl SyntaxError {
     #[cold]
     pub fn token(&self) -> Option<&Token> {
         match self {
-            ParseError::EnvNotFound(token, _) => Some(token),
-            ParseError::UnexpectedToken(token) => Some(token),
-            ParseError::UnexpectedEOFDetected(_) => None,
-            ParseError::InsufficientTokens(token) => Some(token),
-            ParseError::ExpectedClosingParen(token) => Some(token),
-            ParseError::ExpectedClosingBrace(token) => Some(token),
-            ParseError::ExpectedClosingBracket(token) => Some(token),
-            ParseError::InvalidAssignmentTarget(token) => Some(token),
-            ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
+            SyntaxError::EnvNotFound(token, _) => Some(token),
+            SyntaxError::UnexpectedToken(token) => Some(token),
+            SyntaxError::UnexpectedEOFDetected(_) => None,
+            SyntaxError::InsufficientTokens(token) => Some(token),
+            SyntaxError::ExpectedClosingParen(token) => Some(token),
+            SyntaxError::ExpectedClosingBrace(token) => Some(token),
+            SyntaxError::ExpectedClosingBracket(token) => Some(token),
+            SyntaxError::InvalidAssignmentTarget(token) => Some(token),
+            SyntaxError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
         }
     }
 }

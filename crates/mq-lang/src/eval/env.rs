@@ -1,7 +1,7 @@
 use super::builtin;
-use super::error::EvalError;
 use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
+use crate::error::runtime::RuntimeError;
 use crate::{Ident, SharedCell, Token, TokenArena, get_token};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::error::Error;
@@ -30,26 +30,26 @@ impl fmt::Display for EnvError {
 
 impl EnvError {
     #[cold]
-    pub fn to_eval_error(&self, token_id: TokenId, token_arena: TokenArena) -> EvalError {
+    pub fn to_runtime_error(&self, token_id: TokenId, token_arena: TokenArena) -> RuntimeError {
         match self {
             EnvError::InvalidDefinition(def) => {
-                EvalError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
+                RuntimeError::InvalidDefinition((*get_token(token_arena, token_id)).clone(), def.to_string())
             }
             EnvError::AssignToImmutable(var) => {
-                EvalError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
+                RuntimeError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), var.to_string())
             }
             EnvError::UndefinedVariable(var) => {
-                EvalError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), var.to_string())
+                RuntimeError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), var.to_string())
             }
         }
     }
 
     #[cold]
-    pub fn to_eval_error_with_token(&self, token: Token) -> EvalError {
+    pub fn to_runtime_error_with_token(&self, token: Token) -> RuntimeError {
         match self {
-            EnvError::InvalidDefinition(def) => EvalError::InvalidDefinition(token, def.to_string()),
-            EnvError::AssignToImmutable(var) => EvalError::AssignToImmutable(token, var.to_string()),
-            EnvError::UndefinedVariable(var) => EvalError::UndefinedVariable(token, var.to_string()),
+            EnvError::InvalidDefinition(def) => RuntimeError::InvalidDefinition(token, def.to_string()),
+            EnvError::AssignToImmutable(var) => RuntimeError::AssignToImmutable(token, var.to_string()),
+            EnvError::UndefinedVariable(var) => RuntimeError::UndefinedVariable(token, var.to_string()),
         }
     }
 }

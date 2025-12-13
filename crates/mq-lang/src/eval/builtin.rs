@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
+use crate::error::runtime::RuntimeError;
 use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
 use crate::number::{self, Number};
@@ -20,7 +21,6 @@ use std::{
 };
 use thiserror::Error;
 
-use super::error::EvalError;
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
@@ -3675,47 +3675,49 @@ impl From<env::EnvError> for Error {
 
 impl Error {
     #[cold]
-    pub fn to_eval_error(&self, node: ast::Node, token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) -> EvalError {
+    pub fn to_runtime_error(
+        &self,
+        node: ast::Node,
+        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    ) -> RuntimeError {
         match self {
-            Error::UserDefined(message) => EvalError::UserDefined {
+            Error::UserDefined(message) => RuntimeError::UserDefined {
                 message: message.to_owned(),
                 token: (*get_token(token_arena, node.token_id)).clone(),
             },
             Error::InvalidBase64String(e) => {
-                EvalError::InvalidBase64String((*get_token(token_arena, node.token_id)).clone(), e.to_string())
+                RuntimeError::InvalidBase64String((*get_token(token_arena, node.token_id)).clone(), e.to_string())
             }
             Error::NotDefined(name) => {
-                EvalError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
             Error::InvalidDefinition(a) => {
-                EvalError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
+                RuntimeError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
             }
             Error::InvalidDateTimeFormat(msg) => {
-                EvalError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
+                RuntimeError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
             }
-            Error::InvalidTypes(name, args) => EvalError::InvalidTypes {
+            Error::InvalidTypes(name, args) => RuntimeError::InvalidTypes {
                 token: (*get_token(token_arena, node.token_id)).clone(),
                 name: name.clone(),
                 args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
             },
-            Error::InvalidNumberOfArguments(name, expected, got) => EvalError::InvalidNumberOfArguments(
+            Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments(
                 (*get_token(token_arena, node.token_id)).clone(),
                 name.clone(),
                 *expected,
                 *got,
             ),
             Error::InvalidRegularExpression(regex) => {
-                EvalError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
+                RuntimeError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
             }
-            Error::Runtime(msg) => {
-                EvalError::RuntimeError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
-            }
-            Error::ZeroDivision => EvalError::ZeroDivision((*get_token(token_arena, node.token_id)).clone()),
+            Error::Runtime(msg) => RuntimeError::Runtime((*get_token(token_arena, node.token_id)).clone(), msg.clone()),
+            Error::ZeroDivision => RuntimeError::ZeroDivision((*get_token(token_arena, node.token_id)).clone()),
             Error::AssignToImmutable(name) => {
-                EvalError::AssignToImmutable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::AssignToImmutable((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
             Error::UndefinedVariable(name) => {
-                EvalError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
         }
     }
