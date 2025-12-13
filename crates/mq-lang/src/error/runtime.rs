@@ -10,7 +10,7 @@ type ArgType = Vec<SmolStr>;
 type ErrorToken = Token;
 
 #[derive(Error, Debug, PartialEq)]
-pub enum EvalError {
+pub enum RuntimeError {
     #[error("{}", message)]
     UserDefined { message: String, token: ErrorToken },
     #[error("Invalid base64 string")]
@@ -40,7 +40,7 @@ pub enum EvalError {
     #[error("Failed to load module \"{0}\"")]
     ModuleLoadError(#[from] ModuleError),
     #[error("Runtime error: {1}")]
-    RuntimeError(ErrorToken, String),
+    Runtime(ErrorToken, String),
     #[error("Divided by 0")]
     ZeroDivision(ErrorToken),
     #[error("Unexpected token break")]
@@ -55,29 +55,29 @@ pub enum EvalError {
     UndefinedVariable(Token, String),
 }
 
-impl EvalError {
+impl RuntimeError {
     #[cold]
     pub fn token(&self) -> Option<&Token> {
         match self {
-            EvalError::UserDefined { token, .. } => Some(token),
-            EvalError::InvalidBase64String(token, _) => Some(token),
-            EvalError::NotDefined(token, _) => Some(token),
-            EvalError::DateTimeFormatError(token, _) => Some(token),
-            EvalError::IndexOutOfBounds(token, _) => Some(token),
-            EvalError::InvalidDefinition(token, _) => Some(token),
-            EvalError::RecursionError(_) => None,
-            EvalError::InvalidTypes { token, .. } => Some(token),
-            EvalError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
-            EvalError::InvalidRegularExpression(token, _) => Some(token),
-            EvalError::InternalError(token) => Some(token),
-            EvalError::ModuleLoadError(err) => err.token(),
-            EvalError::RuntimeError(token, _) => Some(token),
-            EvalError::ZeroDivision(token) => Some(token),
-            EvalError::Break => None,
-            EvalError::Continue => None,
-            EvalError::EnvNotFound(token, _) => Some(token),
-            EvalError::AssignToImmutable(token, _) => Some(token),
-            EvalError::UndefinedVariable(token, _) => Some(token),
+            RuntimeError::UserDefined { token, .. } => Some(token),
+            RuntimeError::InvalidBase64String(token, _) => Some(token),
+            RuntimeError::NotDefined(token, _) => Some(token),
+            RuntimeError::DateTimeFormatError(token, _) => Some(token),
+            RuntimeError::IndexOutOfBounds(token, _) => Some(token),
+            RuntimeError::InvalidDefinition(token, _) => Some(token),
+            RuntimeError::RecursionError(_) => None,
+            RuntimeError::InvalidTypes { token, .. } => Some(token),
+            RuntimeError::InvalidNumberOfArguments(token, _, _, _) => Some(token),
+            RuntimeError::InvalidRegularExpression(token, _) => Some(token),
+            RuntimeError::InternalError(token) => Some(token),
+            RuntimeError::ModuleLoadError(err) => err.token(),
+            RuntimeError::Runtime(token, _) => Some(token),
+            RuntimeError::ZeroDivision(token) => Some(token),
+            RuntimeError::Break => None,
+            RuntimeError::Continue => None,
+            RuntimeError::EnvNotFound(token, _) => Some(token),
+            RuntimeError::AssignToImmutable(token, _) => Some(token),
+            RuntimeError::UndefinedVariable(token, _) => Some(token),
         }
     }
 }
