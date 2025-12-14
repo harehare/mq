@@ -11,14 +11,18 @@ publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.6"
+
 [dependencies]
-libc = { workspace = true }
-mq-lang = { workspace = true }
-mq-markdown = { workspace = true, features = ["html-to-markdown"], default-features = true }
+libc = {workspace = true}
+mq-lang = {workspace = true}
+mq-markdown = {workspace = true, features = ["html-to-markdown"], default-features = true}
+
 [lib]
 crate-type = ["cdylib", "staticlib"]
+
 [build-dependencies]
-cbindgen = { workspace = true }
+cbindgen = {workspace = true}
+
 [features]
 default = ["html-to-markdown"]
 html-to-markdown = ["mq-markdown/html-to-markdown"]
