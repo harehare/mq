@@ -129,7 +129,7 @@ Some text here.
     examples: [
       {
         name: "Extract js code",
-        code: `.code("js")`,
+        code: `select(.code.lang == "js")`,
         markdown: `# Sample codes
 \`\`\`js
 console.log("Hello, World!");

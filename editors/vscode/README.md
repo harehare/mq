@@ -58,7 +58,7 @@ $ mq '.[][] | select(contains("name"))'
 # list or header
 $ mq 'or(.[], .h) | select(contains("name"))'
 # Exclude js code
-$ mq 'select(not(.code("js")))'
+$ mq '.code | select(.code.lang != "js")'
 # CSV to markdown table
 $ mq 'include "csv" | nodes | csv_parse(true) | csv_to_markdown_table()' example.csv
 ```
