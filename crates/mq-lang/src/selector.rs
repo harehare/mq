@@ -6,94 +6,152 @@ use thiserror::Error;
 
 use crate::{Token, TokenKind};
 
+/// Error type returned when an unknown selector is encountered during parsing.
 #[derive(Error, Clone, Debug, PartialOrd, Eq, Ord, PartialEq)]
 #[error("Unknown selector `{0}`")]
 pub struct UnknownSelector(pub Token);
 
 impl UnknownSelector {
+    /// Creates a new `UnknownSelector` error with the given token.
     pub fn new(token: Token) -> Self {
         Self(token)
     }
 }
 
+/// A selector for matching specific types of markdown nodes.
+///
+/// Selectors are used to query and filter markdown documents, similar to CSS selectors
+/// for HTML. Each variant matches a specific type of markdown element.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Eq, Clone)]
 pub enum Selector {
+    /// Matches blockquote elements (e.g., `> quoted text`).
     Blockquote,
+    /// Matches footnote definitions.
     Footnote,
+    /// Matches list elements.
+    ///
+    /// The first `Option<usize>` specifies an item index, the second `Option<bool>` indicates ordered/unordered.
     List(Option<usize>, Option<bool>),
+    /// Matches TOML frontmatter blocks.
     Toml,
+    /// Matches YAML frontmatter blocks.
     Yaml,
+    /// Matches line break elements.
     Break,
+    /// Matches inline code elements (e.g., `` `code` ``).
     InlineCode,
+    /// Matches inline math elements (e.g., `$math$`).
     InlineMath,
+    /// Matches strikethrough/delete elements (e.g., `~~text~~`).
     Delete,
+    /// Matches emphasis elements (e.g., `*text*` or `_text_`).
     Emphasis,
+    /// Matches footnote references (e.g., `[^1]`).
     FootnoteRef,
+    /// Matches raw HTML elements.
     Html,
+    /// Matches image elements (e.g., `![alt](url)`).
     Image,
+    /// Matches image reference elements (e.g., `![alt][ref]`).
     ImageRef,
+    /// Matches MDX JSX text elements.
     MdxJsxTextElement,
+    /// Matches link elements (e.g., `[text](url)`).
     Link,
+    /// Matches link reference elements (e.g., `[text][ref]`).
     LinkRef,
+    /// Matches strong/bold elements (e.g., `**text**`).
     Strong,
+    /// Matches code block elements.
     Code,
+    /// Matches math block elements (e.g., `$$math$$`).
     Math,
+    /// Matches heading elements.
+    ///
+    /// The `Option<u8>` specifies the heading level (1-6). If `None`, matches any heading level.
     Heading(Option<u8>),
+    /// Matches table elements.
+    ///
+    /// The first `Option<usize>` specifies row index, the second specifies column index.
     Table(Option<usize>, Option<usize>),
+    /// Matches text nodes.
     Text,
+    /// Matches horizontal rule elements (e.g., `---`, `***`, `___`).
     HorizontalRule,
+    /// Matches link/image definition elements.
     Definition,
+    /// Matches MDX flow expression elements.
     MdxFlowExpression,
+    /// Matches MDX text expression elements.
     MdxTextExpression,
+    /// Matches MDX ES module import/export elements.
     MdxJsEsm,
+    /// Matches MDX JSX flow elements.
     MdxJsxFlowElement,
+    /// Matches a specific attribute of a markdown node.
     Attr(AttrKind),
 }
 
-/// Represents an attribute that can be accessed from Markdown nodes
+/// Represents an attribute that can be accessed from markdown nodes.
+///
+/// Attributes allow extracting specific properties from markdown elements,
+/// such as the URL from a link or the language from a code block.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Eq, Clone)]
 pub enum AttrKind {
-    // Common text attributes
-    Value,    // "value"
-    Values,   // "values"
-    Children, // "children"
+    /// The text value or content of a node.
+    Value,
+    /// Collection of values (used for certain node types).
+    Values,
+    /// The children nodes of an element.
+    Children,
 
-    // Code attributes
-    Lang,  // "lang"
-    Meta,  // "meta"
-    Fence, // "fence"
+    /// The programming language identifier for code blocks.
+    Lang,
+    /// Additional metadata for code blocks.
+    Meta,
+    /// The fence character used for code blocks (e.g., `` ` `` or `~`).
+    Fence,
 
-    // Link/Image attributes
-    Url,   // "url"
-    Alt,   // "alt"
-    Title, // "title"
+    /// The URL for links and images.
+    Url,
+    /// The alt text for images.
+    Alt,
+    /// The title attribute for links and images.
+    Title,
 
-    // Reference attributes (LinkRef, ImageRef, FootnoteRef, Definition, Footnote)
-    Ident, // "ident"
-    Label, // "label"
+    /// The identifier for references (LinkRef, ImageRef, FootnoteRef, Definition, Footnote).
+    Ident,
+    /// The label for references.
+    Label,
 
-    // Heading attributes
-    Depth, // "depth"
-    Level, // "level" (alias for depth)
+    /// The depth level of a heading (1-6).
+    Depth,
+    /// Alias for `Depth` - the level of a heading.
+    Level,
 
-    // List attributes
-    Index,   // "index"
-    Ordered, // "ordered"
-    Checked, // "checked"
+    /// The index of a list item within its parent list.
+    Index,
+    /// Whether a list is ordered (numbered) or unordered.
+    Ordered,
+    /// The checked status of a task list item.
+    Checked,
 
-    // TableCell attributes
-    Column,            // "column"
-    Row,               // "row"
-    LastCellInRow,     // "last_cell_in_row"
-    LastCellOfInTable, // "last_cell_of_in_table"
+    /// The column index of a table cell.
+    Column,
+    /// The row index of a table cell.
+    Row,
+    /// Whether this is the last cell in its row.
+    LastCellInRow,
+    /// Whether this is the last cell in the entire table.
+    LastCellOfInTable,
 
-    // TableHeader attributes
-    Align, // "align"
+    /// The alignment of a table header (left, right, center, none).
+    Align,
 
-    // MDX attributes
-    Name, // "name" (for MdxJsxFlowElement, MdxJsxTextElement)
+    /// The name attribute for MDX JSX elements.
+    Name,
 }
 
 impl Display for AttrKind {
@@ -322,6 +380,7 @@ impl Display for Selector {
 }
 
 impl Selector {
+    /// Returns `true` if this is an attribute selector.
     pub fn is_attribute_selector(&self) -> bool {
         matches!(self, Selector::Attr(_))
     }

@@ -4,34 +4,48 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
+
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Number(f64);
 
+/// Represents a Not-a-Number (NaN) value.
 pub const NAN: Number = Number(f64::NAN);
+
+/// Represents positive infinity.
 pub const INFINITE: Number = Number(f64::INFINITY);
 
 impl Number {
+    /// Creates a new `Number` from an `f64` value.
     pub fn new(value: f64) -> Self {
         Number(value)
     }
 
+    /// Returns the underlying `f64` value.
     pub fn value(&self) -> f64 {
         self.0
     }
 
+    /// Returns `true` if the number represents an integer value.
+    ///
+    /// Uses epsilon comparison to account for floating-point precision.
     pub fn is_int(&self) -> bool {
         (self.0 - self.0.trunc()).abs() < f64::EPSILON
     }
 
+    /// Returns the absolute value of this number.
     pub fn abs(&self) -> Self {
         Number(self.0.abs())
     }
 
+    /// Returns `true` if the number is zero or very close to zero.
+    ///
+    /// Uses epsilon comparison to account for floating-point precision.
     pub fn is_zero(&self) -> bool {
         self.0.abs() < f64::EPSILON
     }
 
+    /// Returns `true` if the number is NaN (Not-a-Number).
     pub fn is_nan(&self) -> bool {
         self.0.is_nan()
     }

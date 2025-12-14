@@ -39,8 +39,10 @@ pub mod runtime_value;
 use env::Env;
 use runtime_value::RuntimeValue;
 
+/// Configuration options for the evaluator.
 #[derive(Debug, Clone)]
 pub struct Options {
+    /// Maximum depth of the call stack to prevent infinite recursion.
     pub max_call_stack_depth: u32,
 }
 
@@ -62,6 +64,10 @@ impl Default for Options {
     }
 }
 
+/// The AST evaluator for executing mq programs.
+///
+/// Evaluates abstract syntax trees and manages the runtime environment,
+/// including variable bindings, function calls, and module loading.
 #[derive(Debug)]
 pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
     env: Shared<SharedCell<Env>>,
