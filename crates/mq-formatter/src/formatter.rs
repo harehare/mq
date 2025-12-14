@@ -89,7 +89,7 @@ impl Formatter {
             mq_lang::CstNodeKind::Dict => {
                 self.format_dict(&node, indent_level_consider_new_line);
             }
-            mq_lang::CstNodeKind::BinaryOp(_) => {
+            mq_lang::CstNodeKind::BinaryOp(_) | mq_lang::CstNodeKind::Assign => {
                 self.format_binary_op(&node, indent_level);
             }
             mq_lang::CstNodeKind::UnaryOp(_) => {
@@ -126,7 +126,7 @@ impl Formatter {
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.append_interpolated_string(&node, indent_level_consider_new_line);
             }
-            mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var | mq_lang::CstNodeKind::Assign => {
+            mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
                 self.format_var_decl(&node, indent_level_consider_new_line, indent_level)
             }
             mq_lang::CstNodeKind::Literal => self.append_literal(&node, indent_level_consider_new_line),
@@ -296,6 +296,11 @@ impl Formatter {
                     }
                     mq_lang::CstNode {
                         kind: mq_lang::CstNodeKind::BinaryOp(_),
+                        token: Some(token),
+                        ..
+                    }
+                    | mq_lang::CstNode {
+                        kind: mq_lang::CstNodeKind::Assign,
                         token: Some(token),
                         ..
                     } => {
@@ -1888,6 +1893,7 @@ end
         "let result = match (x):\n| 1: do\n    foo() |\n    bar()\n  end\n| 2: \"two\"\nend",
         "let result = match (x):\n  | 1: do\n      foo() |\n      bar()\n    end\n  | 2: \"two\"\nend\n"
     )]
+    #[case::assign("var i=0 | i=i + 1", "var i = 0 | i = i + 1")]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
