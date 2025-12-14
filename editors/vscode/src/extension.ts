@@ -10,7 +10,7 @@ const COMMANDS = ["mq/run"] as const;
 
 const EXAMPLES = `# To hide these examples, set mq.showExamplesInNewFile to false in settings
 # Extract js code
-.code("js")
+select(.code.lang == "js")
 
 # Extract list
 .[]

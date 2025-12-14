@@ -103,7 +103,7 @@ Returns JSON with selector names, descriptions, and parameters.
 Common mq queries you can use with the MCP tools:
 
 - `.h1` - Select all h1 headings
-- `.code("js")` - Select JavaScript code blocks
+- `select(.code.lang == "js")` - Select JavaScript code blocks
 - `.text` - Extract all text content
 - `select(.h1, .h2)` - Select h1 and h2 headings
 - `select(not(.code))` - Select everything except code blocks
