@@ -157,6 +157,10 @@ impl Optimizer {
                 Self::collect_used_identifiers_in_node(try_node, used_idents);
                 Self::collect_used_identifiers_in_node(catch_node, used_idents);
             }
+            ast::Expr::And(expr1, expr2) | ast::Expr::Or(expr1, expr2) => {
+                Self::collect_used_identifiers_in_node(expr1, used_idents);
+                Self::collect_used_identifiers_in_node(expr2, used_idents);
+            }
             ast::Expr::Match(value, arms) => {
                 Self::collect_used_identifiers_in_node(value, used_idents);
                 for arm in arms {

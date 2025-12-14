@@ -189,6 +189,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         ));
                     }
                 },
+                TokenKind::And => Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::And(lhs, rhs)),
+                }),
+                TokenKind::Or => Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Shared::new(Expr::Or(lhs, rhs)),
+                }),
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
                     expr: Shared::new(Expr::Call(
@@ -4471,30 +4479,24 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token(constants::AND, Some(Shared::new(token(TokenKind::And)))),
-                        smallvec![
-                            Shared::new(Node {
-                                token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
-                                    IdentWithToken::new_with_token(constants::AND, Some(Shared::new(token(TokenKind::And)))),
-                                    smallvec![
-                                        Shared::new(Node {
-                                            token_id: 0.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
-                                        }),
-                                        Shared::new(Node {
-                                            token_id: 2.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
-                                        }),
-                                    ],
-                                )),
-                            }),
-                            Shared::new(Node {
-                                token_id: 4.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
-                            }),
-                        ],
+                    expr: Shared::new(Expr::And(
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::And(
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                }),
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                        }),
                     )),
                 })
             ]))]
@@ -4510,30 +4512,24 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token(constants::OR, Some(Shared::new(token(TokenKind::Or)))),
-                        smallvec![
-                            Shared::new(Node {
-                                token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
-                                    IdentWithToken::new_with_token(constants::OR, Some(Shared::new(token(TokenKind::Or)))),
-                                    smallvec![
-                                        Shared::new(Node {
-                                            token_id: 0.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
-                                        }),
-                                        Shared::new(Node {
-                                            token_id: 2.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
-                                        }),
-                                    ],
-                                )),
-                            }),
-                            Shared::new(Node {
-                                token_id: 4.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("z")))))))),
-                            }),
-                        ],
+                    expr: Shared::new(Expr::Or(
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Or(
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                }),
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("z")))))))),
+                        }),
                     )),
                 })
             ]))]
@@ -4549,30 +4545,24 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token(constants::OR, Some(Shared::new(token(TokenKind::Or)))),
-                        smallvec![
-                            Shared::new(Node {
-                                token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
-                                    IdentWithToken::new_with_token(constants::AND, Some(Shared::new(token(TokenKind::And)))),
-                                    smallvec![
-                                        Shared::new(Node {
-                                            token_id: 0.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
-                                        }),
-                                        Shared::new(Node {
-                                            token_id: 2.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
-                                        }),
-                                    ],
-                                )),
-                            }),
-                            Shared::new(Node {
-                                token_id: 4.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
-                            }),
-                        ],
+                    expr: Shared::new(Expr::Or(
+                        Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::And(
+                                Shared::new(Node {
+                                    token_id: 0.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                }),
+                                Shared::new(Node {
+                                    token_id: 2.into(),
+                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                }),
+                            )),
+                        }),
+                        Shared::new(Node {
+                            token_id: 4.into(),
+                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                        }),
                     )),
                 })
             ]))]
@@ -4692,42 +4682,39 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(constants::OR, Some(Shared::new(token(TokenKind::Or)))),
-                            smallvec![
-                                Shared::new(Node {
-                                    token_id: 1.into(),
-                                    expr: Shared::new(Expr::Call(
-                                        IdentWithToken::new_with_token(constants::GT, Some(Shared::new(token(TokenKind::Gt)))),
-                                        smallvec![
-                                            Shared::new(Node {
-                                                token_id: 0.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
-                                            }),
-                                            Shared::new(Node {
-                                                token_id: 2.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
-                                            }),
-                                        ],
-                                    )),
-                                }),
-                                Shared::new(Node {
-                                    token_id: 5.into(),
-                                    expr: Shared::new(Expr::Call(
-                                        IdentWithToken::new_with_token(constants::GT, Some(Shared::new(token(TokenKind::Gt)))),
-                                        smallvec![
-                                            Shared::new(Node {
-                                                token_id: 4.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
-                                            }),
-                                            Shared::new(Node {
-                                                token_id: 6.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
-                                            }),
-                                        ],
-                                    )),
-                                }),
-                            ],
+                        expr: Shared::new(Expr::Or(
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::GT, Some(Shared::new(token(TokenKind::Gt)))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 0.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        }),
+                                        Shared::new(Node {
+                                            token_id: 2.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                        }),
+                                    ],
+                                )),
+                            }),
+                            Shared::new(Node {
+                                token_id: 5.into(),
+                                expr: Shared::new(Expr::Call(
+                                    IdentWithToken::new_with_token(constants::GT, Some(Shared::new(token(TokenKind::Gt)))),
+                                    smallvec![
+                                        Shared::new(Node {
+                                            token_id: 4.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        }),
+                                        Shared::new(Node {
+                                            token_id: 6.into(),
+                                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                        }),
+                                    ],
+                                )),
+                            }),
                         )),
                     })
                 ]))]
