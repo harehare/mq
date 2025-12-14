@@ -1,4 +1,4 @@
-def _is_section(section): try: is_dict(section) && section[:type] == :section catch: false;
+def _is_section(section): is_dict(section) && section[:type] == :section;
 
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
 def split(md_nodes, level):
@@ -59,9 +59,7 @@ end
 
 # Returns the title text of a section (header text without the # symbols).
 def title(section):
-  if (!is_dict(section)):
-    error("Expected a dictionary, but got a different type.")
-  elif (_is_section(section)):
+  if (_is_section(section)):
     do section[:header] | to_text();
   else:
     ""
@@ -69,9 +67,7 @@ end
 
 # Returns the content of a section (all nodes except the header).
 def content(section):
-  if (!is_dict(section)):
-    error("Expected a dictionary, but got a different type.")
-  elif (_is_section(section)):
+  if (_is_section(section)):
     section[:children]
   else:
     []
@@ -79,9 +75,7 @@ end
 
 # Returns all nodes of a section, including both the header and content.
 def all_nodes(section):
-  if (!is_dict(section)):
-    error("Expected a dictionary, but got a different type.")
-  elif (_is_section(section)):
+  if (_is_section(section)):
     do
       section[:header] + section[:children]
     end
@@ -91,9 +85,7 @@ end
 
 # Returns the header level (1-6) of a section.
 def level(section):
-  if (!is_dict(section)):
-    error("Expected a dictionary, but got a different type.")
-  elif (_is_section(section)):
+  if (_is_section(section)):
     do
       let header = section[:header]
       | if (is_h_level(header, 1)): 1

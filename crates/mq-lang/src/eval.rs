@@ -761,6 +761,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 Ok(runtime_value.clone())
             }
+            ast::Expr::And(left, right) => self.eval_and(runtime_value, left, right, env),
+            ast::Expr::Or(left, right) => self.eval_or(runtime_value, left, right, env),
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
             ast::Expr::Foreach(ident, values, body) => {
@@ -792,6 +794,50 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Literal::Symbol(i) => RuntimeValue::Symbol(*i),
             ast::Literal::Number(n) => RuntimeValue::Number(*n),
         }
+    }
+
+    fn eval_and(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        left: &Shared<ast::Node>,
+        right: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let left_value = self.eval_expr(runtime_value, left, env)?;
+
+        if !left_value.is_truthy() {
+            return Ok(RuntimeValue::Boolean(false));
+        }
+
+        let right_value = self.eval_expr(runtime_value, right, env)?;
+
+        if !right_value.is_truthy() {
+            return Ok(RuntimeValue::Boolean(false));
+        }
+
+        Ok(right_value)
+    }
+
+    fn eval_or(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        left: &Shared<ast::Node>,
+        right: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let left_value = self.eval_expr(runtime_value, left, env)?;
+
+        if left_value.is_truthy() {
+            return Ok(left_value);
+        }
+
+        let right_value = self.eval_expr(runtime_value, right, env)?;
+
+        if right_value.is_truthy() {
+            return Ok(right_value);
+        }
+
+        Ok(RuntimeValue::Boolean(false))
     }
 
     fn eval_foreach(
@@ -5108,6 +5154,123 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_and_both_true(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_and_first_false(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(false)])
+            )]
+    #[case::expr_and_second_false(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(false)])
+            )]
+    #[case::expr_and_return_last_value(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::String("last".to_string())])
+            )]
+    #[case::expr_or_both_true(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_or_first_true(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_or_second_true(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_or_both_false(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(false)])
+            )]
+    #[case::expr_or_return_last_value(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::String("last".to_string())])
             )]
     #[case::intern_string(
                 vec![RuntimeValue::String("hello".to_string())],
