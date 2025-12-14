@@ -2,6 +2,10 @@
 use serde::{Deserialize, Serialize};
 use std::{marker::PhantomData, ops::Index};
 
+/// A type-safe identifier for elements stored in an [`Arena`].
+///
+/// Uses phantom data to ensure type safety - an `ArenaId<A>` cannot be used
+/// to access elements from an `Arena<B>`.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArenaId<T> {
@@ -37,6 +41,7 @@ impl<T> From<i32> for ArenaId<T> {
 }
 
 impl<T> ArenaId<T> {
+    /// Creates a new arena identifier from a raw `u32` index.
     pub const fn new(id: u32) -> ArenaId<T> {
         Self {
             id,
@@ -45,32 +50,42 @@ impl<T> ArenaId<T> {
     }
 }
 
+/// An arena allocator for efficiently storing and accessing elements.
+///
+/// The arena allocates elements sequentially and returns type-safe [`ArenaId`]s
+/// that can be used to retrieve elements later. This pattern provides fast allocation
+/// and cache-friendly access.
 #[derive(Debug, Clone, Default)]
 pub struct Arena<T> {
     items: Vec<T>,
 }
 
 impl<T: Clone + PartialEq> Arena<T> {
+    /// Creates a new arena with the specified initial capacity.
     pub fn new(size: usize) -> Self {
         Arena {
             items: Vec::with_capacity(size),
         }
     }
 
+    /// Allocates a value in the arena and returns its identifier.
     pub fn alloc(&mut self, value: T) -> ArenaId<T> {
         let arena_id = self.items.len() as u32;
         self.items.push(value);
         ArenaId::new(arena_id)
     }
 
+    /// Returns the number of elements in the arena.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Returns `true` if the arena contains no elements.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Returns `true` if the arena contains the specified value.
     pub fn contains(&self, value: T) -> bool {
         self.items.contains(&value)
     }
