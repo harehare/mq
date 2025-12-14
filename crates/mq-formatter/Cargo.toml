@@ -10,8 +10,10 @@ name = "mq-formatter"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.6"
+
 [dependencies]
-mq-lang = { workspace = true, features = ["cst"] }
-rustc-hash = { workspace = true }
+mq-lang = {workspace = true, features = ["cst"]}
+rustc-hash = {workspace = true}
+
 [dev-dependencies]
-rstest = { workspace = true }
+rstest = {workspace = true}

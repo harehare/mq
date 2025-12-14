@@ -10,23 +10,26 @@ name = "mq-lsp"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.6"
+
 [dependencies]
-bimap = { workspace = true }
-dashmap = { workspace = true }
-itertools = { workspace = true }
-miette = { workspace = true, features = ["fancy"] }
-mq-formatter = { workspace = true }
-mq-hir = { workspace = true }
-mq-lang = { workspace = true, features = ["ast-json", "sync"] }
-mq-markdown = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true, features = ["macros", "io-std", "rt-multi-thread"] }
-tokio-macros = { workspace = true }
-tower-lsp-server = { workspace = true }
-url = { workspace = true }
+bimap = {workspace = true}
+dashmap = {workspace = true}
+itertools = {workspace = true}
+miette = {workspace = true, features = ["fancy"]}
+mq-formatter = {workspace = true}
+mq-hir = {workspace = true}
+mq-lang = {workspace = true, features = ["ast-json", "sync"]}
+mq-markdown = {workspace = true}
+serde_json = {workspace = true}
+tokio = {workspace = true, features = ["macros", "io-std", "rt-multi-thread"]}
+tokio-macros = {workspace = true}
+tower-lsp-server = {workspace = true}
+url = {workspace = true}
+
 [[bin]]
 name = "mq-lsp"
 path = "src/main.rs"
+
 [lib]
 name = "mq_lsp"
 path = "src/lib.rs"

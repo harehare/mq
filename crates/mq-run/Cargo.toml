@@ -10,44 +10,50 @@ name = "mq-run"
 readme = "../../README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.5.6"
+
 [features]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex-lite", "mq-dap"]
 default = ["std", "use_mimalloc"]
 std = []
 use_mimalloc = ["mimalloc"]
+
 [dependencies]
-clap = { workspace = true, features = ["derive"] }
-colored = { workspace = true }
-dirs = { workspace = true }
-itertools = { workspace = true }
-miette = { workspace = true, features = ["fancy"] }
-mimalloc = { workspace = true, features = ["v3"], optional = true }
-mq-dap = { workspace = true, optional = true }
-mq-formatter = { workspace = true }
-mq-hir = { workspace = true }
-mq-lang = { workspace = true, features = ["file-io"] }
-mq-lsp = { workspace = true }
-mq-markdown = { workspace = true, features = ["json", "html-to-markdown"] }
-mq-repl = { workspace = true }
-rayon = { workspace = true }
-regex-lite = { workspace = true, optional = true }
-rustyline = { workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"] }
-strum = { workspace = true, features = ["derive"], optional = true }
-tokio = { workspace = true, features = ["io-util", "io-std", "rt"] }
-url = { workspace = true }
+clap = {workspace = true, features = ["derive"]}
+colored = {workspace = true}
+dirs = {workspace = true}
+itertools = {workspace = true}
+miette = {workspace = true, features = ["fancy"]}
+mimalloc = {workspace = true, features = ["v3"], optional = true}
+mq-dap = {workspace = true, optional = true}
+mq-formatter = {workspace = true}
+mq-hir = {workspace = true}
+mq-lang = {workspace = true, features = ["file-io"]}
+mq-lsp = {workspace = true}
+mq-markdown = {workspace = true, features = ["json", "html-to-markdown"]}
+mq-repl = {workspace = true}
+rayon = {workspace = true}
+regex-lite = {workspace = true, optional = true}
+rustyline = {workspace = true, optional = true, default-features = false, features = ["custom-bindings", "with-file-history"]}
+strum = {workspace = true, features = ["derive"], optional = true}
+tokio = {workspace = true, features = ["io-util", "io-std", "rt"]}
+url = {workspace = true}
+
 [dev-dependencies]
-assert_cmd = { workspace = true }
-rstest = { workspace = true }
-scopeguard = { workspace = true }
+assert_cmd = {workspace = true}
+rstest = {workspace = true}
+scopeguard = {workspace = true}
+
 [[bin]]
 doc = false
 name = "mq"
 path = "src/main.rs"
 required-features = ["std"]
+
 [[bin]]
 name = "mq-dbg"
 path = "src/bin/dbg.rs"
 required-features = ["debugger"]
+
 [package.metadata.binstall]
 pkg-fmt = "bin"
 pkg-url = "{ repo }/releases/download/v{ version }/mq-{ target }{ binary-ext }"

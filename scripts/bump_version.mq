@@ -1,6 +1,7 @@
 def crate_version():
-  if (and(ne("[workspace.package]"), starts_with("["))):
-    s"${self}"
+  if (ne("[workspace.package]") && starts_with("[")):
+    s"
+${self}"
   elif (starts_with("version = ")):
     s"version = \"${version}\""
   else: self
@@ -13,8 +14,9 @@ def npm_version():
 end
 
 def py_version():
-  if (and(ne("[project]"), starts_with("["))):
-    s"${self}"
+  if (ne("[project]") && starts_with("[")):
+    s"
+${self}"
   elif (starts_with("version = ")):
     s"version = \"${version}\""
   else: self
