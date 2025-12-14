@@ -237,7 +237,7 @@ impl Node {
     }
 
     pub fn binary_op(&self) -> Option<(Shared<Node>, Shared<Node>)> {
-        if let NodeKind::BinaryOp(_) = self.kind {
+        if matches!(self.kind, NodeKind::BinaryOp(_) | NodeKind::Assign) {
             let mut non_token_children = self.children.iter().filter(|child| !child.is_token());
             let left = non_token_children.next()?;
             let right = non_token_children.next()?;
