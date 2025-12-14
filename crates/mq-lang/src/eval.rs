@@ -807,13 +807,13 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         if !left_value.is_truthy() {
             return Ok(RuntimeValue::Boolean(false));
-        };
+        }
 
         let right_value = self.eval_expr(runtime_value, right, env)?;
 
         if !right_value.is_truthy() {
             return Ok(RuntimeValue::Boolean(false));
-        };
+        }
 
         Ok(right_value)
     }
@@ -829,13 +829,13 @@ impl<T: ModuleResolver> Evaluator<T> {
 
         if left_value.is_truthy() {
             return Ok(left_value);
-        };
+        }
 
         let right_value = self.eval_expr(runtime_value, right, env)?;
 
         if right_value.is_truthy() {
             return Ok(right_value);
-        };
+        }
 
         Ok(RuntimeValue::Boolean(false))
     }
