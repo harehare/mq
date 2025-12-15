@@ -37,10 +37,9 @@ let INFINITY = 9223372036854775807
 | def _skip_comment(input):
     if (len(input) > 0 && input[0] == "#"):
       do
-        let i = 1
+        var i = 1
         | let result = while (i < len(input) && !_is_newline(input[i])):
-                  let i = i + 1
-                  | i
+                  i = i + 1 | i
                 end
         | let skip_count = if (is_none(result)): 1 else: result
         | trim(input[skip_count:len(input)])
@@ -53,9 +52,9 @@ let INFINITY = 9223372036854775807
     if (len(input) > 0 && (input[0] == "\"" || input[0] == "'")):
       do
         let quote_char = input[0]
-        | let i = 1
+        | var i = 1
         | let key_chars = ""
-        | let escaped = false
+        | var escaped = false
         | let result = while (i < len(input) && (escaped || input[i] != quote_char)):
                   let result = if (escaped):
                     [key_chars + input[i], false, i + 1]
@@ -64,8 +63,8 @@ let INFINITY = 9223372036854775807
                   else:
                     [key_chars + input[i], escaped, i + 1]
                   | let key_chars = result[0]
-                  | let escaped = result[1]
-                  | let i = result[2]
+                  | escaped = result[1]
+                  | i = result[2]
                   | result
                 end
         # Add 1 to skip the closing quote character
@@ -149,9 +148,9 @@ let INFINITY = 9223372036854775807
 
     def _parse_string(input):
       let quote_char = input[0]
-      | let i = 1
+      | var i = 1
       | let value_chars = ""
-      | let escaped = false
+      | var escaped = false
       | let result = while (i < len(input) && (escaped || input[i] != quote_char)):
               let result = if (escaped):
                 [value_chars + input[i], false, i + 1]
@@ -160,8 +159,8 @@ let INFINITY = 9223372036854775807
               else:
                 [value_chars + input[i], escaped, i + 1]
               | let value_chars = result[0]
-              | let escaped = result[1]
-              | let i = result[2]
+              | escaped = result[1]
+              | i = result[2]
               | result
             end
       | let value = if (is_none(result[0])): "" else: result[0]
@@ -170,12 +169,11 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_integer(input):
-      let i = 0
+      var i = 0
       | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
-      | let i = if (has_sign): 1 else: 0
+      | i = if (has_sign): 1 else: 0
       | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "_")):
-              let i = i + 1
-              | i
+              i = i + 1 | i
             end
       | let consumed = if (is_none(result)): i else: result
       | let value_str = do input[0:consumed] | replace("_", "");
@@ -184,12 +182,11 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_float(input):
-      let i = 0
+      var i = 0
       | let has_sign = len(input) > 0 && (input[0] == "+" || input[0] == "-")
-      | let i = if (has_sign): 1 else: 0
+      | i = if (has_sign): 1 else: 0
       | let result = while (i < len(input) && (_is_digit(input[i]) || input[i] == "." || input[i] == "_")):
-              let i = i + 1
-              | i
+              i = i + 1 | i
             end
       | let consumed = if (is_none(result)): i else: result
       | let value_str = do input[0:consumed] | replace("_", "");
@@ -209,18 +206,18 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_array(input):
-      let remaining = input[1:len(input)]
+      var remaining = input[1:len(input)]
       | let _values = []
-      | let remaining = trim(remaining)
+      | remaining = trim(remaining)
       | let result = while (len(remaining) > 0 && remaining[0] != "]"):
               let value_result = _parse_value(remaining)
               | let value = value_result[0]
-              | let remaining = trim(value_result[1])
+              | remaining = trim(value_result[1])
               | let _values = if (is_none(value)): _values else: _values + value
-              | let remaining = if (len(remaining) > 0 && remaining[0] == ","):
-                              trim(remaining[1:len(remaining)])
-                            else:
-                              remaining
+              | remaining = if (len(remaining) > 0 && remaining[0] == ","):
+                trim(remaining[1:len(remaining)])
+              else:
+                remaining
               | [_values, remaining]
             end
       | let _values = if (is_none(result)): _values else: result[0]
@@ -230,31 +227,31 @@ let INFINITY = 9223372036854775807
     end
 
     def _parse_inline_table(input):
-      let remaining = input[1:len(input)]
-      | let table = {}
-      | let remaining = trim(remaining)
+      var remaining = input[1:len(input)]
+      | var table = {}
+      | remaining = trim(remaining)
       | let result = while (len(remaining) > 0 && remaining[0] != "}"):
               let key_result = _parse_key(remaining)
               | let key = key_result[0]
-              | let remaining = trim(key_result[1])
-              | let remaining = if (len(remaining) > 0 && remaining[0] == "="): remaining[1:len(remaining)] else: remaining
-              | let remaining = trim(remaining)
+              | remaining = trim(key_result[1])
+              | remaining = if (len(remaining) > 0 && remaining[0] == "="): remaining[1:len(remaining)] else: remaining
+              | remaining = trim(remaining)
               | let value_result = _parse_value(remaining)
               | let value = value_result[0]
-              | let remaining = value_result[1]
-              | let table = set(table, key, value)
-              | let remaining = trim(remaining)
+              | remaining = value_result[1]
+              | table = set(table, key, value)
+              | remaining = trim(remaining)
               | let result = if (len(remaining) > 0 && remaining[0] == ","):
                               [table, trim(remaining[1:len(remaining)])]
                             else:
                               [table, remaining]
-              | let table = result[0]
-              | let remaining = result[1]
+              | table = result[0]
+              | remaining = result[1]
               | result
             end
       | let table = result[0]
-      | let remaining = result[1]
-      | let remaining = if (len(remaining) > 0 && remaining[0] == "}"): remaining[1:len(remaining)] else: remaining
+      | remaining = result[1]
+      | remaining = if (len(remaining) > 0 && remaining[0] == "}"): remaining[1:len(remaining)] else: remaining
       | [table, remaining]
     end
 
@@ -319,13 +316,13 @@ let INFINITY = 9223372036854775807
       | [keys[0:-1] + last_key, is_array_section, temp_remaining]
     end
 
-    | let table = {}
-    | let current_section = []
-    | let is_array_section = false
-    | let remaining = input
+    | var table = {}
+    | var current_section = []
+    | var is_array_section = false
+    | var remaining = input
     | let result = while (len(remaining) > 0):
-          let remaining = trim(remaining)
-          | let remaining = _skip_comment(remaining)
+          remaining = trim(remaining)
+          | remaining = _skip_comment(remaining)
           | let result = if (len(remaining) == 0 || _is_newline(remaining[0])):
                       [table, current_section, is_array_section, if (len(remaining) > 0): remaining[1:len(remaining)] else: ""]
                     elif (remaining[0] == "["): do
@@ -361,10 +358,10 @@ let INFINITY = 9223372036854775807
                         | let temp_remaining = trim(temp_remaining)
                         | [updated_table, current_section, false, temp_remaining]
                       end
-          | let table = result[0]
-          | let current_section = result[1]
-          | let is_array_section = result[2]
-          | let remaining = result[3]
+          | table = result[0]
+          | current_section = result[1]
+          | is_array_section = result[2]
+          | remaining = result[3]
           | result
         end
     | result[0]
@@ -411,14 +408,14 @@ end
 
 # Converts a data structure to a TOML string representation.
 def toml_stringify(data):
-  let lines = []
+  var lines = []
   | let result = keys(data)
-  | let i = 0
+  | var i = 0
   | let final_lines = while (i < len(result)):
       let key = result[i]
       | let value = data[key]
       | let lines = _add_toml_lines(lines, key, value)
-      | let i = i + 1
+      | i = i + 1
       | lines
     end
   | join(final_lines, "\n")

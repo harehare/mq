@@ -73,10 +73,9 @@ def _parse_yaml_key_value(line):
 end
 
 def _get_indent_level(line):
-  let i = 0
+  var i = 0
   | let count = while (i < len(line) && line[i] == " "):
-      let i = i + 1
-      | i
+      i = i + 1 | i
     end
   | let count = if (is_none(count)): i else: count
   | count / 2
@@ -133,8 +132,8 @@ def parse_yaml_content(input):
   end
 
   def _parse_yaml_object(lines, start_index, target_indent):
-    let obj = {}
-    | let current_index = start_index
+    var obj = {}
+    | var current_index = start_index
     | while (current_index < len(lines)):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
@@ -155,15 +154,15 @@ def parse_yaml_content(input):
                 else:
                   _handle_object_indent_break(obj, current_index)
 
-        | let obj = result[0]
-        | let current_index = result[1]
+        | obj = result[0]
+        | current_index = result[1]
         | if (result[2]): break else: result
       end
   end
 
   def _parse_yaml_array(lines, start_index, target_indent):
-    let arr = []
-    | let current_index = start_index
+    var arr = []
+    | var current_index = start_index
     | while (current_index < len(lines)):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
@@ -185,15 +184,15 @@ def parse_yaml_content(input):
                 else:
                   _handle_array_indent_break(arr, current_index)
 
-        | let arr = result[0]
-        | let current_index = result[1]
+        | arr = result[0]
+        | current_index = result[1]
         | if (result[2]): break else: result
       end
   end
 
   def _parse_yaml_multi_lines(lines, start_index, target_indent):
-    let multi_line = ""
-    | let current_index = start_index
+    var multi_line = ""
+    | var current_index = start_index
     | while (current_index < len(lines)):
         let line = lines[current_index]
         | let trimmed_line = trim(line)
@@ -204,8 +203,8 @@ def parse_yaml_content(input):
                 else:
                   [if (is_empty(multi_line)): trimmed_line else: s"${multi_line}
 ${trimmed_line}", current_index + 1]
-        | let multi_line = result[0]
-        | let current_index = result[1]
+        | multi_line = result[0]
+        | current_index = result[1]
         | result
       end
   end

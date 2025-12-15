@@ -1,26 +1,26 @@
 # XML Implementation in mq
 
 def _parse_attributes(input):
-  let input = trim(input)
-  | let attributes = {}
+  var input = trim(input)
+  | var attributes = {}
   | let result = while (!is_empty(input) && !starts_with(input, ">") && !starts_with(input, "/>")):
       let name_match = regex_match(input, "([a-zA-Z_][a-zA-Z0-9_-]*)")
       | if (is_empty(name_match)):
           error("Invalid attribute name")
       | let attr_name = first(name_match)
-      | let input = input[len(attr_name):len(input)]
-      | let input = trim(input)
+      | input = input[len(attr_name):len(input)]
+      | input = trim(input)
       | if (!starts_with(input, "=")):
           error("Expected '=' after attribute name")
-      | let input = input[1:len(input)]
-      | let input = trim(input)
+      | input = input[1:len(input)]
+      | input = trim(input)
       | let quote_char = if (starts_with(input, "\"")):
               "\""
             elif (starts_with(input, "'")):
               "'"
             else:
               error("Attribute value must be quoted")
-      | let input = input[1:len(input)]
+      | input = input[1:len(input)]
       | let value_result = do
               let pos = 0
               | let start_pos = pos
@@ -33,9 +33,9 @@ def _parse_attributes(input):
               | [value, input[pos + 1:len(input)]]
             end
       | let attr_value = value_result[0]
-      | let input = value_result[1]
-      | let attributes = set(attributes, attr_name, attr_value)
-      | let input = trim(input)
+      | input = value_result[1]
+      | attributes = set(attributes, attr_name, attr_value)
+      | input = trim(input)
       | [attributes, input]
     end
   | if (is_none(result)): [{}, input] else: result
@@ -43,13 +43,13 @@ end
 
 def _find_closing_tag(input, tag_name):
   let closing_tag = "</" + tag_name + ">"
-  | let pos = 0
-  | let depth = 0
+  | var pos = 0
+  | var depth = 0
   | let open_tag_start = "<" + tag_name
   | let closing_tag_len = len(closing_tag)
   | let open_tag_start_len = len(open_tag_start)
   | let input_len = len(input)
-  | let has_close_tag = false
+  | var has_close_tag = false
   | let result = while (pos < input_len && !has_close_tag):
       let next_char_pos = pos + open_tag_start_len
       | let result = if (pos + open_tag_start_len <= input_len && input[pos:pos + open_tag_start_len] == open_tag_start):
@@ -63,9 +63,9 @@ def _find_closing_tag(input, tag_name):
               [depth - 1, pos + closing_tag_len, true]
             else:
               [depth, pos + 1, false]
-      | let depth = result[0]
-      | let pos = result[1]
-      | let has_close_tag = result[2]
+      | depth = result[0]
+      | pos = result[1]
+      | has_close_tag = result[2]
       | result
     end
   | result[1]
@@ -135,9 +135,9 @@ def _create_self_closing_element(tag_name, attributes, remaining):
 end
 
 def _parse_xml_content(input):
-  let input = trim(input)
-  | let children = []
-  | let text_parts = []
+  var input = trim(input)
+  | var children = []
+  | var text_parts = []
   | let result = while (!is_empty(input)):
       let result = if (starts_with(input, "<")):
         _parse_child_element(input, children)
@@ -145,11 +145,11 @@ def _parse_xml_content(input):
         _parse_text_content(input, text_parts)
       | let children = children + if (is_empty(result[0])): [] else: result[0]
       | let text_parts = result[1]
-      | let input = result[2]
+      | input = result[2]
       | [children, text_parts, input]
     end
-  | let children = if (is_none(result)): [] else: result[0]
-  | let text_parts = if (is_none(result)): [] else: result[1]
+  | children = if (is_none(result)): [] else: result[0]
+  | text_parts = if (is_none(result)): [] else: result[1]
   | let text = if (is_empty(text_parts)):
       None
     else:
@@ -185,11 +185,10 @@ def _parse_cdata_content(input, text_parts):
 end
 
 def _parse_text_content(input, text_parts):
-  let pos = 0
-  | let start_pos = pos
+  var pos = 0
+  | var start_pos = pos
   | let pos = while (pos < len(input) && input[pos] != "<"):
-      let pos = pos + 1
-      | pos
+      pos = pos + 1 | pos
     end
   | if (is_none(pos)): error("Unexpected end of input while parsing text content")
   | let text = input[start_pos:pos]
