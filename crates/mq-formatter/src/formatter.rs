@@ -317,7 +317,13 @@ impl Formatter {
                     _ => unreachable!(),
                 }
 
-                self.format_node(right, block_indent_level);
+                let indent_level = if right.has_new_line() {
+                    block_indent_level + 1
+                } else {
+                    block_indent_level
+                };
+
+                self.format_node(right, indent_level);
             }
             _ => unreachable!(),
         }
@@ -1894,6 +1900,36 @@ end
         "let result = match (x):\n  | 1: do\n      foo() |\n      bar()\n    end\n  | 2: \"two\"\nend\n"
     )]
     #[case::assign("var i=0 | i=i + 1", "var i = 0 | i = i + 1")]
+    #[case::assign_right_multiline(
+        r#"let x =
+"test""#,
+        r#"let x =
+  "test"
+"#
+    )]
+    #[case::assign_right_multiline_pipe(
+        r#"let x =
+"test"
+| upcase()"#,
+        r#"let x =
+  "test"
+| upcase()
+"#
+    )]
+    #[case::assign_right_multiline_if(
+        r#"let x =
+if(test):
+test
+else:
+test2"#,
+        r#"let x =
+  if (test):
+    test
+  else:
+    test2
+"#
+    )]
+
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
