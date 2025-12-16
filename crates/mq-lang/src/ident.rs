@@ -5,18 +5,32 @@ use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 static STRING_INTERNER: LazyLock<Mutex<StringInterner<DefaultBackend>>> =
     LazyLock::new(|| Mutex::new(StringInterner::default()));
 
+/// An interned string identifier for efficient storage and comparison.
+///
+/// Identifiers are stored in a global string interner, allowing fast equality
+/// checks and reduced memory usage for frequently used strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Ident(DefaultSymbol);
 
 impl Ident {
+    /// Creates a new interned identifier from a string slice.
+    ///
+    /// If the string already exists in the interner, returns the existing identifier.
     pub fn new(s: &str) -> Self {
         Self(STRING_INTERNER.lock().unwrap().get_or_intern(s))
     }
 
+    /// Resolves the identifier to its string representation.
+    ///
+    /// Returns a new `String` with the identifier's content.
     pub fn as_str(&self) -> String {
         STRING_INTERNER.lock().unwrap().resolve(self.0).unwrap().to_string()
     }
 
+    /// Resolves the identifier and passes it to a callback function.
+    ///
+    /// This is more efficient than `as_str()` when you don't need to own the string,
+    /// as it avoids allocating a new `String`.
     pub fn resolve_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&str) -> R,
@@ -72,6 +86,7 @@ impl<'de> serde::Deserialize<'de> for Ident {
     }
 }
 
+/// Returns all interned strings currently in the global string interner.
 pub fn all_symbols() -> Vec<String> {
     STRING_INTERNER
         .lock()

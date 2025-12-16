@@ -1,7 +1,5 @@
-pub mod error;
 pub mod token;
 
-use error::LexerError;
 use nom::Parser;
 use nom::bytes::complete::{is_not, take_until, take_while1};
 use nom::character::complete::{digit1, line_ending};
@@ -20,6 +18,7 @@ use smol_str::SmolStr;
 use token::{StringSegment, Token, TokenKind};
 
 use crate::ast::constants;
+use crate::error::syntax::SyntaxError;
 use crate::module::ModuleId;
 use crate::number::Number;
 use crate::range::Range;
@@ -88,7 +87,7 @@ impl Lexer {
         Self { options }
     }
 
-    pub fn tokenize(&self, input: &str, module_id: ModuleId) -> Result<Vec<Token>, LexerError> {
+    pub fn tokenize(&self, input: &str, module_id: ModuleId) -> Result<Vec<Token>, SyntaxError> {
         match tokens(Span::new_extra(input, module_id), &self.options) {
             Ok((span, mut tokens)) => {
                 let eof: Range = span.into();
@@ -101,10 +100,10 @@ impl Lexer {
                     });
                     Ok(tokens)
                 } else {
-                    Err(LexerError::UnexpectedEOFDetected(module_id))
+                    Err(SyntaxError::UnexpectedEOFDetected(module_id))
                 }
             }
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(LexerError::UnexpectedToken(Token {
+            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(SyntaxError::UnexpectedToken(Token {
                 range: e.input.into(),
                 kind: TokenKind::Eof,
                 module_id,
@@ -715,7 +714,7 @@ mod tests {
           Token{range: Range { start: Position {line: 1, column: 46}, end: Position {line: 1, column: 46} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case("\"test",
           Options::default(),
-          Err(LexerError::UnexpectedEOFDetected(1.into())))]
+          Err(SyntaxError::UnexpectedEOFDetected(1.into())))]
     #[case::new_line("and(\ncontains(\"test\"))",
             Options{include_spaces: true, ignore_errors: true},
             Ok(vec![
@@ -775,7 +774,7 @@ mod tests {
                 ))]
     #[case::error("\"test",
             Options{include_spaces: false, ignore_errors: false},
-            Err(LexerError::UnexpectedEOFDetected(1.into())))]
+            Err(SyntaxError::UnexpectedEOFDetected(1.into())))]
     #[case::error("s\"$$${test}$$\"",
             Options{include_spaces: false, ignore_errors: false},
             Ok(vec![Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 15} },
@@ -1124,7 +1123,7 @@ mod tests {
                    Token{range: Range { start: Position {line: 1, column: 14}, end: Position {line: 1, column: 14} }, kind: TokenKind::Eof, module_id: 1.into()}]
                 ))]
 
-    fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, LexerError>) {
+    fn test_parse(#[case] input: &str, #[case] options: Options, #[case] expected: Result<Vec<Token>, SyntaxError>) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
     }
 }

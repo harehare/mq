@@ -9,11 +9,14 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+/// Runtime selector for indexing into markdown nodes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Selector {
+    /// Selects a child node at the specified index.
     Index(usize),
 }
 
+/// Represents a module's runtime environment with its exports.
 #[derive(Clone, Debug)]
 pub struct ModuleEnv {
     name: SmolStr,
@@ -21,6 +24,7 @@ pub struct ModuleEnv {
 }
 
 impl ModuleEnv {
+    /// Creates a new module environment with the given name and exports.
     pub fn new(name: &str, exports: Shared<SharedCell<Env>>) -> Self {
         Self {
             name: SmolStr::new(name),
@@ -28,14 +32,17 @@ impl ModuleEnv {
         }
     }
 
+    /// Returns the name of the module.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Returns a reference to the module's exports environment.
     pub fn exports(&self) -> &Shared<SharedCell<Env>> {
         &self.exports
     }
 
+    /// Returns the number of exports in this module.
     pub fn len(&self) -> usize {
         #[cfg(not(feature = "sync"))]
         {
@@ -65,18 +72,34 @@ impl PartialEq for ModuleEnv {
     }
 }
 
+/// A value in the mq runtime.
+///
+/// This enum represents all possible value types that can exist during
+/// program execution, including numbers, strings, markdown nodes, functions,
+/// and more complex data structures.
 #[derive(Clone, Default)]
 pub enum RuntimeValue {
+    /// A numeric value.
     Number(Number),
+    /// A boolean value (`true` or `false`).
     Boolean(bool),
+    /// A string value.
     String(String),
+    /// A symbol (interned identifier).
     Symbol(Ident),
+    /// An array of runtime values.
     Array(Vec<RuntimeValue>),
+    /// A markdown node with an optional selector for indexing.
     Markdown(Node, Option<Selector>),
+    /// A user-defined function with parameters, body (program), and captured environment.
     Function(AstParams, Program, Shared<SharedCell<Env>>),
+    /// A built-in native function identified by name.
     NativeFunction(Ident),
+    /// A dictionary mapping identifiers to runtime values.
     Dict(BTreeMap<Ident, RuntimeValue>),
+    /// A module with its exports.
     Module(ModuleEnv),
+    /// An empty or null value.
     #[default]
     None,
 }
@@ -245,16 +268,22 @@ impl std::fmt::Debug for RuntimeValue {
 }
 
 impl RuntimeValue {
+    /// An empty array constant.
     pub const EMPTY_ARRAY: RuntimeValue = Self::Array(Vec::new());
+    /// The boolean `false` value.
     pub const FALSE: RuntimeValue = Self::Boolean(false);
+    /// The `None` (null) value.
     pub const NONE: RuntimeValue = Self::None;
+    /// The boolean `true` value.
     pub const TRUE: RuntimeValue = Self::Boolean(true);
 
+    /// Creates a new empty dictionary.
     #[inline(always)]
     pub fn new_dict() -> RuntimeValue {
         RuntimeValue::Dict(BTreeMap::new())
     }
 
+    /// Returns the type name of this runtime value as a string.
     #[inline(always)]
     pub fn name(&self) -> &str {
         match self {
@@ -272,26 +301,34 @@ impl RuntimeValue {
         }
     }
 
+    /// Returns `true` if this value is `None`.
     #[inline(always)]
     pub fn is_none(&self) -> bool {
         matches!(self, RuntimeValue::None)
     }
 
+    /// Returns `true` if this value is a user-defined function.
     #[inline(always)]
     pub fn is_function(&self) -> bool {
         matches!(self, RuntimeValue::Function(_, _, _))
     }
 
+    /// Returns `true` if this value is a native (built-in) function.
     #[inline(always)]
     pub fn is_native_function(&self) -> bool {
         matches!(self, RuntimeValue::NativeFunction(_))
     }
 
+    /// Returns `true` if this value is an array.
     #[inline(always)]
     pub fn is_array(&self) -> bool {
         matches!(self, RuntimeValue::Array(_))
     }
 
+    /// Returns `true` if this value is considered empty.
+    ///
+    /// Empty values include empty arrays, empty strings, empty markdown nodes,
+    /// empty dictionaries, and `None`.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         match self {
@@ -304,6 +341,11 @@ impl RuntimeValue {
         }
     }
 
+    /// Returns `true` if this value is considered truthy in conditional contexts.
+    ///
+    /// Truthy values include non-zero numbers, non-empty strings and arrays,
+    /// `true`, functions, symbols, and modules. Falsy values include `false`,
+    /// zero, empty collections, and `None`.
     #[inline(always)]
     pub fn is_truthy(&self) -> bool {
         match self {
@@ -324,6 +366,10 @@ impl RuntimeValue {
         }
     }
 
+    /// Returns the length of this value.
+    ///
+    /// For numbers, returns the value as `usize`. For strings and arrays, returns
+    /// the number of elements. For dictionaries, returns the number of entries.
     #[inline(always)]
     pub fn len(&self) -> usize {
         match self {
@@ -341,6 +387,9 @@ impl RuntimeValue {
         }
     }
 
+    /// Extracts the markdown node from this value, if it is a markdown value.
+    ///
+    /// If a selector is present, returns the selected child node.
     #[inline(always)]
     pub fn markdown_node(&self) -> Option<Node> {
         match self {
@@ -350,6 +399,9 @@ impl RuntimeValue {
         }
     }
 
+    /// Updates the value of a markdown node, returning a new runtime value.
+    ///
+    /// If this is not a markdown value, returns `None`.
     #[inline(always)]
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
         match self {
@@ -361,6 +413,7 @@ impl RuntimeValue {
         }
     }
 
+    /// Returns the position information for a markdown node, if available.
     #[inline(always)]
     pub fn position(&self) -> Option<mq_markdown::Position> {
         match self {
@@ -369,6 +422,9 @@ impl RuntimeValue {
         }
     }
 
+    /// Sets the position information for a markdown node.
+    ///
+    /// Only affects markdown values; other value types are unaffected.
     #[inline(always)]
     pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
         if let RuntimeValue::Markdown(node, _) = self {
@@ -404,6 +460,10 @@ impl RuntimeValue {
     }
 }
 
+/// A collection of runtime values.
+///
+/// Provides utilities for working with multiple values, such as filtering
+/// and updating operations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeValues(Vec<RuntimeValue>);
 
@@ -437,6 +497,7 @@ impl IntoIterator for RuntimeValues {
 }
 
 impl RuntimeValues {
+    /// Returns a compacted version of this collection, removing `None` and empty values.
     pub fn compact(&self) -> Vec<RuntimeValue> {
         self.0
             .iter()
@@ -445,18 +506,25 @@ impl RuntimeValues {
             .collect::<Vec<_>>()
     }
 
+    /// Returns a reference to the underlying vector of values.
     pub fn values(&self) -> &Vec<RuntimeValue> {
         &self.0
     }
 
+    /// Returns the number of values in this collection.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns `true` if this collection contains no values.
     pub fn is_empty(&self) -> bool {
         self.0.len() == 0
     }
 
+    /// Updates this collection with values from another collection.
+    ///
+    /// Pairs corresponding elements from both collections and applies special
+    /// update logic for markdown nodes.
     pub fn update_with(&self, other: Self) -> Self {
         self.0
             .clone()

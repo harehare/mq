@@ -109,6 +109,11 @@ impl Node {
                 let end = catch_expr.range(Shared::clone(&arena)).end;
                 Range { start, end }
             }
+            Expr::And(expr1, expr2) | Expr::Or(expr1, expr2) => {
+                let start = expr1.range(Shared::clone(&arena)).start;
+                let end = expr2.range(Shared::clone(&arena)).end;
+                Range { start, end }
+            }
             Expr::Literal(_)
             | Expr::Ident(_)
             | Expr::Selector(_)
@@ -248,6 +253,8 @@ pub enum Expr {
     Let(IdentWithToken, Shared<Node>),
     Var(IdentWithToken, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
+    And(Shared<Node>, Shared<Node>),
+    Or(Shared<Node>, Shared<Node>),
     Literal(Literal),
     Ident(IdentWithToken),
     InterpolatedString(Vec<StringSegment>),

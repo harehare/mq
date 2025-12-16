@@ -41,7 +41,7 @@ impl fmt::Display for Markdown {
             if let Some(pos) = node.position() {
                 let new_line_count = pre_position
                     .as_ref()
-                    .map(|p| pos.start.line - p.end.line)
+                    .map(|p| pos.start.line.saturating_sub(p.end.line))
                     .unwrap_or_else(|| if is_first { 0 } else { 1 });
 
                 pre_position = Some(pos.clone());

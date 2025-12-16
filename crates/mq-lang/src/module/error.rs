@@ -1,8 +1,7 @@
 use thiserror::Error;
 
 use crate::Token;
-use crate::ast::error::ParseError;
-use crate::lexer::error::LexerError;
+use crate::error::syntax::SyntaxError;
 use std::borrow::Cow;
 
 #[derive(Debug, PartialEq, Error)]
@@ -14,9 +13,7 @@ pub enum ModuleError {
     #[error("IO error: {0}")]
     IOError(Cow<'static, str>),
     #[error(transparent)]
-    LexerError(#[from] LexerError),
-    #[error(transparent)]
-    ParseError(#[from] ParseError),
+    SyntaxError(#[from] SyntaxError),
     #[error("Invalid module, expected IDENT or BINDING")]
     InvalidModule,
 }
@@ -28,8 +25,7 @@ impl ModuleError {
             ModuleError::AlreadyLoaded(_) => None,
             ModuleError::NotFound(_) => None,
             ModuleError::IOError(_) => None,
-            ModuleError::LexerError(err) => err.token(),
-            ModuleError::ParseError(err) => err.token(),
+            ModuleError::SyntaxError(err) => err.token(),
             ModuleError::InvalidModule => None,
         }
     }

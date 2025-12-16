@@ -421,6 +421,11 @@ pub async fn html_to_markdown(html_input: &str, options: Option<ConversionOption
         .map_err(|e| JsValue::from_str(&format!("Failed to convert HTML to Markdown: {}", e)))
 }
 
+#[wasm_bindgen(js_name=toHtml)]
+pub async fn to_html(markdown_input: &str) -> String {
+    mq_markdown::to_html(markdown_input)
+}
+
 #[wasm_bindgen(js_name=diagnostics, skip_typescript)]
 pub async fn diagnostics(code: &str) -> JsValue {
     let (_, errors) = mq_lang::parse_recovery(code);
@@ -863,5 +868,15 @@ mod tests {
         let markdown = result.unwrap();
         assert!(markdown.contains("# Hello World"));
         assert!(markdown.contains("**test**"));
+    }
+
+    #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_to_html() {
+        let markdown = "# Hello World\n\nThis is a **test**.";
+        let result = to_html(markdown).await;
+
+        assert!(result.contains("<h1>Hello World</h1>"));
+        assert!(result.contains("<strong>test</strong>"));
     }
 }

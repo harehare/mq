@@ -8,6 +8,7 @@ use crate::ast::constants;
 use crate::eval::debugger::DefaultDebuggerHandler;
 use crate::{
     IdentWithToken, LocalFsModuleResolver, ModuleResolver,
+    error::runtime::RuntimeError,
     eval::{env::EnvError, runtime_value::ModuleEnv},
     module::{self, error::ModuleError},
     selector::Selector,
@@ -33,15 +34,15 @@ pub mod builtin;
 #[cfg(feature = "debugger")]
 pub mod debugger;
 pub mod env;
-pub mod error;
 pub mod runtime_value;
 
 use env::Env;
-use error::EvalError;
 use runtime_value::RuntimeValue;
 
+/// Configuration options for the evaluator.
 #[derive(Debug, Clone)]
 pub struct Options {
+    /// Maximum depth of the call stack to prevent infinite recursion.
     pub max_call_stack_depth: u32,
 }
 
@@ -63,6 +64,10 @@ impl Default for Options {
     }
 }
 
+/// The AST evaluator for executing mq programs.
+///
+/// Evaluates abstract syntax trees and manages the runtime environment,
+/// including variable bindings, function calls, and module loading.
 #[derive(Debug)]
 pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
     env: Shared<SharedCell<Env>>,
@@ -234,12 +239,12 @@ impl<T: ModuleResolver> Evaluator<T> {
         define(&self.env, Ident::new(name), RuntimeValue::String(value.to_string()));
     }
 
-    pub(crate) fn load_builtin_module(&mut self) -> Result<(), EvalError> {
+    pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
         let module = self.module_loader.load_builtin(Shared::clone(&self.token_arena))?;
         self.load_module(module)
     }
 
-    pub(crate) fn load_module(&mut self, module: module::Module) -> Result<(), EvalError> {
+    pub(crate) fn load_module(&mut self, module: module::Module) -> Result<(), RuntimeError> {
         self.load_module_with_env(module, &Shared::clone(&self.env))
     }
 
@@ -247,14 +252,14 @@ impl<T: ModuleResolver> Evaluator<T> {
         &mut self,
         module: module::Module,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<(), EvalError> {
+    ) -> Result<(), RuntimeError> {
         for node in &module.modules {
             let _ = match &*node.expr {
                 ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, env)?,
                 ast::Expr::Module(ident, program) => self.eval_module(&RuntimeValue::NONE, ident, program, env)?,
                 ast::Expr::Import(module_path) => self.eval_import(module_path.to_owned(), env)?,
                 _ => {
-                    return Err(EvalError::InternalError(
+                    return Err(RuntimeError::InternalError(
                         (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                     ));
                 }
@@ -276,7 +281,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 let val = self.eval_expr(&RuntimeValue::NONE, node, env)?;
                 define(env, ident.name, val);
             } else {
-                return Err(EvalError::InternalError(
+                return Err(RuntimeError::InternalError(
                     (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                 ));
             }
@@ -291,7 +296,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         program: &Program,
         runtime_value: RuntimeValue,
         env: Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         let mut value = runtime_value;
         for expr in program {
             match self.eval_expr(&value, expr, &env) {
@@ -308,19 +313,19 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: Ident,
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         #[cfg(not(feature = "sync"))]
         {
             env.borrow()
                 .resolve(ident)
-                .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
+                .map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
         }
         #[cfg(feature = "sync")]
         {
             env.read()
                 .unwrap()
                 .resolve(ident)
-                .map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
+                .map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
         }
     }
 
@@ -365,7 +370,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_include(&mut self, module: ast::Literal, env: &Shared<SharedCell<Env>>) -> Result<(), EvalError> {
+    fn eval_include(&mut self, module: ast::Literal, env: &Shared<SharedCell<Env>>) -> Result<(), RuntimeError> {
         match module {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -373,7 +378,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .load_from_file(&module_name, Shared::clone(&self.token_arena))?;
                 self.load_module_with_env(module, env)
             }
-            _ => Err(EvalError::ModuleLoadError(ModuleError::InvalidModule)),
+            _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule)),
         }
     }
 
@@ -383,7 +388,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: &IdentWithToken,
         program: &Program,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         let module_name_to_use = &ident.name.as_str();
 
         if let Ok(value) = resolve(module_name_to_use, env) {
@@ -434,7 +439,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         &mut self,
         module_path: ast::Literal,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         match module_path {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -463,12 +468,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                 {
                     Ok(value)
                 } else {
-                    Err(EvalError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
+                    Err(RuntimeError::ModuleLoadError(ModuleError::NotFound(Cow::Owned(
                         module_name,
                     ))))
                 }
             }
-            _ => Err(EvalError::ModuleLoadError(ModuleError::InvalidModule)),
+            _ => Err(RuntimeError::ModuleLoadError(ModuleError::InvalidModule)),
         }
     }
 
@@ -479,13 +484,13 @@ impl<T: ModuleResolver> Evaluator<T> {
         access_target: &ast::AccessTarget,
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         // Traverse the module path to get to the final module
         let mut current_value = if let Some(first_module) = module_path.first() {
             self.eval_ident(first_module.name, token_id, env)?
         } else {
             let token = get_token(Shared::clone(&self.token_arena), token_id);
-            return Err(EvalError::InternalError((*token).clone()));
+            return Err(RuntimeError::InternalError((*token).clone()));
         };
 
         // Traverse nested modules
@@ -500,11 +505,14 @@ impl<T: ModuleResolver> Evaluator<T> {
                     let resolved = module_exports.read().unwrap().resolve(module_ident.name);
 
                     current_value =
-                        resolved.map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))?;
+                        resolved.map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))?;
                 }
                 _ => {
                     let token = get_token(Shared::clone(&self.token_arena), token_id);
-                    return Err(EvalError::NotDefined((*token).clone(), module_ident.name.to_string()));
+                    return Err(RuntimeError::NotDefined(
+                        (*token).clone(),
+                        module_ident.name.to_string(),
+                    ));
                 }
             }
         }
@@ -533,7 +541,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                             }
                             Err(_) => {
                                 let token = get_token(Shared::clone(&self.token_arena), token_id);
-                                Err(EvalError::NotDefined((*token).clone(), func_name.name.to_string()))
+                                Err(RuntimeError::NotDefined((*token).clone(), func_name.name.to_string()))
                             }
                         }
                     }
@@ -544,14 +552,14 @@ impl<T: ModuleResolver> Evaluator<T> {
                         #[cfg(feature = "sync")]
                         let resolved = module_exports.read().unwrap().resolve(ident.name);
 
-                        resolved.map_err(|e| e.to_eval_error(token_id, Shared::clone(&self.token_arena)))
+                        resolved.map_err(|e| e.to_runtime_error(token_id, Shared::clone(&self.token_arena)))
                     }
                 }
             }
             _ => {
                 let token = get_token(Shared::clone(&self.token_arena), token_id);
                 let last_module = module_path.last().map(|m| m.name.to_string()).unwrap_or_default();
-                Err(EvalError::NotDefined((*token).clone(), last_module))
+                Err(RuntimeError::NotDefined((*token).clone(), last_module))
             }
         }
     }
@@ -594,7 +602,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         segments: &[ast::StringSegment],
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         // Calculate estimated capacity based on segment content
         let estimated_capacity = segments
             .iter()
@@ -617,7 +625,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     }
                     ast::StringSegment::Env(env_var) => {
                         acc.push_str(&std::env::var(env_var).map_err(|_| {
-                            EvalError::EnvNotFound(
+                            RuntimeError::EnvNotFound(
                                 (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
                                 env_var.clone(),
                             )
@@ -638,7 +646,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         runtime_value: &RuntimeValue,
         node: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         #[cfg(feature = "debugger")]
         {
             let token = &get_token(Shared::clone(&self.token_arena), node.token_id);
@@ -729,7 +737,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 #[cfg(not(feature = "sync"))]
                 {
                     env.borrow_mut().assign(ident.name, val).map_err(|e| {
-                        e.to_eval_error_with_token(
+                        e.to_runtime_error_with_token(
                             ident
                                 .token
                                 .as_ref()
@@ -742,7 +750,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 #[cfg(feature = "sync")]
                 {
                     env.write().unwrap().assign(ident.name, val).map_err(|e| {
-                        e.to_eval_error_with_token(
+                        e.to_runtime_error_with_token(
                             ident
                                 .token
                                 .as_ref()
@@ -753,6 +761,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 }
                 Ok(runtime_value.clone())
             }
+            ast::Expr::And(left, right) => self.eval_and(runtime_value, left, right, env),
+            ast::Expr::Or(left, right) => self.eval_or(runtime_value, left, right, env),
             ast::Expr::While(cond, program) => self.eval_while(runtime_value, cond, program, env),
             ast::Expr::Try(try_expr, catch_expr) => self.eval_try(runtime_value, try_expr, catch_expr, env),
             ast::Expr::Foreach(ident, values, body) => {
@@ -769,8 +779,8 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Module(ident, program) => self.eval_module(runtime_value, ident, program, env),
 
             ast::Expr::Match(value_node, arms) => self.eval_match(runtime_value, value_node, arms, env),
-            ast::Expr::Break => Err(EvalError::Break),
-            ast::Expr::Continue => Err(EvalError::Continue),
+            ast::Expr::Break => Err(RuntimeError::Break),
+            ast::Expr::Continue => Err(RuntimeError::Continue),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
         }
     }
@@ -786,6 +796,50 @@ impl<T: ModuleResolver> Evaluator<T> {
         }
     }
 
+    fn eval_and(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        left: &Shared<ast::Node>,
+        right: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let left_value = self.eval_expr(runtime_value, left, env)?;
+
+        if !left_value.is_truthy() {
+            return Ok(RuntimeValue::Boolean(false));
+        }
+
+        let right_value = self.eval_expr(runtime_value, right, env)?;
+
+        if !right_value.is_truthy() {
+            return Ok(RuntimeValue::Boolean(false));
+        }
+
+        Ok(right_value)
+    }
+
+    fn eval_or(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        left: &Shared<ast::Node>,
+        right: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let left_value = self.eval_expr(runtime_value, left, env)?;
+
+        if left_value.is_truthy() {
+            return Ok(left_value);
+        }
+
+        let right_value = self.eval_expr(runtime_value, right, env)?;
+
+        if right_value.is_truthy() {
+            return Ok(right_value);
+        }
+
+        Ok(RuntimeValue::Boolean(false))
+    }
+
     fn eval_foreach(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -794,7 +848,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         body: &Program,
         token_id: TokenId,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         let values = self.eval_expr(runtime_value, values, env)?;
         let values = match values {
             RuntimeValue::Array(values) => {
@@ -805,8 +859,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&env, ident, value.clone());
                     match self.eval_program(body, value, Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(EvalError::Break) => break,
-                        Err(EvalError::Continue) => continue,
+                        Err(RuntimeError::Break) => break,
+                        Err(RuntimeError::Continue) => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -821,8 +875,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     define(&env, ident, RuntimeValue::String(c.to_string()));
                     match self.eval_program(body, RuntimeValue::String(c.to_string()), Shared::clone(&env)) {
                         Ok(result) => results.push(result),
-                        Err(EvalError::Break) => break,
-                        Err(EvalError::Continue) => continue,
+                        Err(RuntimeError::Break) => break,
+                        Err(RuntimeError::Continue) => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -830,7 +884,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 results
             }
             _ => {
-                return Err(EvalError::InvalidTypes {
+                return Err(RuntimeError::InvalidTypes {
                     token: (*get_token(Shared::clone(&self.token_arena), token_id)).clone(),
                     name: TokenKind::Foreach.to_string(),
                     args: vec![values.to_string().into()],
@@ -847,7 +901,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         cond: &Shared<ast::Node>,
         body: &Program,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         let mut runtime_value = runtime_value.clone();
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
         let mut cond_value = self.eval_expr(&runtime_value, cond, &env)?;
@@ -863,16 +917,16 @@ impl<T: ModuleResolver> Evaluator<T> {
                     std::mem::swap(&mut runtime_value, &mut new_runtime_value);
                     cond_value = self.eval_expr(&runtime_value, cond, &env)?;
                 }
-                Err(EvalError::Break) if first => {
+                Err(RuntimeError::Break) if first => {
                     runtime_value = RuntimeValue::NONE;
                     break;
                 }
-                Err(EvalError::Break) => break,
-                Err(EvalError::Continue) if first => {
+                Err(RuntimeError::Break) => break,
+                Err(RuntimeError::Continue) if first => {
                     runtime_value = RuntimeValue::NONE;
                     continue;
                 }
-                Err(EvalError::Continue) => continue,
+                Err(RuntimeError::Continue) => continue,
                 Err(e) => return Err(e),
             }
 
@@ -889,7 +943,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         try_expr: &Shared<ast::Node>,
         catch_expr: &Shared<ast::Node>,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         match self.eval_expr(runtime_value, try_expr, env) {
             Ok(result) => Ok(result),
             Err(_) => self.eval_expr(runtime_value, catch_expr, env),
@@ -902,7 +956,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         runtime_value: &RuntimeValue,
         conditions: &Branches,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         for (cond_node, body) in conditions {
             match cond_node {
                 Some(cond_node) => {
@@ -925,7 +979,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         value_node: &Shared<ast::Node>,
         arms: &MatchArms,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         let match_value = self.eval_expr(runtime_value, value_node, env)?;
 
         // Try each arm in order
@@ -964,7 +1018,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         &self,
         value: &RuntimeValue,
         pattern: &Pattern,
-    ) -> Result<Option<Vec<(Ident, RuntimeValue)>>, EvalError> {
+    ) -> Result<Option<Vec<(Ident, RuntimeValue)>>, RuntimeError> {
         match pattern {
             Pattern::Wildcard => {
                 // Wildcard always matches, no bindings
@@ -1082,7 +1136,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: Ident,
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         #[cfg(not(feature = "sync"))]
         let resolved = Shared::clone(env).borrow().resolve(ident);
         #[cfg(feature = "sync")]
@@ -1102,11 +1156,11 @@ impl<T: ModuleResolver> Evaluator<T> {
         ident: &Ident,
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
-        let args: Result<builtin::Args, EvalError> =
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let args: Result<builtin::Args, RuntimeError> =
             args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
         builtin::eval_builtin(runtime_value, ident, args?, env)
-            .map_err(|e| e.to_eval_error((*node).clone(), Shared::clone(&self.token_arena)))
+            .map_err(|e| e.to_runtime_error((*node).clone(), Shared::clone(&self.token_arena)))
     }
 
     fn eval_call_dynamic(
@@ -1115,7 +1169,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         callable: &Shared<ast::Node>,
         args: &ast::Args,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         let fn_value = self.eval_expr(runtime_value, callable, env)?;
 
         self.call_fn(
@@ -1129,9 +1183,9 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn enter_scope(&mut self) -> Result<(), EvalError> {
+    fn enter_scope(&mut self) -> Result<(), RuntimeError> {
         if self.call_stack_depth >= self.options.max_call_stack_depth {
-            return Err(EvalError::RecursionError(self.options.max_call_stack_depth));
+            return Err(RuntimeError::RecursionError(self.options.max_call_stack_depth));
         }
         self.call_stack_depth += 1;
         Ok(())
@@ -1153,7 +1207,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         args: &ast::Args,
         runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
-    ) -> Result<RuntimeValue, EvalError> {
+    ) -> Result<RuntimeValue, RuntimeError> {
         if let RuntimeValue::Function(params, program, fn_env) = fn_value {
             self.enter_scope()?;
             #[cfg(feature = "debugger")]
@@ -1165,7 +1219,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 if let ast::Expr::Ident(id) = &*params.first().unwrap().expr {
                     define(&new_env, id.name, runtime_value.clone());
                 } else {
-                    return Err(EvalError::InvalidDefinition(
+                    return Err(RuntimeError::InvalidDefinition(
                         (*get_token(Shared::clone(&self.token_arena), params.first().unwrap().token_id)).clone(),
                         ident.to_string(),
                     ));
@@ -1176,14 +1230,14 @@ impl<T: ModuleResolver> Evaluator<T> {
                         let val = self.eval_expr(runtime_value, arg, env)?;
                         define(&new_env, id.name, val);
                     } else {
-                        return Err(EvalError::InvalidDefinition(
+                        return Err(RuntimeError::InvalidDefinition(
                             (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
                             ident.to_string(),
                         ));
                     }
                 }
             } else if args.len() != params.len() {
-                return Err(EvalError::InvalidNumberOfArguments(
+                return Err(RuntimeError::InvalidNumberOfArguments(
                     (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                     ident.to_string(),
                     params.len() as u8,
@@ -1195,7 +1249,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                         let val = self.eval_expr(runtime_value, arg, env)?;
                         define(&new_env, id.name, val);
                     } else {
-                        return Err(EvalError::InvalidDefinition(
+                        return Err(RuntimeError::InvalidDefinition(
                             (*get_token(Shared::clone(&self.token_arena), param.token_id)).clone(),
                             ident.to_string(),
                         ));
@@ -1212,7 +1266,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         } else if let RuntimeValue::NativeFunction(ident) = fn_value {
             self.eval_builtin(runtime_value, node, ident, args, env)
         } else {
-            Err(EvalError::InvalidDefinition(
+            Err(RuntimeError::InvalidDefinition(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                 ident.to_string(),
             ))
@@ -1262,6 +1316,7 @@ mod tests {
     use std::vec;
 
     use crate::ast::node::{Args, IdentWithToken};
+    use crate::error::runtime::RuntimeError;
     use crate::eval::module::error::ModuleError;
     use crate::number::{INFINITE, NAN};
     use crate::range::Range;
@@ -1354,7 +1409,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("end".to_string())))
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "starts_with".to_string(),
                                                     args: vec!["1".into(), "\"end\"".to_string().into()]})))]
     #[case::ends_with(vec![RuntimeValue::String("test".to_string())],
@@ -1398,7 +1453,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("te".to_string())))
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "ends_with".to_string(),
                                                     args: vec!["1".into(), "\"te\"".into()]})))]
     #[case::downcase(vec![RuntimeValue::String("TEST".to_string())],
@@ -1418,7 +1473,7 @@ mod tests {
        Ok(vec![RuntimeValue::NONE]))]
     #[case::upcase(vec![RuntimeValue::Number(123.into())],
        vec![ast_call("upcase", SmallVec::new())],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "upcase".to_string(),
                                                     args: vec![123.to_string().into()]})))]
     #[case::replace(vec![RuntimeValue::String("testString".to_string())],
@@ -1452,7 +1507,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("exam".to_string())))
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "replace".to_string(),
                                                     args: vec![123.to_string().into(), "\"test\"".to_string().into(), "\"exam\"".to_string().into()]})))]
     #[case::gsub_regex(vec![RuntimeValue::String("test123".to_string())],
@@ -1478,7 +1533,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "gsub".to_string(),
                                                     args: vec![123.to_string().into(), "\"test\"".to_string().into(), "\"\\\\d+\"".to_string().into()]})))]
     #[case::len(vec![RuntimeValue::String("testString".to_string())],
@@ -1556,7 +1611,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("test".to_string())))
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "index".to_string(),
                                                     args: vec!["1".into(), "\"test\"".into()]})))]
     #[case::array_index(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test3".to_string())])],
@@ -1593,7 +1648,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("String".to_string())))
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "rindex".to_string(),
                                                     args: vec!["123".into(), "\"String\"".into()]})))]
     #[case::array_rindex(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string()), RuntimeValue::String("test1".to_string())])],
@@ -2020,7 +2075,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ]),
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                          name: "add".to_string(),
                                                          args: vec![true.to_string().into(), 1.to_string().into()]})))]
     #[case::add(vec![RuntimeValue::String("testString".to_string())],
@@ -2090,7 +2145,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ]),
        ],
-       Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
+       Err(InnerError::Runtime(RuntimeError::Runtime(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::sub(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("sub", smallvec![
@@ -2114,7 +2169,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ])
        ],
-       Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
+       Err(InnerError::Runtime(RuntimeError::Runtime(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::div(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("div", smallvec![
@@ -2122,7 +2177,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(0.into()))),
                 ])
        ],
-       Err(InnerError::Eval(EvalError::ZeroDivision(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}))))]
+       Err(InnerError::Runtime(RuntimeError::ZeroDivision(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}))))]
     #[case::div(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("div", smallvec![
@@ -2178,7 +2233,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ]),
        ],
-       Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
+       Err(InnerError::Runtime(RuntimeError::Runtime(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::pow(vec![RuntimeValue::String("testString".to_string())],
        vec![
             ast_call("pow", smallvec![
@@ -2194,7 +2249,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ]),
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "pow".to_string(),
                                                     args: vec!["\"te\"".to_string().into(), "1".to_string().into()]})))]
     #[case::and(vec![RuntimeValue::String("test".to_string())],
@@ -2303,7 +2358,7 @@ mod tests {
        vec![
             ast_call("split", smallvec![ast_node(ast::Expr::Literal(ast::Literal::String(",".to_string())))])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "split".to_string(),
                                                     args: vec![1.to_string().into(), "\",\"".to_string().into()]})))]
     #[case::split_array(vec![RuntimeValue::Array(vec![
@@ -2391,7 +2446,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("#".to_string())))
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "join".to_string(),
                                                     args: vec![1.to_string().into(), "\"#\"".to_string().into()]})))]
     #[case::reverse_string(vec![RuntimeValue::String("test".to_string())],
@@ -2426,7 +2481,7 @@ mod tests {
        vec![
             ast_call("reverse", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "reverse".to_string(),
                                                     args: vec![123.to_string().into()]})))]
     #[case::base64(vec![RuntimeValue::String("test".to_string())],
@@ -2445,7 +2500,7 @@ mod tests {
        vec![
             ast_call("base64", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64".to_string(),
                                                     args: vec![1.to_string().into()]})))]
     #[case::base64d(vec![RuntimeValue::String("dGVzdA==".to_string())],
@@ -2466,7 +2521,7 @@ mod tests {
             ast_call("base64d", smallvec![
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "base64d".to_string(),
                                                     args: vec![1.to_string().into()]})))]
     #[case::def(vec![RuntimeValue::String("test1,test2".to_string())],
@@ -2579,7 +2634,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ])
             ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "min".to_string(),
                                                     args: vec!["\"te\"".to_string().into(), 1.to_string().into()]})))]
     #[case::max(vec![RuntimeValue::String("test".to_string())],
@@ -2612,7 +2667,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
                 ])
             ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "max".to_string(),
                                                     args: vec!["\"te\"".to_string().into(), 1.to_string().into()]})))]
     #[case::trim(vec![RuntimeValue::String("  test  ".to_string())],
@@ -2629,7 +2684,7 @@ mod tests {
        vec![
             ast_call("trim", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "trim".to_string(),
                                                     args: vec![1.to_string().into()]})))]
     #[case::slice(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "testString".to_string(), position: None}), None)],
@@ -2757,7 +2812,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "slice".to_string(),
                                                     args: vec![123.to_string().into(), 0.to_string().into(), 4.to_string().into()]})))]
     #[case::match_regex1(vec![RuntimeValue::String("test123".to_string())],
@@ -2780,7 +2835,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String(r"\d+".to_string()))),
             ])
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "regex_match".to_string(),
                                                     args: vec![123.to_string().into(), "\"\\\\d+\"".to_string().into()]})))]
     #[case::explode(vec![RuntimeValue::String("ABC".to_string())],
@@ -2796,7 +2851,7 @@ mod tests {
        vec![
             ast_call("explode", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "explode".to_string(),
                                                     args: vec![123.to_string().into()]})))]
     #[case::implode(vec![RuntimeValue::Array(vec![
@@ -2812,7 +2867,7 @@ mod tests {
        vec![
             ast_call("implode", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "implode".to_string(),
                                                     args: vec!["\"test\"".to_string().into()]})))]
     #[case::explode_markdown(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "ABC".to_string(), position: None}), None)],
@@ -2839,7 +2894,7 @@ mod tests {
        vec![
             ast_call("to_number", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
+       Err(InnerError::Runtime(RuntimeError::Runtime(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::to_number_array(vec![RuntimeValue::Array(vec![RuntimeValue::String("42".to_string()), RuntimeValue::String("43".to_string()), RuntimeValue::String("44".to_string())])],
         vec![
               ast_call("to_number", SmallVec::new())
@@ -2854,7 +2909,7 @@ mod tests {
         vec![
               ast_call("to_number", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
+        Err(InnerError::Runtime(RuntimeError::Runtime(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "invalid float literal".to_string()))))]
     #[case::to_number_array_empty(vec![RuntimeValue::Array(Vec::new())],
         vec![
               ast_call("to_number", SmallVec::new())
@@ -2879,7 +2934,7 @@ mod tests {
        vec![
             ast_call("trunc", SmallVec::new())
        ],
-       Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+       Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                     name: "trunc".to_string(),
                                                     args: vec!["\"42.5\"".to_string().into()]})))]
     #[case::abs_positive(vec![RuntimeValue::Number(42.into())],
@@ -2906,7 +2961,7 @@ mod tests {
         vec![
             ast_call("abs", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "abs".to_string(),
                                                      args: vec!["\"42\"".to_string().into()]})))]
     #[case::ceil(vec![RuntimeValue::Number(42.1.into())],
@@ -2923,7 +2978,7 @@ mod tests {
         vec![
             ast_call("ceil", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "ceil".to_string(),
                                                      args: vec!["\"42\"".to_string().into()]})))]
     #[case::round(vec![RuntimeValue::Number(42.5.into())],
@@ -2940,7 +2995,7 @@ mod tests {
         vec![
             ast_call("round", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "round".to_string(),
                                                      args: vec!["\"42.4\"".to_string().into()]})))]
     #[case::floor(vec![RuntimeValue::Number(42.9.into())],
@@ -2957,7 +3012,7 @@ mod tests {
         vec![
             ast_call("floor", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "floor".to_string(),
                                                      args: vec!["\"42.9\"".to_string().into()]})))]
     #[case::del(vec![RuntimeValue::Array(vec![RuntimeValue::String("test1".to_string()), RuntimeValue::String("test2".to_string())])],
@@ -2987,7 +3042,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(4.into()))),
               ]),
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "del".to_string(),
                                                      args: vec!["123".to_string().into(), "4".to_string().into()]})))]
     #[case::to_code(vec![RuntimeValue::String("test1".to_string())],
@@ -3311,7 +3366,7 @@ mod tests {
         vec![
             ast_call("get", smallvec![ast_node(ast::Expr::Literal(ast::Literal::Number(0.into())))])
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "get".to_string(),
                                                      args: vec![true.to_string().into(), 0.to_string().into()]})))]
     #[case::to_date(vec![RuntimeValue::Number(1609459200000_i64.into())],
@@ -3341,7 +3396,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("%Y-%m-%d".to_string())))
             ])
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "to_date".to_string(),
                                                      args: vec!["\"test\"".into(), "\"%Y-%m-%d\"".into()]})))]
     #[case::to_string_array(vec![RuntimeValue::Array(vec![
@@ -3475,7 +3530,7 @@ mod tests {
         vec![
             ast_call("sort", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "sort".to_string(),
                                                      args: vec![1.to_string().into()]})))]
     #[case::uniq_string_array(vec![RuntimeValue::Array(vec![
@@ -3512,7 +3567,7 @@ mod tests {
         vec![
             ast_call("uniq", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "uniq".to_string(),
                                                      args: vec![1.to_string().into()]})))]
     #[case::to_html(vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "test".to_string(), position: None}), None)],
@@ -3554,7 +3609,7 @@ mod tests {
         vec![
              ast_call("to_html", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "to_html".to_string(),
                                                      args: vec![1.to_string().into()]})))]
     #[case::repeat_string(vec![RuntimeValue::String("abc".to_string())],
@@ -3616,7 +3671,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("".into())))
             ])
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
            name: "repeat".to_string(),
            args: vec!["42".to_string().into(), "\"\"".to_string().into()]})))]
     #[case::debug(vec![RuntimeValue::String("test".to_string())],
@@ -3633,12 +3688,12 @@ mod tests {
         vec![
             ast_call("from_date", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::RuntimeError(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "premature end of input".to_string()))))]
+        Err(InnerError::Runtime(RuntimeError::Runtime(Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, "premature end of input".to_string()))))]
     #[case::from_date(vec![RuntimeValue::Number(1.into())],
         vec![
             ast_call("from_date", SmallVec::new())
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "from_date".to_string(),
                                                      args: vec![1.to_string().into()]})))]
     #[case::to_code_inline(vec![RuntimeValue::String("test1".to_string())],
@@ -4043,7 +4098,7 @@ mod tests {
             ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
         ])
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                              name: "set".to_string(),
                              args: vec!["\"not_an_array\"".to_string().into(), 0.to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::set_array_non_number_index(vec![RuntimeValue::Array(vec![
@@ -4056,7 +4111,7 @@ mod tests {
             ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
         ])
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                              name: "set".to_string(),
                              args: vec![r#"["item1", "item2"]"#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::del_dict_valid_key(vec![RuntimeValue::Dict(vec![
@@ -4139,7 +4194,7 @@ mod tests {
                     ast_node(ast::Expr::Literal(ast::Literal::Number(1.into()))),
               ]),
         ],
-        Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+        Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                                      name: "del".to_string(),
                                                      args: vec![r#"{"key1": "value1", "key2": "value2"}"#.to_string().into(), "1".to_string().into()]})))]
     #[case::set_code_block_lang_string(vec![RuntimeValue::Markdown(mq_markdown::Node::Code(mq_markdown::Code {
@@ -4441,7 +4496,7 @@ mod tests {
                         ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
                     ])
                 ],
-                Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "insert".to_string(),
                                      args: vec![1.to_string().into(), 0.to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::insert_array_non_number_index(vec![RuntimeValue::Array(vec![
@@ -4454,7 +4509,7 @@ mod tests {
                         ast_node(ast::Expr::Literal(ast::Literal::String("value".to_string()))),
                     ])
                 ],
-                Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "insert".to_string(),
                                      args: vec![r#"["item1", "item2"]"#.to_string().into(), "\"not_a_number\"".to_string().into(), "\"value\"".to_string().into()]})))]
     #[case::insert_string_middle(vec![RuntimeValue::String("ac".to_string())],
@@ -4992,7 +5047,7 @@ mod tests {
             vec![
                 ast_call("negate", SmallVec::new())
             ],
-            Err(InnerError::Eval(EvalError::InvalidTypes{
+            Err(InnerError::Runtime(RuntimeError::InvalidTypes{
                 token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into() },
                 name: "negate".to_string(),
                 args: vec!["\"test\"".to_string().into()]
@@ -5099,6 +5154,123 @@ mod tests {
                     ])
                 ],
                 Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_and_both_true(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_and_first_false(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(false)])
+            )]
+    #[case::expr_and_second_false(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(false)])
+            )]
+    #[case::expr_and_return_last_value(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::And(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::String("last".to_string())])
+            )]
+    #[case::expr_or_both_true(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_or_first_true(
+                vec![RuntimeValue::Boolean(true)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_or_second_true(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(true))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(true)])
+            )]
+    #[case::expr_or_both_false(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::Boolean(false)])
+            )]
+    #[case::expr_or_return_last_value(
+                vec![RuntimeValue::Boolean(false)],
+                vec![
+                    Shared::new(AstNode {
+                        token_id: 0.into(),
+                        expr: Shared::new(ast::Expr::Or(
+                            ast_node(ast::Expr::Literal(ast::Literal::Bool(false))),
+                            ast_node(ast::Expr::Literal(ast::Literal::String("last".to_string()))),
+                        )),
+                    })
+                ],
+                Ok(vec![RuntimeValue::String("last".to_string())])
             )]
     #[case::intern_string(
                 vec![RuntimeValue::String("hello".to_string())],
@@ -5386,7 +5558,7 @@ mod tests {
                 vec![
                     ast_call("to_markdown", SmallVec::new())
                 ],
-                Err(InnerError::Eval(EvalError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
+                Err(InnerError::Runtime(RuntimeError::InvalidTypes{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()},
                                      name: "to_markdown".to_string(),
                                      args: vec!["None".into()]})))]
     #[case::error_with_message(vec![RuntimeValue::String("test".to_string())],
@@ -5395,7 +5567,7 @@ mod tests {
                 ast_node(ast::Expr::Literal(ast::Literal::String("Custom error message".to_string())))
             ])
         ],
-        Err(InnerError::Eval(EvalError::UserDefined{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, message: "Custom error message".to_string()})))]
+        Err(InnerError::Runtime(RuntimeError::UserDefined{token: Token { range: Range::default(), kind: TokenKind::Eof, module_id: 1.into()}, message: "Custom error message".to_string()})))]
     #[case::get_markdown_position_line_col(
             vec![RuntimeValue::Markdown(mq_markdown::Node::Text(mq_markdown::Text{
                 value: "test".to_string(),
@@ -5569,9 +5741,9 @@ mod tests {
         assert_eq!(
             Evaluator::new(loader, token_arena())
                 .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
-            Err(InnerError::Eval(EvalError::ModuleLoadError(ModuleError::NotFound(
-                Cow::Borrowed("not_found")
-            ))))
+            Err(InnerError::Runtime(RuntimeError::ModuleLoadError(
+                ModuleError::NotFound(Cow::Borrowed("not_found"))
+            )))
         );
     }
 
@@ -5670,7 +5842,7 @@ mod tests {
         ],
         {
             unsafe { std::env::remove_var("MQ_TEST_MISSING_ENV") };
-            Err(EvalError::EnvNotFound(
+            Err(RuntimeError::EnvNotFound(
                 Token {
                     range: Range::default(),
                     kind: TokenKind::Eof,

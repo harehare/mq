@@ -31,7 +31,7 @@ select(!.code)
 ### Extract js code
 
 ```js
-.code("js")
+select(.code.lang == "js")
 ```
 
 ### Extracts the language name from code blocks

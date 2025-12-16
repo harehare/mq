@@ -19,6 +19,7 @@ interface WasmModule {
     html_input: string,
     options?: ConversionOptions
   ): Promise<string>;
+  toHtml(markdown_input: string): Promise<string>;
 }
 
 let wasmModule: WasmModule | null = null;
@@ -40,6 +41,7 @@ async function initWasm(): Promise<WasmModule> {
         diagnostics: wasmImport.diagnostics,
         definedValues: wasmImport.definedValues,
         htmlToMarkdown: wasmImport.htmlToMarkdown,
+        toHtml: wasmImport.toHtml,
       };
     } catch (error) {
       throw new Error(`Failed to initialize mq WebAssembly module: ${error}`);
@@ -114,4 +116,12 @@ export async function htmlToMarkdown(
 ): Promise<string> {
   const wasm = await initWasm();
   return await wasm.htmlToMarkdown(html, options);
+}
+
+/**
+ * Markdown Input to HTML
+ */
+export async function toHtml(markdownInput: string): Promise<string> {
+  const wasm = await initWasm();
+  return await wasm.toHtml(markdownInput);
 }

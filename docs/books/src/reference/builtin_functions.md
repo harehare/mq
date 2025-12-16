@@ -122,7 +122,8 @@
 | `round` | Rounds the given number to the nearest integer. | `number` | round(number) |
 | `rtrimstr` |  Removes suffix string from input if it exists | `s`, `right` | rtrimstr(s, right) |
 | `second` |  Returns the second element of an array | `arr` | second(arr) |
-| `sections` |  Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level. | `md_nodes`, `level` | sections(md_nodes, level) |
+| ~~`sections`~~ |  deprecated: Use the section module instead of the sections function. |
+|  Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level. | `md_nodes`, `level` | sections(md_nodes, level) |
 | `select` |  Returns value if condition is true, None otherwise | `v`, `f` | select(v, f) |
 | `set` | Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map. | `obj`, `key`, `value` | set(obj, key, value) |
 | `set_attr` | Sets the value of the specified attribute on a markdown node. | `markdown`, `attribute`, `value` | set_attr(markdown, attribute, value) |
@@ -163,6 +164,7 @@
 | `to_md_name` | Returns the name of the given markdown node. | `markdown` | to_md_name(markdown) |
 | `to_md_table_row` | Creates a markdown table row node with the given values. | `cells` | to_md_table_row(cells) |
 | `to_md_text` | Creates a markdown text node with the given value. | `value` | to_md_text(value) |
+| `to_mdx` | Parses an MDX string and returns an array of MDX nodes. | `mdx_string` | to_mdx(mdx_string) |
 | `to_number` | Converts the given value to a number. | `value` | to_number(value) |
 | `to_string` | Converts the given value to a string. | `value` | to_string(value) |
 | `to_strong` | Creates a markdown strong (bold) node with the given value. | `value` | to_strong(value) |

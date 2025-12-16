@@ -19,13 +19,13 @@ The installer will:
 # Install from crates.io
 cargo install mq-run
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.5
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.5.6
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.5.5
+cargo binstall mq-run@0.5.6
 ```
 
 ## Binaries
@@ -34,13 +34,13 @@ You can download pre-built binaries from the [GitHub releases page](https://gith
 
 ```sh
 # macOS (Apple Silicon)
-curl -L https://github.com/harehare/mq/releases/download/v0.5.5/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.6/mq-aarch64-apple-darwin -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux x86_64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.5/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.6/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
-curl -L https://github.com/harehare/mq/releases/download/v0.5.5/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
+curl -L https://github.com/harehare/mq/releases/download/v0.5.6/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.5/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.5.6/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ## Homebrew
@@ -53,7 +53,7 @@ $ brew install harehare/tap/mq
 ## Docker
 
 ```sh
-$ docker run --rm ghcr.io/harehare/mq:0.5.5
+$ docker run --rm ghcr.io/harehare/mq:0.5.6
 ```
 
 ## Visual Studio Code Extension

@@ -247,7 +247,7 @@ import "section"
 | nodes | section::split(2) | filter(section::has_content)
 ```
 
-### `flatten(sections)`
+### `collect(sections)`
 
 Converts section objects back to their original markdown node arrays. This is useful for outputting sections after manipulation.
 
@@ -257,7 +257,7 @@ Converts section objects back to their original markdown node arrays. This is us
 
 **Returns:**
 
-- Array of markdown nodes with sections flattened
+- Array of markdown nodes with sections collected
 
 **Example:**
 
@@ -265,7 +265,7 @@ Converts section objects back to their original markdown node arrays. This is us
 import "section"
 
 # Filter sections and convert back to markdown
-| nodes | section::split(2) | section::title_contains("API") | section::flatten()
+| nodes | section::split(2) | section::title_contains("API") | section::collect()
 ```
 
 ## Usage Patterns
@@ -285,7 +285,7 @@ include "section"
 include "section"
 
 # Get only API-related sections
-| h2() | split(2) | title_match("^API") | flatten()
+| h2() | split(2) | title_match("^API") | collect()
 ```
 
 ### Building Navigation

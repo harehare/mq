@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::{constants, node as ast};
+use crate::error::runtime::RuntimeError;
 use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
 use crate::number::{self, Number};
@@ -20,7 +21,6 @@ use std::{
 };
 use thiserror::Error;
 
-use super::error::EvalError;
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
@@ -1186,7 +1186,7 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
             a.extend_from_slice(a2);
             Ok(RuntimeValue::Array(a))
         }
-        [RuntimeValue::Array(a1), a2] | [a2, RuntimeValue::Array(a1)] => {
+        [RuntimeValue::Array(a1), a2] => {
             let total_size = a1.len().saturating_add(1);
             if total_size > MAX_RANGE_SIZE {
                 return Err(Error::Runtime(format!(
@@ -1194,10 +1194,26 @@ define_builtin!(ADD, ParamNum::Fixed(2), |ident, _, mut args, _| {
                     total_size, MAX_RANGE_SIZE
                 )));
             }
+
             let mut a = std::mem::take(a1);
             a.reserve(1);
             a.push(std::mem::take(a2));
             Ok(RuntimeValue::Array(a))
+        }
+        [v, RuntimeValue::Array(a)] => {
+            let total_size = a.len().saturating_add(1);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array size {} exceeds maximum allowed size of {}",
+                    total_size, MAX_RANGE_SIZE
+                )));
+            }
+
+            let mut arr = Vec::with_capacity(total_size);
+            arr.push(std::mem::take(v));
+            arr.extend(std::mem::take(a));
+
+            Ok(RuntimeValue::Array(arr))
         }
         [a, RuntimeValue::None] | [RuntimeValue::None, a] => Ok(std::mem::take(a)),
         [a, b] => Err(Error::InvalidTypes(
@@ -3659,47 +3675,49 @@ impl From<env::EnvError> for Error {
 
 impl Error {
     #[cold]
-    pub fn to_eval_error(&self, node: ast::Node, token_arena: Shared<SharedCell<Arena<Shared<Token>>>>) -> EvalError {
+    pub fn to_runtime_error(
+        &self,
+        node: ast::Node,
+        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    ) -> RuntimeError {
         match self {
-            Error::UserDefined(message) => EvalError::UserDefined {
+            Error::UserDefined(message) => RuntimeError::UserDefined {
                 message: message.to_owned(),
                 token: (*get_token(token_arena, node.token_id)).clone(),
             },
             Error::InvalidBase64String(e) => {
-                EvalError::InvalidBase64String((*get_token(token_arena, node.token_id)).clone(), e.to_string())
+                RuntimeError::InvalidBase64String((*get_token(token_arena, node.token_id)).clone(), e.to_string())
             }
             Error::NotDefined(name) => {
-                EvalError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::NotDefined((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
             Error::InvalidDefinition(a) => {
-                EvalError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
+                RuntimeError::InvalidDefinition((*get_token(token_arena, node.token_id)).clone(), a.clone())
             }
             Error::InvalidDateTimeFormat(msg) => {
-                EvalError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
+                RuntimeError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
             }
-            Error::InvalidTypes(name, args) => EvalError::InvalidTypes {
+            Error::InvalidTypes(name, args) => RuntimeError::InvalidTypes {
                 token: (*get_token(token_arena, node.token_id)).clone(),
                 name: name.clone(),
                 args: args.iter().map(|o| format!("{:?}", o).into()).collect::<Vec<_>>(),
             },
-            Error::InvalidNumberOfArguments(name, expected, got) => EvalError::InvalidNumberOfArguments(
+            Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments(
                 (*get_token(token_arena, node.token_id)).clone(),
                 name.clone(),
                 *expected,
                 *got,
             ),
             Error::InvalidRegularExpression(regex) => {
-                EvalError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
+                RuntimeError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
             }
-            Error::Runtime(msg) => {
-                EvalError::RuntimeError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
-            }
-            Error::ZeroDivision => EvalError::ZeroDivision((*get_token(token_arena, node.token_id)).clone()),
+            Error::Runtime(msg) => RuntimeError::Runtime((*get_token(token_arena, node.token_id)).clone(), msg.clone()),
+            Error::ZeroDivision => RuntimeError::ZeroDivision((*get_token(token_arena, node.token_id)).clone()),
             Error::AssignToImmutable(name) => {
-                EvalError::AssignToImmutable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::AssignToImmutable((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
             Error::UndefinedVariable(name) => {
-                EvalError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
             }
         }
     }

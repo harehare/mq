@@ -17,7 +17,7 @@ console.log('Hello, World!')
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
 
-    let code = r#".code("js") | to_text()?"#;
+    let code = r#"select(.code.lang == "js") | to_text()?"#;
     println!(
         "{:?}",
         engine

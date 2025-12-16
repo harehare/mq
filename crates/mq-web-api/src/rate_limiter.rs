@@ -3,7 +3,7 @@ use libsql::params;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 const MEMORY_DB_URL: &str = ":memory:";
 
