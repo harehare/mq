@@ -48,6 +48,7 @@ impl Node {
         match &*self.expr {
             Expr::Block(program)
             | Expr::Def(_, _, program)
+            | Expr::Macro(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Module(_, program)
@@ -249,6 +250,7 @@ pub enum Expr {
     Call(IdentWithToken, Args),
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
+    Macro(IdentWithToken, Params, Program),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
     Var(IdentWithToken, Shared<Node>),

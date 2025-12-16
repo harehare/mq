@@ -38,6 +38,7 @@ pub enum SymbolKind {
     If,
     Include(SourceId),
     Keyword,
+    Macro(Params),
     Match,
     MatchArm,
     None,
@@ -63,6 +64,11 @@ impl Symbol {
     #[inline(always)]
     pub fn is_function(&self) -> bool {
         matches!(self.kind, SymbolKind::Function(_))
+    }
+
+    #[inline(always)]
+    pub fn is_macro(&self) -> bool {
+        matches!(self.kind, SymbolKind::Macro(_))
     }
 
     #[inline(always)]

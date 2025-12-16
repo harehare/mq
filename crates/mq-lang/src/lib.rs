@@ -48,6 +48,7 @@ mod error;
 mod eval;
 mod ident;
 mod lexer;
+mod macro_expander;
 mod module;
 mod number;
 mod range;

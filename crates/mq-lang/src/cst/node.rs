@@ -102,6 +102,7 @@ pub enum NodeKind {
     Let,
     Var,
     Literal,
+    Macro,
     Match,
     MatchArm,
     Module,

@@ -318,6 +318,9 @@ impl Hir {
             mq_lang::CstNodeKind::Def => {
                 self.add_def_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Macro => {
+                self.add_macro_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Foreach => {
                 self.add_foreach_expr(node, source_id, scope_id, parent);
             }
@@ -1151,6 +1154,70 @@ impl Hir {
             });
 
             self.symbols[symbol_id].kind = SymbolKind::Function(param_names);
+
+            program.iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            });
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn add_macro_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Macro,
+            ..
+        } = &**node
+        {
+            self.symbols.insert(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let (params, program) = node.split_cond_and_program();
+            let ident = params.first().unwrap();
+
+            let symbol_id = self.add_symbol(Symbol {
+                value: ident.name(),
+                kind: SymbolKind::Macro(Vec::new()),
+                source: SourceInfo::new(Some(source_id), Some(ident.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            let scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Function(symbol_id),
+                Some(scope_id),
+            ));
+
+            let mut param_names = Vec::with_capacity(params.len().saturating_sub(1));
+
+            // For macro expressions, the first param is the macro name, so skip it
+            params.iter().skip(1).for_each(|child| {
+                param_names.push(child.name().unwrap_or("arg".into()));
+                self.add_symbol(Symbol {
+                    value: child.name(),
+                    kind: SymbolKind::Parameter,
+                    source: SourceInfo::new(Some(source_id), Some(child.range())),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                });
+            });
+
+            self.symbols[symbol_id].kind = SymbolKind::Macro(param_names);
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
