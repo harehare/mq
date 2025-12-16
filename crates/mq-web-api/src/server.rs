@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::signal;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -58,7 +59,12 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()).await?);
     info!("Rate limiter initialized successfully");
 
-    let app = create_router(&config, rate_limiter.clone());
+    let app = create_router(&config, rate_limiter.clone()).layer(TraceLayer::new_for_http().on_response(
+        |response: &axum::response::Response, latency: Duration, _span: &tracing::Span| {
+            let ms = latency.as_secs_f64() * 1000.0;
+            info!("response latency: {:.2}ms, status: {}", ms, response.status());
+        },
+    ));
 
     let bind_address = config.bind_address();
     let listener = tokio::net::TcpListener::bind(&bind_address)
