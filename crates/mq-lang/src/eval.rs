@@ -7,7 +7,7 @@ use crate::ast::constants;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::DefaultDebuggerHandler;
 use crate::{
-    Ident, Program, Range, Shared, SharedCell, Token, TokenKind,
+    Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
     ast::{
         TokenId,
@@ -25,7 +25,6 @@ use crate::{
 };
 #[cfg(feature = "debugger")]
 use crate::{Module, eval::debugger::Source};
-use crate::{arena::ArenaId, macro_expander::MacroExpander};
 
 #[cfg(feature = "debugger")]
 use debugger::{Breakpoint, DebugContext, Debugger};
@@ -144,20 +143,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        // Expand macros before evaluation
-        let mut macro_expander = MacroExpander::new();
-        let expanded_program = macro_expander.expand_program(program).map_err(|e| {
-            InnerError::Runtime(RuntimeError::Runtime(
-                Token {
-                    range: Range::default(),
-                    kind: TokenKind::Eof,
-                    module_id: ArenaId::new(0),
-                },
-                format!("Macro expansion error: {}", e),
-            ))
-        })?;
-
-        let mut program = expanded_program.iter().try_fold(
+        let mut program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
             |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
