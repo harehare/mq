@@ -60,15 +60,9 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     info!("Rate limiter initialized successfully");
 
     let app = create_router(&config, rate_limiter.clone()).layer(TraceLayer::new_for_http().on_response(
-        |response: &axum::response::Response, latency: Duration, _span: &tracing::Span, req: &axum::http::Request<axum::body::Body>| {
+        |response: &axum::response::Response, latency: Duration, _span: &tracing::Span| {
             let ms = latency.as_secs_f64() * 1000.0;
-            info!(
-                "response latency: {:.2}ms, method: {}, path: {}, status: {}",
-                ms,
-                req.method(),
-                req.uri().path(),
-                response.status()
-            );
+            info!("response latency: {:.2}ms, status: {}", ms, response.status());
         },
     ));
 
