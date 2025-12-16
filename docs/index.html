@@ -815,7 +815,7 @@
             <div class="demo-section">
               <div class="demo-gif-wrapper">
                 <div class="demo-placeholder">
-                  <img src="demo.gif" alt="mq demo" class="demo-gif" />
+                  <img src="demo.gif" alt="mq demo" class="demo-gif" loading="lazy" />
                 </div>
               </div>
             </div>
@@ -1022,7 +1022,7 @@ More content.`;
           return;
         }
 
-        output.textContent = "Running query...";
+        output.textContent = "Running query... Waiting for a response from the Web API.";
         output.className = "demo-output demo-loading";
         isRunning = true;
 
