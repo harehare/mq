@@ -654,3 +654,176 @@ impl Default for Macro {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{SharedCell, Token, TokenKind, arena::Arena, parse};
+    use rstest::rstest;
+
+    fn create_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10240)));
+        // Ensure at least one token for ArenaId::new(0)
+        crate::token_alloc(
+            &token_arena,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: crate::range::Range::default(),
+                module_id: crate::arena::ArenaId::new(0),
+            }),
+        );
+        token_arena
+    }
+
+    fn parse_program(input: &str) -> Result<Program, Box<crate::error::Error>> {
+        parse(input, create_token_arena())
+    }
+
+    #[rstest]
+    #[case::basic_macro(
+        "macro double(x): x + x; | double(5)",
+        "double(5)",
+        Ok(())
+    )]
+    #[case::multiple_params(
+        "macro add_three(a, b, c): a + b + c; | add_three(1, 2, 3)",
+        "add_three(1, 2, 3)",
+        Ok(())
+    )]
+    #[case::nested_macro_calls(
+        "macro double(x): x + x; | macro quad(x): double(double(x)); | quad(3)",
+        "quad(3)",
+        Ok(())
+    )]
+    #[case::macro_with_string(
+        r#"macro greet(name): s"Hello, ${name}!"; | greet("World")"#,
+        r#"greet("World")"#,
+        Ok(())
+    )]
+    #[case::macro_with_let(
+        "macro let_double(x): let y = x | y + y; | let_double(7)",
+        "let_double(7)",
+        Ok(())
+    )]
+    #[case::macro_with_if(
+        "macro max(a, b): if(a > b): a else: b; | max(10, 5)",
+        "max(10, 5)",
+        Ok(())
+    )]
+    #[case::macro_with_function_call(
+        "macro apply_twice(f, x): f(f(x)); | def inc(n): n + 1; | apply_twice(inc, 5)",
+        "apply_twice(inc, 5)",
+        Ok(())
+    )]
+    fn test_macro_expansion_success(#[case] input: &str, #[case] _description: &str, #[case] expected: Result<(), ()>) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        match expected {
+            Ok(_) => {
+                assert!(
+                    result.is_ok(),
+                    "Expected successful expansion but got error: {:?}",
+                    result.err()
+                );
+            }
+            Err(_) => {
+                assert!(result.is_err(), "Expected error but got success");
+            }
+        }
+    }
+
+    #[test]
+    fn test_macro_expansion_arity_mismatch_too_few() {
+        let input = "macro add_two(a, b): a + b; | add_two(1)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(matches!(result, Err(MacroExpansionError::ArityMismatch { .. })));
+    }
+
+    #[test]
+    fn test_macro_expansion_arity_mismatch_too_many() {
+        let input = "macro double(x): x + x; | double(1, 2, 3)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(matches!(result, Err(MacroExpansionError::ArityMismatch { .. })));
+    }
+
+    #[test]
+    fn test_macro_recursion_limit() {
+        let input = "macro recurse(x): recurse(x); | recurse(1)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        macro_expander.max_recursion = 10;
+        let result = macro_expander.expand_program(&program);
+
+        assert!(matches!(result, Err(MacroExpansionError::RecursionLimit)));
+    }
+
+    #[rstest]
+    #[case::no_params("macro const(): 42;", 0)]
+    #[case::one_param("macro double(x): x + x;", 1)]
+    #[case::two_params("macro add(a, b): a + b;", 2)]
+    #[case::three_params("macro add_three(a, b, c): a + b + c;", 3)]
+    fn test_macro_definition_collection(#[case] input: &str, #[case] expected_param_count: usize) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        macro_expander.collect_macros(&program);
+
+        assert_eq!(macro_expander.macros.len(), 1, "Expected one macro definition");
+        let macro_def = macro_expander.macros.values().next().unwrap();
+        assert_eq!(
+            macro_def.params.len(),
+            expected_param_count,
+            "Unexpected parameter count"
+        );
+    }
+
+    #[test]
+    fn test_multiple_macro_definitions() {
+        let input = r#"
+            macro double(x): x + x;
+            | macro triple(x): x + x + x;
+            | double(5) + triple(3)
+        "#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion");
+        assert_eq!(macro_expander.macros.len(), 2, "Expected two macro definitions");
+    }
+
+    #[test]
+    fn test_macro_parameter_shadowing() {
+        let input = "let x = 100 | macro use_param(x): x * 2; | use_param(5)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion with parameter shadowing");
+    }
+
+    #[test]
+    fn test_macro_not_included_in_output() {
+        let input = "macro double(x): x + x; | 42";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        // The expanded program should not contain the macro definition
+        for node in &expanded {
+            assert!(
+                !matches!(&*node.expr, Expr::Macro(_, _, _)),
+                "Macro definition should not be in expanded output"
+            );
+        }
+    }
+}
