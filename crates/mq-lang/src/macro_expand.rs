@@ -55,6 +55,11 @@ impl Macro {
     pub fn expand_program(&mut self, program: &Program) -> Result<Program, MacroExpansionError> {
         self.collect_macros(program);
 
+        // Fast path: if no macros are defined, return the program as-is without traversal
+        if self.macros.is_empty() {
+            return Ok(program.clone());
+        }
+
         let mut expanded_program = Vec::with_capacity(program.len());
         for node in program {
             // Skip macro definitions - they shouldn't appear in the expanded output
@@ -825,5 +830,38 @@ mod tests {
                 "Macro definition should not be in expanded output"
             );
         }
+    }
+
+    #[test]
+    fn test_no_macro_fast_path() {
+        // Test that when no macros are defined, the program is returned as-is
+        let input = "1 + 2 | . * 3";
+        let program = parse_program(input).expect("Failed to parse program");
+        let original_len = program.len();
+
+        let mut macro_expander = Macro::new();
+        let expanded = macro_expander
+            .expand_program(&program)
+            .expect("Failed to expand program");
+
+        // Should have same number of nodes
+        assert_eq!(expanded.len(), original_len);
+        // No macros should be collected
+        assert!(macro_expander.macros.is_empty());
+    }
+
+    #[rstest]
+    #[case::simple_expression("1 + 2")]
+    #[case::pipe_chain(". | . * 2 | . + 1")]
+    #[case::function_call("add(1, 2)")]
+    #[case::let_binding("let x = 5 | x * 2")]
+    #[case::if_expression("if(true): 1 else: 2;")]
+    fn test_no_macro_optimization(#[case] input: &str) {
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion for input without macros");
+        assert!(macro_expander.macros.is_empty(), "No macros should be collected");
     }
 }
