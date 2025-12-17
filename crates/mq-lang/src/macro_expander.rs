@@ -54,10 +54,8 @@ impl MacroExpander {
 
     /// Expands all macros in a program.
     pub fn expand_program(&mut self, program: &Program) -> Result<Program, MacroExpansionError> {
-        // Collect macro definitions
         self.collect_macros(program);
 
-        // Expand all nodes and filter out macro definitions
         let mut expanded_program = Vec::with_capacity(program.len());
         for node in program {
             // Skip macro definitions - they shouldn't appear in the expanded output
