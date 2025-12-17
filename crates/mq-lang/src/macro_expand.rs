@@ -1,4 +1,3 @@
-use crate::arena::ArenaId;
 use crate::{
     Ident, Shared,
     ast::{
@@ -6,7 +5,7 @@ use crate::{
         node::{AccessTarget, Expr, MatchArm, Node, StringSegment},
     },
 };
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use thiserror::Error;
 
 const MAX_RECURSION_DEPTH: u32 = 1000;
@@ -37,13 +36,13 @@ struct MacroDefinition {
 
 /// Expands macros in an AST before evaluation.
 #[derive(Debug, Clone)]
-pub struct MacroExpander {
+pub struct Macro {
     macros: FxHashMap<Ident, MacroDefinition>,
     recursion_depth: u32,
     max_recursion: u32,
 }
 
-impl MacroExpander {
+impl Macro {
     pub fn new() -> Self {
         Self {
             macros: FxHashMap::default(),
@@ -63,6 +62,17 @@ impl MacroExpander {
                 continue;
             }
 
+            // Check if this is a macro call - if so, expand it directly
+            if let Expr::Call(ident, args) = &*node.expr
+                && self.macros.contains_key(&ident.name)
+            {
+                // Expand macro call and add all resulting nodes
+                let expanded_nodes = self.expand_macro_call(ident.name, args)?;
+                expanded_program.extend(expanded_nodes);
+                continue;
+            }
+
+            // Regular node expansion
             let expanded_node = self.expand_node(node)?;
             expanded_program.push(expanded_node);
         }
@@ -70,7 +80,6 @@ impl MacroExpander {
         Ok(expanded_program)
     }
 
-    /// Collects all macro definitions from the program.
     fn collect_macros(&mut self, program: &Program) {
         for node in program {
             if let Expr::Macro(ident, params, body) = &*node.expr {
@@ -96,17 +105,22 @@ impl MacroExpander {
         }
     }
 
-    /// Recursively expands a single node.
-    ///
-    /// If the node is a macro call, it expands the macro.
-    /// Otherwise, it recursively processes child nodes.
     fn expand_node(&mut self, node: &Shared<Node>) -> Result<Shared<Node>, MacroExpansionError> {
         match &*node.expr {
-            // Expand macro calls
+            // Expand function calls, including nested macro calls
             Expr::Call(ident, args) => {
                 // Check if this is a macro call
                 if self.macros.contains_key(&ident.name) {
-                    self.expand_macro_call(ident.name, args)
+                    // For nested macro calls, we need to expand and potentially return multiple nodes
+                    // However, expand_node returns a single node, so we wrap them in a Block
+                    let expanded_nodes = self.expand_macro_call(ident.name, args)?;
+                    match expanded_nodes.as_slice() {
+                        [single] => Ok(Shared::clone(single)),
+                        multiple => Ok(Shared::new(Node {
+                            token_id: node.token_id,
+                            expr: Shared::new(Expr::Block(multiple.to_vec())),
+                        })),
+                    }
                 } else {
                     // Not a macro, just expand arguments
                     let expanded_args = args
@@ -120,8 +134,6 @@ impl MacroExpander {
                     }))
                 }
             }
-
-            // Recursively expand other expressions
             Expr::Block(program) => {
                 let expanded_program = self.expand_program(program)?;
                 Ok(Shared::new(Node {
@@ -129,7 +141,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Block(expanded_program)),
                 }))
             }
-
             Expr::Def(ident, params, program) => {
                 let expanded_program = self.expand_program(program)?;
                 Ok(Shared::new(Node {
@@ -137,7 +148,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Def(ident.clone(), params.clone(), expanded_program)),
                 }))
             }
-
             Expr::Fn(params, program) => {
                 let expanded_program = self.expand_program(program)?;
                 Ok(Shared::new(Node {
@@ -145,7 +155,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Fn(params.clone(), expanded_program)),
                 }))
             }
-
             Expr::If(branches) => {
                 let expanded_branches = branches
                     .iter()
@@ -165,7 +174,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::If(expanded_branches.into())),
                 }))
             }
-
             Expr::While(cond, program) => {
                 let expanded_cond = self.expand_node(cond)?;
                 let expanded_program = self.expand_program(program)?;
@@ -174,7 +182,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::While(expanded_cond, expanded_program)),
                 }))
             }
-
             Expr::Foreach(ident, collection, program) => {
                 let expanded_collection = self.expand_node(collection)?;
                 let expanded_program = self.expand_program(program)?;
@@ -183,7 +190,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Foreach(ident.clone(), expanded_collection, expanded_program)),
                 }))
             }
-
             Expr::Let(ident, value) => {
                 let expanded_value = self.expand_node(value)?;
                 Ok(Shared::new(Node {
@@ -191,7 +197,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Let(ident.clone(), expanded_value)),
                 }))
             }
-
             Expr::Var(ident, value) => {
                 let expanded_value = self.expand_node(value)?;
                 Ok(Shared::new(Node {
@@ -199,7 +204,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Var(ident.clone(), expanded_value)),
                 }))
             }
-
             Expr::Assign(ident, value) => {
                 let expanded_value = self.expand_node(value)?;
                 Ok(Shared::new(Node {
@@ -207,7 +211,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Assign(ident.clone(), expanded_value)),
                 }))
             }
-
             Expr::And(left, right) => {
                 let expanded_left = self.expand_node(left)?;
                 let expanded_right = self.expand_node(right)?;
@@ -216,7 +219,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::And(expanded_left, expanded_right)),
                 }))
             }
-
             Expr::Or(left, right) => {
                 let expanded_left = self.expand_node(left)?;
                 let expanded_right = self.expand_node(right)?;
@@ -225,7 +227,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Or(expanded_left, expanded_right)),
                 }))
             }
-
             Expr::CallDynamic(callable, args) => {
                 let expanded_callable = self.expand_node(callable)?;
                 let expanded_args = args
@@ -237,7 +238,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::CallDynamic(expanded_callable, expanded_args.into())),
                 }))
             }
-
             Expr::Match(value, arms) => {
                 let expanded_value = self.expand_node(value)?;
                 let expanded_arms = arms
@@ -262,7 +262,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Match(expanded_value, expanded_arms.into())),
                 }))
             }
-
             Expr::Module(ident, program) => {
                 let expanded_program = self.expand_program(program)?;
                 Ok(Shared::new(Node {
@@ -270,7 +269,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Module(ident.clone(), expanded_program)),
                 }))
             }
-
             Expr::Paren(inner) => {
                 let expanded_inner = self.expand_node(inner)?;
                 Ok(Shared::new(Node {
@@ -278,7 +276,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Paren(expanded_inner)),
                 }))
             }
-
             Expr::Try(try_expr, catch_expr) => {
                 let expanded_try = self.expand_node(try_expr)?;
                 let expanded_catch = self.expand_node(catch_expr)?;
@@ -287,7 +284,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Try(expanded_try, expanded_catch)),
                 }))
             }
-
             Expr::InterpolatedString(segments) => {
                 let expanded_segments = segments
                     .iter()
@@ -307,7 +303,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::InterpolatedString(expanded_segments)),
                 }))
             }
-
             Expr::QualifiedAccess(path, target) => {
                 let expanded_target = match target {
                     AccessTarget::Call(ident, args) => {
@@ -325,13 +320,11 @@ impl MacroExpander {
                     expr: Shared::new(Expr::QualifiedAccess(path.clone(), expanded_target)),
                 }))
             }
-
             // Macro definitions should not be expanded - they're already collected
             Expr::Macro(_, _, _) => {
                 // This should not happen in normal flow as we filter them out
                 Ok(Shared::clone(node))
             }
-
             // Leaf nodes - no expansion needed
             Expr::Literal(_)
             | Expr::Ident(_)
@@ -345,14 +338,15 @@ impl MacroExpander {
         }
     }
 
-    /// Expands a macro call by substituting arguments into the macro body.
-    fn expand_macro_call(&mut self, name: Ident, args: &[Shared<Node>]) -> Result<Shared<Node>, MacroExpansionError> {
-        // Check recursion depth
+    fn expand_macro_call(
+        &mut self,
+        name: Ident,
+        args: &[Shared<Node>],
+    ) -> Result<Vec<Shared<Node>>, MacroExpansionError> {
         if self.recursion_depth >= self.max_recursion {
             return Err(MacroExpansionError::RecursionLimit);
         }
 
-        // Get macro definition
         let macro_def = self
             .macros
             .get(&name)
@@ -369,7 +363,7 @@ impl MacroExpander {
         }
 
         // Create substitution map
-        let mut substitutions = FxHashMap::default();
+        let mut substitutions = FxHashMap::with_capacity_and_hasher(macro_def.params.len(), FxBuildHasher);
         for (param, arg) in macro_def.params.iter().zip(args.iter()) {
             substitutions.insert(*param, Shared::clone(arg));
         }
@@ -379,18 +373,10 @@ impl MacroExpander {
         let result = self.substitute_and_expand_program(&macro_def.body, &substitutions);
         self.recursion_depth -= 1;
 
-        // If the body has only one expression, return it directly
-        // Otherwise, wrap in a block
-        match result?.as_slice() {
-            [single] => Ok(Shared::clone(single)),
-            multiple => Ok(Shared::new(Node {
-                token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Block(multiple.to_vec())),
-            })),
-        }
+        // Return all nodes from the macro body directly
+        result
     }
 
-    /// Substitutes parameters in a program and expands the result.
     fn substitute_and_expand_program(
         &mut self,
         program: &Program,
@@ -405,7 +391,6 @@ impl MacroExpander {
             .collect()
     }
 
-    /// Recursively substitutes identifiers in a node with their corresponding values.
     fn substitute_node(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
         match &*node.expr {
             // Substitute identifiers
@@ -439,7 +424,6 @@ impl MacroExpander {
                     })
                 }
             }
-
             Expr::Block(program) => {
                 let substituted_program: Vec<_> =
                     program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
@@ -449,27 +433,43 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Block(substituted_program)),
                 })
             }
-
             Expr::Def(ident, params, program) => {
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
+                // Function parameters shadow macro parameters
+                let mut scoped_substitutions = substitutions.clone();
+                for param in params {
+                    if let Expr::Ident(param_ident) = &*param.expr {
+                        scoped_substitutions.remove(&param_ident.name);
+                    }
+                }
+
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_node(n, &scoped_substitutions))
+                    .collect();
 
                 Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Def(ident.clone(), params.clone(), substituted_program)),
                 })
             }
-
             Expr::Fn(params, program) => {
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
+                let mut scoped_substitutions = substitutions.clone();
+                for param in params {
+                    if let Expr::Ident(param_ident) = &*param.expr {
+                        scoped_substitutions.remove(&param_ident.name);
+                    }
+                }
+
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_node(n, &scoped_substitutions))
+                    .collect();
 
                 Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Fn(params.clone(), substituted_program)),
                 })
             }
-
             Expr::If(branches) => {
                 let substituted_branches: Vec<(Option<Shared<Node>>, Shared<Node>)> = branches
                     .iter()
@@ -485,7 +485,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::If(substituted_branches.into())),
                 })
             }
-
             Expr::While(cond, program) => {
                 let substituted_cond = self.substitute_node(cond, substitutions);
                 let substituted_program: Vec<_> =
@@ -496,7 +495,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::While(substituted_cond, substituted_program)),
                 })
             }
-
             Expr::Foreach(ident, collection, program) => {
                 let substituted_collection = self.substitute_node(collection, substitutions);
                 let substituted_program: Vec<_> =
@@ -511,7 +509,6 @@ impl MacroExpander {
                     )),
                 })
             }
-
             Expr::Let(ident, value) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 Shared::new(Node {
@@ -519,7 +516,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Let(ident.clone(), substituted_value)),
                 })
             }
-
             Expr::Var(ident, value) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 Shared::new(Node {
@@ -527,7 +523,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Var(ident.clone(), substituted_value)),
                 })
             }
-
             Expr::Assign(ident, value) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 Shared::new(Node {
@@ -535,7 +530,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Assign(ident.clone(), substituted_value)),
                 })
             }
-
             Expr::And(left, right) => {
                 let substituted_left = self.substitute_node(left, substitutions);
                 let substituted_right = self.substitute_node(right, substitutions);
@@ -544,7 +538,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::And(substituted_left, substituted_right)),
                 })
             }
-
             Expr::Or(left, right) => {
                 let substituted_left = self.substitute_node(left, substitutions);
                 let substituted_right = self.substitute_node(right, substitutions);
@@ -553,7 +546,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Or(substituted_left, substituted_right)),
                 })
             }
-
             Expr::CallDynamic(callable, args) => {
                 let substituted_callable = self.substitute_node(callable, substitutions);
                 let substituted_args: Vec<_> = args
@@ -566,7 +558,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::CallDynamic(substituted_callable, substituted_args.into())),
                 })
             }
-
             Expr::Match(value, arms) => {
                 let substituted_value = self.substitute_node(value, substitutions);
                 let substituted_arms: Vec<_> = arms
@@ -587,7 +578,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Match(substituted_value, substituted_arms.into())),
                 })
             }
-
             Expr::Module(ident, program) => {
                 let substituted_program: Vec<_> =
                     program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
@@ -597,7 +587,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Module(ident.clone(), substituted_program)),
                 })
             }
-
             Expr::Paren(inner) => {
                 let substituted_inner = self.substitute_node(inner, substitutions);
                 Shared::new(Node {
@@ -605,7 +594,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Paren(substituted_inner)),
                 })
             }
-
             Expr::Try(try_expr, catch_expr) => {
                 let substituted_try = self.substitute_node(try_expr, substitutions);
                 let substituted_catch = self.substitute_node(catch_expr, substitutions);
@@ -614,7 +602,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::Try(substituted_try, substituted_catch)),
                 })
             }
-
             Expr::InterpolatedString(segments) => {
                 let substituted_segments: Vec<_> = segments
                     .iter()
@@ -631,7 +618,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::InterpolatedString(substituted_segments)),
                 })
             }
-
             Expr::QualifiedAccess(path, target) => {
                 let substituted_target = match target {
                     AccessTarget::Call(ident, args) => {
@@ -649,7 +635,6 @@ impl MacroExpander {
                     expr: Shared::new(Expr::QualifiedAccess(path.clone(), substituted_target)),
                 })
             }
-
             // Leaf nodes and other expressions - no substitution needed
             Expr::Literal(_)
             | Expr::Selector(_)
@@ -664,13 +649,8 @@ impl MacroExpander {
     }
 }
 
-impl Default for MacroExpander {
+impl Default for Macro {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    // TODO: Add unit tests for macro expansion
 }

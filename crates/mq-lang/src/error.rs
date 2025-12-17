@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use crate::{
     Module, ModuleLoader, ModuleResolver, Token,
     error::{runtime::RuntimeError, syntax::SyntaxError},
-    macro_expander::MacroExpansionError,
+    macro_expand::MacroExpansionError,
     module::{self, error::ModuleError},
 };
 
