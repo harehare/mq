@@ -719,7 +719,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
             ast::Expr::Macro(_, _, _) => Err(RuntimeError::Runtime(
                 (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
-                "Internal error: macro was not expanded before evaluation. This is a compiler bug.".to_string(),
+                "Internal error: macro was not expanded before evaluation.".to_string(),
             )),
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
                 params.clone(),
