@@ -9,7 +9,7 @@ license = "MIT"
 name = "mq-dap"
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.6"
+version = "0.5.7"
 
 [dependencies]
 crossbeam-channel = {workspace = true}
@@ -22,5 +22,6 @@ thiserror = {workspace = true}
 tokio = {workspace = true, features = ["full"]}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true, features = ["env-filter"]}
+
 [dev-dependencies]
 tempfile = {workspace = true}
