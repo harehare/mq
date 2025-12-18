@@ -11,6 +11,7 @@ members = [
   "crates/mq-formatter",
   "crates/mq-wasm",
   "crates/mq-python",
+  "crates/mq-ruby",
   "crates/mq-web-api",
   "crates/mq-dap",
   "crates/mq-crawler",

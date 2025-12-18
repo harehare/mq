@@ -1,0 +1,55 @@
+# frozen_string_literal: true
+
+require "bundler/gem_tasks"
+require "rspec/core/rake_task"
+require "shellwords"
+
+RSpec::Core::RakeTask.new(:spec)
+
+task default: %i[compile spec]
+
+desc "Compile the Rust extension"
+task :compile do
+  # Set up Ruby environment for linking
+  require "rbconfig"
+
+  profile = ENV.fetch("CARGO_PROFILE", "release")
+  manifest_path = File.join(__dir__, "Cargo.toml")
+  lib_dir = File.join(__dir__, "lib", "mq")
+  FileUtils.mkdir_p(lib_dir)
+
+  # Find the built library
+  target_dir = File.join(__dir__, "..", "..", "target", profile)
+  ext_name = RbConfig::CONFIG["DLEXT"]
+
+  # Copy the library to lib/mq
+  found = false
+  Dir.glob(File.join(target_dir, "libmq_ruby.{so,dylib,dll}")).each do |lib|
+    dest = File.join(lib_dir, "mq_ruby.#{ext_name}")
+    FileUtils.cp(lib, dest)
+    puts "Copied #{lib} to #{dest}"
+    found = true
+  end
+
+  unless found
+    warn "Warning: Could not find compiled library"
+  end
+end
+
+desc "Clean build artifacts"
+task :clean do
+  sh "cargo clean --manifest-path #{__dir__}/Cargo.toml" rescue nil
+  FileUtils.rm_f(Dir.glob("lib/mq/*.{so,dylib,dll,bundle}"))
+end
+
+task clobber: :clean
+
+desc "Build the gem"
+task build: :compile do
+  sh "gem build mq.gemspec"
+end
+
+desc "Install the gem locally"
+task install: :build do
+  sh "gem install mq-0.5.6.gem"
+end

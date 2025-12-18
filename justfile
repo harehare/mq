@@ -70,6 +70,18 @@ publish-python-test: build-python
 publish-python: build-python
     twine upload --repository pypi ../../target/wheels/*
 
+# Build mq-ruby gem
+[working-directory: 'crates/mq-ruby']
+build-ruby:
+    cargo build --release
+    bundle install
+    bundle exec rake compile
+
+# Test mq-ruby gem
+[working-directory: 'crates/mq-ruby']
+test-ruby: build-ruby
+    bundle exec rspec
+
 # Run formatting
 fmt:
     cargo fmt --all -- --check
