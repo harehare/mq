@@ -15,6 +15,7 @@ use crate::{
     },
     error::InnerError,
     get_token,
+    macro_expand::Macro,
 };
 use crate::{
     IdentWithToken, LocalFsModuleResolver, ModuleResolver,
@@ -143,7 +144,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        let mut program = program.iter().try_fold(
+        let program = program.iter().try_fold(
             Vec::with_capacity(program.len()),
             |mut nodes: Vec<Shared<ast::Node>>, node: &Shared<ast::Node>| -> Result<_, InnerError> {
                 match &*node.expr {
@@ -166,7 +167,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(nodes)
             },
         )?;
-
+        let mut program = Macro::new().expand_program(&program).map_err(InnerError::from)?;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
