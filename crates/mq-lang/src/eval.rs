@@ -428,7 +428,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                     let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
                 }
                 ast::Expr::Macro(..) => {
-                    // Macros area not loaded into runtime enviroment
+                    // Macros area not loaded into runtime environment
                 }
                 _ => {}
             }
