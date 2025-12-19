@@ -85,27 +85,33 @@ impl Macro {
         Ok(expanded_program)
     }
 
-    fn collect_macros(&mut self, program: &Program) {
+    pub(crate) fn collect_macros(&mut self, program: &Program) {
         for node in program {
-            if let Expr::Macro(ident, params, body) = &*node.expr {
-                let param_names: Vec<Ident> = params
-                    .iter()
-                    .filter_map(|param| {
-                        if let Expr::Ident(param_ident) = &*param.expr {
-                            Some(param_ident.name)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                self.macros.insert(
-                    ident.name,
-                    MacroDefinition {
-                        params: param_names,
-                        body: body.clone(),
-                    },
-                );
+            match &*node.expr {
+                Expr::Macro(ident, params, body) => {
+                    let param_names: Vec<Ident> = params
+                        .iter()
+                        .filter_map(|param| {
+                            if let Expr::Ident(param_ident) = &*param.expr {
+                                Some(param_ident.name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    self.macros.insert(
+                        ident.name,
+                        MacroDefinition {
+                            params: param_names,
+                            body: body.clone(),
+                        },
+                    );
+                }
+                Expr::Module(_, program) => {
+                    // Recursively collect macros in nested modules
+                    self.collect_macros(program);
+                }
+                _ => {}
             }
         }
     }
@@ -675,9 +681,7 @@ impl Macro {
             }
             // Unquote: Unwrap and return the substituted inner expression
             // Unquote should not appear in the final expanded code
-            Expr::Unquote(inner) => {
-                self.substitute_node(inner, substitutions)
-            }
+            Expr::Unquote(inner) => self.substitute_node(inner, substitutions),
             // Leaf nodes and other expressions - no substitution needed
             Expr::Literal(_)
             | Expr::Selector(_)
@@ -696,9 +700,7 @@ impl Macro {
         match &*node.expr {
             // Unquote: Perform substitution and unwrap
             // Unquote should not appear in the final expanded code
-            Expr::Unquote(inner) => {
-                self.substitute_node(inner, substitutions)
-            }
+            Expr::Unquote(inner) => self.substitute_node(inner, substitutions),
             // Nested Quote: Recursively handle
             Expr::Quote(program) => {
                 let substituted_program: Vec<_> = program
@@ -713,8 +715,10 @@ impl Macro {
             }
             // For other expressions, recursively traverse but don't substitute identifiers
             Expr::Block(program) => {
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -783,8 +787,10 @@ impl Macro {
             }
             Expr::While(cond, program) => {
                 let substituted_cond = self.substitute_in_quote(cond, substitutions);
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -793,8 +799,10 @@ impl Macro {
             }
             Expr::Foreach(ident, collection, program) => {
                 let substituted_collection = self.substitute_in_quote(collection, substitutions);
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -863,8 +871,10 @@ impl Macro {
                 })
             }
             Expr::Module(ident, program) => {
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
 
                 Shared::new(Node {
                     token_id: node.token_id,
@@ -1163,7 +1173,10 @@ mod tests {
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
 
-        assert!(result.is_ok(), "Expected successful expansion with multi-expression quote");
+        assert!(
+            result.is_ok(),
+            "Expected successful expansion with multi-expression quote"
+        );
     }
 
     #[test]

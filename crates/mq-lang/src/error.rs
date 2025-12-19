@@ -244,9 +244,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::EnvNotFound(..)) => {
                 Some(Cow::Borrowed("Environment variable not found during evaluation."))
             }
-            InnerError::Runtime(RuntimeError::QuoteNotAllowedInRuntimeContext(_)) => {
-                Some(Cow::Borrowed("quote() is not allowed in runtime context. It should only appear inside macros."))
-            }
+            InnerError::Runtime(RuntimeError::QuoteNotAllowedInRuntimeContext(_)) => Some(Cow::Borrowed(
+                "quote() is not allowed in runtime context. It should only appear inside macros.",
+            )),
             InnerError::Runtime(RuntimeError::UnquoteNotAllowedOutsideQuote(_)) => {
                 Some(Cow::Borrowed("unquote() can only be used inside quote()."))
             }

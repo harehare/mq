@@ -76,6 +76,7 @@ pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
     call_stack_depth: u32,
     pub(crate) options: Options,
     pub(crate) module_loader: module::ModuleLoader<T>,
+    pub(crate) macro_expander: Macro,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -91,6 +92,7 @@ impl<T: ModuleResolver> Default for Evaluator<T> {
             call_stack_depth: 0,
             options: Options::default(),
             module_loader: module::ModuleLoader::new(T::default()),
+            macro_expander: Macro::new(),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -108,6 +110,7 @@ impl<T: ModuleResolver> Clone for Evaluator<T> {
             call_stack_depth: self.call_stack_depth,
             options: self.options.clone(),
             module_loader: self.module_loader.clone(),
+            macro_expander: self.macro_expander.clone(),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -167,7 +170,7 @@ impl<T: ModuleResolver> Evaluator<T> {
                 Ok(nodes)
             },
         )?;
-        let mut program = Macro::new().expand_program(&program).map_err(InnerError::from)?;
+        let mut program = self.macro_expander.expand_program(&program).map_err(InnerError::from)?;
         let nodes_index = &program.iter().position(|node| node.is_nodes());
 
         if let Some(index) = nodes_index {
@@ -286,6 +289,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                 ));
             }
         }
+
+        // Macros are not loaded into runtime enviroment
 
         Ok(())
     }
@@ -418,7 +423,12 @@ impl<T: ModuleResolver> Evaluator<T> {
                     self.eval_import(module_path.to_owned(), &Shared::clone(&module_env))?;
                 }
                 ast::Expr::Module(ident, program) => {
+                    // Collect macros from the module
+                    self.macro_expander.collect_macros(program);
                     let _ = self.eval_module(&RuntimeValue::NONE, ident, program, &module_env)?;
+                }
+                ast::Expr::Macro(..) => {
+                    // Macros area not loaded into runtime enviroment
                 }
                 _ => {}
             }
@@ -447,6 +457,8 @@ impl<T: ModuleResolver> Evaluator<T> {
                     .load_from_file(&module_name, Shared::clone(&self.token_arena));
 
                 if let Ok(module) = module {
+                    // Collect macros from the module
+                    self.macro_expander.collect_macros(&module.macros);
                     // Create a new environment for the module exports
                     let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
 

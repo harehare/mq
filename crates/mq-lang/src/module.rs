@@ -39,6 +39,7 @@ pub struct Module {
     pub functions: Program,
     pub modules: Program,
     pub vars: Program,
+    pub macros: Program,
 }
 
 impl Module {
@@ -140,17 +141,23 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
         let functions = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Def(_, _, _)))
+            .filter(|node| matches!(*node.expr, ast::Expr::Def(..)))
             .cloned()
             .collect::<Vec<_>>();
 
         let vars = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Let(_, _)))
+            .filter(|node| matches!(*node.expr, ast::Expr::Let(..)))
             .cloned()
             .collect::<Vec<_>>();
 
-        let expected_len = functions.len() + modules.len() + vars.len();
+        let macros = program
+            .iter()
+            .filter(|node| matches!(*node.expr, ast::Expr::Macro(..)))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let expected_len = functions.len() + modules.len() + vars.len() + macros.len();
 
         if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
@@ -163,6 +170,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             functions,
             modules,
             vars,
+            macros,
         })
     }
 
@@ -262,6 +270,7 @@ mod tests {
                 }))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
             ))})],
+        macros: Vec::new(),
     }))]
     #[case::load3("def test(): 1;".to_string(), Ok(Module{
         name: "test".to_string(),
@@ -279,6 +288,7 @@ mod tests {
             ]
             ))})],
         vars: Vec::new(),
+        macros: Vec::new(),
     }))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Module{
         name: "test".to_string(),
@@ -312,6 +322,7 @@ mod tests {
                 ))})]
             ))})],
         vars: Vec::new(),
+        macros: Vec::new(),
     }))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
@@ -330,6 +341,7 @@ mod tests {
         functions: Vec::new(),
         modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
         vars: Vec::new(),
+        macros: Vec::new(),
     }))]
     fn test_load_standard_module(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
