@@ -786,6 +786,14 @@ impl<T: ModuleResolver> Evaluator<T> {
             ast::Expr::Break => Err(RuntimeError::Break),
             ast::Expr::Continue => Err(RuntimeError::Continue),
             ast::Expr::Paren(expr) => self.eval_expr(runtime_value, expr, env),
+            ast::Expr::Quote(_) => {
+                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+                Err(RuntimeError::QuoteNotAllowedInRuntimeContext((*token).clone()))
+            }
+            ast::Expr::Unquote(_) => {
+                let token = get_token(Shared::clone(&self.token_arena), node.token_id);
+                Err(RuntimeError::UnquoteNotAllowedOutsideQuote((*token).clone()))
+            }
         }
     }
 

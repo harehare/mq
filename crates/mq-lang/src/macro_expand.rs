@@ -281,6 +281,20 @@ impl Macro {
                     expr: Shared::new(Expr::Paren(expanded_inner)),
                 }))
             }
+            Expr::Quote(program) => {
+                let expanded_program = self.expand_program(program)?;
+                Ok(Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Quote(expanded_program)),
+                }))
+            }
+            Expr::Unquote(inner) => {
+                let expanded_inner = self.expand_node(inner)?;
+                Ok(Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Unquote(expanded_inner)),
+                }))
+            }
             Expr::Try(try_expr, catch_expr) => {
                 let expanded_try = self.expand_node(try_expr)?;
                 let expanded_catch = self.expand_node(catch_expr)?;
@@ -640,6 +654,30 @@ impl Macro {
                     expr: Shared::new(Expr::QualifiedAccess(path.clone(), substituted_target)),
                 })
             }
+            // Quote: Expand unquote expressions and unwrap the quote
+            Expr::Quote(program) => {
+                // Traverse the quoted program to find and handle unquote expressions
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
+
+                // Unwrap quote: return the program as a block
+                // Quote should not appear in the final expanded code
+                if substituted_program.len() == 1 {
+                    Shared::clone(&substituted_program[0])
+                } else {
+                    Shared::new(Node {
+                        token_id: node.token_id,
+                        expr: Shared::new(Expr::Block(substituted_program)),
+                    })
+                }
+            }
+            // Unquote: Unwrap and return the substituted inner expression
+            // Unquote should not appear in the final expanded code
+            Expr::Unquote(inner) => {
+                self.substitute_node(inner, substitutions)
+            }
             // Leaf nodes and other expressions - no substitution needed
             Expr::Literal(_)
             | Expr::Selector(_)
@@ -650,6 +688,239 @@ impl Macro {
             | Expr::Macro(_, _, _)
             | Expr::Break
             | Expr::Continue => Shared::clone(node),
+        }
+    }
+
+    /// Substitute only unquote expressions within quoted code
+    fn substitute_in_quote(&self, node: &Shared<Node>, substitutions: &FxHashMap<Ident, Shared<Node>>) -> Shared<Node> {
+        match &*node.expr {
+            // Unquote: Perform substitution and unwrap
+            // Unquote should not appear in the final expanded code
+            Expr::Unquote(inner) => {
+                self.substitute_node(inner, substitutions)
+            }
+            // Nested Quote: Recursively handle
+            Expr::Quote(program) => {
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Quote(substituted_program)),
+                })
+            }
+            // For other expressions, recursively traverse but don't substitute identifiers
+            Expr::Block(program) => {
+                let substituted_program: Vec<_> =
+                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Block(substituted_program)),
+                })
+            }
+            Expr::Call(ident, args) => {
+                let substituted_args: Vec<_> = args
+                    .iter()
+                    .map(|arg| self.substitute_in_quote(arg, substitutions))
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Call(ident.clone(), substituted_args.into())),
+                })
+            }
+            Expr::CallDynamic(callable, args) => {
+                let substituted_callable = self.substitute_in_quote(callable, substitutions);
+                let substituted_args: Vec<_> = args
+                    .iter()
+                    .map(|arg| self.substitute_in_quote(arg, substitutions))
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::CallDynamic(substituted_callable, substituted_args.into())),
+                })
+            }
+            Expr::Def(ident, params, program) => {
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Def(ident.clone(), params.clone(), substituted_program)),
+                })
+            }
+            Expr::Fn(params, program) => {
+                let substituted_program: Vec<_> = program
+                    .iter()
+                    .map(|n| self.substitute_in_quote(n, substitutions))
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Fn(params.clone(), substituted_program)),
+                })
+            }
+            Expr::If(branches) => {
+                let substituted_branches: Vec<(Option<Shared<Node>>, Shared<Node>)> = branches
+                    .iter()
+                    .map(|(cond, body)| {
+                        let substituted_cond = cond.as_ref().map(|c| self.substitute_in_quote(c, substitutions));
+                        let substituted_body = self.substitute_in_quote(body, substitutions);
+                        (substituted_cond, substituted_body)
+                    })
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::If(substituted_branches.into())),
+                })
+            }
+            Expr::While(cond, program) => {
+                let substituted_cond = self.substitute_in_quote(cond, substitutions);
+                let substituted_program: Vec<_> =
+                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::While(substituted_cond, substituted_program)),
+                })
+            }
+            Expr::Foreach(ident, collection, program) => {
+                let substituted_collection = self.substitute_in_quote(collection, substitutions);
+                let substituted_program: Vec<_> =
+                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Foreach(
+                        ident.clone(),
+                        substituted_collection,
+                        substituted_program,
+                    )),
+                })
+            }
+            Expr::Let(ident, value) => {
+                let substituted_value = self.substitute_in_quote(value, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Let(ident.clone(), substituted_value)),
+                })
+            }
+            Expr::Var(ident, value) => {
+                let substituted_value = self.substitute_in_quote(value, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Var(ident.clone(), substituted_value)),
+                })
+            }
+            Expr::Assign(ident, value) => {
+                let substituted_value = self.substitute_in_quote(value, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Assign(ident.clone(), substituted_value)),
+                })
+            }
+            Expr::And(left, right) => {
+                let substituted_left = self.substitute_in_quote(left, substitutions);
+                let substituted_right = self.substitute_in_quote(right, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::And(substituted_left, substituted_right)),
+                })
+            }
+            Expr::Or(left, right) => {
+                let substituted_left = self.substitute_in_quote(left, substitutions);
+                let substituted_right = self.substitute_in_quote(right, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Or(substituted_left, substituted_right)),
+                })
+            }
+            Expr::Match(value, arms) => {
+                let substituted_value = self.substitute_in_quote(value, substitutions);
+                let substituted_arms: Vec<_> = arms
+                    .iter()
+                    .map(|arm| {
+                        let substituted_guard = arm.guard.as_ref().map(|g| self.substitute_in_quote(g, substitutions));
+                        let substituted_body = self.substitute_in_quote(&arm.body, substitutions);
+                        MatchArm {
+                            pattern: arm.pattern.clone(),
+                            guard: substituted_guard,
+                            body: substituted_body,
+                        }
+                    })
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Match(substituted_value, substituted_arms.into())),
+                })
+            }
+            Expr::Module(ident, program) => {
+                let substituted_program: Vec<_> =
+                    program.iter().map(|n| self.substitute_in_quote(n, substitutions)).collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Module(ident.clone(), substituted_program)),
+                })
+            }
+            Expr::Paren(inner) => {
+                let substituted_inner = self.substitute_in_quote(inner, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Paren(substituted_inner)),
+                })
+            }
+            Expr::Try(try_expr, catch_expr) => {
+                let substituted_try = self.substitute_in_quote(try_expr, substitutions);
+                let substituted_catch = self.substitute_in_quote(catch_expr, substitutions);
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::Try(substituted_try, substituted_catch)),
+                })
+            }
+            Expr::InterpolatedString(segments) => {
+                let substituted_segments: Vec<_> = segments
+                    .iter()
+                    .map(|segment| match segment {
+                        StringSegment::Text(text) => StringSegment::Text(text.clone()),
+                        StringSegment::Expr(node) => StringSegment::Expr(self.substitute_in_quote(node, substitutions)),
+                        StringSegment::Env(env) => StringSegment::Env(env.clone()),
+                        StringSegment::Self_ => StringSegment::Self_,
+                    })
+                    .collect();
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::InterpolatedString(substituted_segments)),
+                })
+            }
+            Expr::QualifiedAccess(path, target) => {
+                let substituted_target = match target {
+                    AccessTarget::Call(ident, args) => {
+                        let substituted_args: Vec<_> = args
+                            .iter()
+                            .map(|arg| self.substitute_in_quote(arg, substitutions))
+                            .collect();
+                        AccessTarget::Call(ident.clone(), substituted_args.into())
+                    }
+                    AccessTarget::Ident(ident) => AccessTarget::Ident(ident.clone()),
+                };
+
+                Shared::new(Node {
+                    token_id: node.token_id,
+                    expr: Shared::new(Expr::QualifiedAccess(path.clone(), substituted_target)),
+                })
+            }
+            // All other nodes (identifiers, literals, etc.) are not substituted in quote context
+            _ => Shared::clone(node),
         }
     }
 }
@@ -863,5 +1134,45 @@ mod tests {
 
         assert!(result.is_ok(), "Expected successful expansion for input without macros");
         assert!(macro_expander.macros.is_empty(), "No macros should be collected");
+    }
+
+    #[test]
+    fn test_quote_basic() {
+        let input = "macro make_expr(x): quote(x + 1); | make_expr(5)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion with quote");
+    }
+
+    #[test]
+    fn test_quote_with_unquote() {
+        let input = "macro add_one(x): quote(unquote(x) + 1); | add_one(5)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion with quote and unquote");
+    }
+
+    #[test]
+    fn test_quote_multiple_expressions() {
+        let input = r#"macro log_and_eval(x): quote(| "start" | unquote(x) | "end"); | log_and_eval(5 + 5)"#;
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion with multi-expression quote");
+    }
+
+    #[test]
+    fn test_nested_quote() {
+        let input = "macro nested(x): quote(quote(unquote(x))); | nested(5)";
+        let program = parse_program(input).expect("Failed to parse program");
+        let mut macro_expander = Macro::new();
+        let result = macro_expander.expand_program(&program);
+
+        assert!(result.is_ok(), "Expected successful expansion with nested quote");
     }
 }

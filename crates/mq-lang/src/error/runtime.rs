@@ -53,6 +53,10 @@ pub enum RuntimeError {
     AssignToImmutable(Token, String),
     #[error("Undefined variable \"{1}\"")]
     UndefinedVariable(Token, String),
+    #[error("quote() is not allowed in runtime context, it should only appear inside macros")]
+    QuoteNotAllowedInRuntimeContext(Token),
+    #[error("unquote() can only be used inside quote()")]
+    UnquoteNotAllowedOutsideQuote(Token),
 }
 
 impl RuntimeError {
@@ -78,6 +82,8 @@ impl RuntimeError {
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::UndefinedVariable(token, _) => Some(token),
+            RuntimeError::QuoteNotAllowedInRuntimeContext(token) => Some(token),
+            RuntimeError::UnquoteNotAllowedOutsideQuote(token) => Some(token),
         }
     }
 }

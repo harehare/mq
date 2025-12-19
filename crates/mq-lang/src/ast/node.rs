@@ -52,7 +52,8 @@ impl Node {
             | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Module(_, program)
-            | Expr::Foreach(_, _, program) => {
+            | Expr::Foreach(_, _, program)
+            | Expr::Quote(program) => {
                 let start = program
                     .first()
                     .map(|node| node.range(Shared::clone(&arena)).start)
@@ -82,7 +83,7 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) => node.range(Shared::clone(&arena)),
+            Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) | Expr::Unquote(node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
                     let start = first.1.range(Shared::clone(&arena));
@@ -272,6 +273,8 @@ pub enum Expr {
     Self_,
     Nodes,
     Paren(Shared<Node>),
+    Quote(Program),
+    Unquote(Shared<Node>),
     Try(Shared<Node>, Shared<Node>),
     Break,
     Continue,

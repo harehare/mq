@@ -381,6 +381,12 @@ impl Hir {
             mq_lang::CstNodeKind::Pattern => {
                 self.add_pattern_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Quote => {
+                self.add_quote_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Unquote => {
+                self.add_unquote_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
@@ -1490,6 +1496,62 @@ impl Hir {
                     // Process other expressions in the pattern (e.g., literals, guard conditions)
                     self.add_expr(&child, source_id, scope_id, Some(symbol_id));
                 }
+            }
+        }
+    }
+
+    fn add_quote_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Quote,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process children (quoted expressions)
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+    }
+
+    fn add_unquote_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Unquote,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: None,
+                kind: SymbolKind::Keyword,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process children (unquoted expressions)
+            for child in node.children_without_token() {
+                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
             }
         }
     }

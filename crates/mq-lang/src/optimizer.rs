@@ -121,7 +121,8 @@ impl Optimizer {
             ast::Expr::Block(program_nodes)
             | ast::Expr::Def(_, _, program_nodes)
             | ast::Expr::Macro(_, _, program_nodes)
-            | ast::Expr::Fn(_, program_nodes) => {
+            | ast::Expr::Fn(_, program_nodes)
+            | ast::Expr::Quote(program_nodes) => {
                 for stmt in program_nodes {
                     Self::collect_used_identifiers_in_node(stmt, used_idents);
                 }
@@ -153,7 +154,7 @@ impl Optimizer {
                     }
                 }
             }
-            ast::Expr::Paren(node) => {
+            ast::Expr::Paren(node) | ast::Expr::Unquote(node) => {
                 Self::collect_used_identifiers_in_node(node, used_idents);
             }
             ast::Expr::Try(try_node, catch_node) => {

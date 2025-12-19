@@ -109,11 +109,13 @@ pub enum NodeKind {
     Nodes,
     Pattern,
     QualifiedAccess,
+    Quote,
     Selector,
     Self_,
     Token,
     Try,
     Catch,
+    Unquote,
     UnaryOp(UnaryOp),
     While,
 }

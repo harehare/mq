@@ -103,6 +103,8 @@ impl Formatter {
             }
             mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::CallDynamic => self.format_call_dynamic(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Quote => self.format_call(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Unquote => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Macro
             | mq_lang::CstNodeKind::Foreach

@@ -1692,7 +1692,83 @@ fn engine() -> DefaultEngine {
     ",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Number(10.into())].into()))]
+<<<<<<< HEAD
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
+    assert_eq!(engine.eval(program, input.into_iter()), expected);
+=======
+#[case::macro_quote_basic("
+    macro make_expr(x):
+        quote(unquote(x) + 1);
+    | make_expr(5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(6.into())].into()))]
+#[case::macro_quote_multiple_expressions("
+    macro wrap_expr(x):
+        quote(let result = unquote(x) | result * 2);
+    | wrap_expr(5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(10.into())].into()))]
+#[case::macro_quote_with_function("
+    macro define_double():
+        quote(def double(x): x * 2 end);
+    | define_double() | double(7)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(14.into())].into()))]
+#[case::macro_quote_nested("
+    macro compute(a, b):
+        quote(unquote(a) + unquote(b) * 2);
+    | compute(10, 5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(20.into())].into()))]
+#[case::macro_quote_with_if("
+    macro conditional_expr(x):
+        quote(if(unquote(x) > 10): \"large\" else: \"small\");
+    | conditional_expr(15)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::String("large".to_string())].into()))]
+#[case::macro_quote_preserve_structure("
+    macro make_array(a, b, c):
+        quote([unquote(a), unquote(b), unquote(c)]);
+    | make_array(1, 2, 3)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Array(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])].into()))]
+#[case::macro_quote_with_let_outside("
+    macro test(x):
+        let y = x + 1 |
+        quote(unquote(y) * 2);
+    | test(5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(12.into())].into()))]
+#[case::macro_quote_mixed_code("
+    macro compute(x):
+        let a = x * 2 |
+        let b = x + 10 |
+        quote(unquote(a) + unquote(b));
+    | compute(5)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(25.into())].into()))]
+#[case::macro_quote_variable_reference("
+    macro make_computation(x):
+        let base = x |
+        quote(base * 3 + unquote(x));
+    | make_computation(4)
+    ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(16.into())].into()))]
+fn test_eval(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] input: Vec<RuntimeValue>,
+    #[case] expected: MqResult,
+) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
 
@@ -1723,6 +1799,13 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
     macro double(x):
         x + x;
     | double(1, 2, 3)
+    ", vec![RuntimeValue::Number(0.into())],)]
+#[case::quote_at_runtime("quote(5 + 5)", vec![RuntimeValue::Number(0.into())],)]
+#[case::unquote_outside_quote("unquote(5)", vec![RuntimeValue::Number(0.into())],)]
+#[case::quote_in_function("
+    def test():
+        quote(5 + 5);
+    | test()
     ", vec![RuntimeValue::Number(0.into())],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
