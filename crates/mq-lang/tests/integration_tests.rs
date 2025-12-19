@@ -1692,10 +1692,6 @@ fn engine() -> DefaultEngine {
     ",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Number(10.into())].into()))]
-<<<<<<< HEAD
-fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
-    assert_eq!(engine.eval(program, input.into_iter()), expected);
-=======
 #[case::macro_quote_basic("
     macro make_expr(x):
         quote(unquote(x) + 1);
@@ -1763,12 +1759,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
     ",
     vec![RuntimeValue::Number(0.into())],
     Ok(vec![RuntimeValue::Number(16.into())].into()))]
-fn test_eval(
-    mut engine: Engine,
-    #[case] program: &str,
-    #[case] input: Vec<RuntimeValue>,
-    #[case] expected: MqResult,
-) {
+fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
 
