@@ -290,7 +290,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
         }
 
-        // Macros are not loaded into runtime enviroment
+        // Macros are not loaded into runtime environment
 
         Ok(())
     }
