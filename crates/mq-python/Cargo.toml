@@ -10,7 +10,7 @@ name = "mq-python"
 publish = false
 readme = "README.md"
 repository = "https://github.com/harehare/mq"
-version = "0.5.7"
+version = "0.5.8"
 
 [lib]
 crate-type = ["cdylib"]
