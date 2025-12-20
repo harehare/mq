@@ -1670,6 +1670,16 @@ fn test_eval(
   ",
     vec![RuntimeValue::Number(100.into())],
     Ok(vec![RuntimeValue::Number(40.into())].into()))]
+#[case::def_arg_scope_with_let_and_do("
+  let a = 10 | def c(cc): do cc + 3;; | c(1)
+  ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(4.into())].into()))]
+#[case::def_arg_scope_with_nested_let_do("
+  def c(cc): let a = 10 | do cc + a;; | c(1)
+  ",
+    vec![RuntimeValue::Number(0.into())],
+    Ok(vec![RuntimeValue::Number(11.into())].into()))]
 #[case::try_simple("
     try:
       1 / 0

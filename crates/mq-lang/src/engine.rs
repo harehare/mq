@@ -33,7 +33,7 @@ impl Default for Options {
         #[cfg(not(feature = "debugger"))]
         {
             Self {
-                optimization_level: OptimizationLevel::None,
+                optimization_level: OptimizationLevel::Full,
             }
         }
         #[cfg(feature = "debugger")]
