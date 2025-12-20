@@ -49,7 +49,7 @@
             cargo-watch
             just
             maturin
-            nodejs_22
+            nodejs_24
             openssl
             pkg-config
             python314
