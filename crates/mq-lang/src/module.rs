@@ -9,7 +9,6 @@ use crate::{
         error::ModuleError,
         resolver::{LocalFsModuleResolver, ModuleResolver},
     },
-    optimizer::{OptimizationLevel, Optimizer},
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -127,8 +126,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         if self.loaded_modules.contains(module_name.into()) {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
-
-        Optimizer::with_level(OptimizationLevel::None).optimize(program);
 
         let modules = program
             .iter()
