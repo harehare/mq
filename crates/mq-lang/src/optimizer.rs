@@ -205,7 +205,7 @@ impl Optimizer {
 
         for node in program {
             if let ast::Expr::Def(func_ident, params, body) = &*node.expr {
-                let line_count = program.len();
+                let line_count = body.len();
 
                 if line_count < self.inline_threshold
                     && !Self::is_used_in_conditionals(func_ident.name, program)
