@@ -7,7 +7,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 pub enum OptimizationLevel {
     /// No optimization
     None,
-    /// Full optimization (constant folding + other optimizations)
+    /// Full optimization (constant folding + dead code elimination)
     #[default]
     Full,
 }
@@ -43,22 +43,32 @@ impl Optimizer {
                 // No optimization
             }
             OptimizationLevel::Full => {
-                let used_identifiers = self.collect_used_identifiers(program);
-
-                program.retain_mut(|node| {
-                    if let ast::Expr::Let(ident, _) = &*node.expr
-                        && !used_identifiers.contains(&ident.name)
-                    {
-                        self.constant_table.remove(&ident.name);
-                        return false;
-                    }
-                    true
-                });
-                for node in program {
-                    self.optimize_node(node);
-                }
+                self.dead_code_elimination(program);
+                self.constant_folding(program);
             }
         }
+    }
+
+    #[inline(always)]
+    fn constant_folding(&mut self, program: &mut Program) {
+        for node in program {
+            self.optimize_node(node);
+        }
+    }
+
+    #[inline(always)]
+    fn dead_code_elimination(&mut self, program: &mut Program) {
+        let used_identifiers = self.collect_used_identifiers(program);
+
+        program.retain_mut(|node| {
+            if let ast::Expr::Let(ident, _) = &*node.expr
+                && !used_identifiers.contains(&ident.name)
+            {
+                self.constant_table.remove(&ident.name);
+                return false;
+            }
+            true
+        });
     }
 
     #[inline(always)]
