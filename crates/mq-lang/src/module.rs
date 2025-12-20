@@ -128,7 +128,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
-        Optimizer::with_level(OptimizationLevel::InlineOnly).optimize(program);
+        Optimizer::with_level(OptimizationLevel::None).optimize(program);
 
         let modules = program
             .iter()
