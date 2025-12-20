@@ -29,7 +29,7 @@ impl Default for Optimizer {
         Self {
             constant_table: FxHashMap::with_capacity_and_hasher(200, FxBuildHasher),
             function_table: FxHashMap::with_capacity_and_hasher(100, FxBuildHasher),
-            inline_threshold: 5,
+            inline_threshold: 3,
             optimization_level: OptimizationLevel::default(),
         }
     }
@@ -544,6 +544,77 @@ impl Optimizer {
                 let substituted_value = Self::substitute_parameters(value, param_bindings);
                 Shared::new(ast::Expr::Let(ident.clone(), substituted_value))
             }
+            ast::Expr::Var(ident, value) => {
+                let substituted_value = Self::substitute_parameters(value, param_bindings);
+                Shared::new(ast::Expr::Var(ident.clone(), substituted_value))
+            }
+            ast::Expr::Assign(ident, value) => {
+                let substituted_value = Self::substitute_parameters(value, param_bindings);
+                Shared::new(ast::Expr::Assign(ident.clone(), substituted_value))
+            }
+            ast::Expr::CallDynamic(callable, args) => {
+                let substituted_callable = Self::substitute_parameters(callable, param_bindings);
+                let substituted_args = args
+                    .iter()
+                    .map(|arg| Self::substitute_parameters(arg, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::CallDynamic(substituted_callable, substituted_args))
+            }
+            ast::Expr::And(left, right) => {
+                let substituted_left = Self::substitute_parameters(left, param_bindings);
+                let substituted_right = Self::substitute_parameters(right, param_bindings);
+                Shared::new(ast::Expr::And(substituted_left, substituted_right))
+            }
+            ast::Expr::Or(left, right) => {
+                let substituted_left = Self::substitute_parameters(left, param_bindings);
+                let substituted_right = Self::substitute_parameters(right, param_bindings);
+                Shared::new(ast::Expr::Or(substituted_left, substituted_right))
+            }
+            ast::Expr::InterpolatedString(segments) => {
+                let substituted_segments = segments
+                    .iter()
+                    .map(|segment| match segment {
+                        ast::StringSegment::Expr(node) => {
+                            ast::StringSegment::Expr(Self::substitute_parameters(node, param_bindings))
+                        }
+                        ast::StringSegment::Text(s) => ast::StringSegment::Text(s.clone()),
+                        ast::StringSegment::Env(s) => ast::StringSegment::Env(s.clone()),
+                        ast::StringSegment::Self_ => ast::StringSegment::Self_,
+                    })
+                    .collect();
+                Shared::new(ast::Expr::InterpolatedString(substituted_segments))
+            }
+            ast::Expr::Match(target, arms) => {
+                let substituted_target = Self::substitute_parameters(target, param_bindings);
+                let substituted_arms = arms
+                    .iter()
+                    .map(|arm| {
+                        let substituted_guard = arm
+                            .guard
+                            .as_ref()
+                            .map(|guard| Self::substitute_parameters(guard, param_bindings));
+                        let substituted_body = Self::substitute_parameters(&arm.body, param_bindings);
+                        ast::MatchArm {
+                            pattern: arm.pattern.clone(),
+                            guard: substituted_guard,
+                            body: substituted_body,
+                        }
+                    })
+                    .collect();
+                Shared::new(ast::Expr::Match(substituted_target, substituted_arms))
+            }
+            ast::Expr::Module(ident, program) => {
+                let substituted_program = program
+                    .iter()
+                    .map(|node| Self::substitute_parameters(node, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::Module(ident.clone(), substituted_program))
+            }
+            ast::Expr::Try(try_node, catch_node) => {
+                let substituted_try = Self::substitute_parameters(try_node, param_bindings);
+                let substituted_catch = Self::substitute_parameters(catch_node, param_bindings);
+                Shared::new(ast::Expr::Try(substituted_try, substituted_catch))
+            }
             ast::Expr::Paren(inner) => {
                 let substituted_inner = Self::substitute_parameters(inner, param_bindings);
                 Shared::new(ast::Expr::Paren(substituted_inner))
@@ -561,6 +632,60 @@ impl Optimizer {
                     ast::AccessTarget::Ident(_) => access_target.clone(),
                 };
                 Shared::new(ast::Expr::QualifiedAccess(module_path.clone(), new_access_target))
+            }
+            ast::Expr::Block(program_nodes) => {
+                let substituted_program = program_nodes
+                    .iter()
+                    .map(|node| Self::substitute_parameters(node, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::Block(substituted_program))
+            }
+            ast::Expr::If(conditions) => {
+                let substituted_conditions = conditions
+                    .iter()
+                    .map(|(cond_opt, body)| {
+                        let substituted_cond = cond_opt
+                            .as_ref()
+                            .map(|cond| Self::substitute_parameters(cond, param_bindings));
+                        let substituted_body = Self::substitute_parameters(body, param_bindings);
+                        (substituted_cond, substituted_body)
+                    })
+                    .collect();
+                Shared::new(ast::Expr::If(substituted_conditions))
+            }
+            ast::Expr::While(cond, body) => {
+                let substituted_cond = Self::substitute_parameters(cond, param_bindings);
+                let substituted_body = body
+                    .iter()
+                    .map(|node| Self::substitute_parameters(node, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::While(substituted_cond, substituted_body))
+            }
+            ast::Expr::Foreach(ident, collection, body) => {
+                let substituted_collection = Self::substitute_parameters(collection, param_bindings);
+                let substituted_body = body
+                    .iter()
+                    .map(|node| Self::substitute_parameters(node, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::Foreach(
+                    ident.clone(),
+                    substituted_collection,
+                    substituted_body,
+                ))
+            }
+            ast::Expr::Def(ident, params, body) => {
+                let substituted_body = body
+                    .iter()
+                    .map(|node| Self::substitute_parameters(node, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::Def(ident.clone(), params.clone(), substituted_body))
+            }
+            ast::Expr::Fn(params, body) => {
+                let substituted_body = body
+                    .iter()
+                    .map(|node| Self::substitute_parameters(node, param_bindings))
+                    .collect();
+                Shared::new(ast::Expr::Fn(params.clone(), substituted_body))
             }
             _ => node.expr.clone(),
         };
@@ -2367,6 +2492,35 @@ mod tests {
                 "Expected identifier '{}' to be absent",
                 ident
             );
+        }
+    }
+
+    /// Tests for function inlining with parameter substitution
+    mod inline_tests {
+        use super::*;
+        use crate::RuntimeValue;
+        use rstest::rstest;
+
+        #[rstest]
+        #[case::block_with_param("def c(cc): do cc + 3;; | c(1)", RuntimeValue::Number(4.into()))]
+        #[case::let_and_block_with_param("def c(cc): let a = 10 | do cc + a;; | c(1)", RuntimeValue::Number(11.into()))]
+        #[case::if_with_param("def c(x): if (x > 0): x + 10 else: x - 10; | c(5)", RuntimeValue::Number(15.into()))]
+        #[case::if_elif_with_param("def c(x): if (eq(x, 0)): 0 elif (eq(x, 1)): x + 1 else: x + 2; | c(1)", RuntimeValue::Number(2.into()))]
+        #[case::logical_ops_with_param("def c(x, y): and(x > 0, y > 0); | c(5, 3)", RuntimeValue::TRUE)]
+        #[case::call_dynamic_with_param("def c(x): let f = fn(a): a + 10; | f(x); | c(5)", RuntimeValue::Number(15.into()))]
+        #[case::nested_def_with_param("def outer(x): def inner(y): x + y; | inner(3); | outer(10)", RuntimeValue::Number(13.into()))]
+        #[case::interpolated_string_with_param(r#"def c(name): s"Hello, ${name}!"; | c("World")"#, RuntimeValue::String("Hello, World!".to_string()))]
+        #[case::try_catch_with_param(r#"def c(x): try: x / 0 catch: "error"; | c(10)"#, RuntimeValue::String("error".to_string()))]
+        #[case::multiple_params("def c(a, b, c): do a + b + c;; | c(1, 2, 3)", RuntimeValue::Number(6.into()))]
+        #[case::var_with_param("def c(x): var result = x | let result = result + 1 | result; | c(5)", RuntimeValue::Number(6.into()))]
+        #[case::and_operator_with_param("def c(x): and(x, true); | c(true)", RuntimeValue::TRUE)]
+        #[case::or_operator_with_param("def c(x): or(x, false); | c(true)", RuntimeValue::TRUE)]
+        fn test_inline_with_param_substitution(#[case] program_str: &str, #[case] expected: RuntimeValue) {
+            let mut engine = crate::DefaultEngine::default();
+            engine.load_builtin_module();
+            engine.set_optimization_level(OptimizationLevel::Full);
+            let result = engine.eval(program_str, crate::null_input().into_iter());
+            assert_eq!(result.unwrap()[0], expected);
         }
     }
 }

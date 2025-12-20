@@ -471,3 +471,19 @@ fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
     assert.success().code(0).stdout("test\n");
     Ok(())
 }
+
+#[test]
+fn test_def_argument_scope_with_let_and_do() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg("let a = 10 | def c(cc): do cc + 3;; | c(1)")
+        .assert();
+
+    assert.success().code(0).stdout("4\n");
+
+    Ok(())
+}
