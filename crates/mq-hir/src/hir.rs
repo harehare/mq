@@ -321,6 +321,9 @@ impl Hir {
             mq_lang::CstNodeKind::Macro => {
                 self.add_macro_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::MacroCall => {
+                self.add_macro_call_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Foreach => {
                 self.add_foreach_expr(node, source_id, scope_id, parent);
             }
@@ -1227,6 +1230,37 @@ impl Hir {
 
             program.iter().for_each(|child| {
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            });
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn add_macro_call_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::MacroCall,
+            ..
+        } = &**node
+        {
+            // Add the macro call as a regular call symbol
+            self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Call,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+            });
+
+            // Process all children (macro arguments and program body)
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, scope_id, parent);
             });
         } else {
             unreachable!()

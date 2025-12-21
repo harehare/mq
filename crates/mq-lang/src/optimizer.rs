@@ -127,6 +127,14 @@ impl Optimizer {
                     Self::collect_used_identifiers_in_node(stmt, used_idents);
                 }
             }
+            ast::Expr::MacroCall(_, args, program_nodes) => {
+                for arg in args {
+                    Self::collect_used_identifiers_in_node(arg, used_idents);
+                }
+                for stmt in program_nodes {
+                    Self::collect_used_identifiers_in_node(stmt, used_idents);
+                }
+            }
             ast::Expr::If(conditions) => {
                 for (cond_node_opt, body_node) in conditions {
                     if let Some(cond_node) = cond_node_opt {

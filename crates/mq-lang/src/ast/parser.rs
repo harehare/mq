@@ -789,6 +789,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Some(TokenKind::LParen) => {
                 let args = self.parse_args()?;
                 let token_id = self.token_arena.alloc(Shared::clone(ident_token));
+
+                // Check for macro call (e.g., foo(args): ...)
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Colon)) {
+                    self.tokens.next(); // consume ':'
+                    let program = self.parse_program(false)?;
+
+                    return Ok(Shared::new(Node {
+                        token_id: self.token_arena.alloc(Shared::clone(ident_token)),
+                        expr: Shared::new(Expr::MacroCall(
+                            IdentWithToken::new_with_token(ident, Some(Shared::clone(ident_token))),
+                            args,
+                            program,
+                        )),
+                    }));
+                }
+
                 let call_node = Shared::new(Node {
                     token_id,
                     expr: Shared::new(Expr::Call(

@@ -103,6 +103,7 @@ pub enum NodeKind {
     Var,
     Literal,
     Macro,
+    MacroCall,
     Match,
     MatchArm,
     Module,

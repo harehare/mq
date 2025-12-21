@@ -487,6 +487,18 @@ impl<'a> Parser<'a> {
                 node.kind = NodeKind::Call;
                 node.children = children;
 
+                // Check for macro call (e.g., foo(args): ...)
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Colon)) {
+                    node.kind = NodeKind::MacroCall;
+                    node.children
+                        .push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+                    let (mut program, _) = self.parse_program(false, false);
+                    node.children.append(&mut program);
+
+                    return Ok(Shared::new(node));
+                }
+
                 // Check for bracket access after function call (e.g., foo()[0])
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     self.parse_bracket_access(node)
