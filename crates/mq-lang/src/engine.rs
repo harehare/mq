@@ -20,6 +20,22 @@ use crate::{
     parse,
 };
 
+/// Configuration options for the mq engine.
+#[derive(Debug, Clone)]
+pub struct Options {
+    /// Whether to use the closure-based compiler instead of the tree-walking interpreter.
+    /// When enabled, AST is compiled to closures for faster execution (10-15% speedup expected).
+    /// Default: true (compiler is enabled by default)
+    #[allow(dead_code)]
+    pub use_compiler: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { use_compiler: true }
+    }
+}
+
 /// The main execution engine for the mq.
 ///
 /// The `Engine` manages parsing, optimization, and evaluation of mq code.
@@ -40,6 +56,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
+    pub(crate) compiler: crate::compiler::Compiler,
+    pub(crate) options: Options,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 }
 
@@ -68,10 +86,28 @@ impl<T: ModuleResolver> Engine<T> {
         let token_arena = create_default_token_arena();
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
+            compiler: crate::compiler::Compiler::new(Shared::clone(&token_arena)),
+            options: Options::default(),
             token_arena,
         }
     }
 
+    /// Enable or disable the closure-based compiler.
+    ///
+    /// When enabled, AST is compiled to closures for faster execution.
+    /// When disabled, the tree-walking interpreter is used (default).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mq_lang::DefaultEngine;
+    ///
+    /// let mut engine = DefaultEngine::default();
+    /// engine.set_use_compiler(true);
+    /// ```
+    pub fn set_use_compiler(&mut self, use_compiler: bool) {
+        self.options.use_compiler = use_compiler;
+    }
     /// Set the maximum call stack depth for function calls.
     ///
     /// This prevents infinite recursion by limiting how deep function
@@ -153,10 +189,175 @@ impl<T: ModuleResolver> Engine<T> {
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(code.to_string());
 
-        self.evaluator
-            .eval(&program, input.into_iter())
-            .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
+        let result = if self.options.use_compiler {
+            self.eval_compiled(&program, input)
+        } else {
+            self.evaluator
+                .eval(&program, input.into_iter())
+                .map(|values| values.into())
+        };
+
+        result.map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
+    }
+
+    /// Evaluates a program using the closure-based compiler.
+    ///
+    /// This is a private method used when `use_compiler` is enabled.
+    fn eval_compiled<I: Iterator<Item = RuntimeValue>>(
+        &mut self,
+        program: &crate::Program,
+        input: I,
+    ) -> Result<crate::eval::runtime_value::RuntimeValues, crate::error::InnerError> {
+        use crate::ast::node::Expr;
+        use crate::error::InnerError;
+        use crate::eval::define;
+        use crate::eval::runtime_value::RuntimeValue;
+
+        // Pre-process: handle Def/Import/Include (same as tree-walker)
+        let filtered_program: Vec<_> = program
+            .iter()
+            .filter_map(|node| {
+                match &*node.expr {
+                    Expr::Def(ident, params, program) => {
+                        // Register function definition
+                        define(
+                            &self.evaluator.env,
+                            ident.name,
+                            RuntimeValue::Function(params.clone(), program.clone(), Shared::clone(&self.evaluator.env)),
+                        );
+                        None // Remove from program
+                    }
+                    Expr::Include(module_id) => {
+                        // Execute include and remove from program
+                        let _ = self
+                            .evaluator
+                            .eval_include(module_id.clone(), &Shared::clone(&self.evaluator.env));
+                        None
+                    }
+                    Expr::Import(module_path) => {
+                        // Execute import and remove from program
+                        let _ = self
+                            .evaluator
+                            .eval_import(module_path.clone(), &Shared::clone(&self.evaluator.env));
+                        None
+                    }
+                    _ => Some(Shared::clone(node)), // Keep in program
+                }
+            })
+            .collect();
+
+        // Compile the filtered program
+        let (nodes_index, compiled_program) = self
+            .compiler
+            .compile_program(&filtered_program)
+            .map_err(InnerError::Runtime)?;
+
+        // Create call stack for recursion tracking
+        let mut call_stack = Vec::with_capacity(32);
+
+        // Get environment from evaluator
+        let env = Shared::clone(&self.evaluator.env);
+
+        // Check if program contains `nodes` expression
+        if let Some(index) = nodes_index {
+            // Split compiled program at nodes position
+            let (before_nodes, after_nodes_with_nodes) = compiled_program.split_at(index);
+            let after_nodes = &after_nodes_with_nodes[1..]; // Skip the nodes expression itself
+
+            // Execute before_nodes part and collect results into array
+            let values: Vec<RuntimeValue> = input
+                .map(|runtime_value| {
+                    match &runtime_value {
+                        RuntimeValue::Markdown(node, _) => {
+                            // For Markdown nodes, use the tree-walker's eval_markdown_node logic
+                            self.eval_compiled_markdown_node(before_nodes, &mut call_stack, &env, node)
+                        }
+                        _ => {
+                            // For non-Markdown values, execute normally
+                            let mut value = runtime_value;
+                            for expr in before_nodes {
+                                value = expr(value, &mut call_stack, Shared::clone(&env))?;
+                            }
+                            Ok(value)
+                        }
+                    }
+                })
+                .collect::<Result<_, _>>()
+                .map_err(InnerError::Runtime)?;
+
+            // If there's a program after nodes, execute it with the values array
+            if after_nodes.is_empty() {
+                Ok(values.into())
+            } else {
+                // Execute after_nodes part with the values array
+                let mut value = RuntimeValue::Array(values);
+                for expr in after_nodes {
+                    value = expr(value, &mut call_stack, Shared::clone(&env)).map_err(InnerError::Runtime)?;
+                }
+
+                // Convert result to RuntimeValues
+                Ok(match value {
+                    RuntimeValue::Array(values) => values.into(),
+                    other => vec![other].into(),
+                })
+            }
+        } else {
+            // No nodes expression, execute normally
+            let results: Vec<RuntimeValue> = input
+                .map(|runtime_value| {
+                    match &runtime_value {
+                        RuntimeValue::Markdown(node, _) => {
+                            // For Markdown nodes, use the tree-walker's eval_markdown_node logic
+                            self.eval_compiled_markdown_node(&compiled_program, &mut call_stack, &env, node)
+                        }
+                        _ => {
+                            // For non-Markdown values, execute normally
+                            let mut value = runtime_value;
+                            for expr in &compiled_program {
+                                value = expr(value, &mut call_stack, Shared::clone(&env))?;
+                            }
+                            Ok(value)
+                        }
+                    }
+                })
+                .collect::<Result<_, _>>()
+                .map_err(InnerError::Runtime)?;
+
+            Ok(results.into())
+        }
+    }
+
+    /// Helper method to evaluate Markdown nodes with the compiled program.
+    ///
+    /// This replicates the tree-walker's `eval_markdown_node` logic for the compiler.
+    fn eval_compiled_markdown_node(
+        &mut self,
+        compiled_program: &[crate::compiler::compiled::CompiledExpr],
+        call_stack: &mut Vec<()>,
+        env: &Shared<SharedCell<crate::eval::env::Env>>,
+        node: &mq_markdown::Node,
+    ) -> Result<RuntimeValue, crate::error::runtime::RuntimeError> {
+        node.map_values(&mut |child_node| {
+            let mut value = RuntimeValue::Markdown(child_node.clone(), None);
+            for expr in compiled_program {
+                value = expr(value, call_stack, Shared::clone(env))?;
+            }
+
+            Ok(match value {
+                RuntimeValue::None => child_node.to_fragment(),
+                RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
+                    mq_markdown::Node::Empty
+                }
+                RuntimeValue::Array(_)
+                | RuntimeValue::Dict(_)
+                | RuntimeValue::Boolean(_)
+                | RuntimeValue::Number(_)
+                | RuntimeValue::String(_) => value.to_string().into(),
+                RuntimeValue::Symbol(i) => i.as_str().into(),
+                RuntimeValue::Markdown(node, _) => node,
+            })
+        })
+        .map(|node| RuntimeValue::Markdown(node, None))
     }
 
     /// Evaluates a pre-parsed AST (Program).
@@ -225,6 +426,8 @@ impl<T: ModuleResolver> Engine<T> {
 
         Self {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
+            compiler: crate::compiler::Compiler::new(Shared::clone(&token_arena)),
+            options: self.options.clone(),
             token_arena: Shared::clone(&token_arena),
         }
     }

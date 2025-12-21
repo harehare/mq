@@ -41,6 +41,7 @@
 //!   are included.
 mod arena;
 mod ast;
+mod compiler;
 #[cfg(feature = "cst")]
 mod cst;
 mod engine;

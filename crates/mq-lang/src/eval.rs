@@ -70,7 +70,7 @@ impl Default for Options {
 /// including variable bindings, function calls, and module loading.
 #[derive(Debug)]
 pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
-    env: Shared<SharedCell<Env>>,
+    pub(crate) env: Shared<SharedCell<Env>>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
     call_stack_depth: u32,
@@ -291,7 +291,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_program(
+    pub(crate) fn eval_program(
         &mut self,
         program: &Program,
         runtime_value: RuntimeValue,
@@ -370,7 +370,11 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_include(&mut self, module: ast::Literal, env: &Shared<SharedCell<Env>>) -> Result<(), RuntimeError> {
+    pub(crate) fn eval_include(
+        &mut self,
+        module: ast::Literal,
+        env: &Shared<SharedCell<Env>>,
+    ) -> Result<(), RuntimeError> {
         match module {
             ast::Literal::String(module_name) => {
                 let module = self
@@ -435,7 +439,7 @@ impl<T: ModuleResolver> Evaluator<T> {
         Ok(runtime_value.clone())
     }
 
-    fn eval_import(
+    pub(crate) fn eval_import(
         &mut self,
         module_path: ast::Literal,
         env: &Shared<SharedCell<Env>>,
@@ -565,7 +569,7 @@ impl<T: ModuleResolver> Evaluator<T> {
     }
 
     #[inline(always)]
-    fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
+    pub(crate) fn eval_selector_expr(runtime_value: &RuntimeValue, ident: &Selector) -> RuntimeValue {
         match runtime_value {
             RuntimeValue::Markdown(node_value, _) => {
                 if builtin::eval_selector(node_value, ident) {
@@ -641,7 +645,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             .map(|acc| acc.into())
     }
 
-    fn eval_expr(
+    pub(crate) fn eval_expr(
         &mut self,
         runtime_value: &RuntimeValue,
         node: &Shared<ast::Node>,
@@ -1275,7 +1279,7 @@ impl<T: ModuleResolver> Evaluator<T> {
 }
 
 #[inline(always)]
-fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeValue) {
+pub(crate) fn define(env: &Shared<SharedCell<Env>>, ident: Ident, runtime_value: RuntimeValue) {
     #[cfg(not(feature = "sync"))]
     {
         env.borrow_mut().define(ident, runtime_value);

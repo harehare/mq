@@ -464,7 +464,7 @@ impl RuntimeValue {
 ///
 /// Provides utilities for working with multiple values, such as filtering
 /// and updating operations.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct RuntimeValues(Vec<RuntimeValue>);
 
 impl From<Vec<RuntimeValue>> for RuntimeValues {
