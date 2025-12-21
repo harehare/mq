@@ -179,6 +179,12 @@ pub struct Repl {
     command_context: Rc<RefCell<CommandContext>>,
 }
 
+pub fn config_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("MQ_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::config_dir().map(|d| d.join("mq")))
+}
+
 impl Repl {
     pub fn new(input: Vec<mq_lang::RuntimeValue>) -> Self {
         let mut engine = mq_lang::DefaultEngine::default();
@@ -202,12 +208,6 @@ impl Repl {
         println!();
     }
 
-    pub fn config_dir() -> Option<std::path::PathBuf> {
-        std::env::var_os("MDQ_CONFIG_DIR")
-            .map(std::path::PathBuf::from)
-            .or_else(|| dirs::config_dir().map(|d| d.join("mq")))
-    }
-
     pub fn run(&self) -> miette::Result<()> {
         let config = Config::builder()
             .history_ignore_space(true)
@@ -228,7 +228,7 @@ impl Repl {
             Cmd::Move(Movement::ForwardWord(1, At::AfterEnd, Word::Big)),
         );
 
-        let config_dir = Self::config_dir();
+        let config_dir = config_dir();
 
         if let Some(config_dir) = &config_dir {
             let history = config_dir.join("history.txt");
@@ -299,12 +299,11 @@ mod tests {
 
     #[test]
     fn test_config_dir() {
-        unsafe { std::env::set_var("MDQ_CONFIG_DIR", "/tmp/test_mq_config") };
-        let config_dir = Repl::config_dir();
-        assert_eq!(config_dir, Some(std::path::PathBuf::from("/tmp/test_mq_config")));
+        unsafe { std::env::set_var("MQ_CONFIG_DIR", "/tmp/test_mq_config") };
+        assert_eq!(config_dir(), Some(std::path::PathBuf::from("/tmp/test_mq_config")));
 
-        unsafe { std::env::remove_var("MDQ_CONFIG_DIR") };
-        let config_dir = Repl::config_dir();
+        unsafe { std::env::remove_var("MQ_CONFIG_DIR") };
+        let config_dir = config_dir();
         assert!(config_dir.is_some());
         if let Some(dir) = config_dir {
             assert!(dir.ends_with("mq"));
