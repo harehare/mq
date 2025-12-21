@@ -487,14 +487,13 @@ impl<'a> Parser<'a> {
                 node.kind = NodeKind::Call;
                 node.children = children;
 
-                // Check for macro call (e.g., foo(args): ...)
-                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Colon)) {
+                // Check for macro call (e.g., foo(args) do ...)
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Do)) {
                     node.kind = NodeKind::MacroCall;
-                    node.children
-                        .push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
 
-                    let (mut program, _) = self.parse_program(false, false);
-                    node.children.append(&mut program);
+                    let leading_trivia = self.parse_leading_trivia();
+                    let block = self.parse_block(leading_trivia, false)?;
+                    node.children.push(block);
 
                     return Ok(Shared::new(node));
                 }

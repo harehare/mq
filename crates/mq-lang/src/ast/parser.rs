@@ -787,20 +787,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 Err(SyntaxError::UnexpectedToken((**ident_token).clone()))
             }
             Some(TokenKind::LParen) => {
-                let args = self.parse_args()?;
+                let mut args = self.parse_args()?;
                 let token_id = self.token_arena.alloc(Shared::clone(ident_token));
 
-                // Check for macro call (e.g., foo(args): ...)
-                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Colon)) {
-                    self.tokens.next(); // consume ':'
-                    let program = self.parse_program(false)?;
+                // Check for macro call (e.g., foo(args) do ...)
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Do)) {
+                    let do_token = self.tokens.next().unwrap(); // consume 'do'
+                    let block = self.parse_expr_block(do_token)?;
+                    args.push(block);
 
                     return Ok(Shared::new(Node {
                         token_id: self.token_arena.alloc(Shared::clone(ident_token)),
-                        expr: Shared::new(Expr::MacroCall(
+                        expr: Shared::new(Expr::Call(
                             IdentWithToken::new_with_token(ident, Some(Shared::clone(ident_token))),
                             args,
-                            program,
                         )),
                     }));
                 }

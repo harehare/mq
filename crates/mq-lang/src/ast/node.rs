@@ -53,8 +53,7 @@ impl Node {
             | Expr::While(_, program)
             | Expr::Module(_, program)
             | Expr::Foreach(_, _, program)
-            | Expr::Quote(program)
-            | Expr::MacroCall(_, _, program) => {
+            | Expr::Quote(program) => {
                 let start = program
                     .first()
                     .map(|node| node.range(Shared::clone(&arena)).start)
@@ -255,7 +254,6 @@ pub enum Expr {
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
     Macro(IdentWithToken, Params, Program),
-    MacroCall(IdentWithToken, Args, Program),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
     Var(IdentWithToken, Shared<Node>),

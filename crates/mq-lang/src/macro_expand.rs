@@ -77,19 +77,6 @@ impl Macro {
                 continue;
             }
 
-            // Check if this is a MacroCall - if so, expand it directly
-            if let Expr::MacroCall(ident, args, body) = &*node.expr
-                && self.macros.contains_key(&ident.name)
-            {
-                // Expand macro call first
-                let expanded_nodes = self.expand_macro_call(ident.name, args)?;
-                expanded_program.extend(expanded_nodes);
-                // Then expand the body program
-                let expanded_body = self.expand_program(body)?;
-                expanded_program.extend(expanded_body);
-                continue;
-            }
-
             // Regular node expansion
             let expanded_node = self.expand_node(node)?;
             expanded_program.push(expanded_node);
@@ -155,39 +142,6 @@ impl Macro {
                     Ok(Shared::new(Node {
                         token_id: node.token_id,
                         expr: Shared::new(Expr::Call(ident.clone(), expanded_args.into())),
-                    }))
-                }
-            }
-            Expr::MacroCall(ident, args, program) => {
-                // Check if this is a macro call
-                if self.macros.contains_key(&ident.name) {
-                    // Expand the macro call first
-                    let expanded_nodes = self.expand_macro_call(ident.name, args)?;
-                    // Then expand the program body
-                    let expanded_program = self.expand_program(program)?;
-
-                    // Combine expanded macro result with the program
-                    let mut combined = expanded_nodes;
-                    combined.extend(expanded_program);
-
-                    match combined.as_slice() {
-                        [single] => Ok(Shared::clone(single)),
-                        multiple => Ok(Shared::new(Node {
-                            token_id: node.token_id,
-                            expr: Shared::new(Expr::Block(multiple.to_vec())),
-                        })),
-                    }
-                } else {
-                    // Not a macro, just expand arguments and program
-                    let expanded_args = args
-                        .iter()
-                        .map(|arg| self.expand_node(arg))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let expanded_program = self.expand_program(program)?;
-
-                    Ok(Shared::new(Node {
-                        token_id: node.token_id,
-                        expr: Shared::new(Expr::MacroCall(ident.clone(), expanded_args.into(), expanded_program)),
                     }))
                 }
             }
@@ -495,23 +449,6 @@ impl Macro {
                     })
                 }
             }
-            Expr::MacroCall(ident, args, program) => {
-                let substituted_args: Vec<_> = args
-                    .iter()
-                    .map(|arg| self.substitute_node(arg, substitutions))
-                    .collect();
-                let substituted_program: Vec<_> =
-                    program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
-
-                Shared::new(Node {
-                    token_id: node.token_id,
-                    expr: Shared::new(Expr::MacroCall(
-                        ident.clone(),
-                        substituted_args.into(),
-                        substituted_program,
-                    )),
-                })
-            }
             Expr::Block(program) => {
                 let substituted_program: Vec<_> =
                     program.iter().map(|n| self.substitute_node(n, substitutions)).collect();
@@ -774,26 +711,6 @@ impl Macro {
                 Shared::new(Node {
                     token_id: node.token_id,
                     expr: Shared::new(Expr::Quote(substituted_program)),
-                })
-            }
-            // For other expressions, recursively traverse but don't substitute identifiers
-            Expr::MacroCall(ident, args, program) => {
-                let substituted_args: Vec<_> = args
-                    .iter()
-                    .map(|arg| self.substitute_in_quote(arg, substitutions))
-                    .collect();
-                let substituted_program: Vec<_> = program
-                    .iter()
-                    .map(|n| self.substitute_in_quote(n, substitutions))
-                    .collect();
-
-                Shared::new(Node {
-                    token_id: node.token_id,
-                    expr: Shared::new(Expr::MacroCall(
-                        ident.clone(),
-                        substituted_args.into(),
-                        substituted_program,
-                    )),
                 })
             }
             Expr::Block(program) => {
@@ -1272,50 +1189,12 @@ mod tests {
     }
 
     #[test]
-    fn test_macro_call_basic() {
-        let input = "macro double(x): x + x; | double(5): . * 2;";
-        let program = parse_program(input).expect("Failed to parse program");
-        let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
-
-        assert!(result.is_ok(), "Expected successful expansion with MacroCall");
-    }
-
-    #[test]
     fn test_macro_call_with_body() {
-        let input = r#"macro add_one(x): x + 1; | add_one(5): "result" | ."#;
+        let input = r#"macro unless(cond, expr): quote(if (unquote(!cond)): unquote(expr)); | unless(!false) do 1;"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
 
         assert!(result.is_ok(), "Expected successful expansion with MacroCall and body");
-    }
-
-    #[test]
-    fn test_nested_macro_call() {
-        let input = "macro double(x): x + x; | macro quad(x): double(x) + double(x); | quad(3): . * 10;";
-        let program = parse_program(input).expect("Failed to parse program");
-        let mut macro_expander = Macro::new();
-        let result = macro_expander.expand_program(&program);
-
-        assert!(result.is_ok(), "Expected successful expansion with nested MacroCall");
-    }
-
-    #[test]
-    fn test_macro_call_not_expanded_in_output() {
-        let input = "macro double(x): x + x; | double(5): . * 2;";
-        let program = parse_program(input).expect("Failed to parse program");
-        let mut macro_expander = Macro::new();
-        let expanded = macro_expander
-            .expand_program(&program)
-            .expect("Failed to expand program");
-
-        // The expanded program should not contain the macro definition
-        for node in &expanded {
-            assert!(
-                !matches!(&*node.expr, Expr::Macro(_, _, _)),
-                "Macro definition should not be in expanded output"
-            );
-        }
     }
 }
