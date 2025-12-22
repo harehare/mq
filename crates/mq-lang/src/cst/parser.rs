@@ -722,7 +722,7 @@ impl<'a> Parser<'a> {
         let mut params = self.parse_params()?;
         children.append(&mut params);
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, false);
 
@@ -750,7 +750,7 @@ impl<'a> Parser<'a> {
         let mut params = self.parse_params()?;
         children.append(&mut params);
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, false);
 
@@ -775,7 +775,8 @@ impl<'a> Parser<'a> {
 
         let mut params = self.parse_params()?;
         children.append(&mut params);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, in_loop);
 
@@ -948,8 +949,7 @@ impl<'a> Parser<'a> {
         // Parse module name (identifier)
         children.push(self.next_node(|kind| matches!(kind, TokenKind::Ident(_)), NodeKind::Ident)?);
 
-        // Parse colon
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         // Parse program block (contains let, def, or module statements)
         let (program_nodes, errors) = self.parse_program(false, false);
@@ -985,7 +985,8 @@ impl<'a> Parser<'a> {
         }
 
         children.append(&mut args);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, in_loop)?);
@@ -1031,7 +1032,8 @@ impl<'a> Parser<'a> {
         }
 
         children.append(&mut args);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, in_loop)?);
@@ -1053,7 +1055,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, in_loop)?);
@@ -1428,7 +1430,8 @@ impl<'a> Parser<'a> {
 
         children.push(self.parse_expr(leading_trivia, false, false)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, true);
 
@@ -1457,7 +1460,8 @@ impl<'a> Parser<'a> {
 
         children.push(self.parse_expr(leading_trivia, false, true)?);
         children.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+
+        self.push_colon_token_if_present(&mut children)?;
 
         let (mut program, _) = self.parse_program(false, true);
 
@@ -1480,7 +1484,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, false)?);
@@ -1511,7 +1515,7 @@ impl<'a> Parser<'a> {
             children: Vec::new(),
         };
 
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         let leading_trivia = self.parse_leading_trivia();
         children.push(self.parse_expr(leading_trivia, false, false)?);
@@ -1540,8 +1544,7 @@ impl<'a> Parser<'a> {
         }
         children.append(&mut args);
 
-        // Parse colon
-        children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        self.push_colon_token_if_present(&mut children)?;
 
         // Parse match arms
         loop {
@@ -2016,6 +2019,15 @@ impl<'a> Parser<'a> {
             trailing_trivia,
             children: Vec::new(),
         }))
+    }
+
+    #[inline(always)]
+    fn push_colon_token_if_present(&mut self, children: &mut Vec<Shared<Node>>) -> Result<(), ParseError> {
+        if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+            children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
+        }
+
+        Ok(())
     }
 }
 
