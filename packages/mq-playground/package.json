@@ -29,7 +29,7 @@
     "globals": "^16.5.0",
     "oxlint": "^1.35.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.50.0",
+    "typescript-eslint": "^8.50.1",
     "vite": "^7.3.0"
   }
 }
