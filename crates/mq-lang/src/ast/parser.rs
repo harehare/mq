@@ -2348,6 +2348,80 @@ mod tests {
             token(TokenKind::Colon),
         ],
         Err(SyntaxError::UnexpectedToken(Token{range: Range::default(), kind:TokenKind::LParen, module_id: 1.into()})))]
+    #[case::def_without_colon1(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
+                        SmallVec::new(),
+                        vec![Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                        })],
+                )),
+            }),
+        ]))]
+    #[case::def_without_colon2(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::RParen),
+            token(TokenKind::StringLiteral("value".to_owned())),
+            token(TokenKind::End)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
+                        SmallVec::new(),
+                        vec![Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                        })],
+                )),
+            }),
+        ]))]
+    #[case::def_without_colon_with_args(
+        vec![
+            token(TokenKind::Def),
+            token(TokenKind::Ident(SmolStr::new("name"))),
+            token(TokenKind::LParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::RParen),
+            token(TokenKind::Ident(SmolStr::new("x"))),
+            token(TokenKind::SemiColon)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Shared::new(Expr::Def(
+                        IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
+                        smallvec![Shared::new(Node {
+                            token_id: 1.into(),
+                            expr: Shared::new(Expr::Ident(
+                                IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                            )),
+                        })],
+                        vec![Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Shared::new(Expr::Ident(
+                                IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                            )),
+                        })],
+                )),
+            }),
+        ]))]
     #[case::let_1(
             vec![
                 token(TokenKind::Let),
