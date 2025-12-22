@@ -290,7 +290,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
         }
 
-        // Macros are not loaded into runtime environment
+        self.macro_expander.collect_macros(&module.macros);
 
         Ok(())
     }
@@ -458,10 +458,8 @@ impl<T: ModuleResolver> Evaluator<T> {
 
                 if let Ok(module) = module {
                     // Collect macros from the module
-                    self.macro_expander.collect_macros(&module.macros);
                     // Create a new environment for the module exports
                     let module_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-
                     let module_name_to_use = module.name.to_string();
 
                     self.load_module_with_env(module, &Shared::clone(&module_env))?;
