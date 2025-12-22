@@ -30,7 +30,7 @@ arbitrary = {version = "1.4.2", features = ["derive"]}
 arboard = {version = "3.6.1", default-features = false}
 assert_cmd = "2.1.1"
 async-trait = "0.1.83"
-axum = "0.8.7"
+axum = "0.8.8"
 base64 = "0.22.1"
 bimap = "0.6.3"
 cbindgen = "0.29.2"
