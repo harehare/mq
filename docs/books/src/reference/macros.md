@@ -90,10 +90,11 @@ macro conditional_expr(x):
 | conditional_expr(15)  # Returns "large"
 
 # Complex pre-computation
-macro compute_mixed(x):
+macro compute_mixed(x) do
   let a = x * 2 |
   let b = x + 10 |
-  quote(unquote(a) + unquote(b));
+  quote(unquote(a) + unquote(b))
+end
 
 | compute_mixed(5)  # a=10, b=15, returns 25
 
@@ -103,5 +104,3 @@ macro make_array(a, b, c):
 
 | make_array(1, 2, 3)  # Returns [1, 2, 3]
 ```
-
-
