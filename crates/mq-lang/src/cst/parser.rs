@@ -752,9 +752,11 @@ impl<'a> Parser<'a> {
 
         self.push_colon_token_if_present(&mut children)?;
 
-        let (mut program, _) = self.parse_program(false, false);
+        let leading_trivia = self.parse_leading_trivia();
 
-        children.append(&mut program);
+        let expr = self.parse_expr(leading_trivia, false, false)?;
+
+        children.push(expr);
 
         node.children = children;
         Ok(Shared::new(node))
@@ -7235,7 +7237,6 @@ mod tests {
             Shared::new(token(TokenKind::Ident("x".into()))),
             Shared::new(token(TokenKind::Plus)),
             Shared::new(token(TokenKind::Ident("x".into()))),
-            Shared::new(token(TokenKind::End)),
             Shared::new(token(TokenKind::Eof)),
         ],
         (
@@ -7302,13 +7303,6 @@ mod tests {
                                     children: Vec::new(),
                                 }),
                             ],
-                        }),
-                        Shared::new(Node {
-                            kind: NodeKind::End,
-                            token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
-                            children: Vec::new(),
                         }),
                     ],
                 }),
