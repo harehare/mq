@@ -256,6 +256,11 @@ impl<T: ModuleResolver> Evaluator<T> {
         module: module::Module,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<(), RuntimeError> {
+        self.macro_expander.collect_macros(&module.modules);
+        self.macro_expander.collect_macros(&module.macros);
+        let functions = self.macro_expander.expand_program(&module.functions)?;
+        let vars = self.macro_expander.expand_program(&module.vars)?;
+
         for node in &module.modules {
             let _ = match &*node.expr {
                 ast::Expr::Include(_) => self.eval_expr(&RuntimeValue::NONE, node, env)?,
@@ -269,7 +274,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             };
         }
 
-        for node in &module.functions {
+        for node in functions {
             if let ast::Expr::Def(ident, params, program) = &*node.expr {
                 define(
                     env,
@@ -279,7 +284,7 @@ impl<T: ModuleResolver> Evaluator<T> {
             }
         }
 
-        for node in &module.vars {
+        for node in vars {
             if let ast::Expr::Let(ident, node) = &*node.expr {
                 let val = self.eval_expr(&RuntimeValue::NONE, node, env)?;
                 define(env, ident.name, val);
@@ -289,8 +294,6 @@ impl<T: ModuleResolver> Evaluator<T> {
                 ));
             }
         }
-
-        self.macro_expander.collect_macros(&module.macros);
 
         Ok(())
     }
@@ -5987,6 +5990,83 @@ mod tests {
         assert_eq!(
             Evaluator::new(DefaultModuleLoader::default(), token_arena).eval(&program, runtime_values.into_iter()),
             expected
+        );
+    }
+
+    #[test]
+    fn test_expand_macro_with_module() {
+        let (temp_dir, temp_file_path) = create_file(
+            "test_macro.mq",
+            r#"
+            macro add_macro(a, b) do
+              unquote(a + b)
+            end"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro".to_string()))),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Call(
+                    IdentWithToken::new("add_macro"),
+                    smallvec![
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(10.into()))),
+                        ast_node(ast::Expr::Literal(ast::Literal::Number(20.into()))),
+                    ],
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+            Ok(vec![RuntimeValue::Number(30.into())])
+        );
+    }
+
+    #[test]
+    fn test_expand_macro_with_def_in_module() {
+        let (temp_dir, temp_file_path) = create_file(
+            "test_macro2.mq",
+            r#"
+            macro add_macro(a, b) do
+              unquote(a + b)
+            end | def a(): add_macro(10, 20);"#,
+        );
+
+        defer! {
+            if temp_file_path.exists() {
+                std::fs::remove_file(&temp_file_path).expect("Failed to delete temp file");
+            }
+        }
+
+        let loader = ModuleLoader::new(LocalFsModuleResolver::new(Some(vec![temp_dir.clone()])));
+        let program = vec![
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::Import(ast::Literal::String("test_macro2".to_string()))),
+            }),
+            Shared::new(ast::Node {
+                token_id: 0.into(),
+                expr: Shared::new(ast::Expr::QualifiedAccess(
+                    vec![IdentWithToken::new("test_macro2")],
+                    ast::AccessTarget::Call(IdentWithToken::new("a"), smallvec![]),
+                )),
+            }),
+        ];
+        assert_eq!(
+            Evaluator::new(loader, token_arena())
+                .eval(&program, vec![RuntimeValue::String("".to_string())].into_iter()),
+            Ok(vec![RuntimeValue::Number(30.into())])
         );
     }
 }

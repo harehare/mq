@@ -7,7 +7,6 @@ use std::borrow::Cow;
 use crate::{
     Module, ModuleLoader, ModuleResolver, Token,
     error::{runtime::RuntimeError, syntax::SyntaxError},
-    macro_expand::MacroExpansionError,
     module::{self, error::ModuleError},
 };
 
@@ -20,8 +19,6 @@ pub enum InnerError {
     Syntax(#[from] SyntaxError),
     #[error(transparent)]
     Module(#[from] ModuleError),
-    #[error(transparent)]
-    MacroExpansion(#[from] MacroExpansionError),
 }
 
 impl InnerError {
@@ -31,7 +28,6 @@ impl InnerError {
             InnerError::Syntax(err) => err.token(),
             InnerError::Runtime(err) => err.token(),
             InnerError::Module(err) => err.token(),
-            InnerError::MacroExpansion(_) => None,
         }
     }
 }
@@ -144,7 +140,6 @@ impl Diagnostic for Error {
                 InnerError::Runtime(e) => type_name(&e),
                 InnerError::Syntax(e) => type_name(&e),
                 InnerError::Module(e) => type_name(&e),
-                InnerError::MacroExpansion(e) => type_name(&e),
             }
             .replace("&mq_lang::", ""),
         ) as Box<dyn std::fmt::Display>)
@@ -287,13 +282,13 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("Parse error in module: unknown selector used."))
             }
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
-            InnerError::MacroExpansion(MacroExpansionError::UndefinedMacro(_)) => {
+            InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
                 Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
             }
-            InnerError::MacroExpansion(MacroExpansionError::ArityMismatch { .. }) => {
+            InnerError::Runtime(RuntimeError::ArityMismatch { .. }) => {
                 Some(Cow::Borrowed("Macro expansion error: macro arity mismatch."))
             }
-            InnerError::MacroExpansion(MacroExpansionError::RecursionLimit) => {
+            InnerError::Runtime(RuntimeError::RecursionLimit) => {
                 Some(Cow::Borrowed("Macro expansion error: recursion limit exceeded."))
             }
         };

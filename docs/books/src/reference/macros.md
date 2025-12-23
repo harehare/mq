@@ -24,22 +24,25 @@ Macros differ from functions:
 
 ## Basic Examples
 
-```python
+```elixir
 # Simple value transformation
-macro double(x):
-  x + x;
+macro double(x) do
+  x + x
+end
 
 | double(5)  # Returns 10
 
 # Multiple parameters
-macro add_three(a, b, c):
-  a + b + c;
+macro add_three(a, b, c) do
+  a + b + c
+end
 
 | add_three(1, 2, 3)  # Returns 6
 
 # With control flow
-macro max(a, b):
-  if(a > b): a else: b;
+macro max(a, b) do
+  if(a > b): a else: b
+end
 
 | max(10, 5)  # Returns 10
 ```
@@ -48,14 +51,15 @@ macro max(a, b):
 
 ```python
 # Nested macro calls
-macro double(x): x + x;
-macro quadruple(x): double(double(x));
+macro double(x): x + x
+macro quadruple(x): double(double(x))
 
 | quadruple(3)  # Returns 12
 
 # Accepting functions as parameters
-macro apply_twice(f, x):
-  f(f(x));
+macro apply_twice(f, x) do
+  f(f(x))
+end
 
 def inc(n): n + 1;
 | apply_twice(inc, 5)  # Returns 7
@@ -72,20 +76,23 @@ def inc(n): n + 1;
 
 ```python
 # Basic injection
-macro make_expr(x):
-  quote(unquote(x) + 1);
+macro make_expr(x) do
+  quote(unquote(x) + 1)
+end
 
 | make_expr(5)  # Returns 6
 
 # Pre-computation
-macro compute(a, b):
-  quote(unquote(a) + unquote(b) * 2);
+macro compute(a, b) do
+  quote(unquote(a) + unquote(b) * 2)
+end
 
 | compute(10, 5)  # Returns 20
 
 # Conditional code generation
-macro conditional_expr(x):
-  quote(if(unquote(x) > 10): "large" else: "small");
+macro conditional_expr(x) do
+  quote(if(unquote(x) > 10): "large" else: "small")
+end
 
 | conditional_expr(15)  # Returns "large"
 
@@ -99,8 +106,9 @@ end
 | compute_mixed(5)  # a=10, b=15, returns 25
 
 # Generating data structures
-macro make_array(a, b, c):
-  quote([unquote(a), unquote(b), unquote(c)]);
+macro make_array(a, b, c) do
+  quote([unquote(a), unquote(b), unquote(c)])
+end
 
 | make_array(1, 2, 3)  # Returns [1, 2, 3]
 ```

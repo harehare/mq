@@ -4,28 +4,11 @@ use crate::{
         Program,
         node::{AccessTarget, Expr, MatchArm, Node, StringSegment},
     },
+    error::runtime::RuntimeError,
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use thiserror::Error;
 
 const MAX_RECURSION_DEPTH: u32 = 1000;
-
-#[derive(Error, Debug, Clone, PartialEq)]
-pub enum MacroExpansionError {
-    /// A macro was called but not defined
-    #[error("Undefined macro: {0}")]
-    UndefinedMacro(Ident),
-    /// Wrong number of arguments passed to a macro
-    #[error("Macro {macro_name} expects {expected} arguments, got {got}")]
-    ArityMismatch {
-        macro_name: Ident,
-        expected: usize,
-        got: usize,
-    },
-    /// Maximum recursion depth exceeded
-    #[error("Maximum macro recursion depth exceeded")]
-    RecursionLimit,
-}
 
 /// A macro definition containing its parameters and body.
 #[derive(Debug, Clone)]
@@ -52,7 +35,7 @@ impl Macro {
     }
 
     /// Expands all macros in a program.
-    pub fn expand_program(&mut self, program: &Program) -> Result<Program, MacroExpansionError> {
+    pub fn expand_program(&mut self, program: &Program) -> Result<Program, RuntimeError> {
         self.collect_macros(program);
 
         // Fast path: if no macros are defined, return the program as-is without traversal
@@ -63,7 +46,7 @@ impl Macro {
         let mut expanded_program = Vec::with_capacity(program.len());
         for node in program {
             // Skip macro definitions - they shouldn't appear in the expanded output
-            if matches!(&*node.expr, Expr::Macro(_, _, _)) {
+            if matches!(&*node.expr, Expr::Macro(..)) {
                 continue;
             }
 
@@ -99,11 +82,17 @@ impl Macro {
                             }
                         })
                         .collect();
+
+                    let program = match &*body.expr {
+                        Expr::Block(prog) => prog.clone(),
+                        _ => vec![Shared::clone(body)],
+                    };
+
                     self.macros.insert(
                         ident.name,
                         MacroDefinition {
                             params: param_names,
-                            body: body.clone(),
+                            body: program,
                         },
                     );
                 }
@@ -116,7 +105,7 @@ impl Macro {
         }
     }
 
-    fn expand_node(&mut self, node: &Shared<Node>) -> Result<Shared<Node>, MacroExpansionError> {
+    fn expand_node(&mut self, node: &Shared<Node>) -> Result<Shared<Node>, RuntimeError> {
         match &*node.expr {
             // Expand function calls, including nested macro calls
             Expr::Call(ident, args) => {
@@ -178,7 +167,7 @@ impl Macro {
                         let expanded_body = self.expand_node(body)?;
                         Ok((expanded_cond, expanded_body))
                     })
-                    .collect::<Result<Vec<_>, MacroExpansionError>>()?;
+                    .collect::<Result<Vec<_>, RuntimeError>>()?;
 
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
@@ -266,7 +255,7 @@ impl Macro {
                             body: expanded_body,
                         })
                     })
-                    .collect::<Result<Vec<_>, MacroExpansionError>>()?;
+                    .collect::<Result<Vec<_>, RuntimeError>>()?;
 
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
@@ -321,7 +310,7 @@ impl Macro {
                         StringSegment::Env(env) => Ok(StringSegment::Env(env.clone())),
                         StringSegment::Self_ => Ok(StringSegment::Self_),
                     })
-                    .collect::<Result<Vec<_>, MacroExpansionError>>()?;
+                    .collect::<Result<Vec<_>, RuntimeError>>()?;
 
                 Ok(Shared::new(Node {
                     token_id: node.token_id,
@@ -363,24 +352,20 @@ impl Macro {
         }
     }
 
-    fn expand_macro_call(
-        &mut self,
-        name: Ident,
-        args: &[Shared<Node>],
-    ) -> Result<Vec<Shared<Node>>, MacroExpansionError> {
+    fn expand_macro_call(&mut self, name: Ident, args: &[Shared<Node>]) -> Result<Vec<Shared<Node>>, RuntimeError> {
         if self.recursion_depth >= self.max_recursion {
-            return Err(MacroExpansionError::RecursionLimit);
+            return Err(RuntimeError::RecursionLimit);
         }
 
         let macro_def = self
             .macros
             .get(&name)
-            .ok_or(MacroExpansionError::UndefinedMacro(name))?
+            .ok_or(RuntimeError::UndefinedMacro(name))?
             .clone();
 
         // Check arity
         if macro_def.params.len() != args.len() {
-            return Err(MacroExpansionError::ArityMismatch {
+            return Err(RuntimeError::ArityMismatch {
                 macro_name: name,
                 expected: macro_def.params.len(),
                 got: args.len(),
@@ -398,7 +383,6 @@ impl Macro {
         let result = self.substitute_and_expand_program(&macro_def.body, &substitutions);
         self.recursion_depth -= 1;
 
-        // Return all nodes from the macro body directly
         result
     }
 
@@ -406,7 +390,7 @@ impl Macro {
         &mut self,
         program: &Program,
         substitutions: &FxHashMap<Ident, Shared<Node>>,
-    ) -> Result<Program, MacroExpansionError> {
+    ) -> Result<Program, RuntimeError> {
         program
             .iter()
             .map(|node| {
@@ -966,37 +950,37 @@ mod tests {
 
     #[rstest]
     #[case::basic_macro(
-        "macro double(x): x + x; | double(5)",
+        "macro double(x): x + x | double(5)",
         "double(5)",
         Ok(())
     )]
     #[case::multiple_params(
-        "macro add_three(a, b, c): a + b + c; | add_three(1, 2, 3)",
+        "macro add_three(a, b, c) a + b + c | add_three(1, 2, 3)",
         "add_three(1, 2, 3)",
         Ok(())
     )]
     #[case::nested_macro_calls(
-        "macro double(x): x + x; | macro quad(x): double(double(x)); | quad(3)",
+        "macro double(x): x + x | macro quad(x): double(double(x)) | quad(3)",
         "quad(3)",
         Ok(())
     )]
     #[case::macro_with_string(
-        r#"macro greet(name): s"Hello, ${name}!"; | greet("World")"#,
+        r#"macro greet(name) do s"Hello, ${name}!"; | greet("World");"#,
         r#"greet("World")"#,
         Ok(())
     )]
     #[case::macro_with_let(
-        "macro let_double(x): let y = x | y + y; | let_double(7)",
+        "macro let_double(x) do let y = x | y + y; | let_double(7);",
         "let_double(7)",
         Ok(())
     )]
     #[case::macro_with_if(
-        "macro max(a, b): if(a > b): a else: b; | max(10, 5)",
+        "macro max(a, b) do if(a > b): a else: b; | max(10, 5);",
         "max(10, 5)",
         Ok(())
     )]
     #[case::macro_with_function_call(
-        "macro apply_twice(f, x): f(f(x)); | def inc(n): n + 1; | apply_twice(inc, 5)",
+        "macro apply_twice(f, x) do f(f(x)); | def inc(n): n + 1; | apply_twice(inc, 5);",
         "apply_twice(inc, 5)",
         Ok(())
     )]
@@ -1021,33 +1005,34 @@ mod tests {
 
     #[test]
     fn test_macro_expansion_arity_mismatch_too_few() {
-        let input = "macro add_two(a, b): a + b; | add_two(1)";
+        let input = "macro add_two(a, b): a + b | add_two(1)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
 
-        assert!(matches!(result, Err(MacroExpansionError::ArityMismatch { .. })));
+        assert!(matches!(result, Err(RuntimeError::ArityMismatch { .. })));
     }
 
     #[test]
     fn test_macro_expansion_arity_mismatch_too_many() {
-        let input = "macro double(x): x + x; | double(1, 2, 3)";
+        let input = "macro double(x): x + x | double(1, 2, 3)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
 
-        assert!(matches!(result, Err(MacroExpansionError::ArityMismatch { .. })));
+        assert!(matches!(result, Err(RuntimeError::ArityMismatch { .. })));
     }
 
     #[test]
     fn test_macro_recursion_limit() {
-        let input = "macro recurse(x): recurse(x); | recurse(1)";
+        let input = "macro recurse(x): recurse(x) | recurse(1)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         macro_expander.max_recursion = 10;
         let result = macro_expander.expand_program(&program);
 
-        assert!(matches!(result, Err(MacroExpansionError::RecursionLimit)));
+        dbg!(&result);
+        assert!(matches!(result, Err(RuntimeError::RecursionLimit)));
     }
 
     #[rstest]
@@ -1072,8 +1057,8 @@ mod tests {
     #[test]
     fn test_multiple_macro_definitions() {
         let input = r#"
-            macro double(x): x + x;
-            | macro triple(x): x + x + x;
+            macro double(x): x + x
+            | macro triple(x): x + x + x
             | double(5) + triple(3)
         "#;
         let program = parse_program(input).expect("Failed to parse program");
@@ -1086,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_macro_parameter_shadowing() {
-        let input = "let x = 100 | macro use_param(x): x * 2; | use_param(5)";
+        let input = "let x = 100 | macro use_param(x): x * 2 | use_param(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1096,7 +1081,7 @@ mod tests {
 
     #[test]
     fn test_macro_not_included_in_output() {
-        let input = "macro double(x): x + x; | 42";
+        let input = "macro double(x): x + x | 42";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let expanded = macro_expander
@@ -1147,7 +1132,7 @@ mod tests {
 
     #[test]
     fn test_quote_basic() {
-        let input = "macro make_expr(x): quote(x + 1); | make_expr(5)";
+        let input = "macro make_expr(x): quote(x + 1) | make_expr(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1157,7 +1142,7 @@ mod tests {
 
     #[test]
     fn test_quote_with_unquote() {
-        let input = "macro add_one(x): quote(unquote(x) + 1); | add_one(5)";
+        let input = "macro add_one(x): quote(unquote(x) + 1) | add_one(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1167,7 +1152,7 @@ mod tests {
 
     #[test]
     fn test_quote_multiple_expressions() {
-        let input = r#"macro log_and_eval(x): quote(| "start" | unquote(x) | "end"); | log_and_eval(5 + 5)"#;
+        let input = r#"macro log_and_eval(x): quote(| "start" | unquote(x) | "end") | log_and_eval(5 + 5)"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1180,7 +1165,7 @@ mod tests {
 
     #[test]
     fn test_nested_quote() {
-        let input = "macro nested(x): quote(quote(unquote(x))); | nested(5)";
+        let input = "macro nested(x): quote(quote(unquote(x))) | nested(5)";
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);
@@ -1190,7 +1175,7 @@ mod tests {
 
     #[test]
     fn test_macro_call_with_body() {
-        let input = r#"macro unless(cond, expr): quote(if (unquote(!cond)): unquote(expr)); | unless(!false) do 1;"#;
+        let input = r#"macro unless(cond, expr): quote(if (unquote(!cond)): unquote(expr)) | unless(!false) do 1;"#;
         let program = parse_program(input).expect("Failed to parse program");
         let mut macro_expander = Macro::new();
         let result = macro_expander.expand_program(&program);

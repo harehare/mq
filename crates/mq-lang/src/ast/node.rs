@@ -48,7 +48,6 @@ impl Node {
         match &*self.expr {
             Expr::Block(program)
             | Expr::Def(_, _, program)
-            | Expr::Macro(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
             | Expr::Module(_, program)
@@ -81,6 +80,15 @@ impl Node {
                     .last()
                     .map(|node| node.range(Shared::clone(&arena)).end)
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
+                Range { start, end }
+            }
+            Expr::Macro(_, args, block) => {
+                let start = args
+                    .first()
+                    .map(|node| node.range(Shared::clone(&arena)))
+                    .unwrap_or(block.range(Shared::clone(&arena)))
+                    .start;
+                let end = block.range(arena).end;
                 Range { start, end }
             }
             Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) | Expr::Unquote(node) => {
@@ -253,7 +261,7 @@ pub enum Expr {
     Call(IdentWithToken, Args),
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
-    Macro(IdentWithToken, Params, Program),
+    Macro(IdentWithToken, Params, Shared<Node>),
     Fn(Params, Program),
     Let(IdentWithToken, Shared<Node>),
     Var(IdentWithToken, Shared<Node>),
