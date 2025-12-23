@@ -121,6 +121,11 @@ impl Variable {
                 value: format!("function/{}", params.len()),
                 type_field: "function".to_string(),
             },
+            RuntimeValue::OpTreeFunction { params, .. } => Variable {
+                name: ident.to_string(),
+                value: format!("optree_function/{}", params.len()),
+                type_field: "optree_function".to_string(),
+            },
             RuntimeValue::NativeFunction(_) => Variable {
                 name: ident.to_string(),
                 value: "native function".to_string(),

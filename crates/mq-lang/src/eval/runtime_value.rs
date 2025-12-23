@@ -1,6 +1,7 @@
 use super::env::Env;
 use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
 use mq_markdown::Node;
+use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::{
     borrow::Cow,
@@ -93,6 +94,12 @@ pub enum RuntimeValue {
     Markdown(Node, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
     Function(AstParams, Program, Shared<SharedCell<Env>>),
+    /// A user-defined OpTree function with parameters, body (OpRef), and captured environment.
+    OpTreeFunction {
+        params: SmallVec<[crate::optree::OpRef; 4]>,
+        body: crate::optree::OpRef,
+        env: Shared<SharedCell<Env>>,
+    },
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A dictionary mapping identifiers to runtime values.
@@ -115,6 +122,14 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
             (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => a1 == a2 && b1 == b2,
+            (
+                RuntimeValue::OpTreeFunction {
+                    params: p1, body: b1, ..
+                },
+                RuntimeValue::OpTreeFunction {
+                    params: p2, body: b2, ..
+                },
+            ) => p1 == p2 && b1 == b2,
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
@@ -228,6 +243,17 @@ impl PartialOrd for RuntimeValue {
                 Some(Ordering::Less) => Some(Ordering::Less),
                 _ => None,
             },
+            (
+                RuntimeValue::OpTreeFunction {
+                    params: p1, body: b1, ..
+                },
+                RuntimeValue::OpTreeFunction {
+                    params: p2, body: b2, ..
+                },
+            ) => match p1.len().cmp(&p2.len()) {
+                Ordering::Equal => b1.partial_cmp(b2),
+                other => Some(other),
+            },
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a.name.partial_cmp(&b.name),
@@ -247,6 +273,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
             Self::Function(params, ..) => Cow::Owned(format!("function/{}", params.len())),
+            Self::OpTreeFunction { params, .. } => Cow::Owned(format!("optree_function/{}", params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Dict(_) => self.string(),
             Self::Module(module_name) => Cow::Owned(format!(r#"module "{}""#, module_name.name)),
@@ -295,6 +322,7 @@ impl RuntimeValue {
             RuntimeValue::Array(_) => "array",
             RuntimeValue::None => "None",
             RuntimeValue::Function(_, _, _) => "function",
+            RuntimeValue::OpTreeFunction { .. } => "optree_function",
             RuntimeValue::NativeFunction(_) => "native_function",
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Module(_) => "module",
@@ -310,7 +338,10 @@ impl RuntimeValue {
     /// Returns `true` if this value is a user-defined function.
     #[inline(always)]
     pub fn is_function(&self) -> bool {
-        matches!(self, RuntimeValue::Function(_, _, _))
+        matches!(
+            self,
+            RuntimeValue::Function(_, _, _) | RuntimeValue::OpTreeFunction { .. }
+        )
     }
 
     /// Returns `true` if this value is a native (built-in) function.
@@ -359,6 +390,7 @@ impl RuntimeValue {
             },
             RuntimeValue::Symbol(_)
             | RuntimeValue::Function(_, _, _)
+            | RuntimeValue::OpTreeFunction { .. }
             | RuntimeValue::NativeFunction(_)
             | RuntimeValue::Dict(_) => true,
             RuntimeValue::Module(_) => true,
@@ -382,6 +414,7 @@ impl RuntimeValue {
             RuntimeValue::Dict(m) => m.len(),
             RuntimeValue::None => 0,
             RuntimeValue::Function(..) => 0,
+            RuntimeValue::OpTreeFunction { .. } => 0,
             RuntimeValue::Module(m) => m.len(),
             RuntimeValue::NativeFunction(..) => 0,
         }
@@ -446,6 +479,7 @@ impl RuntimeValue {
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
             Self::Function(f, _, _) => Cow::Owned(format!("function/{}", f.len())),
+            Self::OpTreeFunction { params, .. } => Cow::Owned(format!("optree_function/{}", params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Module(m) => Cow::Owned(format!("module/{}", m.name())),
             Self::Dict(map) => {
@@ -537,6 +571,7 @@ impl RuntimeValues {
                     match &updated_value {
                         RuntimeValue::None
                         | RuntimeValue::Function(_, _, _)
+                        | RuntimeValue::OpTreeFunction { .. }
                         | RuntimeValue::Module(_)
                         | RuntimeValue::NativeFunction(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
