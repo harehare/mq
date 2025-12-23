@@ -117,6 +117,7 @@ impl From<mq_lang::RuntimeValue> for MQValue {
                 markdown_type: MarkdownType::Text,
             },
             mq_lang::RuntimeValue::Function(..)
+            | mq_lang::RuntimeValue::OpTreeFunction { .. }
             | mq_lang::RuntimeValue::NativeFunction(..)
             | mq_lang::RuntimeValue::Module(..) => MQValue::Markdown {
                 value: "".to_string(),

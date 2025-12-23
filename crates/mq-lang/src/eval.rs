@@ -70,7 +70,7 @@ impl Default for Options {
 /// including variable bindings, function calls, and module loading.
 #[derive(Debug)]
 pub struct Evaluator<T: ModuleResolver = LocalFsModuleResolver> {
-    env: Shared<SharedCell<Env>>,
+    pub(crate) env: Shared<SharedCell<Env>>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
 
     call_stack_depth: u32,
@@ -223,9 +223,10 @@ impl<T: ModuleResolver> Evaluator<T> {
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
-                RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
-                    mq_markdown::Node::Empty
-                }
+                RuntimeValue::Function(_, _, _)
+                | RuntimeValue::OpTreeFunction { .. }
+                | RuntimeValue::NativeFunction(_)
+                | RuntimeValue::Module(_) => mq_markdown::Node::Empty,
                 RuntimeValue::Array(_)
                 | RuntimeValue::Dict(_)
                 | RuntimeValue::Boolean(_)

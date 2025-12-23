@@ -51,6 +51,7 @@ mod lexer;
 mod macro_expand;
 mod module;
 mod number;
+pub mod optree;
 mod range;
 mod selector;
 
@@ -87,6 +88,7 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, error::ModuleError,
     resolver::LocalFsModuleResolver, resolver::ModuleResolver, resolver::module_name,
 };
+pub use optree::{Op, OpPool, OpRef, OpTreeEvaluator, OpTreeTransformer, dump_optree};
 pub use range::{Position, Range};
 pub use selector::{AttrKind, Selector};
 

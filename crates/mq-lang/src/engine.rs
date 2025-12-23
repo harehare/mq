@@ -2,7 +2,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-#[cfg(feature = "ast-json")]
 use crate::Program;
 #[cfg(feature = "debugger")]
 use crate::eval::env::Env;
@@ -41,6 +40,8 @@ use crate::{
 pub struct Engine<T: ModuleResolver = LocalFsModuleResolver> {
     pub(crate) evaluator: Evaluator<T>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    /// Whether to use OpTree evaluation (default: true)
+    use_optree: bool,
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -59,7 +60,9 @@ fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
 
 impl<T: ModuleResolver> Default for Engine<T> {
     fn default() -> Self {
-        Self::new(T::default())
+        let mut engine = Self::new(T::default());
+        engine.use_optree = true; // OpTree is default
+        engine
     }
 }
 
@@ -69,7 +72,31 @@ impl<T: ModuleResolver> Engine<T> {
         Self {
             evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
             token_arena,
+            use_optree: false, // Will be set to true in Default impl
         }
+    }
+
+    /// Enables or disables OpTree evaluation.
+    ///
+    /// OpTree is the default execution engine, providing better performance
+    /// and memory locality. The recursive evaluator is available as a fallback.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use mq_lang::DefaultEngine;
+    ///
+    /// let mut engine = DefaultEngine::default();
+    /// // Disable OpTree and use recursive evaluator
+    /// engine.set_optree_enabled(false);
+    /// ```
+    pub fn set_optree_enabled(&mut self, enabled: bool) {
+        self.use_optree = enabled;
+    }
+
+    /// Returns whether OpTree evaluation is enabled.
+    pub fn is_optree_enabled(&self) -> bool {
+        self.use_optree
     }
 
     /// Set the maximum call stack depth for function calls.
@@ -153,10 +180,51 @@ impl<T: ModuleResolver> Engine<T> {
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(code.to_string());
 
-        self.evaluator
-            .eval(&program, input.into_iter())
-            .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
+        if self.use_optree {
+            // OpTree execution path (default)
+            self.eval_with_optree(&program, input, code)
+        } else {
+            // Recursive evaluator path (fallback)
+            self.evaluator
+                .eval(&program, input.into_iter())
+                .map(|values| values.into())
+                .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
+        }
+    }
+
+    /// Evaluates a program using OpTree.
+    fn eval_with_optree<I: Iterator<Item = RuntimeValue>>(
+        &mut self,
+        program: &Program,
+        input: I,
+        code: &str,
+    ) -> MqResult {
+        use crate::optree::{OpTreeEvaluator, OpTreeTransformer};
+
+        // Transform AST to OpTree
+        let transformer = OpTreeTransformer::new();
+        let (pool, source_map, root) = transformer.transform(program);
+
+        // Create OpTree evaluator
+        let mut evaluator = OpTreeEvaluator::new(
+            pool,
+            source_map,
+            Shared::clone(&self.evaluator.env),
+            Shared::clone(&self.token_arena),
+            self.evaluator.module_loader.clone(),
+            self.evaluator.options.max_call_stack_depth,
+        );
+
+        // Evaluate with the iterator
+        let values = evaluator.eval(root, input);
+
+        values.map(|v| v.into()).map_err(|e| {
+            Box::new(error::Error::from_error(
+                code,
+                e.into(),
+                self.evaluator.module_loader.clone(),
+            ))
+        })
     }
 
     /// Evaluates a pre-parsed AST (Program).
@@ -226,6 +294,7 @@ impl<T: ModuleResolver> Engine<T> {
         Self {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
             token_arena: Shared::clone(&token_arena),
+            use_optree: self.use_optree,
         }
     }
 
