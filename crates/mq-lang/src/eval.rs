@@ -256,7 +256,6 @@ impl<T: ModuleResolver> Evaluator<T> {
         module: module::Module,
         env: &Shared<SharedCell<Env>>,
     ) -> Result<(), RuntimeError> {
-        self.macro_expander.collect_macros(&module.modules);
         self.macro_expander.collect_macros(&module.macros);
         let functions = self.macro_expander.expand_program(&module.functions)?;
         let vars = self.macro_expander.expand_program(&module.vars)?;
